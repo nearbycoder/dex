@@ -4,7 +4,7 @@ import { CLINEPASS_MODELS, type ClinePassModel, clampThinking, findModel, MODEL_
 import { ModelLogo } from "./model-logo"
 
 const selectClass =
-  "max-w-44 appearance-none truncate rounded-md border border-zinc-800 bg-zinc-900 py-1 pr-7 pl-2 text-xs text-zinc-300 hover:border-zinc-700 focus:border-emerald-600 focus:outline-none"
+  "appearance-none rounded-md border border-zinc-800 bg-zinc-900 py-1 pr-5 pl-6 text-xs text-zinc-300 hover:border-zinc-700 focus:border-emerald-600 focus:outline-none sm:pr-6"
 
 export const hasVision = (model: ClinePassModel | undefined) => model?.input.includes("image") ?? false
 
@@ -54,18 +54,18 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
   }
 
   return (
-    <div ref={root} className="relative">
+    <div ref={root} className="relative min-w-0">
       <button
         type="button"
         disabled={props.disabled}
         onClick={toggle}
-        title={hasVision(current) ? "This model can see images" : "This model reads text only"}
-        className="flex max-w-48 items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-900 py-1 pr-1.5 pl-2 text-xs text-zinc-300 hover:border-zinc-700 disabled:opacity-50"
+        title={`${current?.name ?? props.model}: ${hasVision(current) ? "can see images" : "reads text only"}`}
+        className="flex max-w-full min-w-0 items-center gap-1 rounded-md border border-zinc-800 bg-zinc-900 py-1 pr-1.5 pl-1.5 text-xs text-zinc-300 hover:border-zinc-700 disabled:opacity-50 sm:max-w-48 sm:gap-1.5 sm:pl-2"
       >
         <ModelLogo modelId={props.model} className="size-3.5" />
-        <span className="truncate">{current?.name ?? props.model}</span>
+        <span className="min-w-0 truncate">{current?.name ?? props.model}</span>
         {hasVision(current) && <Eye className="size-3.5 shrink-0 text-emerald-400" />}
-        <ChevronDown className="size-3.5 shrink-0 text-zinc-500" />
+        <ChevronDown className="hidden size-3.5 shrink-0 text-zinc-500 sm:block" />
       </button>
       {open && (
         <div
@@ -130,17 +130,18 @@ export function ModelPicker(props: {
 }) {
   const levels = supportedThinkingLevels(findModel(props.model))
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
+    // One line: the model name truncates before anything wraps.
+    <div className="flex min-w-0 items-center gap-1">
       <ModelMenu
         model={props.model}
         disabled={props.disabled}
         onSelect={(model) => props.onChange({ model, thinking: clampThinking(findModel(model), props.thinking) })}
       />
       {levels.length > 0 && (
-        <div className="relative">
-          <Brain className="pointer-events-none absolute top-1.5 left-2 size-3.5 text-zinc-500" />
+        <div className="relative shrink-0">
+          <Brain className="pointer-events-none absolute top-1.5 left-1.5 size-3.5 text-zinc-500" />
           <select
-            className={`${selectClass} pl-7`}
+            className={selectClass}
             value={props.thinking}
             disabled={props.disabled}
             title="Thinking level"
@@ -152,7 +153,7 @@ export function ModelPicker(props: {
               </option>
             ))}
           </select>
-          <ChevronDown className="pointer-events-none absolute top-1.5 right-1.5 size-3.5 text-zinc-500" />
+          <ChevronDown className="pointer-events-none absolute top-1.5 right-1 size-3.5 text-zinc-500" />
         </div>
       )}
     </div>

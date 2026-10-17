@@ -106,7 +106,7 @@ function Chat() {
           placeholder={transcript.running ? "Queue a follow-up…" : "Message Dex…"}
           toolbar={
             session && (
-              <div className="flex flex-wrap items-center gap-1.5">
+              <div className="flex min-w-0 items-center gap-1">
                 <ModelPicker
                   model={session.model}
                   thinking={session.thinking}

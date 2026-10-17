@@ -57,18 +57,23 @@ export function McpPicker(props: {
     props.onChange(props.selected.includes(id) ? props.selected.filter((other) => other !== id) : [...props.selected, id])
 
   return (
-    <div ref={root} className="relative">
+    <div ref={root} className="relative shrink-0">
       <button
         type="button"
         disabled={props.disabled}
         onClick={toggleMenu}
         title={attached.length ? `MCP: ${attached.map((server) => server.name).join(", ")}` : "Attach MCP servers"}
-        className={`flex items-center gap-1.5 rounded-md border py-1 pr-2 pl-1.5 text-xs disabled:opacity-50 ${
+        aria-label={attached.length ? `MCP servers: ${attached.length}` : "MCP servers"}
+        className={`flex items-center gap-1 rounded-md border px-1.5 py-1 text-xs disabled:opacity-50 sm:gap-1.5 sm:pr-2 ${
           attached.length ? "border-emerald-800/70 bg-emerald-950/30 text-emerald-300" : "border-zinc-800 bg-zinc-900 text-zinc-400 hover:border-zinc-700"
         }`}
       >
         <Plug className="size-3.5" />
-        {attached.length ? (attached.length === 1 ? <span className="max-w-24 truncate">{attached[0]!.name}</span> : `${attached.length} MCP`) : "MCP"}
+        {/* Phones show just the plug and a count, so the toolbar stays on one line. */}
+        {attached.length > 0 && <span className="sm:hidden">{attached.length}</span>}
+        <span className="hidden sm:inline">
+          {attached.length ? (attached.length === 1 ? <span className="inline-block max-w-24 truncate align-bottom">{attached[0]!.name}</span> : `${attached.length} MCP`) : "MCP"}
+        </span>
         {attached.some(mcpNeedsAttention) && <span className="size-1.5 rounded-full bg-amber-500" />}
       </button>
       {open && (
