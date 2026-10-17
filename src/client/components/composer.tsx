@@ -35,7 +35,7 @@ export function Composer(props: {
         value={text}
         autoFocus={props.autoFocus}
         placeholder={props.placeholder ?? "Ask Dex to do anything…"}
-        className="block w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none"
+        className="block w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-base text-zinc-100 md:text-sm placeholder:text-zinc-500 focus:outline-none"
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {

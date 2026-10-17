@@ -2,7 +2,7 @@ import { Brain, ChevronDown } from "lucide-react"
 import { CLINEPASS_MODELS, findModel, supportedThinkingLevels, type ThinkingLevel } from "~/shared/models"
 
 const selectClass =
-  "appearance-none rounded-md border border-zinc-800 bg-zinc-900 py-1 pr-7 pl-2 text-xs text-zinc-300 hover:border-zinc-700 focus:border-emerald-600 focus:outline-none"
+  "max-w-44 appearance-none truncate rounded-md border border-zinc-800 bg-zinc-900 py-1 pr-7 pl-2 text-xs text-zinc-300 hover:border-zinc-700 focus:border-emerald-600 focus:outline-none"
 
 export function ModelPicker(props: {
   model: string
@@ -12,7 +12,7 @@ export function ModelPicker(props: {
 }) {
   const levels = supportedThinkingLevels(findModel(props.model))
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex flex-wrap items-center gap-1.5">
       <div className="relative">
         <select
           className={selectClass}

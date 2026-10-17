@@ -45,7 +45,7 @@ function Login() {
                   required
                   autoComplete="current-password"
                   placeholder="Owner password"
-                  className="w-full rounded-lg border border-zinc-800 bg-zinc-950 py-2 pr-3 pl-9 text-sm focus:border-emerald-600 focus:outline-none"
+                  className="w-full rounded-lg border border-zinc-800 bg-zinc-950 py-2 pr-3 pl-9 text-base focus:border-emerald-600 sm:text-sm focus:outline-none"
                 />
               </div>
               <button

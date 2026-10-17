@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router"
-import { File, FilePlus, RefreshCw, Save, SquareTerminal, Trash2 } from "lucide-react"
+import { ArrowLeft, File, FilePlus, RefreshCw, Save, SquareTerminal, Trash2 } from "lucide-react"
 import { useCallback, useEffect, useState } from "react"
 import { useDex } from "~/client/lib/dex"
 import { formatBytes, timeAgo } from "~/client/lib/format"
@@ -56,7 +56,7 @@ function FilesPage() {
 
   return (
     <div className="flex min-h-0 flex-1">
-      <div className="flex w-80 shrink-0 flex-col border-r border-zinc-900">
+      <div className={`${open ? "hidden md:flex" : "flex"} w-full shrink-0 flex-col border-zinc-900 md:w-80 md:border-r`}>
         <div className="flex h-12 items-center gap-2 border-b border-zinc-900 px-4">
           <span className="text-sm font-medium">/workspace</span>
           <button type="button" title="Refresh" onClick={() => void refresh()} className="ml-auto p-1 text-zinc-500 hover:text-zinc-200">
@@ -98,13 +98,16 @@ function FilesPage() {
           ))}
         </ul>
       </div>
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className={`${open ? "flex" : "hidden md:flex"} min-w-0 flex-1 flex-col`}>
         {error && <p className="p-4 text-sm text-red-400">{error}</p>}
         {open ? (
           <>
             <div className="flex h-12 items-center gap-3 border-b border-zinc-900 px-4">
+              <button type="button" title="Back" onClick={() => setOpen(null)} className="-ml-1.5 p-1.5 text-zinc-400 md:hidden">
+                <ArrowLeft className="size-4" />
+              </button>
               <span className="truncate font-mono text-xs text-zinc-300">{open.path}</span>
-              <span className="text-xs text-zinc-600">{timeAgo(files.find((file) => file.path === open.path)?.mtime ?? Date.now())}</span>
+              <span className="hidden text-xs text-zinc-600 sm:inline">{timeAgo(files.find((file) => file.path === open.path)?.mtime ?? Date.now())}</span>
               <div className="ml-auto flex items-center gap-1">
                 {open.content !== null && (
                   <button
@@ -172,8 +175,8 @@ function FilesPage() {
               value={command}
               onChange={(event) => setCommand(event.target.value)}
               disabled={running || !connected}
-              placeholder={running ? "Running…" : "Run a command in the workspace (bash, jq, curl, rg…)"}
-              className="flex-1 bg-transparent font-mono text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none"
+              placeholder={running ? "Running…" : "Run a command (bash, jq, curl, rg…)"}
+              className="min-w-0 flex-1 bg-transparent font-mono text-base text-zinc-200 placeholder:text-zinc-600 focus:outline-none md:text-xs"
             />
           </form>
         </div>

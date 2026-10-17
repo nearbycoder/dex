@@ -10,7 +10,7 @@ export const Route = createFileRoute("/_app/settings")({ component: SettingsPage
 
 function Section({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
   return (
-    <section className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6">
+    <section className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4 md:p-6">
       <h2 className="font-medium">{title}</h2>
       {description && <p className="mt-1 text-sm text-zinc-400">{description}</p>}
       <div className="mt-4">{children}</div>
@@ -37,7 +37,7 @@ function SettingsPage() {
 
   return (
     <div className="scrollbar-thin flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-2xl space-y-6 px-4 py-10">
+      <div className="mx-auto max-w-2xl space-y-6 px-4 py-6 md:py-10">
         <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
 
         <Section title="ClinePass" description="Dex runs on open-weight coding models through your ClinePass subscription.">
@@ -61,7 +61,7 @@ function SettingsPage() {
             }}
             rows={6}
             placeholder="e.g. I'm a TypeScript developer in Chicago. Be concise. Prefer tables for comparisons."
-            className="w-full rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-sm focus:border-emerald-600 focus:outline-none"
+            className="w-full rounded-lg border border-zinc-800 bg-zinc-950 p-3 text-base focus:border-emerald-600 md:text-sm focus:outline-none"
           />
           <div className="mt-2 flex items-center gap-3">
             <button
@@ -112,7 +112,7 @@ function SettingsPage() {
         </Section>
 
         <Section title="Account">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <span className="text-sm text-zinc-400">
               Signed in as <span className="text-zinc-200">{viewer.name}</span> (@{viewer.login})
             </span>

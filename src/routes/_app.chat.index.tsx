@@ -40,9 +40,9 @@ function NewChat() {
   }
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center px-4 pb-24">
+    <div className="scrollbar-thin flex flex-1 flex-col items-center overflow-y-auto px-4 pt-10 pb-10 md:justify-center md:pt-0 md:pb-24">
       <div className="w-full max-w-2xl">
-        <h1 className="mb-6 text-center text-3xl font-semibold tracking-tight">What should Dex do?</h1>
+        <h1 className="mb-6 text-center text-2xl font-semibold tracking-tight md:text-3xl">What should Dex do?</h1>
         {state && !state.cline.connected && (
           <Link
             to="/settings"
