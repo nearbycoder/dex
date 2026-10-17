@@ -1,5 +1,5 @@
 import { Menu } from "lucide-react"
-import { createContext, useCallback, useContext, useEffect, useState } from "react"
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react"
 
 const WIDE = "(min-width: 768px)"
 const COLLAPSED_KEY = "dex.sidebarCollapsed"
@@ -13,6 +13,10 @@ interface Nav {
   readonly show: () => void
   readonly closeDrawer: () => void
   readonly toggleCollapsed: () => void
+  /** Keeps the drawer open through the next page change, e.g. switching the sidebar to Settings. */
+  readonly holdOpen: () => void
+  /** Whether a hold was set since the last page change; clears it. */
+  readonly takeHold: () => boolean
 }
 
 export const NavContext = createContext<Nav>({
@@ -20,7 +24,9 @@ export const NavContext = createContext<Nav>({
   collapsed: false,
   show: () => {},
   closeDrawer: () => {},
-  toggleCollapsed: () => {}
+  toggleCollapsed: () => {},
+  holdOpen: () => {},
+  takeHold: () => false
 })
 
 export const useNav = () => useContext(NavContext)
@@ -50,6 +56,15 @@ export function useNavState(): Nav {
   }, [])
 
   const closeDrawer = useCallback(() => setDrawerOpen(false), [])
+  const hold = useRef(false)
+  const holdOpen = useCallback(() => {
+    hold.current = true
+  }, [])
+  const takeHold = useCallback(() => {
+    const held = hold.current
+    hold.current = false
+    return held
+  }, [])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -102,7 +117,7 @@ export function useNavState(): Nav {
     }
   }, [])
 
-  return { drawerOpen, collapsed, show, closeDrawer, toggleCollapsed }
+  return { drawerOpen, collapsed, show, closeDrawer, toggleCollapsed, holdOpen, takeHold }
 }
 
 /**

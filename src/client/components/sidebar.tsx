@@ -1,25 +1,103 @@
-import { Link, useNavigate, useParams } from "@tanstack/react-router"
-import { BarChart3, Bot, FolderGit2, FolderOpen, LogOut, MessageSquarePlus, Monitor, PanelLeftClose, Plug, Settings, Trash2, X } from "lucide-react"
-import { AgentAvatar } from "./agent-avatar"
-import { mcpNeedsAttention } from "./mcp-picker"
-import { useNav } from "~/client/lib/mobile-nav"
+import { Link, useLocation, useNavigate, useParams } from "@tanstack/react-router"
+import {
+  BarChart3,
+  Bot,
+  ChevronLeft,
+  ChevronRight,
+  FolderGit2,
+  FolderOpen,
+  LogOut,
+  MessageSquarePlus,
+  Monitor,
+  PanelLeftClose,
+  Plug,
+  Settings,
+  SlidersHorizontal,
+  Trash2,
+  X
+} from "lucide-react"
+import { type ReactNode, useEffect, useRef, useState } from "react"
 import { useDex } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
+import { useNav } from "~/client/lib/mobile-nav"
 import { findModel } from "~/shared/models"
+import { AgentAvatar } from "./agent-avatar"
+import { mcpNeedsAttention } from "./mcp-picker"
 import { ModelLogo } from "./model-logo"
-import { useEffect, useState } from "react"
+
+/** Configuration pages: on these the sidebar shows the settings links instead of the chats. */
+const SETTINGS_AREA = ["/settings", "/machine", "/projects", "/agents", "/mcp", "/files", "/usage"]
+const inSettingsArea = (pathname: string) => SETTINGS_AREA.some((path) => pathname === path || pathname.startsWith(`${path}/`))
+
+const linkClass =
+  "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 [&.active]:bg-zinc-900 [&.active]:text-zinc-100"
+
+/** A settings link's trailing hint: a count, a status dot, or both. */
+function Hint({ count, dot, title }: { count?: number; dot?: string; title?: string }) {
+  if (!count && !dot) return null
+  return (
+    <span className="ml-auto flex items-center gap-1.5 text-[11px] text-zinc-500" title={title}>
+      {count ? count : null}
+      {dot && <span className={`size-2 rounded-full ${dot}`} />}
+    </span>
+  )
+}
 
 export function Sidebar() {
-  const { drawerOpen: open, closeDrawer: onClose, collapsed, toggleCollapsed } = useNav()
+  const { drawerOpen: open, closeDrawer: onClose, collapsed, toggleCollapsed, holdOpen } = useNav()
   const { state, viewer, stub, connected } = useDex()
   const navigate = useNavigate()
+  const { pathname } = useLocation()
   const params = useParams({ strict: false })
   const activeId = "sessionId" in params ? params.sessionId : undefined
+  const settingsMode = inSettingsArea(pathname)
   const [, setTick] = useState(0)
   useEffect(() => {
     const timer = setInterval(() => setTick((tick) => tick + 1), 30_000)
     return () => clearInterval(timer)
   }, [])
+
+  // Where "Chats" goes back to: the chat you were last in.
+  const lastChat = useRef<string | null>(null)
+  if (activeId) lastChat.current = activeId
+
+  const running = state?.vms.filter((vm) => vm.status === "running").length ?? 0
+  const vmChanging = state?.vms.some((vm) => vm.status === "starting" || vm.status === "stopping") ?? false
+  const mcpAttention = state?.mcp.some(mcpNeedsAttention) ?? false
+  const clineMissing = state ? !state.cline.connected : false
+
+  // Switching sidebars keeps the phone drawer open, so you can go on from there.
+  const openSettings = () => {
+    holdOpen()
+    void navigate({ to: "/settings" })
+  }
+  const backToChats = () => {
+    holdOpen()
+    const chat = lastChat.current && state?.sessions.some((session) => session.id === lastChat.current) ? lastChat.current : null
+    void (chat ? navigate({ to: "/chat/$sessionId", params: { sessionId: chat } }) : navigate({ to: "/chat" }))
+  }
+
+  const settingsLinks: Array<{ to: string; label: string; icon: ReactNode; hint?: ReactNode; show?: boolean }> = [
+    { to: "/settings", label: "General", icon: <SlidersHorizontal className="size-4" />, hint: clineMissing && <Hint dot="bg-amber-500" title="Connect ClinePass" /> },
+    {
+      to: "/machine",
+      label: "Machines",
+      icon: <Monitor className="size-4" />,
+      show: state?.vmConfigured ?? false,
+      hint: (state?.vms.length ?? 0) > 0 && (
+        <Hint
+          count={running}
+          dot={vmChanging ? "animate-pulse bg-amber-500" : running ? "bg-emerald-500" : "bg-zinc-700"}
+          title={`${running} running of ${state?.vms.length ?? 0}`}
+        />
+      )
+    },
+    { to: "/projects", label: "Projects", icon: <FolderGit2 className="size-4" /> },
+    { to: "/agents", label: "Agents", icon: <Bot className="size-4" /> },
+    { to: "/mcp", label: "MCP servers", icon: <Plug className="size-4" />, hint: mcpAttention && <Hint dot="bg-amber-500" title="A server needs attention" /> },
+    { to: "/files", label: "Workspace", icon: <FolderOpen className="size-4" /> },
+    { to: "/usage", label: "Usage", icon: <BarChart3 className="size-4" /> }
+  ]
 
   return (
     <>
@@ -53,135 +131,121 @@ export function Sidebar() {
           <PanelLeftClose className="size-4" />
         </button>
       </div>
-      <div className="px-3">
-        <Link
-          to="/chat"
-          className="flex items-center gap-2 rounded-lg border border-zinc-800 px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-900"
-        >
-          <MessageSquarePlus className="size-4" /> New chat
-        </Link>
-      </div>
-      <nav className="scrollbar-thin mt-4 flex-1 space-y-0.5 overflow-y-auto px-3">
-        <div className="px-2 pb-1 text-[11px] font-medium tracking-wide text-zinc-600 uppercase">Chats</div>
-        {state?.sessions.length === 0 && <div className="px-2 py-1 text-xs text-zinc-600">No chats yet</div>}
-        {state?.sessions.map((session) => (
-          <div key={session.id} className="group relative animate-fade">
-            <Link
-              to="/chat/$sessionId"
-              params={{ sessionId: session.id }}
-              className={`block rounded-lg py-2 pr-8 pl-2.5 ${
-                session.id === activeId ? "bg-zinc-900 text-zinc-100" : "text-zinc-300 hover:bg-zinc-900/60 hover:text-zinc-100"
-              }`}
-            >
-              <div className="truncate text-sm">{session.title}</div>
-              <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-zinc-500">
-                {(() => {
-                  const agent = session.agentId ? state.agents.find((candidate) => candidate.id === session.agentId) : undefined
-                  const project = session.projectId ? state.projects.find((candidate) => candidate.id === session.projectId) : undefined
-                  return project ? (
-                    <>
-                      <AgentAvatar icon={project.icon} color={project.color} size={14} />
-                      <span className="max-w-24 shrink-0 truncate text-zinc-400">{project.name}</span>
-                      {agent && <span className="truncate text-zinc-500">· {agent.name}</span>}
-                    </>
-                  ) : agent ? (
-                    <>
-                      <AgentAvatar icon={agent.icon} color={agent.color} size={14} />
-                      <span className="shrink-0 text-zinc-400">{agent.name}</span>
-                      <span className="text-zinc-700">·</span>
-                      <span className="truncate">{findModel(session.model)?.name ?? session.model}</span>
-                    </>
-                  ) : (
-                    <>
-                      <ModelLogo modelId={session.model} className="size-3.5" />
-                      <span className="truncate">{findModel(session.model)?.name ?? session.model}</span>
-                    </>
-                  )
-                })()}
-                <span className="text-zinc-700">·</span>
-                {session.busy ? (
-                  <span className="flex shrink-0 items-center gap-1 text-emerald-400">
-                    <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" /> working
-                  </span>
-                ) : (
-                  <span className="shrink-0" title={new Date(session.updatedAt).toLocaleString()}>
-                    {timeAgo(session.updatedAt)}
-                  </span>
-                )}
-              </div>
-            </Link>
+
+      {settingsMode ? (
+        // Settings: links to every configuration page, and a way back to the chats.
+        <div key="settings" className="flex min-h-0 flex-1 animate-fade flex-col">
+          <div className="px-3">
             <button
               type="button"
-              title="Delete chat"
-              onClick={async () => {
-                if (!confirm(`Delete “${session.title}”?`)) return
-                await stub.deleteSession(session.id)
-                if (session.id === activeId) void navigate({ to: "/chat" })
-              }}
-              className="absolute top-1/2 right-1.5 -translate-y-1/2 rounded p-1 text-zinc-500 hover:text-red-400 md:hidden md:group-hover:block"
+              onClick={backToChats}
+              className="flex w-full items-center gap-2 rounded-lg border border-zinc-800 px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-900"
             >
-              <Trash2 className="size-3.5" />
+              <ChevronLeft className="size-4" /> Chats
             </button>
           </div>
-        ))}
-      </nav>
+          <nav className="scrollbar-thin mt-4 flex-1 space-y-0.5 overflow-y-auto px-3">
+            <div className="px-2 pb-1 text-[11px] font-medium tracking-wide text-zinc-600 uppercase">Settings</div>
+            {settingsLinks
+              .filter((link) => link.show !== false)
+              .map((link) => (
+                <Link key={link.to} to={link.to} activeOptions={{ exact: link.to === "/settings" }} onClick={onClose} className={linkClass}>
+                  {link.icon} {link.label}
+                  {link.hint}
+                </Link>
+              ))}
+          </nav>
+        </div>
+      ) : (
+        <div key="chats" className="flex min-h-0 flex-1 animate-fade flex-col">
+          <div className="px-3">
+            <Link
+              to="/chat"
+              onClick={onClose}
+              className="flex items-center gap-2 rounded-lg border border-zinc-800 px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-900"
+            >
+              <MessageSquarePlus className="size-4" /> New chat
+            </Link>
+          </div>
+          <nav className="scrollbar-thin mt-4 flex-1 space-y-0.5 overflow-y-auto px-3">
+            <div className="px-2 pb-1 text-[11px] font-medium tracking-wide text-zinc-600 uppercase">Chats</div>
+          {state?.sessions.length === 0 && <div className="px-2 py-1 text-xs text-zinc-600">No chats yet</div>}
+          {state?.sessions.map((session) => (
+            <div key={session.id} className="group relative animate-fade">
+              <Link
+                to="/chat/$sessionId"
+                params={{ sessionId: session.id }}
+                onClick={onClose}
+                className={`block rounded-lg py-2 pr-8 pl-2.5 ${
+                  session.id === activeId ? "bg-zinc-900 text-zinc-100" : "text-zinc-300 hover:bg-zinc-900/60 hover:text-zinc-100"
+                }`}
+              >
+                <div className="truncate text-sm">{session.title}</div>
+                <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-zinc-500">
+                  {(() => {
+                    const agent = session.agentId ? state.agents.find((candidate) => candidate.id === session.agentId) : undefined
+                    const project = session.projectId ? state.projects.find((candidate) => candidate.id === session.projectId) : undefined
+                    return project ? (
+                      <>
+                        <AgentAvatar icon={project.icon} color={project.color} size={14} />
+                        <span className="max-w-24 shrink-0 truncate text-zinc-400">{project.name}</span>
+                        {agent && <span className="truncate text-zinc-500">· {agent.name}</span>}
+                      </>
+                    ) : agent ? (
+                      <>
+                        <AgentAvatar icon={agent.icon} color={agent.color} size={14} />
+                        <span className="shrink-0 text-zinc-400">{agent.name}</span>
+                        <span className="text-zinc-700">·</span>
+                        <span className="truncate">{findModel(session.model)?.name ?? session.model}</span>
+                      </>
+                    ) : (
+                      <>
+                        <ModelLogo modelId={session.model} className="size-3.5" />
+                        <span className="truncate">{findModel(session.model)?.name ?? session.model}</span>
+                      </>
+                    )
+                  })()}
+                  <span className="text-zinc-700">·</span>
+                  {session.busy ? (
+                    <span className="flex shrink-0 items-center gap-1 text-emerald-400">
+                      <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" /> working
+                    </span>
+                  ) : (
+                    <span className="shrink-0" title={new Date(session.updatedAt).toLocaleString()}>
+                      {timeAgo(session.updatedAt)}
+                    </span>
+                  )}
+                </div>
+              </Link>
+              <button
+                type="button"
+                title="Delete chat"
+                onClick={async () => {
+                  if (!confirm(`Delete “${session.title}”?`)) return
+                  await stub.deleteSession(session.id)
+                  if (session.id === activeId) void navigate({ to: "/chat" })
+                }}
+                className="absolute top-1/2 right-1.5 -translate-y-1/2 rounded p-1 text-zinc-500 hover:text-red-400 md:hidden md:group-hover:block"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            </div>
+          ))}
+          </nav>
+        </div>
+      )}
       <div className="space-y-0.5 border-t border-zinc-900 p-3">
-        {state?.vmConfigured && (
-          <Link
-            to="/machine"
-            className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 [&.active]:bg-zinc-900 [&.active]:text-zinc-100"
-          >
-            <Monitor className="size-4" /> Machines
-            {(() => {
-              const running = state.vms.filter((vm) => vm.status === "running").length
-              const changing = state.vms.some((vm) => vm.status === "starting" || vm.status === "stopping")
-              return (
-                <span className="ml-auto flex items-center gap-1.5 text-[11px] text-zinc-500" title={`${running} running of ${state.vms.length}`}>
-                  {running > 0 && running}
-                  <span className={`size-2 rounded-full ${changing ? "animate-pulse bg-amber-500" : running ? "bg-emerald-500" : "bg-zinc-700"}`} />
-                </span>
-              )
-            })()}
-          </Link>
+        {!settingsMode && (
+          <button type="button" onClick={openSettings} className={`${linkClass} w-full`}>
+            <Settings className="size-4" /> Settings
+            {running > 0 ? (
+              <Hint count={running} dot="bg-emerald-500" title={`${running} VM${running === 1 ? "" : "s"} running`} />
+            ) : (
+              (clineMissing || mcpAttention) && <Hint dot="bg-amber-500" title={clineMissing ? "Connect ClinePass" : "A server needs attention"} />
+            )}
+            <ChevronRight className={`size-4 text-zinc-600 ${running > 0 || clineMissing || mcpAttention ? "" : "ml-auto"}`} />
+          </button>
         )}
-        <Link
-          to="/projects"
-          className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 [&.active]:bg-zinc-900 [&.active]:text-zinc-100"
-        >
-          <FolderGit2 className="size-4" /> Projects
-        </Link>
-        <Link
-          to="/agents"
-          className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 [&.active]:bg-zinc-900 [&.active]:text-zinc-100"
-        >
-          <Bot className="size-4" /> Agents
-        </Link>
-        <Link
-          to="/mcp"
-          className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 [&.active]:bg-zinc-900 [&.active]:text-zinc-100"
-        >
-          <Plug className="size-4" /> MCP servers
-          {state?.mcp.some(mcpNeedsAttention) && <span className="ml-auto size-2 rounded-full bg-amber-500" title="A server needs attention" />}
-        </Link>
-        <Link
-          to="/files"
-          className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 [&.active]:bg-zinc-900 [&.active]:text-zinc-100"
-        >
-          <FolderOpen className="size-4" /> Workspace
-        </Link>
-        <Link
-          to="/usage"
-          className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 [&.active]:bg-zinc-900 [&.active]:text-zinc-100"
-        >
-          <BarChart3 className="size-4" /> Usage
-        </Link>
-        <Link
-          to="/settings"
-          className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 [&.active]:bg-zinc-900 [&.active]:text-zinc-100"
-        >
-          <Settings className="size-4" /> Settings
-          {state && !state.cline.connected && <span className="ml-auto size-2 rounded-full bg-amber-500" />}
-        </Link>
         <div className="flex items-center gap-2 px-2 pt-2">
           {viewer.avatarUrl ? (
             <img src={viewer.avatarUrl} alt="" className="size-6 rounded-full" />

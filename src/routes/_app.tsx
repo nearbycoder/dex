@@ -28,8 +28,11 @@ function AppLayout() {
   const inChat = useMatch({ from: "/_app/chat/$sessionId", shouldThrow: false }) !== undefined
   const ownHeader = inChat || pathname === "/machine" || pathname.startsWith("/machine/") || pathname === "/usage"
 
-  const { closeDrawer } = nav
-  useEffect(() => closeDrawer(), [pathname, closeDrawer])
+  // Picking a page closes the drawer; switching between the chats and settings sidebars keeps it open.
+  const { closeDrawer, takeHold } = nav
+  useEffect(() => {
+    if (!takeHold()) closeDrawer()
+  }, [pathname, closeDrawer, takeHold])
 
   return (
     <DexProvider viewer={viewer}>
