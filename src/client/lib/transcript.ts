@@ -155,7 +155,8 @@ export const applyEvent = (state: TranscriptState, event: AgentEvent): Transcrip
 
 export type DisplayItem =
   | { readonly kind: "user"; readonly id: string; readonly text: string; readonly images: number }
-  | { readonly kind: "assistant"; readonly id: string; readonly message: AssistantMessage; readonly streaming: boolean }
+  /** One reply: the assistant messages between two user messages, the last one possibly still streaming. */
+  | { readonly kind: "assistant"; readonly id: string; readonly messages: ReadonlyArray<AssistantMessage>; readonly streaming: boolean; readonly endedAt: number | null }
   | { readonly kind: "divider"; readonly id: string; readonly label: string }
 
 const userText = (message: UserMessage) =>
@@ -178,16 +179,30 @@ export const toolResults = (entries: ReadonlyArray<EntryRecord>) => {
 
 export const displayItems = (state: TranscriptState): DisplayItem[] => {
   const items: DisplayItem[] = []
+  // Consecutive assistant messages (tool results don't interrupt them) are one reply.
+  const addAssistant = (id: string, message: AssistantMessage, streaming: boolean) => {
+    const last = items.at(-1)
+    const ended = streaming ? null : message.timestamp + (message.durationMs ?? 0)
+    if (last?.kind === "assistant") {
+      items[items.length - 1] = { ...last, messages: [...last.messages, message], streaming, endedAt: ended ?? last.endedAt }
+    } else {
+      items.push({ kind: "assistant", id, messages: [message], streaming, endedAt: ended })
+    }
+  }
   for (const entry of state.entries) {
     if (entry.kind === "pi.reset") items.push({ kind: "divider", id: String(entry.id), label: "Context reset" })
     else if (entry.kind === "pi.compaction") items.push({ kind: "divider", id: String(entry.id), label: "Earlier messages summarized" })
     for (const [index, message] of (entry.model ?? []).entries()) {
       const id = `${entry.id}:${index}`
       if (message.role === "user") items.push({ kind: "user", id, ...userText(message) })
-      else if (message.role === "assistant") items.push({ kind: "assistant", id, message, streaming: false })
+      else if (message.role === "assistant") addAssistant(id, message, false)
+      else if (message.role === "toolResult") {
+        const last = items.at(-1)
+        if (last?.kind === "assistant") items[items.length - 1] = { ...last, endedAt: Math.max(last.endedAt ?? 0, message.timestamp) }
+      }
     }
   }
-  if (state.streaming) items.push({ kind: "assistant", id: "streaming", message: state.streaming, streaming: true })
+  if (state.streaming) addAssistant("streaming", state.streaming, true)
   return items
 }
 

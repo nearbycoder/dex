@@ -1,11 +1,12 @@
 import type { AssistantMessage, ToolResultMessage } from "@earendil-works/pi-ai"
 import { Predicate } from "effect"
-import { AlertTriangle, ChevronRight, LoaderCircle } from "lucide-react"
+import { AlertTriangle, ChevronRight, ListChecks, LoaderCircle } from "lucide-react"
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react"
 import { displayItems, type LiveTool, toolResults, type TranscriptState } from "~/client/lib/transcript"
 import { Collapse } from "./collapse"
 import { Markdown } from "./markdown"
-import { ToolCard } from "./tool-card"
+import { summarize, ToolCard, toolActivity } from "./tool-card"
+import { useNow } from "./vm-status"
 
 const OpenUIBlock = lazy(() => import("./openui-block"))
 
@@ -25,43 +26,182 @@ function Thinking({ text, streaming }: { text: string; streaming: boolean }) {
   )
 }
 
-function AssistantBlocks(props: {
-  message: AssistantMessage
+type Block = AssistantMessage["content"][number]
+
+interface Step {
+  readonly key: string
+  readonly block: Block
+  /** The block is the end of the message still streaming. */
+  readonly live: boolean
+}
+
+const isUi = (block: Block) => block.type === "toolCall" && block.name === "render_ui" && Predicate.isString(block.arguments.code)
+/** Thinking and tool calls: the work behind a reply, folded into its activity row. */
+const isWork = (block: Block) => (block.type === "thinking" && block.thinking.trim() !== "") || (block.type === "toolCall" && !isUi(block))
+
+/** While the model is thinking or between steps, the status line cycles through these. */
+const PHRASES = ["Thinking", "Working through it", "Looking closer", "Connecting the dots", "Checking the details", "Putting it together"]
+
+const duration = (ms: number) => {
+  const seconds = Math.max(0, Math.round(ms / 1000))
+  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+}
+
+const plural = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`
+
+/**
+ * Everything the model did on the way to its answer, as one row: a status line that follows the current step (and
+ * rotates while it thinks), counts, and time. Tap to see every thought, note, and tool call in order.
+ */
+function Activity(props: {
+  steps: ReadonlyArray<Step>
+  /** Still on the work (no answer text yet). */
+  active: boolean
+  /** The reply is still going, answer included: the clock keeps running. */
+  running: boolean
+  startedAt: number
+  endedAt: number | null
+  results: Map<string, ToolResultMessage>
+  tools: Readonly<Record<string, LiveTool>>
+}) {
+  const { steps, active, results, tools } = props
+  const [open, setOpen] = useState(false)
+  const [phrase, setPhrase] = useState(0)
+  const now = useNow(props.running ? 1_000 : 60_000)
+
+  const calls = steps.flatMap((step) => (step.block.type === "toolCall" ? [step.block] : []))
+  const thoughts = steps.filter((step) => step.block.type === "thinking").length
+  const failed = calls.filter((call) => results.get(call.id)?.isError).length
+  const current = [...calls].reverse().find((call) => !results.has(call.id))
+  const last = steps.at(-1)
+  const thinking = last?.live && last.block.type === "thinking"
+
+  // A running tool says what it's doing; otherwise the line rotates so a long think still feels alive.
+  const rotating = active && !current
+  // Each new step starts the cycle over at "Thinking".
+  useEffect(() => setPhrase(0), [calls.length])
+  useEffect(() => {
+    if (!rotating) return
+    const timer = setInterval(() => setPhrase((index) => index + 1), 2_400)
+    return () => clearInterval(timer)
+  }, [rotating])
+
+  const status = !active
+    ? `Worked for ${duration((props.endedAt ?? now) - props.startedAt)}`
+    : current
+      ? toolActivity(current.name)
+      : thinking && phrase === 0
+        ? "Thinking"
+        : PHRASES[phrase % PHRASES.length]!
+  const detail = active && current ? summarize(current.arguments) : ""
+  const counts = [
+    calls.length > 0 && plural(calls.length, "tool call"),
+    thoughts > 0 && plural(thoughts, "thought"),
+    failed > 0 && `${failed} failed`,
+    active && duration(now - props.startedAt)
+  ].filter(Boolean)
+
+  return (
+    <div className="my-1.5 animate-fade overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900/60 text-xs">
+      <button type="button" onClick={() => setOpen((value) => !value)} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-zinc-800/50">
+        <ChevronRight className={`size-3.5 shrink-0 text-zinc-500 transition-transform ${open ? "rotate-90" : ""}`} />
+        {active ? (
+          <LoaderCircle className="size-3.5 shrink-0 animate-spin text-emerald-400" />
+        ) : failed > 0 ? (
+          <AlertTriangle className="size-3.5 shrink-0 text-amber-400" />
+        ) : (
+          <ListChecks className="size-3.5 shrink-0 text-emerald-400" />
+        )}
+        <span className="flex min-w-0 flex-1 items-baseline gap-1.5 overflow-hidden">
+          <span key={status} className={`shrink-0 font-medium text-zinc-300 ${active ? "animate-rise" : ""}`}>
+            {status}
+            {active && "…"}
+          </span>
+          {detail && <span className="truncate font-mono text-zinc-500">{detail}</span>}
+        </span>
+        <span className="shrink-0 text-zinc-500 tabular-nums">{counts.join(" · ")}</span>
+      </button>
+      <Collapse open={open}>
+        <div className="border-t border-zinc-800 px-3 py-1">
+          {steps.map((step) => {
+            const { block } = step
+            switch (block.type) {
+              case "thinking":
+                return <Thinking key={step.key} text={block.thinking} streaming={step.live} />
+              case "text":
+                return block.text.trim() ? (
+                  <div key={step.key} className="my-2 text-zinc-400 [&_p]:text-xs">
+                    <Markdown>{block.text}</Markdown>
+                  </div>
+                ) : null
+              case "toolCall":
+                return <ToolCard key={step.key} call={block} result={results.get(block.id)} live={tools[block.id]} />
+            }
+          })}
+        </div>
+      </Collapse>
+    </div>
+  )
+}
+
+/** One reply: its work folded into an activity row, then what it shows you (answer text and UI cards). */
+function AssistantTurn(props: {
+  messages: ReadonlyArray<AssistantMessage>
   streaming: boolean
+  active: boolean
+  endedAt: number | null
   results: Map<string, ToolResultMessage>
   tools: Readonly<Record<string, LiveTool>>
   onSend: (text: string) => void
 }) {
-  const { message } = props
+  const { messages } = props
+  const blocks: Step[] = messages.flatMap((message, m) =>
+    message.content.map((block, index) => ({
+      key: `${m}:${index}`,
+      block,
+      live: props.streaming && m === messages.length - 1 && index === message.content.length - 1
+    }))
+  )
+  const lastWork = blocks.findLastIndex((step) => isWork(step.block))
+  // Notes the model wrote between steps stay with the work; UI cards and the final answer stay in view.
+  const steps = blocks.slice(0, lastWork + 1).filter((step) => !isUi(step.block))
+  const shown = [...blocks.slice(0, lastWork + 1).filter((step) => isUi(step.block)), ...blocks.slice(lastWork + 1)]
+  const final = messages.at(-1)
+  const errors = messages.filter((message) => message.stopReason === "error")
+
   return (
     <div className="min-w-0 flex-1">
-      {message.content.map((block, index) => {
-        const last = index === message.content.length - 1
-        switch (block.type) {
-          case "thinking":
-            return <Thinking key={index} text={block.thinking} streaming={props.streaming && last} />
-          case "text":
-            return block.text ? <Markdown key={index}>{block.text}</Markdown> : null
-          case "toolCall": {
-            const code = block.arguments.code
-            if (block.name === "render_ui" && Predicate.isString(code)) {
-              return (
-                <Suspense key={block.id || index} fallback={<div className="my-3 h-24 animate-pulse rounded-xl bg-zinc-900" />}>
-                  <OpenUIBlock code={code} streaming={props.streaming} onSend={props.onSend} />
-                </Suspense>
-              )
-            }
-            return <ToolCard key={block.id || index} call={block} result={props.results.get(block.id)} live={props.tools[block.id]} />
-          }
+      {steps.length > 0 && (
+        <Activity
+          steps={steps}
+          active={props.active && shown.every((step) => step.block.type !== "text" || !step.block.text)}
+          running={props.active}
+          startedAt={messages[0]!.timestamp}
+          endedAt={props.endedAt}
+          results={props.results}
+          tools={props.tools}
+        />
+      )}
+      {shown.map((step) => {
+        const { block } = step
+        if (block.type === "text") return block.text ? <Markdown key={step.key}>{block.text}</Markdown> : null
+        if (block.type === "thinking") return <Thinking key={step.key} text={block.thinking} streaming={step.live} />
+        if (isUi(block)) {
+          return (
+            <Suspense key={step.key} fallback={<div className="my-3 h-24 animate-pulse rounded-xl bg-zinc-900" />}>
+              <OpenUIBlock code={block.arguments.code as string} streaming={props.streaming} onSend={props.onSend} />
+            </Suspense>
+          )
         }
+        return null
       })}
-      {message.stopReason === "error" && (
-        <div className="my-2 flex items-start gap-2 rounded-lg border border-red-900/60 bg-red-950/40 px-3 py-2 text-xs text-red-300">
+      {errors.map((message, index) => (
+        <div key={index} className="my-2 flex items-start gap-2 rounded-lg border border-red-900/60 bg-red-950/40 px-3 py-2 text-xs text-red-300">
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
           <span className="break-words">{message.errorMessage ?? "The model request failed."}</span>
         </div>
-      )}
-      {message.stopReason === "aborted" && <div className="my-1 text-xs text-zinc-500">Stopped.</div>}
+      ))}
+      {final?.stopReason === "aborted" && <div className="my-1 text-xs text-zinc-500">Stopped.</div>}
     </div>
   )
 }
@@ -91,7 +231,7 @@ export function MessageList({ transcript, onSend }: { transcript: TranscriptStat
       }}
     >
       <div className="mx-auto max-w-3xl space-y-5 px-4 py-6">
-        {items.map((item) => {
+        {items.map((item, index) => {
           switch (item.kind) {
             case "user":
               return (
@@ -106,9 +246,11 @@ export function MessageList({ transcript, onSend }: { transcript: TranscriptStat
               return (
                 <div key={item.id} className="flex animate-rise gap-3">
                   <img src="/favicon.svg" alt="Dex" className="mt-0.5 size-6 shrink-0" />
-                  <AssistantBlocks
-                    message={item.message}
+                  <AssistantTurn
+                    messages={item.messages}
                     streaming={item.streaming}
+                    active={transcript.running && index === items.length - 1}
+                    endedAt={item.endedAt}
                     results={results}
                     tools={transcript.tools}
                     onSend={onSend}
@@ -125,7 +267,7 @@ export function MessageList({ transcript, onSend }: { transcript: TranscriptStat
               )
           }
         })}
-        {transcript.running && !transcript.streaming && (
+        {transcript.running && items.at(-1)?.kind !== "assistant" && (
           <div className="flex animate-fade items-center gap-2 pl-9 text-xs text-zinc-500">
             <LoaderCircle className="size-3.5 animate-spin" /> Working…
           </div>

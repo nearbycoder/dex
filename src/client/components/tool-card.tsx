@@ -41,7 +41,7 @@ const icons: Record<string, LucideIcon> = {
 
 const summaryKeys = ["command", "path", "query", "url", "prompt", "name", "id"]
 
-const summarize = (args: unknown) => {
+export const summarize = (args: unknown) => {
   if (!Predicate.isObject(args)) return ""
   const record = args as Record<string, unknown>
   for (const key of summaryKeys) {
@@ -53,6 +53,31 @@ const summarize = (args: unknown) => {
 
 export const resultText = (result: ToolResultMessage | undefined) =>
   result?.content.flatMap((part) => (part.type === "text" ? [part.text] : ["[image]"])).join("\n") ?? ""
+
+/** What a tool call is doing, in words: "Running a command", "Searching the web", "Using github". */
+export const toolActivity = (name: string) => {
+  if (name.includes("skill")) return "Reading a skill"
+  if (name.includes("__")) return `Using ${name.split("__")[0]}`
+  return activities[name] ?? `Using ${name}`
+}
+
+const activities: Record<string, string> = {
+  bash: "Running a command",
+  read_file: "Reading a file",
+  write_file: "Writing a file",
+  edit_file: "Editing a file",
+  web_search: "Searching the web",
+  web_fetch: "Reading a page",
+  schedule_prompt: "Scheduling a prompt",
+  list_scheduled_prompts: "Checking the schedule",
+  cancel_scheduled_prompt: "Cancelling a scheduled prompt",
+  vm_exec: "Running on the VM",
+  vm_read_file: "Reading a file on the VM",
+  vm_write_file: "Writing a file on the VM",
+  vm_expose_port: "Opening a port",
+  vm_screenshot: "Looking at the VM's screen",
+  vm_stop: "Stopping the VM"
+}
 
 export function ToolCard({ call, result, live }: { call: ToolCall; result?: ToolResultMessage; live?: LiveTool }) {
   const [open, setOpen] = useState(false)
