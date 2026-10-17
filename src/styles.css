@@ -30,3 +30,85 @@ body {
 .dex-openui :is(.openui-markdown-renderer, .openui-text-content, .openui-callout, .openui-steps) {
   overflow-wrap: anywhere;
 }
+
+/* ── Native app feel ─────────────────────────────────────────────────────── */
+
+html {
+  background: #09090b;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  /* No rubber-band bounce or pull-to-refresh on the app frame; inner lists still scroll. */
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* No double-tap-to-zoom delay on controls. */
+a,
+button,
+input,
+select,
+textarea,
+label,
+[role="button"] {
+  touch-action: manipulation;
+}
+
+/* Navigation and headers behave like app chrome, not a document: no text selection or long-press callouts. */
+.dex-chrome {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* Touch screens get pressed feedback, since there is no hover. */
+@media (hover: none) {
+  .dex-chrome :is(a, button):active,
+  button:active {
+    opacity: 0.6;
+    transition: opacity 0s;
+  }
+}
+
+/* Scrolling lists don't chain their overscroll into the app frame. */
+.dex-app .overflow-y-auto {
+  overscroll-behavior-y: contain;
+}
+
+/* ── Dual-screen and foldable devices ────────────────────────────────────── */
+
+/* Spanned across two side-by-side screens (Surface Duo, Fold-style dual displays): navigation on the
+   left screen, the conversation on the right, nothing under the hinge. */
+@media (horizontal-viewport-segments: 2) {
+  .dex-sidebar {
+    position: static !important;
+    display: flex !important;
+    transform: none !important;
+    width: calc(env(viewport-segment-right 0 0) - env(safe-area-inset-left, 0px)) !important;
+    box-shadow: none !important;
+  }
+  .dex-main {
+    margin-left: calc(env(viewport-segment-left 1 0) - env(viewport-segment-right 0 0));
+  }
+  .dex-collapse {
+    display: none !important;
+  }
+  .dex-machine-grid {
+    grid-template-columns: env(viewport-segment-width 0 0) env(viewport-segment-width 1 0) !important;
+    column-gap: calc(env(viewport-segment-left 1 0) - env(viewport-segment-right 0 0)) !important;
+  }
+}
+
+/* Short screens (phones in landscape, foldables in tabletop): the sidebar scrolls as one list so the chats
+   are not squeezed out by the bottom links. */
+@media (max-height: 520px) {
+  .dex-sidebar {
+    overflow-y: auto;
+  }
+  .dex-sidebar > nav {
+    flex: none;
+    overflow: visible;
+  }
+}

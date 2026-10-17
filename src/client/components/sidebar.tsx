@@ -1,12 +1,14 @@
 import { Link, useNavigate, useParams } from "@tanstack/react-router"
-import { BarChart3, FolderOpen, LogOut, MessageSquarePlus, Monitor, Settings, Trash2, X } from "lucide-react"
+import { BarChart3, FolderOpen, LogOut, MessageSquarePlus, Monitor, PanelLeftClose, Settings, Trash2, X } from "lucide-react"
+import { useNav } from "~/client/lib/mobile-nav"
 import { useDex } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
 import { findModel } from "~/shared/models"
 import { ModelLogo } from "./model-logo"
 import { useEffect, useState } from "react"
 
-export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function Sidebar() {
+  const { drawerOpen: open, closeDrawer: onClose, collapsed, toggleCollapsed } = useNav()
   const { state, viewer, stub, connected } = useDex()
   const navigate = useNavigate()
   const params = useParams({ strict: false })
@@ -19,11 +21,11 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
 
   return (
     <>
-      {open && <div className="fixed inset-0 z-30 bg-black/60 md:hidden" onClick={onClose} aria-hidden="true" />}
+      {open && <div className="fixed inset-0 z-30 bg-black/60 backdrop-blur-[1px] md:hidden" onClick={onClose} aria-hidden="true" />}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex h-full w-72 shrink-0 flex-col border-r border-zinc-900 bg-zinc-950 transition-transform duration-200 md:static md:w-64 md:translate-x-0 ${
+        className={`dex-sidebar dex-chrome fixed inset-y-0 left-0 z-40 flex h-full w-[min(18rem,85vw)] shrink-0 flex-col border-r border-zinc-900 bg-zinc-950 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] shadow-2xl shadow-black/60 transition-transform duration-200 ease-out md:static md:w-64 md:translate-x-0 md:pt-0 md:pl-0 md:shadow-none lg:w-72 ${
           open ? "translate-x-0" : "-translate-x-full"
-        }`}
+        } ${collapsed ? "md:hidden" : ""}`}
       >
       <div className="flex items-center gap-2 px-4 py-4">
         <img src="/favicon.svg" alt="" className="size-7" />
@@ -34,6 +36,14 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
         />
         <button type="button" onClick={onClose} title="Close menu" className="-mr-1 rounded-md p-1 text-zinc-500 hover:text-zinc-200 md:hidden">
           <X className="size-5" />
+        </button>
+        <button
+          type="button"
+          onClick={toggleCollapsed}
+          title="Hide sidebar (⌘B)"
+          className="dex-collapse -mr-1 hidden rounded-md p-1 text-zinc-500 hover:text-zinc-200 md:block"
+        >
+          <PanelLeftClose className="size-4" />
         </button>
       </div>
       <div className="px-3">

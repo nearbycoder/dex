@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router"
 import { Clock, Trash2 } from "lucide-react"
 import { type ReactNode, useCallback, useEffect, useState } from "react"
 import { ClineConnect } from "~/client/components/cline-connect"
+import { InstallApp } from "~/client/components/install-app"
 import { ModelPicker } from "~/client/components/model-picker"
 import { useDex } from "~/client/lib/dex"
 import type { ScheduledPrompt } from "~/shared/protocol"
@@ -37,8 +38,12 @@ function SettingsPage() {
 
   return (
     <div className="scrollbar-thin flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-2xl space-y-6 px-4 py-6 md:py-10">
+      <div className="mx-auto max-w-2xl space-y-6 px-4 pt-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] md:pt-10">
         <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+
+        <Section title="Install Dex" description="Add Dex to your Home Screen to open it full screen, like a native app.">
+          <InstallApp />
+        </Section>
 
         <Section title="ClinePass" description="Dex runs on open-weight coding models through your ClinePass subscription.">
           <ClineConnect />

@@ -123,7 +123,7 @@ function ActivityItem({ item, defaultOpen }: { item: VmActivity; defaultOpen: bo
 function Panel({ title, actions, children, className = "" }: { title: ReactNode; actions?: ReactNode; children: ReactNode; className?: string }) {
   return (
     <section className={`flex min-h-0 flex-col overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/40 ${className}`}>
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-zinc-800 px-3 text-xs">
+      <div className="flex h-10 shrink-0 items-center gap-2 overflow-hidden border-b border-zinc-800 px-3 text-xs whitespace-nowrap">
         {title}
         <div className="ml-auto flex items-center gap-1">{actions}</div>
       </div>
@@ -366,7 +366,7 @@ function MachinePage() {
         </div>
       </PageHeader>
 
-      <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto p-3 md:p-4">
+      <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:p-4 md:pb-[max(1rem,env(safe-area-inset-bottom))]">
         {workingSessions.length > 0 && (
           <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-emerald-900/60 bg-emerald-950/30 px-3 py-2 text-sm">
             <Bot className="size-4 text-emerald-400" />
@@ -390,7 +390,7 @@ function MachinePage() {
         )}
         {(error || vm.error) && <p className="mb-3 rounded-lg bg-red-950/40 px-3 py-2 text-sm text-red-300">{error ?? vm.error}</p>}
 
-        <div className="grid gap-3 lg:grid-cols-5 lg:items-start">
+        <div className="dex-machine-grid grid gap-3 lg:grid-cols-5 lg:items-start">
           <Desktop running={running} />
 
           <Panel
@@ -514,7 +514,7 @@ function MachinePage() {
 
 function PageHeader({ children }: { children?: ReactNode }) {
   return (
-    <header className="flex h-12 shrink-0 items-center gap-3 border-b border-zinc-900 px-4">
+    <header className="dex-chrome flex h-12 shrink-0 items-center gap-3 border-b border-zinc-900 px-4">
       <MenuButton />
       <span className="text-sm font-medium">Machine</span>
       {children}

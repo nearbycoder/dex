@@ -14,6 +14,7 @@ A personal agent harness: [Pi Durable](https://developers.cloudflare.com/agents/
 - **Tools**: `bash` (a simulated shell with grep, sed, jq, sqlite3, curl and more, over a persistent `/workspace`), `read_file` / `write_file` / `edit_file`, `web_search` / `web_fetch` (Workers AI), `render_ui` (OpenUI cards, tables, charts, forms), and `schedule_prompt` (one-off or cron).
 - **Memory**: `/workspace/MEMORY.md` is injected into every chat's system prompt.
 - **Workspace page**: browse and edit the agent's files, and run shell commands yourself.
+- **Installable app**: add Dex to a phone or tablet Home Screen (Settings → Install Dex). It runs full screen and edge to edge with safe-area insets, keeps the composer above the keyboard, swipes the sidebar in from the left edge, and adapts from folded phones to tablets, with a collapsible sidebar (⌘/Ctrl+B) and a split across the hinge on dual-screen devices. A service worker caches static assets and shows an offline screen; it never caches pages or API calls.
 - **Usage page**: what Dex costs across ClinePass (tokens per model and chat, at API list prices), boat.dev (VM run time × hourly rate), and Cloudflare (Workers, Durable Objects, and Workers AI from the Analytics API, against the plan's allowance), with a daily chart.
 
 ## Architecture

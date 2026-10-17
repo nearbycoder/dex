@@ -1,9 +1,9 @@
 import { createFileRoute, Link, Outlet, redirect, useLocation, useMatch } from "@tanstack/react-router"
 import { MessageSquarePlus } from "lucide-react"
-import { useEffect, useState } from "react"
+import { useEffect } from "react"
 import { Sidebar } from "~/client/components/sidebar"
 import { DexProvider } from "~/client/lib/dex"
-import { MenuButton, MobileNavContext } from "~/client/lib/mobile-nav"
+import { MenuButton, NavContext, useNavState, useVisualViewportHeight } from "~/client/lib/mobile-nav"
 import { getViewer } from "~/server/viewer"
 
 /** Signed-in shell. Client-rendered: it holds the WebSocket to the user's agent. */
@@ -19,22 +19,25 @@ export const Route = createFileRoute("/_app")({
 
 function AppLayout() {
   const { viewer } = Route.useRouteContext()
-  const [navOpen, setNavOpen] = useState(false)
+  const nav = useNavState()
+  useVisualViewportHeight()
   const { pathname } = useLocation()
   // Chat and Machine pages put the menu button in their own header.
   const inChat = useMatch({ from: "/_app/chat/$sessionId", shouldThrow: false }) !== undefined
   const ownHeader = inChat || pathname === "/machine" || pathname === "/usage"
 
-  useEffect(() => setNavOpen(false), [pathname])
+  const { closeDrawer } = nav
+  useEffect(() => closeDrawer(), [pathname, closeDrawer])
 
   return (
     <DexProvider viewer={viewer}>
-      <MobileNavContext.Provider value={() => setNavOpen(true)}>
-        <div className="flex h-dvh overflow-hidden">
-          <Sidebar open={navOpen} onClose={() => setNavOpen(false)} />
-          <main className="flex min-w-0 flex-1 flex-col">
+      <NavContext.Provider value={nav}>
+        {/* Edge to edge: status bar, notch, and home-indicator insets are padded here and in the drawer. */}
+        <div className="dex-app flex h-[var(--app-height,100dvh)] overflow-hidden pt-[env(safe-area-inset-top)] pr-[env(safe-area-inset-right)] pl-[env(safe-area-inset-left)]">
+          <Sidebar />
+          <main className="dex-main flex min-w-0 flex-1 flex-col">
             {!ownHeader && (
-              <header className="flex h-12 shrink-0 items-center gap-2 border-b border-zinc-900 px-4 md:hidden">
+              <header className={`dex-chrome flex h-12 shrink-0 items-center gap-2 border-b border-zinc-900 px-4 ${nav.collapsed ? "" : "md:hidden"}`}>
                 <MenuButton />
                 <img src="/favicon.svg" alt="" className="size-6" />
                 <span className="font-semibold tracking-tight">Dex</span>
@@ -46,7 +49,7 @@ function AppLayout() {
             <Outlet />
           </main>
         </div>
-      </MobileNavContext.Provider>
+      </NavContext.Provider>
     </DexProvider>
   )
 }

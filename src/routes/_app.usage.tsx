@@ -214,7 +214,7 @@ function UsagePage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-zinc-900 px-4">
+      <header className="dex-chrome flex h-12 shrink-0 items-center gap-3 border-b border-zinc-900 px-4">
         <MenuButton />
         <span className="text-sm font-medium">Usage</span>
         <div className="ml-auto flex items-center gap-1">
@@ -237,7 +237,7 @@ function UsagePage() {
       </header>
 
       <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-5xl space-y-4 p-4">
+        <div className="mx-auto max-w-5xl space-y-4 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
           {error && <p className="rounded-lg bg-red-950/40 px-3 py-2 text-sm text-red-300">{error}</p>}
           {!report ? (
             <div className="flex items-center gap-2 p-8 text-sm text-zinc-500">

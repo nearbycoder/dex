@@ -24,7 +24,7 @@ function Chat() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-zinc-900 px-4">
+      <header className="dex-chrome flex h-12 shrink-0 items-center gap-3 border-b border-zinc-900 px-4">
         <MenuButton />
         {editing === null ? (
           <button type="button" onClick={() => setEditing(session?.title ?? "")} className="group flex min-w-0 items-center gap-2">
@@ -68,7 +68,7 @@ function Chat() {
 
       <MessageList transcript={transcript} onSend={send} />
 
-      <div className="mx-auto w-full max-w-3xl px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:px-4 md:pb-4">
+      <div className="mx-auto w-full max-w-3xl px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:px-4 md:pb-[max(1rem,env(safe-area-inset-bottom))]">
         {state && !state.cline.connected && (
           <Link to="/settings" className="mb-2 flex items-center gap-2 text-xs text-amber-300 hover:underline">
             <KeyRound className="size-3.5" /> Connect ClinePass to get answers

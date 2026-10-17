@@ -164,7 +164,7 @@ function FilesPage() {
             </div>
           )}
           <form
-            className="flex items-center gap-2 px-4 py-2.5"
+            className="flex items-center gap-2 px-4 pt-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))]"
             onSubmit={(event) => {
               event.preventDefault()
               void run()
