@@ -1,15 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <!-- Dex: a D that watches (the eye) and types (the cursor pupil). -->
+  <!-- Dex: the machine the agent drives, with a cursor on its face. -->
   <defs>
-    <linearGradient id="dex-gradient" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#6ee7b7"/>
-      <stop offset="1" stop-color="#059669"/>
+    <linearGradient id="dex-left" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#34d399"/>
+      <stop offset="1" stop-color="#10b981"/>
     </linearGradient>
-    <mask id="dex-eye">
-      <path d="M14 8h14c13.25 0 24 10.75 24 24S41.25 56 28 56H14a4 4 0 0 1-4-4V12a4 4 0 0 1 4-4z" fill="#fff"/>
-      <path d="M17 32c4.2-6.6 9.4-10 14.5-10S41.8 25.4 46 32c-4.2 6.6-9.4 10-14.5 10S21.2 38.6 17 32z" fill="#000"/>
-    </mask>
+    <linearGradient id="dex-right" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#059669"/>
+      <stop offset="1" stop-color="#047857"/>
+    </linearGradient>
   </defs>
-  <rect width="64" height="64" fill="url(#dex-gradient)" mask="url(#dex-eye)"/>
-  <rect x="29" y="25.5" width="5" height="13" rx="2" fill="#34d399"/>
+  <path d="M32 6 55 19 32 32 9 19Z" fill="#a7f3d0"/>
+  <path d="M9 19 32 32V58L9 45Z" fill="url(#dex-left)"/>
+  <path d="M32 32 55 19V45L32 58Z" fill="url(#dex-right)"/>
+  <path d="M43.5 32.8 46.7 31V42.4L43.5 44.2Z" fill="#ecfdf5"/>
 </svg>
