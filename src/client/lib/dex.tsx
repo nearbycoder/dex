@@ -1,8 +1,10 @@
+import { useLocation } from "@tanstack/react-router"
 import { useAgent } from "agents/react"
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from "react"
 import type { DexAgent } from "~/agent/dex-agent"
 import type { Viewer } from "~/server/viewer"
 import { AGENT_CLASS, type ClientMessage, type DexState, isServerMessage, type ServerMessage, withStateDefaults } from "~/shared/protocol"
+import { clearNotifications } from "./push"
 import { applyEvent, emptyTranscript, fromSnapshot, type TranscriptState } from "./transcript"
 
 type Listener = (message: ServerMessage) => void
@@ -38,6 +40,22 @@ export function DexProvider({ viewer, children }: { viewer: Viewer; children: Re
   }, [])
 
   const state = useMemo(() => agent.state && withStateDefaults(agent.state), [agent.state])
+
+  // Tells the agent whether Dex is visible here and which chat it shows, so notifications skip what you're
+  // looking at; and clears the badge and that chat's notifications whenever Dex comes into view.
+  const { pathname } = useLocation()
+  const sessionId = /^\/chat\/([^/]+)/.exec(pathname)?.[1] ?? null
+  useEffect(() => {
+    if (!agent.identified) return
+    const report = () => {
+      const visible = document.visibilityState === "visible"
+      send({ type: "dex.presence", visible, sessionId })
+      if (visible) void clearNotifications(sessionId)
+    }
+    report()
+    document.addEventListener("visibilitychange", report)
+    return () => document.removeEventListener("visibilitychange", report)
+  }, [agent.identified, send, sessionId])
   const value = useMemo<DexContextValue>(
     () => ({ viewer, state, connected: agent.identified, stub: agent.stub, send, listen }),
     [viewer, state, agent.identified, agent.stub, send, listen]

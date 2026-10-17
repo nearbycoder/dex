@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { Check, KeyRound, Monitor, Pencil } from "lucide-react"
+import { Bell, BellOff, Check, KeyRound, Monitor, Pencil } from "lucide-react"
 import { useState } from "react"
 import { Composer } from "~/client/components/composer"
 import { MessageList } from "~/client/components/message-list"
@@ -87,6 +87,18 @@ function Chat() {
             </Link>
           )
         })()}
+        {/* Only once some device has notifications on: mute this chat's. */}
+        {session && (state?.push.devices.length ?? 0) > 0 && (
+          <button
+            type="button"
+            onClick={() => void stub.setSessionMuted(sessionId, !session.muted)}
+            title={session.muted ? "Notifications muted for this chat. Tap to unmute." : "Mute notifications for this chat"}
+            aria-pressed={session.muted}
+            className={`${state?.vms.some((vm) => vm.key === sessionId) ? "" : "ml-auto"} shrink-0 rounded-md p-1.5 hover:bg-zinc-900 ${session.muted ? "text-amber-400" : "text-zinc-500 hover:text-zinc-200"}`}
+          >
+            {session.muted ? <BellOff className="size-4" /> : <Bell className="size-4" />}
+          </button>
+        )}
       </header>
 
       <MessageList transcript={transcript} onSend={send} />

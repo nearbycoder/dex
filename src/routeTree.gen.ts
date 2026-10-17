@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppFilesRouteImport } from './routes/_app.files'
+import { Route as AppNotificationsRouteImport } from './routes/_app.notifications'
 import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppUsageRouteImport } from './routes/_app.usage'
 import { Route as AuthDevRouteImport } from './routes/auth.dev'
@@ -28,6 +29,7 @@ import { Route as AppMcpIndexRouteImport } from './routes/_app.mcp.index'
 import { Route as AppMcpServerIdRouteImport } from './routes/_app.mcp.$serverId'
 import { Route as AppProjectsIndexRouteImport } from './routes/_app.projects.index'
 import { Route as AppProjectsProjectIdRouteImport } from './routes/_app.projects.$projectId'
+import { Route as ApiPushActionRouteImport } from './routes/api.push.action'
 import { Route as AuthGithubCallbackRouteImport } from './routes/auth.github.callback'
 import { Route as AuthGithubStartRouteImport } from './routes/auth.github.start'
 
@@ -48,6 +50,11 @@ const LoginRoute = LoginRouteImport.update({
 const AppFilesRoute = AppFilesRouteImport.update({
   id: '/files',
   path: '/files',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppNotificationsRoute = AppNotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
   getParentRoute: () => AppRoute,
 } as any)
 const AppSettingsRoute = AppSettingsRouteImport.update({
@@ -125,6 +132,11 @@ const AppProjectsProjectIdRoute = AppProjectsProjectIdRouteImport.update({
   path: '/projects/$projectId',
   getParentRoute: () => AppRoute,
 } as any)
+const ApiPushActionRoute = ApiPushActionRouteImport.update({
+  id: '/api/push/action',
+  path: '/api/push/action',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthGithubCallbackRoute = AuthGithubCallbackRouteImport.update({
   id: '/auth/github/callback',
   path: '/auth/github/callback',
@@ -140,6 +152,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/files': typeof AppFilesRoute
+  '/notifications': typeof AppNotificationsRoute
   '/settings': typeof AppSettingsRoute
   '/usage': typeof AppUsageRoute
   '/auth/dev': typeof AuthDevRoute
@@ -150,6 +163,7 @@ export interface FileRoutesByFullPath {
   '/machine/$vmKey': typeof AppMachineVmKeyRoute
   '/mcp/$serverId': typeof AppMcpServerIdRoute
   '/projects/$projectId': typeof AppProjectsProjectIdRoute
+  '/api/push/action': typeof ApiPushActionRoute
   '/auth/github/callback': typeof AuthGithubCallbackRoute
   '/auth/github/start': typeof AuthGithubStartRoute
   '/agents/': typeof AppAgentsIndexRoute
@@ -162,6 +176,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/files': typeof AppFilesRoute
+  '/notifications': typeof AppNotificationsRoute
   '/settings': typeof AppSettingsRoute
   '/usage': typeof AppUsageRoute
   '/auth/dev': typeof AuthDevRoute
@@ -172,6 +187,7 @@ export interface FileRoutesByTo {
   '/machine/$vmKey': typeof AppMachineVmKeyRoute
   '/mcp/$serverId': typeof AppMcpServerIdRoute
   '/projects/$projectId': typeof AppProjectsProjectIdRoute
+  '/api/push/action': typeof ApiPushActionRoute
   '/auth/github/callback': typeof AuthGithubCallbackRoute
   '/auth/github/start': typeof AuthGithubStartRoute
   '/agents': typeof AppAgentsIndexRoute
@@ -186,6 +202,7 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
   '/_app/files': typeof AppFilesRoute
+  '/_app/notifications': typeof AppNotificationsRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/usage': typeof AppUsageRoute
   '/auth/dev': typeof AuthDevRoute
@@ -196,6 +213,7 @@ export interface FileRoutesById {
   '/_app/machine/$vmKey': typeof AppMachineVmKeyRoute
   '/_app/mcp/$serverId': typeof AppMcpServerIdRoute
   '/_app/projects/$projectId': typeof AppProjectsProjectIdRoute
+  '/api/push/action': typeof ApiPushActionRoute
   '/auth/github/callback': typeof AuthGithubCallbackRoute
   '/auth/github/start': typeof AuthGithubStartRoute
   '/_app/agents/': typeof AppAgentsIndexRoute
@@ -210,6 +228,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/files'
+    | '/notifications'
     | '/settings'
     | '/usage'
     | '/auth/dev'
@@ -220,6 +239,7 @@ export interface FileRouteTypes {
     | '/machine/$vmKey'
     | '/mcp/$serverId'
     | '/projects/$projectId'
+    | '/api/push/action'
     | '/auth/github/callback'
     | '/auth/github/start'
     | '/agents/'
@@ -232,6 +252,7 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/files'
+    | '/notifications'
     | '/settings'
     | '/usage'
     | '/auth/dev'
@@ -242,6 +263,7 @@ export interface FileRouteTypes {
     | '/machine/$vmKey'
     | '/mcp/$serverId'
     | '/projects/$projectId'
+    | '/api/push/action'
     | '/auth/github/callback'
     | '/auth/github/start'
     | '/agents'
@@ -255,6 +277,7 @@ export interface FileRouteTypes {
     | '/_app'
     | '/login'
     | '/_app/files'
+    | '/_app/notifications'
     | '/_app/settings'
     | '/_app/usage'
     | '/auth/dev'
@@ -265,6 +288,7 @@ export interface FileRouteTypes {
     | '/_app/machine/$vmKey'
     | '/_app/mcp/$serverId'
     | '/_app/projects/$projectId'
+    | '/api/push/action'
     | '/auth/github/callback'
     | '/auth/github/start'
     | '/_app/agents/'
@@ -281,6 +305,7 @@ export interface RootRouteChildren {
   AuthDevRoute: typeof AuthDevRoute
   AuthLogoutRoute: typeof AuthLogoutRoute
   AuthPasswordRoute: typeof AuthPasswordRoute
+  ApiPushActionRoute: typeof ApiPushActionRoute
   AuthGithubCallbackRoute: typeof AuthGithubCallbackRoute
   AuthGithubStartRoute: typeof AuthGithubStartRoute
 }
@@ -313,6 +338,13 @@ declare module '@tanstack/react-router' {
       path: '/files'
       fullPath: '/files'
       preLoaderRoute: typeof AppFilesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/notifications': {
+      id: '/_app/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof AppNotificationsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/settings': {
@@ -420,6 +452,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProjectsProjectIdRouteImport
       parentRoute: typeof AppRoute
     }
+    '/api/push/action': {
+      id: '/api/push/action'
+      path: '/api/push/action'
+      fullPath: '/api/push/action'
+      preLoaderRoute: typeof ApiPushActionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth/github/callback': {
       id: '/auth/github/callback'
       path: '/auth/github/callback'
@@ -439,6 +478,7 @@ declare module '@tanstack/react-router' {
 
 interface AppRouteChildren {
   AppFilesRoute: typeof AppFilesRoute
+  AppNotificationsRoute: typeof AppNotificationsRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppUsageRoute: typeof AppUsageRoute
   AppAgentsAgentIdRoute: typeof AppAgentsAgentIdRoute
@@ -455,6 +495,7 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppFilesRoute: AppFilesRoute,
+  AppNotificationsRoute: AppNotificationsRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppUsageRoute: AppUsageRoute,
   AppAgentsAgentIdRoute: AppAgentsAgentIdRoute,
@@ -478,6 +519,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthDevRoute: AuthDevRoute,
   AuthLogoutRoute: AuthLogoutRoute,
   AuthPasswordRoute: AuthPasswordRoute,
+  ApiPushActionRoute: ApiPushActionRoute,
   AuthGithubCallbackRoute: AuthGithubCallbackRoute,
   AuthGithubStartRoute: AuthGithubStartRoute,
 }

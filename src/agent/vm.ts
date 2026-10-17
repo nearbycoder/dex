@@ -27,6 +27,8 @@ export interface VmHost {
   provision(key: string, setup: VmSetupContext): Promise<void>
   /** boat refused another running VM: stop another, idle one if possible. Returns whether it freed one. */
   makeRoom(exceptKey: string): Promise<boolean>
+  /** A VM finished being set up: `error` is why it failed, or null. */
+  setupFinished?(key: string, error: string | null): void
 }
 
 /** What `VmHost.provision` can do on a VM that is up but not handed to the model yet. */
@@ -490,6 +492,7 @@ export class VmManager {
       await this.host.provision(this.key, context)
       this.host.sql.exec(`UPDATE dex_vms SET provisioned = 1, setup_error = NULL WHERE vm_key = ?`, this.key)
       this.setSetup({ status: "done", step: null, error: null })
+      this.host.setupFinished?.(this.key, null)
     } catch (error) {
       // Interrupted (the chat was stopped, or Dex restarted): setup runs again next time.
       if (signal?.aborted) {
@@ -499,6 +502,7 @@ export class VmManager {
       const message = errorText(error)
       this.host.sql.exec(`UPDATE dex_vms SET provisioned = 1, setup_error = ? WHERE vm_key = ?`, `${step ?? "Setup"}: ${message}`, this.key)
       this.setSetup({ status: "error", step, error: message })
+      this.host.setupFinished?.(this.key, `${step ?? "Setup"}: ${message}`)
       onProgress?.(`Setup failed at "${step ?? "setup"}": ${message}. The VM is usable; fix it by hand or re-run setup on the Machine page.\n`)
     } finally {
       this.inFlight--

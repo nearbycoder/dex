@@ -1,6 +1,7 @@
 import { Link, useLocation, useNavigate, useParams } from "@tanstack/react-router"
 import {
   BarChart3,
+  Bell,
   Bot,
   ChevronLeft,
   ChevronRight,
@@ -26,7 +27,7 @@ import { mcpNeedsAttention } from "./mcp-picker"
 import { ModelLogo } from "./model-logo"
 
 /** Configuration pages: on these the sidebar shows the settings links instead of the chats. */
-const SETTINGS_AREA = ["/settings", "/machine", "/projects", "/agents", "/mcp", "/files", "/usage"]
+const SETTINGS_AREA = ["/settings", "/notifications", "/machine", "/projects", "/agents", "/mcp", "/files", "/usage"]
 const inSettingsArea = (pathname: string) => SETTINGS_AREA.some((path) => pathname === path || pathname.startsWith(`${path}/`))
 
 const linkClass =
@@ -79,6 +80,7 @@ export function Sidebar() {
 
   const settingsLinks: Array<{ to: string; label: string; icon: ReactNode; hint?: ReactNode; show?: boolean }> = [
     { to: "/settings", label: "General", icon: <SlidersHorizontal className="size-4" />, hint: clineMissing && <Hint dot="bg-amber-500" title="Connect ClinePass" /> },
+    { to: "/notifications", label: "Notifications", icon: <Bell className="size-4" /> },
     {
       to: "/machine",
       label: "Machines",

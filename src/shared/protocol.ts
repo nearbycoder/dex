@@ -2,6 +2,7 @@ import type { AgentEvent, SnapshotEvent } from "@earendil-works/pi-durable"
 import { Predicate } from "effect"
 import type { AgentProfile } from "./agents"
 import type { McpServerInfo } from "./mcp"
+import type { PushStatus } from "./notifications"
 import type { ProjectProfile } from "./projects"
 import type { ThinkingLevel } from "./models"
 
@@ -22,6 +23,8 @@ export interface SessionMeta {
   readonly mcpServers: ReadonlyArray<string>
   /** The project this chat works on, if any: its repos are cloned on the chat's VM. */
   readonly projectId: string | null
+  /** No push notifications for this chat. */
+  readonly muted: boolean
 }
 
 export interface GitHubStatus {
@@ -117,13 +120,15 @@ export const withStateDefaults = (state: DexState): DexState => ({
   vmConfigured: state.vmConfigured ?? false,
   projects: state.projects ?? [],
   github: state.github ?? { connected: false, login: null },
+  push: state.push ?? { configured: false, publicKey: null, devices: [] },
   agents: (state.agents ?? []).map((agent) => ({ ...agent, mcpServers: agent.mcpServers ?? [] })),
   mcp: state.mcp ?? [],
   sessions: state.sessions.map((session) => ({
     ...session,
     agentId: session.agentId ?? null,
     mcpServers: session.mcpServers ?? [],
-    projectId: session.projectId ?? null
+    projectId: session.projectId ?? null,
+    muted: session.muted ?? false
   })),
   settings: { ...state.settings, vmSize: state.settings.vmSize ?? "small", vmMinutes: state.settings.vmMinutes ?? 5 }
 })
@@ -139,6 +144,7 @@ export interface DexState {
   readonly vmConfigured: boolean
   readonly projects: ReadonlyArray<ProjectProfile>
   readonly github: GitHubStatus
+  readonly push: PushStatus
   readonly agents: ReadonlyArray<AgentProfile>
   readonly mcp: ReadonlyArray<McpServerInfo>
 }
@@ -165,6 +171,8 @@ export type ClientMessage =
   | { readonly type: "dex.unsubscribe" }
   /** Sent periodically: re-opens the event stream if the object was evicted since. */
   | { readonly type: "dex.ping"; readonly sessionId: string | null }
+  /** Whether Dex is visible on this connection, and which chat it shows; notifications skip what you're looking at. */
+  | { readonly type: "dex.presence"; readonly visible: boolean; readonly sessionId: string | null }
 
 export type ServerMessage =
   | { readonly type: "dex.snapshot"; readonly sessionId: string; readonly snapshot: SnapshotEvent }

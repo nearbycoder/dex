@@ -10,3 +10,5 @@ GITHUB_CLIENT_SECRET=
 CLINE_API_KEY=
 # Optional: read-only Cloudflare token (Account > Account Analytics > Read) for the Usage page.
 CLOUDFLARE_API_TOKEN=
+# Web Push signing key (JWK JSON). Generate with: npx @pushforge/builder vapid
+VAPID_PRIVATE_KEY=

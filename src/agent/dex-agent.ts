@@ -48,6 +48,8 @@ import { vmTools } from "./tools/vm-tools"
 import { workspaceTools } from "./tools/workspace-tools"
 import { verifyGitHubToken, type GitHubIdentity } from "./github-token"
 import { provisionVm } from "./provision"
+import { PushCenter, type SubscriptionInput } from "./push"
+import type { BackgroundAction, NotifyKind, PushPayload } from "~/shared/notifications"
 import { migrateVmTables, storedVmKeys, type VmHost, VmManager } from "./vm"
 import { Workspace, WORKSPACE_ROOT } from "./workspace"
 
@@ -61,7 +63,8 @@ const ClientMessageJson = Schema.fromJsonString(
   Schema.Union([
     Schema.Struct({ type: Schema.Literal("dex.subscribe"), sessionId: Schema.String }),
     Schema.Struct({ type: Schema.Literal("dex.unsubscribe") }),
-    Schema.Struct({ type: Schema.Literal("dex.ping"), sessionId: Schema.NullOr(Schema.String) })
+    Schema.Struct({ type: Schema.Literal("dex.ping"), sessionId: Schema.NullOr(Schema.String) }),
+    Schema.Struct({ type: Schema.Literal("dex.presence"), visible: Schema.Boolean, sessionId: Schema.NullOr(Schema.String) })
   ])
 )
 const decodeClientMessage = Schema.decodeUnknownOption(ClientMessageJson)
@@ -101,6 +104,7 @@ interface SessionRow {
   agent_id: string | null
   mcp_servers: string | null
   project_id: string | null
+  muted: number | null
   [key: string]: SqlStorageValue
 }
 
@@ -149,6 +153,16 @@ const parseIds = (value: string | null | undefined): string[] => {
   }
 }
 
+/** A reply as one line of plain text for a notification: no code blocks, links, or markdown marks. */
+const summarize = (markdown: string) =>
+  markdown
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/[#*_`>|~-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 180)
+
 const keyHint = (key: string) => (key.length > 8 ? `${key.slice(0, 4)}…${key.slice(-4)}` : "••••")
 
 /**
@@ -166,7 +180,8 @@ export class DexAgent extends Agent<Env, DexState> {
     agents: [],
     mcp: [],
     projects: [],
-    github: { connected: false, login: null }
+    github: { connected: false, login: null },
+    push: { configured: false, publicKey: null, devices: [] }
   }
 
   readonly runtime = ManagedRuntime.make(AgentLayer(this.env))
@@ -179,6 +194,22 @@ export class DexAgent extends Agent<Env, DexState> {
   private readonly mcpInstalled = new Map<string, string>()
   /** Connection errors the SDK doesn't keep, e.g. when the first connect fails. */
   private readonly mcpErrors = new Map<string, string>()
+  /** Each server's last status, to notify when one falls back to needing sign-in. */
+  private readonly mcpLastStatus = new Map<string, McpStatus>()
+  /** What each connection shows and whether it's visible; notifications skip what you're looking at. */
+  private readonly presence = new Map<string, { visible: boolean; sessionId: string | null }>()
+  /** Each chat's latest model response, for the notification when its run ends. */
+  private readonly lastResponses = new Map<string, { text: string; stopReason: string; error: string | null }>()
+
+  readonly push = new PushCenter({
+    sql: this.ctx.storage.sql,
+    publicKey: (this.env as unknown as Record<string, string | undefined>).VAPID_PUBLIC_KEY,
+    privateKey: (this.env as unknown as Record<string, string | undefined>).VAPID_PRIVATE_KEY,
+    subject: () => this.appOrigin() ?? "https://dex.invalid",
+    publish: (push) => this.publish({ push }),
+    isWatching: (sessionId) =>
+      [...this.presence.values()].some((entry) => entry.visible && (sessionId === undefined || entry.sessionId === sessionId))
+  })
 
   /** One VM per chat (plus `shared`, from before VMs were per chat), created when a chat first needs one. */
   private readonly vms = new Map<string, VmManager>()
@@ -199,6 +230,7 @@ export class DexAgent extends Agent<Env, DexState> {
       const github = await this.githubCredentials()
       await provisionVm(setup, { github, project: this.projectForSession(key) ?? null })
     },
+    setupFinished: (key, error) => void this.notifyMachine(key, error),
     makeRoom: async (exceptKey) => {
       // The least recently used VM that nothing is running on.
       const candidate = [...this.vms.values()]
@@ -253,6 +285,7 @@ export class DexAgent extends Agent<Env, DexState> {
     if (!sessionColumns.includes("agent_id")) ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN agent_id TEXT`)
     if (!sessionColumns.includes("mcp_servers")) ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN mcp_servers TEXT`)
     if (!sessionColumns.includes("project_id")) ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN project_id TEXT`)
+    if (!sessionColumns.includes("muted")) ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN muted INTEGER`)
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_projects (
       id TEXT PRIMARY KEY, data TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
     migrateVmTables(ctx.storage.sql)
@@ -280,6 +313,7 @@ export class DexAgent extends Agent<Env, DexState> {
     this.publishVms()
     this.refreshProjects()
     this.refreshGitHubStatus()
+    this.publish({ push: this.push.status() })
     void this.backfillUsage()
     this.seedAgents()
     this.refreshAgents()
@@ -312,7 +346,16 @@ export class DexAgent extends Agent<Env, DexState> {
         section("project", (input) => this.projectContext(String(input.conversationId)))
       ],
       // Every model response's tokens and list-price cost, for the Usage page.
-      hooks: [hook(GenerationTask, { afterResponse: (message, api) => this.ledger.recordResponse(String(api.conversationId), message) })],
+      hooks: [
+        hook(GenerationTask, {
+          afterResponse: (message, api) => {
+            this.ledger.recordResponse(String(api.conversationId), message)
+            // Remembered for the notification when the run ends.
+            const text = message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("\n")
+            this.lastResponses.set(String(api.conversationId), { text, stopReason: message.stopReason, error: message.errorMessage ?? null })
+          }
+        })
+      ],
       tools: [
         ...workspaceTools(this.workspace),
         ...webTools(this.env.AI),
@@ -368,7 +411,8 @@ export class DexAgent extends Agent<Env, DexState> {
         busy: busy.get(row.id) ?? false,
         agentId: row.agent_id ?? null,
         mcpServers: parseIds(row.mcp_servers),
-        projectId: row.project_id ?? null
+        projectId: row.project_id ?? null,
+        muted: row.muted === 1
       }))
     this.publish({ sessions })
   }
@@ -473,7 +517,8 @@ export class DexAgent extends Agent<Env, DexState> {
       busy: false,
       agentId: agent?.id ?? null,
       mcpServers,
-      projectId: project?.id ?? null
+      projectId: project?.id ?? null,
+      muted: false
     }
   }
 
@@ -492,10 +537,11 @@ export class DexAgent extends Agent<Env, DexState> {
     const title = row.title === "New chat" ? content.replace(/\s+/g, " ").slice(0, 60) : row.title
     this.ctx.storage.sql.exec(`UPDATE dex_sessions SET title = ?, updated_at = ? WHERE id = ?`, title, Date.now(), sessionId)
     await this.refreshSessions()
-    // Clears the busy flag even when nobody is watching this chat.
-    const finished = () => {
+    // Clears the busy flag even when nobody is watching this chat, and tells your devices.
+    const finished = async () => {
       this.ctx.storage.sql.exec(`UPDATE dex_sessions SET updated_at = ? WHERE id = ?`, Date.now(), sessionId)
-      return this.refreshSessions()
+      await this.refreshSessions()
+      await this.notifyRunEnd(sessionId, "reply")
     }
     this.ctx.waitUntil(session.wait(receipt.operationId).then(finished, finished))
   }
@@ -556,10 +602,14 @@ export class DexAgent extends Agent<Env, DexState> {
         return msg.sessionId ? this.subscribe(connection, msg.sessionId) : this.unsubscribe(connection.id)
       case "dex.unsubscribe":
         return this.unsubscribe(connection.id)
+      case "dex.presence":
+        this.presence.set(connection.id, { visible: msg.visible, sessionId: msg.sessionId })
+        return
     }
   }
 
   override async onClose(connection: Connection) {
+    this.presence.delete(connection.id)
     await this.unsubscribe(connection.id)
   }
 
@@ -759,6 +809,11 @@ export class DexAgent extends Agent<Env, DexState> {
   }
 
   /** OAuth sends the user back to the host they connected from; remembered for reconnects started by the agent. */
+  /** Dex's own https origin, learned from the app's connections; push and OAuth need it outside a request. */
+  private appOrigin(): string | undefined {
+    return this.mcpCallbackHost()
+  }
+
   private mcpCallbackHost(): string | undefined {
     const { connection } = getCurrentAgent()
     if (connection?.uri) {
@@ -836,6 +891,19 @@ export class DexAgent extends Agent<Env, DexState> {
     const servers: McpServerInfo[] = []
     for (const row of rows) {
       const connection = this.mcp.mcpConnections[row.id]
+      // A server that was working and now wants a fresh sign-in (an expired token, say): tell the user.
+      const status = this.mcpStatus(row.id)
+      if (status === "authenticating" && this.mcpLastStatus.get(row.id) === "ready") {
+        void this.push.notify("mcp", {
+          title: `${row.name} needs you to sign in again`,
+          body: "Its tools stop working in chats until you do.",
+          url: "/mcp",
+          tag: `mcp-${row.id}`,
+          kind: "mcp",
+          actions: [{ action: "open", title: "Sign in" }]
+        })
+      }
+      this.mcpLastStatus.set(row.id, status)
       let tools = row.tools
       if (connection?.connectionState === "ready") {
         const live: McpToolSpec[] = connection.tools.map((tool) => ({
@@ -1349,6 +1417,81 @@ export class DexAgent extends Agent<Env, DexState> {
     await this.refreshSessions()
   }
 
+  // ── Push notifications ────────────────────────────────────────────────────
+
+  /** Tells your devices how a chat's run ended: its reply, or what went wrong. Stopped runs stay quiet. */
+  private async notifyRunEnd(sessionId: string, kind: "reply" | "scheduled", prompt?: string) {
+    const row = this.ctx.storage.sql.exec<SessionRow>(`SELECT * FROM dex_sessions WHERE id = ?`, sessionId).toArray()[0]
+    const last = this.lastResponses.get(sessionId)
+    this.lastResponses.delete(sessionId)
+    if (!row || row.muted === 1 || !last || last.stopReason === "aborted") return
+    const url = `/chat/${sessionId}`
+    const title = (kind === "scheduled" ? `⏰ ${prompt ?? row.title}` : row.title).slice(0, 80)
+    const failed = last.stopReason === "error"
+    const payload: PushPayload = {
+      title: failed ? `Problem in “${title}”` : title,
+      body: failed ? (last.error ?? "The model request failed.").slice(0, 180) : summarize(last.text) || "Done.",
+      url,
+      tag: `chat-${sessionId}`,
+      kind: failed ? "error" : kind,
+      sessionId,
+      actions: failed ? [{ action: "open", title: "Open chat" }] : [{ action: "open", title: "Open chat" }, { action: "mute", title: "Mute this chat" }]
+    }
+    await this.push.notify(failed ? "error" : kind, payload)
+  }
+
+  /** A project chat's VM is ready (repos cloned, setup run), or its setup failed. */
+  private async notifyMachine(key: string, error: string | null) {
+    const project = this.projectForSession(key)
+    const row = this.ctx.storage.sql.exec<SessionRow>(`SELECT * FROM dex_sessions WHERE id = ?`, key).toArray()[0]
+    if (!project || !row || row.muted === 1) return
+    await this.push.notify("machine", {
+      title: error ? `${project.name}: VM setup failed` : `${project.name} is ready`,
+      body: error ? error.slice(0, 180) : `The VM for “${row.title.slice(0, 60)}” has the repos cloned and setup done.`,
+      url: `/chat/${key}`,
+      tag: `machine-${key}`,
+      kind: "machine",
+      sessionId: key,
+      actions: [{ action: "open", title: "Open chat" }, { action: "machine", title: "Watch machine" }],
+      actionUrls: { machine: `/machine/${key}` }
+    })
+  }
+
+  /** Saves this browser's push subscription; returns its device id, which the browser keeps. */
+  @callable()
+  async pushSubscribe(subscription: SubscriptionInput, label: string): Promise<string> {
+    this.appOrigin()
+    return this.push.subscribe(subscription, label)
+  }
+
+  @callable()
+  async pushUpdate(id: string, patch: { kinds?: readonly NotifyKind[]; onlyWhenAway?: boolean }) {
+    this.push.update(id, patch)
+  }
+
+  @callable()
+  async pushUnsubscribe(id: string) {
+    this.push.remove(id)
+  }
+
+  /** Sends a test notification to one device; returns why it failed, or null. */
+  @callable()
+  async pushTest(id: string): Promise<string | null> {
+    this.appOrigin()
+    return this.push.test(id)
+  }
+
+  @callable()
+  async setSessionMuted(sessionId: string, muted: boolean) {
+    this.ctx.storage.sql.exec(`UPDATE dex_sessions SET muted = ? WHERE id = ?`, muted ? 1 : 0, sessionId)
+    await this.refreshSessions()
+  }
+
+  /** A notification's quick action, run by the service worker without opening Dex (RPC from the Worker). */
+  async pushAction(action: BackgroundAction, sessionId: string) {
+    if (action === "mute" && this.hasSession(sessionId)) await this.setSessionMuted(sessionId, true)
+  }
+
   // ── Scheduled prompts ─────────────────────────────────────────────────────
 
   async schedulePrompt(input: { prompt: string; when: Date | number | string; sessionId: string | null }) {
@@ -1376,9 +1519,17 @@ export class DexAgent extends Agent<Env, DexState> {
       payload.sessionId && this.hasSession(payload.sessionId)
         ? payload.sessionId
         : (await this.createSession({ title: `⏰ ${payload.prompt.slice(0, 50)}` })).id
-    await this.harness.session(sessionId).submit(`[Scheduled task] ${payload.prompt}`)
+    const session = this.harness.session(sessionId)
+    const receipt = await session.submit(`[Scheduled task] ${payload.prompt}`)
     this.ctx.storage.sql.exec(`UPDATE dex_sessions SET updated_at = ? WHERE id = ?`, Date.now(), sessionId)
     await this.refreshSessions()
+    const finished = async () => {
+      this.ctx.storage.sql.exec(`UPDATE dex_sessions SET updated_at = ? WHERE id = ?`, Date.now(), sessionId)
+      await this.refreshSessions()
+      await this.notifyRunEnd(sessionId, "scheduled", payload.prompt)
+    }
+    // In the background, so a long run doesn't hold up the scheduler.
+    this.ctx.waitUntil(session.wait(receipt.operationId).then(finished, finished))
   }
 }
 

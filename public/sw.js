@@ -41,3 +41,70 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(fetch(request).catch(() => caches.match("/offline")))
   }
 })
+
+// ── Push notifications ────────────────────────────────────────────────────
+// The agent sends a JSON payload (see PushPayload in src/shared/notifications.ts). Android and desktop show
+// its action buttons; iOS shows none and opens `url` when tapped. The app icon badge counts what's unread.
+
+self.addEventListener("push", (event) => {
+  let data
+  try {
+    data = event.data ? event.data.json() : {}
+  } catch {
+    data = { body: event.data ? event.data.text() : "" }
+  }
+  const title = data.title || "Dex"
+  event.waitUntil(
+    (async () => {
+      await self.registration.showNotification(title, {
+        body: data.body || "",
+        tag: data.tag || undefined,
+        // A newer update for the same chat replaces the old one, and still alerts.
+        renotify: Boolean(data.tag),
+        icon: "/icon-192.png",
+        badge: "/badge-96.png",
+        timestamp: Date.now(),
+        actions: Array.isArray(data.actions) ? data.actions.slice(0, 2) : [],
+        data: { url: data.url || "/", sessionId: data.sessionId || null, actionUrls: data.actionUrls || {} }
+      })
+      const shown = await self.registration.getNotifications()
+      if (self.navigator.setAppBadge) await self.navigator.setAppBadge(shown.length).catch(() => {})
+    })()
+  )
+})
+
+/** Focuses an open Dex window and takes it to `url`, or opens one. */
+async function openDex(url) {
+  const target = new URL(url, self.location.origin).href
+  const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true })
+  const existing = windows.find((client) => new URL(client.url).origin === self.location.origin)
+  if (existing) {
+    await existing.focus()
+    if (existing.url !== target && "navigate" in existing) await existing.navigate(target).catch(() => {})
+    return
+  }
+  await self.clients.openWindow(target)
+}
+
+self.addEventListener("notificationclick", (event) => {
+  const notification = event.notification
+  const { url, sessionId, actionUrls } = notification.data || {}
+  notification.close()
+  event.waitUntil(
+    (async () => {
+      if (event.action === "mute" && sessionId) {
+        // Quick action that doesn't open Dex; the session cookie authenticates it.
+        await fetch("/api/push/action", {
+          method: "POST",
+          credentials: "include",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "mute", sessionId })
+        }).catch(() => {})
+      } else {
+        await openDex((actionUrls && actionUrls[event.action]) || url || "/")
+      }
+      const shown = await self.registration.getNotifications()
+      if (self.navigator.setAppBadge) await self.navigator.setAppBadge(shown.length).catch(() => {})
+    })()
+  )
+})

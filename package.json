@@ -12,6 +12,7 @@
     "openui:spec": "openui generate src/client/openui/library.tsx --spec --out src/shared/openui-spec.json"
   },
   "dependencies": {
+    "@block65/webcrypto-web-push": "^2.0.0",
     "@earendil-works/chord": "^1.3.0",
     "@earendil-works/pi-ai": "^1.3.0",
     "@earendil-works/pi-durable": "^1.3.0",
