@@ -29,7 +29,7 @@ export interface DexSettings {
   /** Appended to the system prompt of every chat. */
   readonly instructions: string
   readonly vmSize: VmSize
-  /** The VM stops (keeping its disk) after this many minutes without agent or user activity. */
+  /** The VM stops (keeping its disk) after this many minutes with no commands running and no one in control. */
   readonly vmMinutes: number
 }
 
@@ -51,6 +51,10 @@ export interface VmInfo {
   readonly size: string | null
   readonly archiveAfter: string | null
   readonly error: string | null
+  /** Last time a command, file action, or user control touched the VM. */
+  readonly lastActiveAt: number | null
+  /** Something is running on the VM right now, so it will not idle-stop. */
+  readonly busy: boolean
 }
 
 /** One thing done on the VM, by the agent or the user, shown live on the Machine page. */
@@ -65,13 +69,13 @@ export interface VmActivity {
   readonly output: string
 }
 
-export const NO_VM: VmInfo = { configured: false, id: null, status: "none", size: null, archiveAfter: null, error: null }
+export const NO_VM: VmInfo = { configured: false, id: null, status: "none", size: null, archiveAfter: null, error: null, lastActiveAt: null, busy: false }
 
 /** Fills fields an agent saved before they existed, so older state never breaks the UI. */
 export const withStateDefaults = (state: DexState): DexState => ({
   ...state,
-  vm: state.vm ?? NO_VM,
-  settings: { ...state.settings, vmSize: state.settings.vmSize ?? "small", vmMinutes: state.settings.vmMinutes ?? 30 }
+  vm: { ...NO_VM, ...state.vm },
+  settings: { ...state.settings, vmSize: state.settings.vmSize ?? "small", vmMinutes: state.settings.vmMinutes ?? 5 }
 })
 
 /** Synced to every connected client through the Agents SDK state channel. Never put secrets here. */

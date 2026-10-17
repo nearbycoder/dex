@@ -7,6 +7,8 @@ const BOOTING = new Set(["init", "provisioning", "provisioned", "cloning"])
 const MAX_ACTIVITY_OUTPUT = 16_000
 const MAX_ACTIVITY_ROWS = 300
 const BOOT_TIMEOUT_MS = 4 * 60_000
+/** boat's own auto-stop deadline sits this far past the idle timeout: a fallback in case the agent is down. */
+const SAFETY_SECONDS = 15 * 60
 
 export interface VmHost {
   readonly sql: SqlStorage
@@ -16,6 +18,8 @@ export interface VmHost {
   settings(): { size: VmSize; minutes: number }
   publish(info: VmInfo): void
   broadcast(message: ServerMessage): void
+  /** Ensures `idleCheck()` runs within a minute or so. */
+  scheduleIdleCheck(): void
 }
 
 interface ActivityRow {
@@ -63,6 +67,8 @@ export class VmManager {
   private info: VmInfo
   private starting: Promise<Sandbox> | null = null
   private lastExtend = 0
+  /** Operations running on the VM; it never idle-stops while this is above zero. */
+  private inFlight = 0
 
   constructor(private readonly host: VmHost) {
     host.sql.exec(`CREATE TABLE IF NOT EXISTS dex_vm (key TEXT PRIMARY KEY, value TEXT NOT NULL)`)
@@ -70,7 +76,63 @@ export class VmManager {
       id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, actor TEXT NOT NULL, kind TEXT NOT NULL,
       title TEXT NOT NULL, status TEXT NOT NULL, exit_code INTEGER, output TEXT NOT NULL DEFAULT '')`)
     const id = this.sandboxId()
-    this.info = { configured: host.configured, id, status: id ? "stopped" : "none", size: null, archiveAfter: null, error: null }
+    this.info = {
+      configured: host.configured,
+      id,
+      status: id ? "stopped" : "none",
+      size: null,
+      archiveAfter: null,
+      error: null,
+      lastActiveAt: this.lastActive(),
+      busy: false
+    }
+  }
+
+  private lastActive(): number | null {
+    const value = this.host.sql.exec<{ value: string }>(`SELECT value FROM dex_vm WHERE key = 'last_active'`).toArray()[0]?.value
+    return value ? Number(value) : null
+  }
+
+  /** Marks the VM as in use now, which restarts its idle countdown. */
+  touch() {
+    const now = Date.now()
+    this.host.sql.exec(`INSERT INTO dex_vm (key, value) VALUES ('last_active', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, String(now))
+    this.update({ lastActiveAt: now })
+    if (this.info.status === "running") {
+      this.host.scheduleIdleCheck()
+      void this.extendSafetyDeadline()
+    }
+  }
+
+  /** Runs `work` as activity: the VM counts as busy until it settles. */
+  private async track<A>(work: () => Promise<A>): Promise<A> {
+    this.inFlight++
+    this.update({ busy: true })
+    this.touch()
+    try {
+      return await work()
+    } finally {
+      this.inFlight--
+      this.update({ busy: this.inFlight > 0 })
+      this.touch()
+    }
+  }
+
+  /**
+   * Called about once a minute while the VM runs. Stops it once nothing has
+   * used it for the idle timeout; returns whether to check again.
+   */
+  async idleCheck(): Promise<boolean> {
+    if (!this.sandboxId() || this.info.status !== "running") return false
+    if (this.inFlight > 0) {
+      await this.extendSafetyDeadline()
+      return true
+    }
+    const minutes = this.host.settings().minutes
+    const idleFor = Date.now() - (this.lastActive() ?? 0)
+    if (idleFor < minutes * 60_000) return true
+    await this.stop("system", `Stop VM after ${minutes} idle minute${minutes === 1 ? "" : "s"} (disk is kept)`).catch(() => undefined)
+    return this.info.status === "running"
   }
 
   get current(): VmInfo {
@@ -169,6 +231,7 @@ export class VmManager {
     }
     try {
       this.fromSandbox(await this.host.run(BoatClient.use((boat) => boat.get(id))))
+      if (this.info.status === "running") this.host.scheduleIdleCheck()
     } catch (error) {
       if (error instanceof BoatError && error.status === 404) {
         this.setSandboxId(null)
@@ -183,9 +246,14 @@ export class VmManager {
   /** The running VM: created, resumed, or waited on as needed. Concurrent callers share one start. */
   ensureRunning(onProgress?: (message: string) => void, signal?: AbortSignal): Promise<Sandbox> {
     if (!this.host.configured) return Promise.reject(new Error("No VM is configured: set BOAT_API_KEY for this deployment."))
-    this.starting ??= this.start(onProgress, signal).finally(() => {
-      this.starting = null
-    })
+    this.starting ??= this.start(onProgress, signal)
+      .then((sandbox) => {
+        this.touch()
+        return sandbox
+      })
+      .finally(() => {
+        this.starting = null
+      })
     return this.starting
   }
 
@@ -193,7 +261,7 @@ export class VmManager {
     const boat = (effect: (client: BoatClient["Service"]) => Effect.Effect<Sandbox, BoatError>) =>
       this.host.run(BoatClient.use(effect), signal)
     const { size, minutes } = this.host.settings()
-    const ttlSeconds = minutes * 60
+    const ttlSeconds = minutes * 60 + SAFETY_SECONDS
 
     const create = async () => {
       onProgress?.(`Creating a ${size} VM…\n`)
@@ -223,7 +291,7 @@ export class VmManager {
     }
     this.fromSandbox(sandbox)
 
-    if (READY.has(sandbox.state)) return this.keepAlive(sandbox)
+    if (READY.has(sandbox.state)) return sandbox
     if (BOOTING.has(sandbox.state)) return this.waitUntilReady(id, onProgress, signal)
     if (sandbox.state === "archiving") sandbox = await this.waitFor(id, (s) => s.state === "archived", "stop", signal)
     if (sandbox.state === "archived") {
@@ -267,21 +335,22 @@ export class VmManager {
     return sandbox
   }
 
-  /** Pushes the auto-stop deadline out while the VM is in use. */
-  private async keepAlive(sandbox: Sandbox): Promise<Sandbox> {
-    const remaining = sandbox.archiveAfter ? Date.parse(sandbox.archiveAfter) - Date.now() : Infinity
-    const ttlSeconds = this.host.settings().minutes * 60
-    if (remaining > (ttlSeconds * 1000) / 2 || Date.now() - this.lastExtend < 60_000) return sandbox
+  /** Keeps boat's own deadline well ahead of the idle timeout, so only `idleCheck` stops a VM that is in use. */
+  private async extendSafetyDeadline() {
+    const id = this.sandboxId()
+    if (!id || Date.now() - this.lastExtend < 60_000) return
+    const remaining = this.info.archiveAfter ? Date.parse(this.info.archiveAfter) - Date.now() : 0
+    if (remaining > SAFETY_SECONDS * 1000) return
     this.lastExtend = Date.now()
-    const extended = await this.host.run(BoatClient.use((client) => client.extend(sandbox.id, ttlSeconds))).catch(() => sandbox)
-    this.fromSandbox(extended)
-    return extended
+    const ttlSeconds = this.host.settings().minutes * 60 + SAFETY_SECONDS
+    const extended = await this.host.run(BoatClient.use((client) => client.extend(id, ttlSeconds))).catch(() => undefined)
+    if (extended) this.fromSandbox(extended)
   }
 
-  async stop(actor: VmActivity["actor"] = "user") {
+  async stop(actor: VmActivity["actor"] = "user", title = "Stop VM (disk is kept)") {
     const id = this.sandboxId()
     if (!id) return
-    await this.logged(actor, "lifecycle", "Stop VM (disk is kept)", async () => {
+    await this.logged(actor, "lifecycle", title, async () => {
       this.update({ status: "stopping" })
       await this.host.run(BoatClient.use((client) => client.stop(id)))
       await this.waitFor(id, (s) => s.state === "archived", "stop")
@@ -303,7 +372,7 @@ export class VmManager {
   // ── Work ──────────────────────────────────────────────────────────────────
 
   /** Runs a shell command on the VM, streaming output to `onOutput` and to every watching client. */
-  async exec(
+  private async execUntracked(
     command: string,
     options: { actor: VmActivity["actor"]; cwd?: string; timeoutSeconds?: number; signal?: AbortSignal; onOutput?: (data: string) => void }
   ): Promise<CommandResult & { output: string }> {
@@ -346,7 +415,7 @@ export class VmManager {
     }
   }
 
-  async spawn(command: string, options: { actor: VmActivity["actor"]; cwd?: string; signal?: AbortSignal; onOutput?: (data: string) => void }) {
+  private async spawnUntracked(command: string, options: { actor: VmActivity["actor"]; cwd?: string; signal?: AbortSignal; onOutput?: (data: string) => void }) {
     const sandbox = await this.ensureRunning(options.onOutput, options.signal)
     return this.logged(
       options.actor,
@@ -357,7 +426,7 @@ export class VmManager {
     )
   }
 
-  async readFile(path: string, actor: VmActivity["actor"], encoding: "utf8" | "base64" = "utf8", signal?: AbortSignal) {
+  private async readFileUntracked(path: string, actor: VmActivity["actor"], encoding: "utf8" | "base64" = "utf8", signal?: AbortSignal) {
     const sandbox = await this.ensureRunning(undefined, signal)
     return this.logged(
       actor,
@@ -368,7 +437,7 @@ export class VmManager {
     )
   }
 
-  async writeFile(path: string, content: string, actor: VmActivity["actor"], signal?: AbortSignal) {
+  private async writeFileUntracked(path: string, content: string, actor: VmActivity["actor"], signal?: AbortSignal) {
     const sandbox = await this.ensureRunning(undefined, signal)
     await this.logged(
       actor,
@@ -379,7 +448,7 @@ export class VmManager {
     )
   }
 
-  async exposePort(port: number, isPublic: boolean, actor: VmActivity["actor"], signal?: AbortSignal) {
+  private async exposePortUntracked(port: number, isPublic: boolean, actor: VmActivity["actor"], signal?: AbortSignal) {
     const sandbox = await this.ensureRunning(undefined, signal)
     return this.logged(
       actor,
@@ -391,7 +460,7 @@ export class VmManager {
   }
 
   /** A JPEG of the VM's desktop scaled to fit 1280px, with the real screen size for mapping clicks. */
-  async screenshot(actor: VmActivity["actor"], signal?: AbortSignal) {
+  private async screenshotUntracked(actor: VmActivity["actor"], signal?: AbortSignal) {
     const sandbox = await this.ensureRunning(undefined, signal)
     return this.logged(actor, "screenshot", "screenshot", async () => {
       const shot = await this.host.run(
@@ -410,6 +479,30 @@ export class VmManager {
       const scale = Math.min(1, 1280 / Math.max(width, height))
       return { data: file.content, width, height, scale }
     }, (shot) => `${shot.width}×${shot.height}`)
+  }
+
+  exec(...args: Parameters<VmManager["execUntracked"]>) {
+    return this.track(() => this.execUntracked(...args))
+  }
+
+  spawn(...args: Parameters<VmManager["spawnUntracked"]>) {
+    return this.track(() => this.spawnUntracked(...args))
+  }
+
+  readFile(...args: Parameters<VmManager["readFileUntracked"]>) {
+    return this.track(() => this.readFileUntracked(...args))
+  }
+
+  writeFile(...args: Parameters<VmManager["writeFileUntracked"]>) {
+    return this.track(() => this.writeFileUntracked(...args))
+  }
+
+  exposePort(...args: Parameters<VmManager["exposePortUntracked"]>) {
+    return this.track(() => this.exposePortUntracked(...args))
+  }
+
+  screenshot(...args: Parameters<VmManager["screenshotUntracked"]>) {
+    return this.track(() => this.screenshotUntracked(...args))
   }
 
   /** A desktop URL for the Machine page, or null while the VM or its desktop is not up yet. */

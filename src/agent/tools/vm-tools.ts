@@ -7,7 +7,7 @@ const MAX_MODEL_OUTPUT = 30_000
 const clip = (value: string) =>
   value.length > MAX_MODEL_OUTPUT ? `… [${value.length - MAX_MODEL_OUTPUT} earlier chars cut]\n${value.slice(-MAX_MODEL_OUTPUT)}` : value
 
-export const VM_GUIDE = `Your VM is a full Ubuntu machine (user \`user\`, passwordless sudo) with Docker, Node 24, Bun, Python 3.12, git, the GitHub CLI and Google Chrome. Home is /home/user. It starts on demand (first call can take ~30s), stops itself when idle, and keeps its disk across stops. A desktop runs on DISPLAY=:0: GUI apps you launch there (e.g. \`DISPLAY=:0 google-chrome --no-first-run URL &\`) appear on it. The user can watch the desktop and every command you run live on the Machine page, and may take control of the desktop at any time; if something you did changed unexpectedly, take a fresh screenshot.`
+export const VM_GUIDE = `Your VM is a full Ubuntu machine (user \`user\`, passwordless sudo) with Docker, Node 24, Bun, Python 3.12, git, the GitHub CLI and Google Chrome. Home is /home/user. It starts on demand (first call can take ~30s) and keeps its disk across stops. It stops itself after a few minutes with no VM tool calls running, even if a background server is still up, so check that servers you started are still running before relying on them later. A desktop runs on DISPLAY=:0: GUI apps you launch there (e.g. \`DISPLAY=:0 google-chrome --no-first-run URL &\`) appear on it. The user can watch the desktop and every command you run live on the Machine page, and may take control of the desktop at any time; if something you did changed unexpectedly, take a fresh screenshot.`
 
 export const vmTools = (vm: VmManager) => [
   defineTool({

@@ -67,7 +67,7 @@ const DEFAULT_SETTINGS: DexSettings = {
   defaultThinking: DEFAULT_THINKING,
   instructions: "",
   vmSize: "small",
-  vmMinutes: 30
+  vmMinutes: 5
 }
 
 interface SessionRow {
@@ -110,7 +110,8 @@ export class DexAgent extends Agent<Env, DexState> {
     run: (effect, signal) => this.runtime.runPromise(effect, { signal }),
     settings: () => ({ size: this.state.settings.vmSize, minutes: this.state.settings.vmMinutes }),
     publish: (vm: VmInfo) => this.publish({ vm }),
-    broadcast: (message: ServerMessage) => this.broadcast(JSON.stringify(message))
+    broadcast: (message: ServerMessage) => this.broadcast(JSON.stringify(message)),
+    scheduleIdleCheck: () => void this.scheduleVmIdleCheck()
   })
 
   readonly harness = new PiHarness({
@@ -141,12 +142,19 @@ export class DexAgent extends Agent<Env, DexState> {
       id TEXT PRIMARY KEY, title TEXT NOT NULL, model TEXT NOT NULL, thinking TEXT NOT NULL,
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_secrets (name TEXT PRIMARY KEY, value TEXT NOT NULL)`)
+    ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`)
     this.lifecycle.use(this.harness)
   }
 
   override async onStart() {
     // Settings saved before a field existed get its default.
-    this.publish({ settings: { ...DEFAULT_SETTINGS, ...this.state.settings }, vm: this.vm.current })
+    const settings = { ...DEFAULT_SETTINGS, ...this.state.settings }
+    // One-time: agents created when the idle default was 30 minutes move to 5.
+    if (!this.ctx.storage.sql.exec(`SELECT 1 FROM dex_meta WHERE key = 'vm_idle_default_5'`).toArray().length) {
+      if (settings.vmMinutes === 30) settings.vmMinutes = 5
+      this.ctx.storage.sql.exec(`INSERT INTO dex_meta (key, value) VALUES ('vm_idle_default_5', '1')`)
+    }
+    this.publish({ settings, vm: this.vm.current })
     await this.refreshClineStatus()
     await this.refreshSessions()
     void this.vm.refresh()
@@ -269,7 +277,7 @@ export class DexAgent extends Agent<Env, DexState> {
     const settings = { ...this.state.settings, ...patch }
     if (!findModel(settings.defaultModel)) settings.defaultModel = DEFAULT_MODEL_ID
     if (!VM_SIZES.has(settings.vmSize)) settings.vmSize = DEFAULT_SETTINGS.vmSize
-    settings.vmMinutes = Math.min(24 * 60, Math.max(5, Math.round(Number(settings.vmMinutes) || DEFAULT_SETTINGS.vmMinutes)))
+    settings.vmMinutes = Math.min(24 * 60, Math.max(1, Math.round(Number(settings.vmMinutes) || DEFAULT_SETTINGS.vmMinutes)))
     settings.defaultThinking = clampThinking(findModel(settings.defaultModel), settings.defaultThinking)
     this.publish({ settings })
   }
@@ -467,6 +475,21 @@ export class DexAgent extends Agent<Env, DexState> {
   async vmDestroy(): Promise<VmInfo> {
     await this.vm.destroy()
     return this.vm.current
+  }
+
+  /** Heartbeat from the Machine page while the user has control of the desktop. */
+  @callable()
+  async vmTouch() {
+    this.vm.touch()
+  }
+
+  private async scheduleVmIdleCheck() {
+    if (this.getSchedules().some((schedule) => schedule.callback === "vmIdleCheck")) return
+    await this.schedule(60, "vmIdleCheck")
+  }
+
+  async vmIdleCheck() {
+    if (await this.vm.idleCheck()) await this.schedule(60, "vmIdleCheck")
   }
 
   @callable()

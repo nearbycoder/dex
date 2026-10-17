@@ -134,6 +134,16 @@ function Panel({ title, actions, children, className = "" }: { title: ReactNode;
 
 const iconButton = "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-40"
 
+/** Re-renders every `ms` so relative times stay fresh. */
+function useNow(ms: number) {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), ms)
+    return () => clearInterval(timer)
+  }, [ms])
+  return now
+}
+
 function Desktop({ running }: { running: boolean }) {
   const { stub } = useDex()
   const [mode, setMode] = useState<"stream" | "vnc">("stream")
@@ -160,6 +170,14 @@ function Desktop({ running }: { running: boolean }) {
     if (running) void load()
     else setUrl(null)
   }, [running, load])
+
+  // Using the desktop counts as activity, so the VM does not idle-stop under you.
+  useEffect(() => {
+    if (!running || !control) return
+    void stub.vmTouch()
+    const heartbeat = setInterval(() => void stub.vmTouch(), 30_000)
+    return () => clearInterval(heartbeat)
+  }, [running, control, stub])
 
   return (
     <Panel
@@ -251,6 +269,7 @@ function MachinePage() {
   const [port, setPort] = useState("")
   const [portUrl, setPortUrl] = useState<string | null>(null)
   const feedEnd = useRef<HTMLDivElement>(null)
+  const now = useNow(15_000)
 
   useEffect(() => {
     if (connected) void stub.vmRefresh()
@@ -295,7 +314,14 @@ function MachinePage() {
           <span className={`size-2 rounded-full ${statusStyle[vm.status].dot}`} />
           {statusStyle[vm.status].label}
           {vm.size && <span className="hidden text-zinc-600 sm:inline">· {vm.size}</span>}
-          {running && vm.archiveAfter && <span className="hidden text-zinc-600 sm:inline">· idles out {timeAgo(Date.parse(vm.archiveAfter))}</span>}
+          {running && (
+            <span className="hidden text-zinc-600 sm:inline">
+              ·{" "}
+              {vm.busy
+                ? "in use"
+                : `stops when idle ${Math.max(0, Math.ceil(((vm.lastActiveAt ?? now) + settings.vmMinutes * 60_000 - now) / 60_000))} min from now`}
+            </span>
+          )}
         </span>
         <div className="ml-auto flex items-center gap-1">
           {(vm.status === "none" || vm.status === "stopped" || vm.status === "error") && (
@@ -437,7 +463,7 @@ function MachinePage() {
               <>
                 <Cpu className="size-3.5 text-zinc-500" />
                 <span className="font-medium text-zinc-300">VM settings</span>
-                <span className="text-zinc-600">apply on next start</span>
+                <span className="text-zinc-600">size applies on next start</span>
               </>
             }
           >
@@ -454,13 +480,13 @@ function MachinePage() {
                 ))}
               </select>
               <label className="flex items-center gap-2 text-zinc-400">
-                Idle stop after
+                Stop when idle for
                 <select
                   value={settings.vmMinutes}
                   onChange={(event) => void stub.updateSettings({ vmMinutes: Number(event.target.value) })}
                   className="rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1 text-sm text-zinc-200"
                 >
-                  {[15, 30, 60, 120].map((minutes) => (
+                  {[5, 10, 15, 30, 60].map((minutes) => (
                     <option key={minutes} value={minutes}>
                       {minutes} min
                     </option>
