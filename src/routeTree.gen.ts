@@ -13,7 +13,6 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppFilesRouteImport } from './routes/_app.files'
-import { Route as AppMachineRouteImport } from './routes/_app.machine'
 import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppUsageRouteImport } from './routes/_app.usage'
 import { Route as AuthDevRouteImport } from './routes/auth.dev'
@@ -23,6 +22,8 @@ import { Route as AppAgentsIndexRouteImport } from './routes/_app.agents.index'
 import { Route as AppAgentsAgentIdRouteImport } from './routes/_app.agents.$agentId'
 import { Route as AppChatIndexRouteImport } from './routes/_app.chat.index'
 import { Route as AppChatSessionIdRouteImport } from './routes/_app.chat.$sessionId'
+import { Route as AppMachineIndexRouteImport } from './routes/_app.machine.index'
+import { Route as AppMachineVmKeyRouteImport } from './routes/_app.machine.$vmKey'
 import { Route as AppMcpIndexRouteImport } from './routes/_app.mcp.index'
 import { Route as AppMcpServerIdRouteImport } from './routes/_app.mcp.$serverId'
 import { Route as AppProjectsIndexRouteImport } from './routes/_app.projects.index'
@@ -47,11 +48,6 @@ const LoginRoute = LoginRouteImport.update({
 const AppFilesRoute = AppFilesRouteImport.update({
   id: '/files',
   path: '/files',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppMachineRoute = AppMachineRouteImport.update({
-  id: '/machine',
-  path: '/machine',
   getParentRoute: () => AppRoute,
 } as any)
 const AppSettingsRoute = AppSettingsRouteImport.update({
@@ -99,6 +95,16 @@ const AppChatSessionIdRoute = AppChatSessionIdRouteImport.update({
   path: '/chat/$sessionId',
   getParentRoute: () => AppRoute,
 } as any)
+const AppMachineIndexRoute = AppMachineIndexRouteImport.update({
+  id: '/machine/',
+  path: '/machine/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppMachineVmKeyRoute = AppMachineVmKeyRouteImport.update({
+  id: '/machine/$vmKey',
+  path: '/machine/$vmKey',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppMcpIndexRoute = AppMcpIndexRouteImport.update({
   id: '/mcp/',
   path: '/mcp/',
@@ -134,7 +140,6 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/files': typeof AppFilesRoute
-  '/machine': typeof AppMachineRoute
   '/settings': typeof AppSettingsRoute
   '/usage': typeof AppUsageRoute
   '/auth/dev': typeof AuthDevRoute
@@ -142,12 +147,14 @@ export interface FileRoutesByFullPath {
   '/auth/password': typeof AuthPasswordRoute
   '/agents/$agentId': typeof AppAgentsAgentIdRoute
   '/chat/$sessionId': typeof AppChatSessionIdRoute
+  '/machine/$vmKey': typeof AppMachineVmKeyRoute
   '/mcp/$serverId': typeof AppMcpServerIdRoute
   '/projects/$projectId': typeof AppProjectsProjectIdRoute
   '/auth/github/callback': typeof AuthGithubCallbackRoute
   '/auth/github/start': typeof AuthGithubStartRoute
   '/agents/': typeof AppAgentsIndexRoute
   '/chat/': typeof AppChatIndexRoute
+  '/machine/': typeof AppMachineIndexRoute
   '/mcp/': typeof AppMcpIndexRoute
   '/projects/': typeof AppProjectsIndexRoute
 }
@@ -155,7 +162,6 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/files': typeof AppFilesRoute
-  '/machine': typeof AppMachineRoute
   '/settings': typeof AppSettingsRoute
   '/usage': typeof AppUsageRoute
   '/auth/dev': typeof AuthDevRoute
@@ -163,12 +169,14 @@ export interface FileRoutesByTo {
   '/auth/password': typeof AuthPasswordRoute
   '/agents/$agentId': typeof AppAgentsAgentIdRoute
   '/chat/$sessionId': typeof AppChatSessionIdRoute
+  '/machine/$vmKey': typeof AppMachineVmKeyRoute
   '/mcp/$serverId': typeof AppMcpServerIdRoute
   '/projects/$projectId': typeof AppProjectsProjectIdRoute
   '/auth/github/callback': typeof AuthGithubCallbackRoute
   '/auth/github/start': typeof AuthGithubStartRoute
   '/agents': typeof AppAgentsIndexRoute
   '/chat': typeof AppChatIndexRoute
+  '/machine': typeof AppMachineIndexRoute
   '/mcp': typeof AppMcpIndexRoute
   '/projects': typeof AppProjectsIndexRoute
 }
@@ -178,7 +186,6 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
   '/_app/files': typeof AppFilesRoute
-  '/_app/machine': typeof AppMachineRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/usage': typeof AppUsageRoute
   '/auth/dev': typeof AuthDevRoute
@@ -186,12 +193,14 @@ export interface FileRoutesById {
   '/auth/password': typeof AuthPasswordRoute
   '/_app/agents/$agentId': typeof AppAgentsAgentIdRoute
   '/_app/chat/$sessionId': typeof AppChatSessionIdRoute
+  '/_app/machine/$vmKey': typeof AppMachineVmKeyRoute
   '/_app/mcp/$serverId': typeof AppMcpServerIdRoute
   '/_app/projects/$projectId': typeof AppProjectsProjectIdRoute
   '/auth/github/callback': typeof AuthGithubCallbackRoute
   '/auth/github/start': typeof AuthGithubStartRoute
   '/_app/agents/': typeof AppAgentsIndexRoute
   '/_app/chat/': typeof AppChatIndexRoute
+  '/_app/machine/': typeof AppMachineIndexRoute
   '/_app/mcp/': typeof AppMcpIndexRoute
   '/_app/projects/': typeof AppProjectsIndexRoute
 }
@@ -201,7 +210,6 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/files'
-    | '/machine'
     | '/settings'
     | '/usage'
     | '/auth/dev'
@@ -209,12 +217,14 @@ export interface FileRouteTypes {
     | '/auth/password'
     | '/agents/$agentId'
     | '/chat/$sessionId'
+    | '/machine/$vmKey'
     | '/mcp/$serverId'
     | '/projects/$projectId'
     | '/auth/github/callback'
     | '/auth/github/start'
     | '/agents/'
     | '/chat/'
+    | '/machine/'
     | '/mcp/'
     | '/projects/'
   fileRoutesByTo: FileRoutesByTo
@@ -222,7 +232,6 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/files'
-    | '/machine'
     | '/settings'
     | '/usage'
     | '/auth/dev'
@@ -230,12 +239,14 @@ export interface FileRouteTypes {
     | '/auth/password'
     | '/agents/$agentId'
     | '/chat/$sessionId'
+    | '/machine/$vmKey'
     | '/mcp/$serverId'
     | '/projects/$projectId'
     | '/auth/github/callback'
     | '/auth/github/start'
     | '/agents'
     | '/chat'
+    | '/machine'
     | '/mcp'
     | '/projects'
   id:
@@ -244,7 +255,6 @@ export interface FileRouteTypes {
     | '/_app'
     | '/login'
     | '/_app/files'
-    | '/_app/machine'
     | '/_app/settings'
     | '/_app/usage'
     | '/auth/dev'
@@ -252,12 +262,14 @@ export interface FileRouteTypes {
     | '/auth/password'
     | '/_app/agents/$agentId'
     | '/_app/chat/$sessionId'
+    | '/_app/machine/$vmKey'
     | '/_app/mcp/$serverId'
     | '/_app/projects/$projectId'
     | '/auth/github/callback'
     | '/auth/github/start'
     | '/_app/agents/'
     | '/_app/chat/'
+    | '/_app/machine/'
     | '/_app/mcp/'
     | '/_app/projects/'
   fileRoutesById: FileRoutesById
@@ -301,13 +313,6 @@ declare module '@tanstack/react-router' {
       path: '/files'
       fullPath: '/files'
       preLoaderRoute: typeof AppFilesRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/machine': {
-      id: '/_app/machine'
-      path: '/machine'
-      fullPath: '/machine'
-      preLoaderRoute: typeof AppMachineRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/settings': {
@@ -373,6 +378,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppChatSessionIdRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/machine/': {
+      id: '/_app/machine/'
+      path: '/machine'
+      fullPath: '/machine/'
+      preLoaderRoute: typeof AppMachineIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/machine/$vmKey': {
+      id: '/_app/machine/$vmKey'
+      path: '/machine/$vmKey'
+      fullPath: '/machine/$vmKey'
+      preLoaderRoute: typeof AppMachineVmKeyRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/mcp/': {
       id: '/_app/mcp/'
       path: '/mcp'
@@ -420,30 +439,32 @@ declare module '@tanstack/react-router' {
 
 interface AppRouteChildren {
   AppFilesRoute: typeof AppFilesRoute
-  AppMachineRoute: typeof AppMachineRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppUsageRoute: typeof AppUsageRoute
   AppAgentsAgentIdRoute: typeof AppAgentsAgentIdRoute
   AppChatSessionIdRoute: typeof AppChatSessionIdRoute
+  AppMachineVmKeyRoute: typeof AppMachineVmKeyRoute
   AppMcpServerIdRoute: typeof AppMcpServerIdRoute
   AppProjectsProjectIdRoute: typeof AppProjectsProjectIdRoute
   AppAgentsIndexRoute: typeof AppAgentsIndexRoute
   AppChatIndexRoute: typeof AppChatIndexRoute
+  AppMachineIndexRoute: typeof AppMachineIndexRoute
   AppMcpIndexRoute: typeof AppMcpIndexRoute
   AppProjectsIndexRoute: typeof AppProjectsIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppFilesRoute: AppFilesRoute,
-  AppMachineRoute: AppMachineRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppUsageRoute: AppUsageRoute,
   AppAgentsAgentIdRoute: AppAgentsAgentIdRoute,
   AppChatSessionIdRoute: AppChatSessionIdRoute,
+  AppMachineVmKeyRoute: AppMachineVmKeyRoute,
   AppMcpServerIdRoute: AppMcpServerIdRoute,
   AppProjectsProjectIdRoute: AppProjectsProjectIdRoute,
   AppAgentsIndexRoute: AppAgentsIndexRoute,
   AppChatIndexRoute: AppChatIndexRoute,
+  AppMachineIndexRoute: AppMachineIndexRoute,
   AppMcpIndexRoute: AppMcpIndexRoute,
   AppProjectsIndexRoute: AppProjectsIndexRoute,
 }

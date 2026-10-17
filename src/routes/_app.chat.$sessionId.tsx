@@ -72,8 +72,8 @@ function Chat() {
           if (!state?.vmConfigured || !vm) return null
           return (
             <Link
-              to="/machine"
-              search={{ vm: sessionId }}
+              to="/machine/$vmKey"
+              params={{ vmKey: sessionId }}
               title="Watch or take over this chat's VM"
               className="ml-auto flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
             >

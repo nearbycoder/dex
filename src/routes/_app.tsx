@@ -26,7 +26,7 @@ function AppLayout() {
   const { pathname } = useLocation()
   // Chat and Machine pages put the menu button in their own header.
   const inChat = useMatch({ from: "/_app/chat/$sessionId", shouldThrow: false }) !== undefined
-  const ownHeader = inChat || pathname === "/machine" || pathname === "/usage"
+  const ownHeader = inChat || pathname === "/machine" || pathname.startsWith("/machine/") || pathname === "/usage"
 
   const { closeDrawer } = nav
   useEffect(() => closeDrawer(), [pathname, closeDrawer])

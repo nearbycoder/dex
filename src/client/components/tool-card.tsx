@@ -81,8 +81,8 @@ export function ToolCard({ call, result, live }: { call: ToolCall; result?: Tool
         <span className="truncate font-mono text-zinc-500">{summarize(call.arguments)}</span>
         {onVm && (
           <Link
-            to="/machine"
-            search={chatId ? { vm: chatId } : {}}
+            to={chatId ? "/machine/$vmKey" : "/machine"}
+            params={chatId ? { vmKey: chatId } : {}}
             onClick={(event) => event.stopPropagation()}
             className="ml-auto shrink-0 rounded px-1.5 py-0.5 text-[10px] text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
             title="Watch this chat's VM live"

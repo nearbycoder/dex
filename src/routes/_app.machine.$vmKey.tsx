@@ -1,8 +1,8 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, Link } from "@tanstack/react-router"
 import {
   Bot,
+  ChevronLeft,
   ChevronRight,
-  Cpu,
   ExternalLink,
   Eye,
   Hand,
@@ -20,27 +20,14 @@ import {
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
 import { AgentAvatar } from "~/client/components/agent-avatar"
 import { Collapse } from "~/client/components/collapse"
+import { idleText, useNow, useVmLabel, VM_STATUS } from "~/client/components/vm-status"
 import { useDex } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
 import { MenuButton } from "~/client/lib/mobile-nav"
-import { noVm, SHARED_VM, VM_SIZES, type VmActivity, type VmInfo, type VmSize, type VmStatus } from "~/shared/protocol"
+import { noVm, type VmActivity } from "~/shared/protocol"
 
-export const Route = createFileRoute("/_app/machine")({
-  // `?vm=<chat id>` selects a chat's VM, e.g. from the chat's header.
-  // Chat ids are numeric, so a hand-typed ?vm=216 arrives as a number.
-  validateSearch: (search: Record<string, unknown>): { vm?: string } =>
-    typeof search.vm === "string" || typeof search.vm === "number" ? { vm: String(search.vm) } : {},
-  component: MachinePage
-})
-
-const statusStyle: Record<VmStatus, { label: string; dot: string }> = {
-  none: { label: "No VM yet", dot: "bg-zinc-600" },
-  starting: { label: "Starting", dot: "animate-pulse bg-amber-500" },
-  running: { label: "Running", dot: "bg-emerald-500" },
-  stopping: { label: "Stopping", dot: "animate-pulse bg-amber-500" },
-  stopped: { label: "Stopped · disk saved", dot: "bg-zinc-500" },
-  error: { label: "Error", dot: "bg-red-500" }
-}
+/** One VM: its live desktop, activity, terminal, and ports. `vmKey` is the chat id, or `shared`. */
+export const Route = createFileRoute("/_app/machine/$vmKey")({ component: MachinePage })
 
 const MAX_OUTPUT = 64_000
 
@@ -145,16 +132,6 @@ function Panel({ title, actions, children, className = "" }: { title: ReactNode;
 }
 
 const iconButton = "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-40"
-
-/** Re-renders every `ms` so relative times stay fresh. */
-function useNow(ms: number) {
-  const [now, setNow] = useState(Date.now())
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), ms)
-    return () => clearInterval(timer)
-  }, [ms])
-  return now
-}
 
 /**
  * boat's Stream player needs MediaStreamTrackGenerator (Chromium only) and hangs elsewhere, notably on
@@ -281,56 +258,9 @@ function Desktop({ vmKey, running }: { vmKey: string; running: boolean }) {
   )
 }
 
-/** A VM's chat (or the shared VM's label), for the switcher and header. */
-function useVmLabel() {
-  const { state } = useDex()
-  return (key: string) => {
-    if (key === SHARED_VM) return { title: "Shared VM", subtitle: "from before VMs were per chat", agent: undefined, project: undefined }
-    const session = state?.sessions.find((candidate) => candidate.id === key)
-    return {
-      title: session?.title ?? "Deleted chat",
-      subtitle: null,
-      agent: session?.agentId ? state?.agents.find((agent) => agent.id === session.agentId) : undefined,
-      project: session?.projectId ? state?.projects.find((project) => project.id === session.projectId) : undefined
-    }
-  }
-}
-
-/** One chip per VM: pick which one the page shows. */
-function VmSwitcher({ vms, selected, onSelect }: { vms: ReadonlyArray<VmInfo>; selected: string | null; onSelect: (key: string) => void }) {
-  const label = useVmLabel()
-  return (
-    <div className="scrollbar-thin -mx-3 mb-3 flex gap-2 overflow-x-auto px-3 pb-1 md:-mx-4 md:px-4">
-      {vms.map((vm) => {
-        const { title, project, agent } = label(vm.key)
-        const active = vm.key === selected
-        const badge = project ?? agent
-        return (
-          <button
-            key={vm.key}
-            type="button"
-            onClick={() => onSelect(vm.key)}
-            aria-pressed={active}
-            title={title}
-            className={`flex max-w-60 shrink-0 items-center gap-2 rounded-lg border px-2.5 py-1.5 text-left text-xs ${
-              active ? "border-zinc-600 bg-zinc-800 text-zinc-100" : "border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200"
-            }`}
-          >
-            <span className={`size-2 shrink-0 rounded-full ${statusStyle[vm.status].dot}`} />
-            {badge && <AgentAvatar icon={badge.icon} color={badge.color} size={16} />}
-            <span className="truncate">{title}</span>
-            {vm.busy && <LoaderCircle className="size-3 shrink-0 animate-spin text-zinc-500" />}
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
 function MachinePage() {
   const { state, stub, connected } = useDex()
-  const navigate = useNavigate()
-  const { vm: requested } = Route.useSearch()
+  const { vmKey } = Route.useParams()
   const label = useVmLabel()
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -341,13 +271,10 @@ function MachinePage() {
   const now = useNow(15_000)
 
   const vms = state?.vms ?? []
-  // The asked-for VM (a chat without one yet shows as "No VM yet"), else the most recently used.
-  const selectedKey =
-    requested && (vms.some((vm) => vm.key === requested) || state?.sessions.some((session) => session.id === requested))
-      ? requested
-      : ([...vms].sort((a, b) => Number(b.status === "running") - Number(a.status === "running") || (b.lastActiveAt ?? 0) - (a.lastActiveAt ?? 0))[0]?.key ?? null)
+  // A chat that hasn't needed a VM yet shows as "No VM yet", with Start.
+  const known = vms.some((candidate) => candidate.key === vmKey) || state?.sessions.some((session) => session.id === vmKey)
+  const selectedKey = known ? vmKey : null
   const vm = selectedKey ? (vms.find((candidate) => candidate.key === selectedKey) ?? noVm(selectedKey)) : null
-  const listed = vm && !vms.some((candidate) => candidate.key === vm.key) ? [vm, ...vms] : vms
   const activity = useVmActivity(selectedKey)
 
   useEffect(() => {
@@ -363,7 +290,6 @@ function MachinePage() {
   if (!state) return <div className="p-8 text-sm text-zinc-500">Connecting to your agent…</div>
   const { settings } = state
   const running = vm?.status === "running"
-  const select = (key: string) => void navigate({ to: "/machine", search: { vm: key }, replace: true })
 
   const act = async (name: string, action: () => Promise<unknown>) => {
     setBusy(name)
@@ -394,7 +320,10 @@ function MachinePage() {
         <PageHeader />
         <div className="mx-auto max-w-md p-8 text-center text-sm leading-relaxed text-zinc-400">
           <MonitorPlay className="mx-auto mb-3 size-8 text-zinc-600" />
-          No VMs yet. Each chat gets its own VM the first time Dex needs one, and project chats get theirs right away, with the repos cloned.
+          This VM no longer exists.{" "}
+          <Link to="/machine" className="text-emerald-400 hover:underline">
+            See all machines
+          </Link>
         </div>
       </div>
     )
@@ -407,20 +336,10 @@ function MachinePage() {
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader>
         <span className="flex min-w-0 items-center gap-1.5 truncate text-xs text-zinc-400">
-          <span className={`size-2 shrink-0 rounded-full ${statusStyle[vm.status].dot}`} />
-          <span className="truncate">{statusStyle[vm.status].label}</span>
+          <span className={`size-2 shrink-0 rounded-full ${VM_STATUS[vm.status].dot}`} />
+          <span className="hidden truncate sm:inline">{VM_STATUS[vm.status].label}</span>
           {vm.size && <span className="hidden text-zinc-600 sm:inline">· {vm.size}</span>}
-          {running && (
-            <span className="hidden text-zinc-600 sm:inline">
-              ·{" "}
-              {vm.busy
-                ? "in use"
-                : (() => {
-                    const minutes = Math.ceil(((vm.lastActiveAt ?? now) + settings.vmMinutes * 60_000 - now) / 60_000)
-                    return minutes > 0 ? `stops when idle in ${minutes} min` : "idle, stopping any moment now"
-                  })()}
-            </span>
-          )}
+          {running && <span className="hidden text-zinc-600 sm:inline">· {idleText(vm, settings.vmMinutes, now)}</span>}
         </span>
         <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1">
           {(vm.status === "none" || vm.status === "stopped" || vm.status === "error") && (
@@ -460,10 +379,12 @@ function MachinePage() {
       </PageHeader>
 
       <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:p-4 md:pb-[max(1rem,env(safe-area-inset-bottom))]">
-        {listed.length > 1 && <VmSwitcher vms={listed} selected={selectedKey} onSelect={select} />}
-
         <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
           <span className="min-w-0 truncate font-medium text-zinc-200">{info.title}</span>
+          <span className="flex items-center gap-1.5 text-xs text-zinc-400 sm:hidden">
+            <span className={`size-2 rounded-full ${VM_STATUS[vm.status].dot}`} />
+            {VM_STATUS[vm.status].label}
+          </span>
           {info.subtitle && <span className="text-xs text-zinc-500">{info.subtitle}</span>}
           {info.project && (
             <Link to="/projects/$projectId" params={{ projectId: info.project.id }} className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200">
@@ -554,7 +475,7 @@ function MachinePage() {
           </Panel>
         </div>
 
-        <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-5">
           <Panel
             title={
               <>
@@ -589,44 +510,6 @@ function MachinePage() {
               )}
             </form>
           </Panel>
-
-          <Panel
-            title={
-              <>
-                <Cpu className="size-3.5 text-zinc-500" />
-                <span className="font-medium text-zinc-300">VM defaults</span>
-                <span className="text-zinc-600">for new VMs; projects can pick a size</span>
-              </>
-            }
-          >
-            <div className="flex flex-wrap items-center gap-3 p-3 text-sm">
-              <select
-                value={settings.vmSize}
-                onChange={(event) => void stub.updateSettings({ vmSize: event.target.value as VmSize })}
-                className="rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1 text-sm"
-              >
-                {VM_SIZES.map((size) => (
-                  <option key={size.id} value={size.id}>
-                    {size.label}
-                  </option>
-                ))}
-              </select>
-              <label className="flex items-center gap-2 text-zinc-400">
-                Stop when idle for
-                <select
-                  value={settings.vmMinutes}
-                  onChange={(event) => void stub.updateSettings({ vmMinutes: Number(event.target.value) })}
-                  className="rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1 text-sm text-zinc-200"
-                >
-                  {[5, 10, 15, 30, 60].map((minutes) => (
-                    <option key={minutes} value={minutes}>
-                      {minutes} min
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          </Panel>
         </div>
       </div>
     </div>
@@ -637,7 +520,9 @@ function PageHeader({ children }: { children?: ReactNode }) {
   return (
     <header className="dex-chrome flex h-12 shrink-0 items-center gap-2 border-b border-zinc-900 px-3 sm:gap-3 sm:px-4">
       <MenuButton />
-      <span className="shrink-0 text-sm font-medium">Machines</span>
+      <Link to="/machine" className="-ml-1 flex shrink-0 items-center gap-0.5 rounded-md py-1 pr-1.5 pl-0.5 text-sm font-medium text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100" title="All machines">
+        <ChevronLeft className="size-4" /> Machines
+      </Link>
       {children}
     </header>
   )
