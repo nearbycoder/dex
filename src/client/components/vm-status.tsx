@@ -34,10 +34,13 @@ export function useVmLabel() {
 export const byRecentUse = (a: VmInfo, b: VmInfo) =>
   Number(b.status === "running") - Number(a.status === "running") || (b.lastActiveAt ?? 0) - (a.lastActiveAt ?? 0)
 
-/** Re-renders every `ms` so relative times stay fresh. */
+/** Re-renders every `ms` so relative times stay fresh; `0` stops. */
 export function useNow(ms: number) {
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
+    // 0 pauses it (nothing on screen is counting).
+    if (ms <= 0) return
+    setNow(Date.now())
     const timer = setInterval(() => setNow(Date.now()), ms)
     return () => clearInterval(timer)
   }, [ms])

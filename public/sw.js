@@ -3,6 +3,15 @@
 const CACHE = "dex-static-v2"
 const SHELL = ["/offline", "/favicon.svg", "/icon-192.png"]
 
+/** Each deploy adds new fingerprinted files; keep the most recent ones so the cache doesn't grow forever. */
+const MAX_ENTRIES = 400
+const trim = async (cache) => {
+  const keys = await cache.keys()
+  const extra = keys.length - MAX_ENTRIES
+  // Keys come back in insertion order, oldest first; the shell entries were added first, so skip those.
+  if (extra > 0) await Promise.all(keys.slice(SHELL.length, SHELL.length + extra).map((key) => cache.delete(key)))
+}
+
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()))
 })
@@ -29,7 +38,7 @@ self.addEventListener("fetch", (event) => {
         const hit = await cache.match(request)
         if (hit) return hit
         const response = await fetch(request)
-        if (response.ok) cache.put(request, response.clone())
+        if (response.ok) event.waitUntil(cache.put(request, response.clone()).then(() => trim(cache)))
         return response
       })
     )

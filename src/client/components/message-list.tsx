@@ -1,7 +1,7 @@
 import type { AssistantMessage, ToolResultMessage } from "@earendil-works/pi-ai"
 import { Predicate } from "effect"
 import { AlertTriangle, ChevronRight, ListChecks, LoaderCircle } from "lucide-react"
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react"
+import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from "react"
 import { displayItems, type LiveTool, toolResults, type TranscriptState } from "~/client/lib/transcript"
 import { Collapse } from "./collapse"
 import { ConfirmCard } from "./confirm-card"
@@ -68,7 +68,8 @@ function Activity(props: {
   const { steps, active, results, tools } = props
   const [open, setOpen] = useState(false)
   const [phrase, setPhrase] = useState(0)
-  const now = useNow(props.running ? 1_000 : 60_000)
+  // Only a reply that's still going has a clock to tick; finished ones show their fixed duration.
+  const now = useNow(props.running || props.endedAt === null ? 1_000 : 0)
 
   const calls = steps.flatMap((step) => (step.block.type === "toolCall" ? [step.block] : []))
   const thoughts = steps.filter((step) => step.block.type === "thinking").length
@@ -146,7 +147,18 @@ function Activity(props: {
 }
 
 /** One reply: its work folded into an activity row, then what it shows you (answer text and UI cards). */
-function AssistantTurn(props: {
+const AssistantTurn = memo(AssistantTurnView, (prev, next) => {
+  // A finished reply never changes: skip it entirely while a newer one streams, however long the chat.
+  if (prev.active || next.active || prev.streaming || next.streaming) return false
+  return (
+    prev.endedAt === next.endedAt &&
+    prev.onSend === next.onSend &&
+    prev.messages.length === next.messages.length &&
+    prev.messages.every((message, index) => message === next.messages[index])
+  )
+})
+
+function AssistantTurnView(props: {
   messages: ReadonlyArray<AssistantMessage>
   streaming: boolean
   active: boolean
@@ -216,7 +228,8 @@ function AssistantTurn(props: {
   )
 }
 
-export function MessageList({ transcript, onSend }: { transcript: TranscriptState; onSend: (text: string) => void }) {
+/** Memoized: the chat page re-renders on every synced-state change, but the transcript only on its own. */
+export const MessageList = memo(function MessageList({ transcript, onSend }: { transcript: TranscriptState; onSend: (text: string) => void }) {
   const items = useMemo(() => displayItems(transcript), [transcript])
   const results = useMemo(() => toolResults(transcript.entries), [transcript.entries])
   const bottom = useRef<HTMLDivElement>(null)
@@ -225,11 +238,25 @@ export function MessageList({ transcript, onSend }: { transcript: TranscriptStat
   const count = useRef(0)
 
   // A new message glides into view; streaming text that grows the last one keeps the bottom pinned instantly.
+  // At most once a frame, however fast tokens arrive.
+  const frame = useRef(0)
   useEffect(() => {
     const added = count.current > 0 && items.length > count.current
     count.current = items.length
-    if (pinned.current) bottom.current?.scrollIntoView({ block: "end", behavior: added ? "smooth" : "auto" })
+    if (!pinned.current) return
+    cancelAnimationFrame(frame.current)
+    frame.current = requestAnimationFrame(() => bottom.current?.scrollIntoView({ block: "end", behavior: added ? "smooth" : "auto" }))
   }, [items])
+  useEffect(() => () => cancelAnimationFrame(frame.current), [])
+
+  // load_ui_guide comes right before render_ui: start fetching the UI renderer then, so the card doesn't wait on it.
+  const wantsUi = useMemo(
+    () => items.some((item) => item.kind === "assistant" && item.messages.some((message) => message.content.some((block) => block.type === "toolCall" && (block.name === "load_ui_guide" || block.name === "render_ui")))),
+    [items]
+  )
+  useEffect(() => {
+    if (wantsUi) void import("./openui-block")
+  }, [wantsUi])
 
   return (
     <div
@@ -295,4 +322,4 @@ export function MessageList({ transcript, onSend }: { transcript: TranscriptStat
       </div>
     </div>
   )
-}
+})

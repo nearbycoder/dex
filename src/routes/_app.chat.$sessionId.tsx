@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { Bell, BellOff, Check, KeyRound, Monitor, Pencil } from "lucide-react"
-import { useState } from "react"
+import { useCallback, useState } from "react"
 import { Composer } from "~/client/components/composer"
 import { MessageList } from "~/client/components/message-list"
 import { McpPicker } from "~/client/components/mcp-picker"
@@ -21,7 +21,8 @@ function Chat() {
   const agent = session?.agentId ? state?.agents.find((candidate) => candidate.id === session.agentId) : undefined
   const project = session?.projectId ? state?.projects.find((candidate) => candidate.id === session.projectId) : undefined
 
-  const send = (text: string) => void stub.sendMessage(sessionId, text)
+  // Stable, so finished replies (memoized in MessageList) don't re-render when the page does.
+  const send = useCallback((text: string) => void stub.sendMessage(sessionId, text), [stub, sessionId])
 
   if (state && !session) {
     return <div className="flex flex-1 items-center justify-center text-sm text-zinc-500">This chat no longer exists.</div>

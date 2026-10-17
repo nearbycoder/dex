@@ -1,6 +1,5 @@
 @layer theme, base, openui, components, utilities;
 @import "tailwindcss";
-@import "@openuidev/react-ui/layered/styles/index.css";
 @plugin "@tailwindcss/typography";
 
 @theme {

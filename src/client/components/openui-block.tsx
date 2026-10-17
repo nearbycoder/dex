@@ -1,6 +1,8 @@
 import { type ActionEvent, BuiltinActionType, Renderer } from "@openuidev/react-lang"
 import { ThemeProvider } from "@openuidev/react-ui"
 import { library } from "~/client/openui/library"
+// Loaded with this lazy chunk rather than on every page; its layer order is fixed in styles.css.
+import "@openuidev/react-ui/layered/styles/index.css"
 
 /** Model-written UI can carry any URL; only open web pages, never `javascript:` or `data:` ones. */
 const safeHttpUrl = (value: unknown) => {
