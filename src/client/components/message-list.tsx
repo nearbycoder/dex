@@ -1,6 +1,6 @@
 import type { AssistantMessage, ToolResultMessage } from "@earendil-works/pi-ai"
 import { Predicate } from "effect"
-import { AlertTriangle, ChevronRight, LoaderCircle, Sparkles } from "lucide-react"
+import { AlertTriangle, ChevronRight, LoaderCircle } from "lucide-react"
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react"
 import { displayItems, type LiveTool, toolResults, type TranscriptState } from "~/client/lib/transcript"
 import { Markdown } from "./markdown"
@@ -98,9 +98,7 @@ export function MessageList({ transcript, onSend }: { transcript: TranscriptStat
             case "assistant":
               return (
                 <div key={item.id} className="flex gap-3">
-                  <div className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md bg-emerald-600/15 text-emerald-400">
-                    <Sparkles className="size-3.5" />
-                  </div>
+                  <img src="/favicon.svg" alt="Dex" className="mt-0.5 size-6 shrink-0" />
                   <AssistantBlocks
                     message={item.message}
                     streaming={item.streaming}

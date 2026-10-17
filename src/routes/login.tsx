@@ -21,7 +21,7 @@ function Login() {
     <main className="flex min-h-full items-center justify-center p-6">
       <div className="w-full max-w-sm">
         <div className="mb-8 flex flex-col items-center text-center">
-          <img src="/favicon.svg" alt="" className="mb-4 size-14 rounded-2xl shadow-lg shadow-emerald-900/40" />
+          <img src="/favicon.svg" alt="" className="mb-4 size-16 drop-shadow-[0_8px_24px_rgba(16,185,129,0.35)]" />
           <h1 className="text-2xl font-semibold tracking-tight">Sign in to Dex</h1>
           <p className="mt-2 text-sm text-zinc-400">Your durable agent, powered by Pi and ClinePass.</p>
         </div>

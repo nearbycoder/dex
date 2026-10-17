@@ -18,7 +18,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
         }`}
       >
       <div className="flex items-center gap-2 px-4 py-4">
-        <img src="/favicon.svg" alt="" className="size-7 rounded-md" />
+        <img src="/favicon.svg" alt="" className="size-7" />
         <span className="font-semibold tracking-tight">Dex</span>
         <span
           className={`ml-auto size-2 rounded-full ${connected ? "bg-emerald-500" : "animate-pulse bg-amber-500"}`}

@@ -36,7 +36,7 @@ function AppLayout() {
             {!ownHeader && (
               <header className="flex h-12 shrink-0 items-center gap-2 border-b border-zinc-900 px-4 md:hidden">
                 <MenuButton />
-                <img src="/favicon.svg" alt="" className="size-6 rounded-md" />
+                <img src="/favicon.svg" alt="" className="size-6" />
                 <span className="font-semibold tracking-tight">Dex</span>
                 <Link to="/chat" title="New chat" className="ml-auto rounded-md p-1.5 text-zinc-400 hover:text-zinc-100">
                   <MessageSquarePlus className="size-5" />
