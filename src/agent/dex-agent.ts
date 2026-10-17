@@ -316,7 +316,11 @@ export class DexAgent extends Agent<Env, DexState> {
     this.ctx.storage.sql.exec(`UPDATE dex_sessions SET title = ?, updated_at = ? WHERE id = ?`, title, Date.now(), sessionId)
     await this.refreshSessions()
     // Clears the busy flag even when nobody is watching this chat.
-    this.ctx.waitUntil(session.wait(receipt.operationId).then(() => this.refreshSessions(), () => this.refreshSessions()))
+    const finished = () => {
+      this.ctx.storage.sql.exec(`UPDATE dex_sessions SET updated_at = ? WHERE id = ?`, Date.now(), sessionId)
+      return this.refreshSessions()
+    }
+    this.ctx.waitUntil(session.wait(receipt.operationId).then(finished, finished))
   }
 
   @callable()

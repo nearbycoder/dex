@@ -1,6 +1,7 @@
 import { Brain, Check, ChevronDown, Eye, Type } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
-import { CLINEPASS_MODELS, type ClinePassModel, clampThinking, findModel, supportedThinkingLevels, type ThinkingLevel } from "~/shared/models"
+import { CLINEPASS_MODELS, type ClinePassModel, clampThinking, findModel, MODEL_MAKERS, supportedThinkingLevels, type ThinkingLevel } from "~/shared/models"
+import { ModelLogo } from "./model-logo"
 
 const selectClass =
   "max-w-44 appearance-none truncate rounded-md border border-zinc-800 bg-zinc-900 py-1 pr-7 pl-2 text-xs text-zinc-300 hover:border-zinc-700 focus:border-emerald-600 focus:outline-none"
@@ -61,6 +62,7 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
         title={hasVision(current) ? "This model can see images" : "This model reads text only"}
         className="flex max-w-48 items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-900 py-1 pr-1.5 pl-2 text-xs text-zinc-300 hover:border-zinc-700 disabled:opacity-50"
       >
+        <ModelLogo modelId={props.model} className="size-3.5" />
         <span className="truncate">{current?.name ?? props.model}</span>
         {hasVision(current) && <Eye className="size-3.5 shrink-0 text-emerald-400" />}
         <ChevronDown className="size-3.5 shrink-0 text-zinc-500" />
@@ -83,10 +85,14 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
                       props.onSelect(model.id)
                       setOpen(false)
                     }}
-                    className={`flex w-full items-start gap-2 px-3 py-2 text-left hover:bg-zinc-900 ${selected ? "bg-zinc-900/70" : ""}`}
+                    className={`flex w-full items-start gap-2.5 px-3 py-2 text-left hover:bg-zinc-900 ${selected ? "bg-zinc-900/70" : ""}`}
                   >
+                    <ModelLogo modelId={model.id} className="mt-0.5 size-5" />
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm text-zinc-100">{model.name}</div>
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="truncate text-sm text-zinc-100">{model.name}</span>
+                        <span className="shrink-0 text-[10px] text-zinc-500">{MODEL_MAKERS[model.maker].name}</span>
+                      </div>
                       <div className="mt-1 flex flex-wrap items-center gap-1">
                         <VisionBadge vision={hasVision(model)} />
                         <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">

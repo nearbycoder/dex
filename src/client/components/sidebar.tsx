@@ -2,12 +2,20 @@ import { Link, useNavigate, useParams } from "@tanstack/react-router"
 import { FolderOpen, LogOut, MessageSquarePlus, Monitor, Settings, Trash2, X } from "lucide-react"
 import { useDex } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
+import { findModel } from "~/shared/models"
+import { ModelLogo } from "./model-logo"
+import { useEffect, useState } from "react"
 
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { state, viewer, stub, connected } = useDex()
   const navigate = useNavigate()
   const params = useParams({ strict: false })
   const activeId = "sessionId" in params ? params.sessionId : undefined
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const timer = setInterval(() => setTick((tick) => tick + 1), 30_000)
+    return () => clearInterval(timer)
+  }, [])
 
   return (
     <>
@@ -44,13 +52,25 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
             <Link
               to="/chat/$sessionId"
               params={{ sessionId: session.id }}
-              className={`flex items-center gap-2 rounded-lg py-1.5 pr-8 pl-2 text-sm md:pr-2 ${
-                session.id === activeId ? "bg-zinc-900 text-zinc-100" : "text-zinc-400 hover:bg-zinc-900/60 hover:text-zinc-200"
+              className={`block rounded-lg py-2 pr-8 pl-2.5 ${
+                session.id === activeId ? "bg-zinc-900 text-zinc-100" : "text-zinc-300 hover:bg-zinc-900/60 hover:text-zinc-100"
               }`}
             >
-              {session.busy && <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-emerald-500" />}
-              <span className="truncate">{session.title}</span>
-              <span className="ml-auto hidden shrink-0 text-[10px] text-zinc-600 md:inline md:group-hover:hidden">{timeAgo(session.updatedAt)}</span>
+              <div className="truncate text-sm">{session.title}</div>
+              <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-zinc-500">
+                <ModelLogo modelId={session.model} className="size-3.5" />
+                <span className="truncate">{findModel(session.model)?.name ?? session.model}</span>
+                <span className="text-zinc-700">·</span>
+                {session.busy ? (
+                  <span className="flex shrink-0 items-center gap-1 text-emerald-400">
+                    <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" /> working
+                  </span>
+                ) : (
+                  <span className="shrink-0" title={new Date(session.updatedAt).toLocaleString()}>
+                    {timeAgo(session.updatedAt)}
+                  </span>
+                )}
+              </div>
             </Link>
             <button
               type="button"
@@ -60,7 +80,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
                 await stub.deleteSession(session.id)
                 if (session.id === activeId) void navigate({ to: "/chat" })
               }}
-              className="absolute top-1.5 right-1.5 rounded p-0.5 text-zinc-500 hover:text-red-400 md:hidden md:group-hover:block"
+              className="absolute top-1/2 right-1.5 -translate-y-1/2 rounded p-1 text-zinc-500 hover:text-red-400 md:hidden md:group-hover:block"
             >
               <Trash2 className="size-3.5" />
             </button>
