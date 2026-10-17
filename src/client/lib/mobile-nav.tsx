@@ -106,6 +106,20 @@ export function useNavState(): Nav {
 }
 
 /**
+ * The screen's height when Dex runs as a Home Screen app that fills it (not in iPad Split View or Slide
+ * Over), else null. iOS can report such an app's visual viewport one status bar short, which left a band
+ * of empty space under the composer.
+ */
+const fullScreenHeight = () => {
+  if (document.documentElement.dataset.standalone !== "true") return null
+  const landscape = window.innerWidth > window.innerHeight
+  const long = Math.max(screen.width, screen.height)
+  const short = Math.min(screen.width, screen.height)
+  const width = landscape ? long : short
+  return Math.abs(window.innerWidth - width) <= 1 ? (landscape ? short : long) : null
+}
+
+/**
  * Keeps `--app-height` equal to the visible viewport. On iOS the on-screen keyboard covers the page instead
  * of resizing it, so this is what keeps the composer above the keyboard (and undoes Safari's page shift).
  */
@@ -114,7 +128,11 @@ export function useVisualViewportHeight() {
     const viewport = window.visualViewport
     if (!viewport) return
     const update = () => {
-      document.documentElement.style.setProperty("--app-height", `${Math.round(viewport.height)}px`)
+      const screenHeight = fullScreenHeight()
+      // An open keyboard takes well over a fifth of the screen; a short viewport report is a status bar.
+      const keyboardOpen = screenHeight !== null && viewport.height < screenHeight * 0.8
+      const height = screenHeight !== null && !keyboardOpen ? screenHeight : viewport.height
+      document.documentElement.style.setProperty("--app-height", `${Math.round(height)}px`)
       if (viewport.offsetTop > 0 && document.documentElement.scrollTop !== 0) window.scrollTo(0, 0)
     }
     update()
