@@ -5,6 +5,8 @@ import { ClineConnect } from "~/client/components/cline-connect"
 import { GitHubConnect } from "~/client/components/github-connect"
 import { InstallApp } from "~/client/components/install-app"
 import { ModelPicker } from "~/client/components/model-picker"
+import { PageSkeleton, RowsSkeleton } from "~/client/components/skeleton"
+import { useCachedFetch } from "~/client/lib/cache"
 import { useDex } from "~/client/lib/dex"
 import { hapticsEnabled, hapticsSupported, onHapticsChange, setHapticsEnabled } from "~/client/lib/haptics"
 import type { ScheduledPrompt } from "~/shared/protocol"
@@ -52,18 +54,15 @@ function SettingsPage() {
   const { state, stub, viewer, connected } = useDex()
   const [instructions, setInstructions] = useState("")
   const [saved, setSaved] = useState(false)
-  const [schedules, setSchedules] = useState<ScheduledPrompt[]>([])
 
   useEffect(() => {
     if (state) setInstructions(state.settings.instructions)
   }, [state?.settings.instructions])
 
-  const loadSchedules = useCallback(async () => setSchedules(await stub.listScheduledPrompts()), [stub])
-  useEffect(() => {
-    if (connected) void loadSchedules()
-  }, [connected, loadSchedules])
+  const listSchedules = useCallback(() => stub.listScheduledPrompts() as Promise<ScheduledPrompt[]>, [stub])
+  const { data: schedules, refresh: loadSchedules } = useCachedFetch("schedules", listSchedules, connected)
 
-  if (!state) return <div className="p-8 text-sm text-zinc-500">Connecting to your agent…</div>
+  if (!state) return <PageSkeleton variant="sections" />
 
   return (
     <div className="scrollbar-thin flex-1 overflow-y-auto">
@@ -120,7 +119,9 @@ function SettingsPage() {
         </Section>
 
         <Section title="Scheduled prompts" description="Things Dex will do later. Ask Dex in chat to schedule something.">
-          {schedules.length === 0 ? (
+          {!schedules ? (
+            <RowsSkeleton count={2} />
+          ) : schedules.length === 0 ? (
             <p className="text-sm text-zinc-500">Nothing scheduled.</p>
           ) : (
             <ul className="divide-y divide-zinc-800">

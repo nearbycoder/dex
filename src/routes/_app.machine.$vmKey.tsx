@@ -20,7 +20,9 @@ import {
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
 import { AgentAvatar } from "~/client/components/agent-avatar"
 import { Collapse } from "~/client/components/collapse"
+import { Lines, PageSkeleton } from "~/client/components/skeleton"
 import { idleText, useNow, useVmLabel, VM_STATUS } from "~/client/components/vm-status"
+import { useCachedFetch } from "~/client/lib/cache"
 import { useDex } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
 import { MenuButton } from "~/client/lib/mobile-nav"
@@ -34,13 +36,9 @@ const MAX_OUTPUT = 64_000
 /** One VM's activity log, kept live from the agent's broadcasts. */
 function useVmActivity(vmKey: string | null) {
   const { stub, listen, connected } = useDex()
-  const [items, setItems] = useState<VmActivity[]>([])
-
-  useEffect(() => {
-    setItems([])
-    if (!connected || !vmKey) return
-    void stub.vmActivity(vmKey, 150).then(setItems)
-  }, [connected, stub, vmKey])
+  const load = useCallback(() => (vmKey ? stub.vmActivity(vmKey, 150) : Promise.resolve([])) as Promise<VmActivity[]>, [stub, vmKey])
+  const { data: items, setData } = useCachedFetch(vmKey && `vm-activity:${vmKey}`, load, connected && vmKey !== null)
+  const setItems = (update: (current: VmActivity[]) => VmActivity[]) => setData((current) => update(current ?? []))
 
   useEffect(
     () =>
@@ -60,7 +58,7 @@ function useVmActivity(vmKey: string | null) {
           )
         }
       }),
-    [listen, vmKey]
+    [listen, vmKey, setData]
   )
 
   return items
@@ -285,9 +283,9 @@ function MachinePage() {
 
   useEffect(() => {
     feedEnd.current?.scrollIntoView({ block: "end" })
-  }, [activity.length])
+  }, [activity?.length])
 
-  if (!state) return <div className="p-8 text-sm text-zinc-500">Connecting to your agent…</div>
+  if (!state) return <PageSkeleton variant="sections" />
   const { settings } = state
   const running = vm?.status === "running"
 
@@ -446,9 +444,14 @@ function MachinePage() {
             }
           >
             <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
-              {activity.length === 0 && <p className="p-4 text-xs text-zinc-600">Nothing yet. Dex's commands on this chat's VM appear here, or run one below.</p>}
-              {activity.map((item, index) => (
-                <ActivityItem key={item.id} item={item} defaultOpen={index === activity.length - 1} />
+              {!activity && (
+                <div className="space-y-3 p-4">
+                  <Lines count={4} />
+                </div>
+              )}
+              {activity?.length === 0 && <p className="p-4 text-xs text-zinc-600">Nothing yet. Dex's commands on this chat's VM appear here, or run one below.</p>}
+              {activity?.map((item, index) => (
+                <ActivityItem key={item.id} item={item} defaultOpen={index === activity!.length - 1} />
               ))}
               <div ref={feedEnd} />
             </div>

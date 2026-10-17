@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { BarChart3, Cloud, Cpu, LoaderCircle, RefreshCw, Sparkles, Table2 } from "lucide-react"
-import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { BarChart3, Cloud, Cpu, RefreshCw, Sparkles, Table2 } from "lucide-react"
+import { type ReactNode, useCallback, useLayoutEffect, useRef, useState } from "react"
 import { ModelLogo } from "~/client/components/model-logo"
+import { Bone, Lines } from "~/client/components/skeleton"
+import { useCachedFetch } from "~/client/lib/cache"
 import { useDex } from "~/client/lib/dex"
 import { MenuButton } from "~/client/lib/mobile-nav"
 import { findModel } from "~/shared/models"
@@ -185,29 +187,41 @@ function DailyTable({ daily }: { daily: ReadonlyArray<DailySpend> }) {
   )
 }
 
+/** The report's layout while it loads: four tiles, the chart, and a table. */
+function UsageSkeleton() {
+  return (
+    <div role="status" className="space-y-4">
+      <span className="sr-only">Loading usage…</span>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 4 }, (_, index) => (
+          <div key={index} className="space-y-3 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+            <Bone className="h-3 w-24" />
+            <Bone className="h-7 w-20" />
+            <Bone className="h-3 w-full" />
+          </div>
+        ))}
+      </div>
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+        <Bone className="mb-4 h-4 w-32" />
+        <div className="flex h-[200px] items-end gap-[2%] pl-11">
+          {[38, 62, 25, 80, 47, 70, 33, 55, 90, 42, 66, 28].map((height, index) => (
+            <Bone key={index} className="flex-1 rounded-b-none" style={{ height: `${height}%` }} />
+          ))}
+        </div>
+      </div>
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+        <Lines count={5} />
+      </div>
+    </div>
+  )
+}
+
 function UsagePage() {
   const { stub, connected } = useDex()
   const [range, setRange] = useState<UsageRange>("month")
-  const [report, setReport] = useState<UsageReport | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [view, setView] = useState<"chart" | "table">("chart")
-
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      setReport(await stub.usageReport(range))
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      setLoading(false)
-    }
-  }, [range, stub])
-
-  useEffect(() => {
-    if (connected) void load()
-  }, [connected, load])
+  const fetchReport = useCallback(() => stub.usageReport(range) as Promise<UsageReport>, [range, stub])
+  const { data: report, loading, error, refresh: load } = useCachedFetch(`usage:${range}`, fetchReport, connected)
 
   const isMonth = range === "month"
   const plans = PLAN_FEES.clinePass + PLAN_FEES.workersPaid
@@ -240,9 +254,7 @@ function UsagePage() {
         <div className="mx-auto max-w-5xl space-y-4 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
           {error && <p className="rounded-lg bg-red-950/40 px-3 py-2 text-sm text-red-300">{error}</p>}
           {!report ? (
-            <div className="flex items-center gap-2 p-8 text-sm text-zinc-500">
-              <LoaderCircle className="size-4 animate-spin" /> Loading usage…
-            </div>
+            <UsageSkeleton />
           ) : (
             <>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

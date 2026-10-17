@@ -4,6 +4,7 @@ import { type ReactNode, useEffect, useState } from "react"
 import { AGENT_ICON_COMPONENTS, AgentAvatar } from "~/client/components/agent-avatar"
 import { McpStatusDot } from "~/client/components/mcp-picker"
 import { ModelPicker } from "~/client/components/model-picker"
+import { PageSkeleton } from "~/client/components/skeleton"
 import { useDex } from "~/client/lib/dex"
 import { AGENT_COLORS, AGENT_ICONS, type AgentColor, type AgentDraft } from "~/shared/agents"
 import { DEFAULT_MODEL_ID, DEFAULT_THINKING } from "~/shared/models"
@@ -52,7 +53,7 @@ function AgentEditor() {
     else if (existing) setDraft({ ...existing })
   }, [state, existing, isNew, draft])
 
-  if (!state) return <div className="p-8 text-sm text-zinc-500">Connecting to your agent…</div>
+  if (!state) return <PageSkeleton variant="form" />
   if (!isNew && !existing) {
     return (
       <div className="p-8 text-sm text-zinc-500">

@@ -181,6 +181,21 @@ button:disabled > [data-haptic-trigger] {
   pointer-events: none;
 }
 
+/* Skeleton bones (client/components/skeleton.tsx): a soft sweep of light while content loads. */
+.dex-bone {
+  background: linear-gradient(90deg, rgb(39 39 42 / 0.75) 30%, rgb(63 63 70 / 0.75) 50%, rgb(39 39 42 / 0.75) 70%);
+  background-size: 300% 100%;
+  animation: dex-shimmer 1.6s ease-in-out infinite;
+}
+@keyframes dex-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+
 /* Page changes: only the content area moves; the sidebar stays put. */
 .dex-main {
   view-transition-name: dex-main;
@@ -189,10 +204,10 @@ button:disabled > [data-haptic-trigger] {
   view-transition-name: dex-sidebar;
 }
 ::view-transition-old(dex-main) {
-  animation: dex-page-out 160ms ease-in both;
+  animation: dex-page-out 90ms ease-in both;
 }
 ::view-transition-new(dex-main) {
-  animation: dex-page-in 280ms var(--ease-fluid) both;
+  animation: dex-page-in 200ms var(--ease-fluid) both;
 }
 ::view-transition-group(dex-sidebar) {
   animation: none;

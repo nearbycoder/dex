@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { FolderGit2, GitBranch, MessageSquarePlus, Pencil, Plus } from "lucide-react"
 import { AgentAvatar } from "~/client/components/agent-avatar"
+import { CardGridSkeleton } from "~/client/components/skeleton"
 import { useDex } from "~/client/lib/dex"
 import { repoLabel } from "~/shared/projects"
 
@@ -39,7 +40,9 @@ function ProjectsPage() {
             Connect GitHub in Settings so VMs can clone private repos and push.
           </Link>
         )}
-        {projects.length === 0 ? (
+        {!state ? (
+          <CardGridSkeleton />
+        ) : projects.length === 0 ? (
           <p className="rounded-xl border border-dashed border-zinc-800 px-4 py-6 text-center text-sm text-zinc-500">
             No projects yet. Add your repos and a setup script, then start chats that are ready to work.
           </p>

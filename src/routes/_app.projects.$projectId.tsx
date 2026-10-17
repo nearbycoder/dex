@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { ArrowLeft, Check, LoaderCircle, MessageSquarePlus, Plus, Trash2, X } from "lucide-react"
 import { type ReactNode, useEffect, useState } from "react"
 import { AGENT_ICON_COMPONENTS, AgentAvatar } from "~/client/components/agent-avatar"
+import { PageSkeleton } from "~/client/components/skeleton"
 import { useDex } from "~/client/lib/dex"
 import { AGENT_COLORS, AGENT_ICONS, type AgentColor } from "~/shared/agents"
 import { type ProjectDraft, repoDirName } from "~/shared/projects"
@@ -52,7 +53,7 @@ function ProjectEditor() {
     else if (existing) setDraft({ ...existing, repos: existing.repos.length ? existing.repos : blank.repos })
   }, [state, existing, isNew, draft])
 
-  if (!state) return <div className="p-8 text-sm text-zinc-500">Connecting to your agent…</div>
+  if (!state) return <PageSkeleton variant="form" />
   if (!isNew && !existing) {
     return (
       <div className="p-8 text-sm text-zinc-500">

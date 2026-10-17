@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router"
 import { MessageSquarePlus, Pencil, Plus } from "lucide-react"
 import { AgentAvatar } from "~/client/components/agent-avatar"
 import { ModelLogo } from "~/client/components/model-logo"
+import { CardGridSkeleton } from "~/client/components/skeleton"
 import { useDex } from "~/client/lib/dex"
 import { findModel } from "~/shared/models"
 
@@ -31,7 +32,9 @@ function AgentsPage() {
             <Plus className="size-4" /> New agent
           </Link>
         </div>
-        {agents.length === 0 ? (
+        {!state ? (
+          <CardGridSkeleton />
+        ) : agents.length === 0 ? (
           <p className="text-sm text-zinc-500">No agents yet.</p>
         ) : (
           <ul className="grid gap-3 sm:grid-cols-2">

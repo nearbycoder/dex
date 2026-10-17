@@ -3,6 +3,7 @@ import { ChevronRight, Cpu, LoaderCircle, MessageSquare, Monitor, Play, RefreshC
 import { useEffect, useState } from "react"
 import { AgentAvatar } from "~/client/components/agent-avatar"
 import { byRecentUse, idleText, useNow, useVmLabel, VM_STATUS, VmStatusDot } from "~/client/components/vm-status"
+import { CardGridSkeleton } from "~/client/components/skeleton"
 import { useDex } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
 import { MenuButton } from "~/client/lib/mobile-nav"
@@ -165,7 +166,7 @@ function MachinesPage() {
       <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto max-w-4xl px-4 pt-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] md:pt-8">
           {!state ? (
-            <div className="p-8 text-sm text-zinc-500">Connecting to your agent…</div>
+            <CardGridSkeleton columns="md:grid-cols-2" />
           ) : !state.vmConfigured ? (
             <p className="mx-auto max-w-lg p-8 text-sm text-zinc-400">
               No VM provider is configured. Set the <code className="text-zinc-200">BOAT_API_KEY</code> secret to give Dex boat.dev cloud VMs.

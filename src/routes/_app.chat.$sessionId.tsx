@@ -6,6 +6,7 @@ import { MessageList } from "~/client/components/message-list"
 import { McpPicker } from "~/client/components/mcp-picker"
 import { ModelPicker } from "~/client/components/model-picker"
 import { AgentAvatar } from "~/client/components/agent-avatar"
+import { ChatSkeleton } from "~/client/components/skeleton"
 import { useDex, useTranscript } from "~/client/lib/dex"
 import { MenuButton } from "~/client/lib/mobile-nav"
 
@@ -101,7 +102,7 @@ function Chat() {
         )}
       </header>
 
-      <MessageList transcript={transcript} onSend={send} />
+      {transcript.loaded ? <MessageList transcript={transcript} onSend={send} /> : <ChatSkeleton />}
 
       <div className="mx-auto w-full max-w-3xl px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:px-4 md:pb-[max(1rem,env(safe-area-inset-bottom))]">
         {state && !state.cline.connected && (

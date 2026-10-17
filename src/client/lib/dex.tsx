@@ -1,9 +1,10 @@
 import { useLocation } from "@tanstack/react-router"
 import { useAgent } from "agents/react"
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from "react"
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from "react"
 import type { DexAgent } from "~/agent/dex-agent"
 import type { Viewer } from "~/server/viewer"
 import { AGENT_CLASS, type ClientMessage, type DexState, isServerMessage, type ServerMessage, withStateDefaults } from "~/shared/protocol"
+import { clearPageCache } from "./cache"
 import { clearNotifications } from "./push"
 import { applyEvent, emptyTranscript, fromSnapshot, type TranscriptState } from "./transcript"
 
@@ -19,6 +20,28 @@ interface DexContextValue {
 }
 
 const DexContext = createContext<DexContextValue | null>(null)
+
+/**
+ * The last state the agent synced, kept on this device so a launch shows your chats and settings at once while the
+ * socket connects (`connected` stays false until it has). Nothing secret is in it; signing out clears it.
+ */
+const STATE_KEY = (userId: string) => `dex-state:${userId}`
+
+const readSavedState = (userId: string): DexState | undefined => {
+  try {
+    const saved = localStorage.getItem(STATE_KEY(userId))
+    return saved ? withStateDefaults(JSON.parse(saved) as DexState) : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** Forgets what this device kept for a quick start (signing out). */
+export function forgetSavedState() {
+  for (const key of Object.keys(localStorage)) if (key.startsWith("dex-state:")) localStorage.removeItem(key)
+  transcripts.clear()
+  clearPageCache()
+}
 
 /** One WebSocket to this user's DexAgent: synced state, RPC, and chat event streams. */
 export function DexProvider({ viewer, children }: { viewer: Viewer; children: ReactNode }) {
@@ -39,7 +62,22 @@ export function DexProvider({ viewer, children }: { viewer: Viewer; children: Re
     return () => void listeners.current.delete(listener)
   }, [])
 
-  const state = useMemo(() => agent.state && withStateDefaults(agent.state), [agent.state])
+  const [saved] = useState(() => readSavedState(viewer.id))
+  const live = useMemo(() => agent.state && withStateDefaults(agent.state), [agent.state])
+  const state = live ?? saved
+
+  // Saved a moment after it settles, not on every streamed change.
+  useEffect(() => {
+    if (!live) return
+    const timer = setTimeout(() => {
+      try {
+        localStorage.setItem(STATE_KEY(viewer.id), JSON.stringify(live))
+      } catch {
+        // Storage full or blocked: launches just wait for the socket.
+      }
+    }, 1_000)
+    return () => clearTimeout(timer)
+  }, [live, viewer.id])
 
   // Tells the agent whether Dex is visible here and which chat it shows, so notifications skip what you're
   // looking at; and clears the badge and that chat's notifications whenever Dex comes into view.
@@ -69,10 +107,24 @@ export function useDex() {
   return context
 }
 
-type Action = { type: "reset" } | { type: "message"; message: ServerMessage }
+type Action = { type: "reset"; to: TranscriptState } | { type: "message"; message: ServerMessage }
+
+/** Recently opened chats as last seen, so going back to one shows it at once; the fresh snapshot replaces it. */
+const transcripts = new Map<string, TranscriptState>()
+const MAX_CACHED_TRANSCRIPTS = 12
+
+const remember = (sessionId: string, transcript: TranscriptState) => {
+  if (!transcript.loaded) return
+  transcripts.delete(sessionId)
+  transcripts.set(sessionId, transcript)
+  for (const oldest of transcripts.keys()) {
+    if (transcripts.size <= MAX_CACHED_TRANSCRIPTS) break
+    transcripts.delete(oldest)
+  }
+}
 
 const reduce = (state: TranscriptState, action: Action): TranscriptState => {
-  if (action.type === "reset") return emptyTranscript
+  if (action.type === "reset") return action.to
   const { message } = action
   switch (message.type) {
     case "dex.snapshot":
@@ -80,7 +132,7 @@ const reduce = (state: TranscriptState, action: Action): TranscriptState => {
     case "dex.events":
       return message.events.reduce(applyEvent, state)
     case "dex.error":
-      return { ...state, error: message.message }
+      return { ...state, error: message.message, loaded: true }
     default:
       return state
   }
@@ -91,12 +143,22 @@ const PING_MS = 20_000
 /** Live transcript of one chat. Re-subscribes on reconnect and pings so an evicted object resumes the stream. */
 export function useTranscript(sessionId: string) {
   const { send, listen, connected } = useDex()
-  const [state, dispatch] = useReducer(reduce, emptyTranscript)
+  const cachedOr = (id: string) => transcripts.get(id) ?? emptyTranscript
+  // Tagged with its chat: right after switching, the reducer still holds the previous chat until the reset lands.
+  const [tagged, dispatch] = useReducer(
+    (current: { id: string; transcript: TranscriptState }, action: Action & { id: string }) => ({
+      id: action.id,
+      transcript: reduce(action.id === current.id ? current.transcript : cachedOr(action.id), action)
+    }),
+    sessionId,
+    (id) => ({ id, transcript: cachedOr(id) })
+  )
+  const state = tagged.id === sessionId ? tagged.transcript : cachedOr(sessionId)
 
   useEffect(() => {
-    dispatch({ type: "reset" })
+    dispatch({ type: "reset", to: cachedOr(sessionId), id: sessionId })
     return listen((message) => {
-      if (message.sessionId === sessionId) dispatch({ type: "message", message })
+      if (message.sessionId === sessionId) dispatch({ type: "message", message, id: sessionId })
     })
   }, [listen, sessionId])
 
@@ -109,6 +171,10 @@ export function useTranscript(sessionId: string) {
       send({ type: "dex.unsubscribe" })
     }
   }, [connected, send, sessionId])
+
+  useEffect(() => {
+    if (tagged.id === sessionId) remember(sessionId, tagged.transcript)
+  }, [sessionId, tagged])
 
   return state
 }

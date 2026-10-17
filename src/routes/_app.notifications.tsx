@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { Bell, BellOff, LoaderCircle, Send, Smartphone, Trash2 } from "lucide-react"
 import { type ReactNode, useEffect, useState } from "react"
+import { PageSkeleton } from "~/client/components/skeleton"
 import { useDex } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
 import { disablePush, enablePush, notificationPermission, pushSupport, thisDeviceId } from "~/client/lib/push"
@@ -49,7 +50,7 @@ function NotificationsPage() {
     setPermission(notificationPermission())
   }, [])
 
-  if (!state) return <div className="p-8 text-sm text-zinc-500">Connecting to your agent…</div>
+  if (!state) return <PageSkeleton variant="sections" />
   const { push } = state
   // A device the agent dropped (e.g. the browser revoked it) counts as off.
   const device = push.devices.find((candidate) => candidate.id === deviceId)

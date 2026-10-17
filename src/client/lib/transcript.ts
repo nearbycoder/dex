@@ -21,6 +21,8 @@ export interface TranscriptState {
   readonly queued: number
   readonly retry: { readonly at: number; readonly error: string } | null
   readonly error: string | null
+  /** The agent has sent this chat's snapshot (or it was shown from the recent-chats cache). */
+  readonly loaded: boolean
 }
 
 export const emptyTranscript: TranscriptState = {
@@ -30,7 +32,8 @@ export const emptyTranscript: TranscriptState = {
   running: false,
   queued: 0,
   retry: null,
-  error: null
+  error: null,
+  loaded: false
 }
 
 export const fromSnapshot = (snapshot: SnapshotEvent): TranscriptState => ({
@@ -45,7 +48,8 @@ export const fromSnapshot = (snapshot: SnapshotEvent): TranscriptState => ({
   running: snapshot.run !== undefined,
   queued: snapshot.inbox.length,
   retry: snapshot.generation?.retry ?? null,
-  error: null
+  error: null,
+  loaded: true
 })
 
 const appendEntry = (entries: ReadonlyArray<EntryRecord>, entry: EntryRecord) =>

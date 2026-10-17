@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { ChevronRight, LoaderCircle, LogIn, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react"
 import { useState } from "react"
 import { McpStatusDot } from "~/client/components/mcp-picker"
+import { CardGridSkeleton } from "~/client/components/skeleton"
 import { useDex } from "~/client/lib/dex"
 import { AUTH_ICON, AUTH_LABEL, followConnect } from "~/client/lib/mcp"
 import { MCP_STATUS_LABEL, type McpServerInfo } from "~/shared/mcp"
@@ -170,7 +171,9 @@ function McpPage() {
           </div>
         )}
 
-        {servers.length === 0 ? (
+        {!state ? (
+          <CardGridSkeleton count={3} columns="" />
+        ) : servers.length === 0 ? (
           <p className="rounded-xl border border-dashed border-zinc-800 px-4 py-6 text-center text-sm text-zinc-500">
             No MCP servers yet. Add one below or by URL.
           </p>

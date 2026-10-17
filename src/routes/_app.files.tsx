@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { ArrowLeft, File, FilePlus, RefreshCw, Save, SquareTerminal, Trash2 } from "lucide-react"
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useState } from "react"
+import { Bone } from "~/client/components/skeleton"
+import { useCachedFetch } from "~/client/lib/cache"
 import { useDex } from "~/client/lib/dex"
 import { formatBytes, timeAgo } from "~/client/lib/format"
 import type { WorkspaceFile } from "~/shared/protocol"
@@ -16,7 +18,6 @@ interface OpenFile {
 
 function FilesPage() {
   const { stub, connected } = useDex()
-  const [files, setFiles] = useState<WorkspaceFile[]>([])
   const [open, setOpen] = useState<OpenFile | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [command, setCommand] = useState("")
@@ -39,10 +40,8 @@ function FilesPage() {
     }
   }
 
-  const refresh = useCallback(async () => setFiles(await stub.listFiles()), [stub])
-  useEffect(() => {
-    if (connected) void refresh()
-  }, [connected, refresh])
+  const listFiles = useCallback(() => stub.listFiles() as Promise<WorkspaceFile[]>, [stub])
+  const { data: files, refresh } = useCachedFetch("files", listFiles, connected)
 
   const select = async (path: string) => {
     setError(null)
@@ -78,10 +77,17 @@ function FilesPage() {
           </button>
         </div>
         <ul className="scrollbar-thin flex-1 overflow-y-auto p-2">
-          {files.length === 0 && (
+          {!files &&
+            [70, 55, 82, 46, 64].map((width, index) => (
+              <li key={index} className="flex items-center gap-2 px-2 py-2">
+                <Bone className="size-3.5 shrink-0" />
+                <Bone className="h-3" style={{ width: `${width}%` }} />
+              </li>
+            ))}
+          {files?.length === 0 && (
             <li className="px-2 py-1 text-xs text-zinc-600">Empty. Files Dex creates with its tools show up here.</li>
           )}
-          {files.map((file) => (
+          {files?.map((file) => (
             <li key={file.path}>
               <button
                 type="button"
@@ -107,7 +113,7 @@ function FilesPage() {
                 <ArrowLeft className="size-4" />
               </button>
               <span className="truncate font-mono text-xs text-zinc-300">{open.path}</span>
-              <span className="hidden text-xs text-zinc-600 sm:inline">{timeAgo(files.find((file) => file.path === open.path)?.mtime ?? Date.now())}</span>
+              <span className="hidden text-xs text-zinc-600 sm:inline">{timeAgo(files?.find((file) => file.path === open.path)?.mtime ?? Date.now())}</span>
               <div className="ml-auto flex items-center gap-1">
                 {open.content !== null && (
                   <button
