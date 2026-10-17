@@ -511,7 +511,9 @@ export class VmManager {
     if (!id || this.info.status !== "running") return null
     for (let attempt = 0; attempt < 10; attempt++) {
       const url = await this.host.run(BoatClient.use((client) => client.desktop(id, mode)))
-      if (url) return url
+      // Scale the picture to the viewer instead of resizing the VM's screen, which would move
+      // everything under the agent's feet (its screenshots and click coordinates).
+      if (url) return mode === "vnc" ? url.replace("resize=remote", "resize=scale") : url
       await sleep(2_000)
     }
     return null

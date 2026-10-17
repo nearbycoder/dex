@@ -90,7 +90,11 @@ export class BoatClient extends Context.Service<BoatClient, {
   readFile(id: string, path: string, encoding?: "utf8" | "base64"): Effect.Effect<typeof FileRead.Type, BoatError>
   writeFile(id: string, path: string, content: string, encoding?: "utf8" | "base64"): Effect.Effect<void, BoatError>
   hostPort(id: string, port: number, isPublic: boolean): Effect.Effect<string, BoatError>
-  /** A desktop URL: `stream` (embeddable WebRTC stream) or `vnc` (noVNC). Undefined while the desktop is still provisioning. */
+  /**
+   * A desktop URL: `stream` (low-latency WebCodecs player, Chromium only) or `vnc` (noVNC, works everywhere).
+   * noVNC is requested with public access: no cookie, gated by the VNC password in the URL, so it also works
+   * embedded in Safari, which blocks the third-party cookie the private route needs. Undefined while provisioning.
+   */
   desktop(id: string, mode: "stream" | "vnc"): Effect.Effect<string | undefined, BoatError>
 }>()("dex/agent/BoatClient") {
   static readonly layer = Layer.effect(
@@ -199,7 +203,9 @@ export class BoatClient extends Context.Service<BoatClient, {
           json(PortHosted)(HttpClientRequest.post(url(`/sandboxes/${id}/host`)).pipe(body({ port, public: isPublic }))).pipe(Effect.map((hosted) => hosted.url)),
 
         desktop: (id, mode) =>
-          json(DesktopResponse)(HttpClientRequest.post(url(`/sandboxes/${id}/desktop${mode === "vnc" ? "?vnc=1" : ""}`)).pipe(body({}))).pipe(
+          json(DesktopResponse)(
+            HttpClientRequest.post(url(`/sandboxes/${id}/desktop${mode === "vnc" ? "?vnc=1" : ""}`)).pipe(body(mode === "vnc" ? { publicAccess: true } : {}))
+          ).pipe(
             Effect.map((response) => (response.type === "desktop.url" ? (response.desktopUrl ?? undefined) : undefined))
           )
       })

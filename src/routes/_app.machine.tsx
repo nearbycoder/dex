@@ -144,9 +144,15 @@ function useNow(ms: number) {
   return now
 }
 
+/**
+ * boat's Stream player needs MediaStreamTrackGenerator (Chromium only) and hangs elsewhere, notably on
+ * iPhone/iPad where every browser is WebKit. Those get noVNC, which runs anywhere.
+ */
+const streamSupported = () => typeof window !== "undefined" && "MediaStreamTrackGenerator" in window
+
 function Desktop({ running }: { running: boolean }) {
   const { stub } = useDex()
-  const [mode, setMode] = useState<"stream" | "vnc">("stream")
+  const [mode, setMode] = useState<"stream" | "vnc">(() => (streamSupported() ? "stream" : "vnc"))
   const [url, setUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [control, setControl] = useState(false)
@@ -208,7 +214,9 @@ function Desktop({ running }: { running: boolean }) {
               className="rounded-md border border-zinc-800 bg-zinc-900 px-1.5 py-1 text-xs text-zinc-300"
               title="Streaming mode"
             >
-              <option value="stream">Stream</option>
+              <option value="stream" disabled={!streamSupported()}>
+                Stream{streamSupported() ? "" : " (Chrome only)"}
+              </option>
               <option value="vnc">noVNC</option>
             </select>
             <button type="button" onClick={() => void load()} title="Reconnect" className={iconButton}>
@@ -250,8 +258,8 @@ function Desktop({ running }: { running: boolean }) {
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4 text-center text-sm text-zinc-500">
             {loading ? <LoaderCircle className="size-5 animate-spin" /> : <MonitorPlay className="size-6" />}
             {running ? (error ?? "Connecting to the desktop…") : "The desktop appears here while the VM is running."}
-            {mode === "vnc" && running && (
-              <span className="text-xs text-zinc-600">If noVNC stays blank in your browser, use “Open in a new tab”.</span>
+            {mode === "stream" && running && (
+              <span className="text-xs text-zinc-600">If the stream stays on “Connecting”, switch to noVNC.</span>
             )}
           </div>
         )}
@@ -319,7 +327,10 @@ function MachinePage() {
               ·{" "}
               {vm.busy
                 ? "in use"
-                : `stops when idle ${Math.max(0, Math.ceil(((vm.lastActiveAt ?? now) + settings.vmMinutes * 60_000 - now) / 60_000))} min from now`}
+                : (() => {
+                    const minutes = Math.ceil(((vm.lastActiveAt ?? now) + settings.vmMinutes * 60_000 - now) / 60_000)
+                    return minutes > 0 ? `stops when idle in ${minutes} min` : "idle, stopping any moment now"
+                  })()}
             </span>
           )}
         </span>
