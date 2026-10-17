@@ -3,6 +3,7 @@ import { Predicate } from "effect"
 import { AlertTriangle, ChevronRight, LoaderCircle } from "lucide-react"
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react"
 import { displayItems, type LiveTool, toolResults, type TranscriptState } from "~/client/lib/transcript"
+import { Collapse } from "./collapse"
 import { Markdown } from "./markdown"
 import { ToolCard } from "./tool-card"
 
@@ -17,7 +18,9 @@ function Thinking({ text, streaming }: { text: string; streaming: boolean }) {
         <ChevronRight className={`size-3 transition-transform ${open ? "rotate-90" : ""}`} />
         {streaming ? "Thinking…" : "Thought"}
       </button>
-      {open && <div className="mt-1 border-l border-zinc-800 pl-3 whitespace-pre-wrap">{text}</div>}
+      <Collapse open={open}>
+        <div className="mt-1 border-l border-zinc-800 pl-3 whitespace-pre-wrap">{text}</div>
+      </Collapse>
     </div>
   )
 }
@@ -69,9 +72,13 @@ export function MessageList({ transcript, onSend }: { transcript: TranscriptStat
   const bottom = useRef<HTMLDivElement>(null)
   const pinned = useRef(true)
   const scroller = useRef<HTMLDivElement>(null)
+  const count = useRef(0)
 
+  // A new message glides into view; streaming text that grows the last one keeps the bottom pinned instantly.
   useEffect(() => {
-    if (pinned.current) bottom.current?.scrollIntoView({ block: "end" })
+    const added = count.current > 0 && items.length > count.current
+    count.current = items.length
+    if (pinned.current) bottom.current?.scrollIntoView({ block: "end", behavior: added ? "smooth" : "auto" })
   }, [items])
 
   return (
@@ -88,7 +95,7 @@ export function MessageList({ transcript, onSend }: { transcript: TranscriptStat
           switch (item.kind) {
             case "user":
               return (
-                <div key={item.id} className="flex justify-end">
+                <div key={item.id} className="flex animate-rise justify-end">
                   <div className="max-w-[85%] rounded-2xl rounded-br-md bg-zinc-800 px-4 py-2.5 text-sm whitespace-pre-wrap text-zinc-100 [overflow-wrap:anywhere]">
                     {item.text}
                     {item.images > 0 && <div className="mt-1 text-xs text-zinc-400">+{item.images} image(s)</div>}
@@ -97,7 +104,7 @@ export function MessageList({ transcript, onSend }: { transcript: TranscriptStat
               )
             case "assistant":
               return (
-                <div key={item.id} className="flex gap-3">
+                <div key={item.id} className="flex animate-rise gap-3">
                   <img src="/favicon.svg" alt="Dex" className="mt-0.5 size-6 shrink-0" />
                   <AssistantBlocks
                     message={item.message}
@@ -119,7 +126,7 @@ export function MessageList({ transcript, onSend }: { transcript: TranscriptStat
           }
         })}
         {transcript.running && !transcript.streaming && (
-          <div className="flex items-center gap-2 pl-9 text-xs text-zinc-500">
+          <div className="flex animate-fade items-center gap-2 pl-9 text-xs text-zinc-500">
             <LoaderCircle className="size-3.5 animate-spin" /> Working…
           </div>
         )}

@@ -78,8 +78,8 @@ export function McpPicker(props: {
       </button>
       {open && (
         <div
-          className={`absolute left-0 z-50 w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl shadow-black/50 ${
-            upward ? "bottom-full mb-1.5" : "top-full mt-1.5"
+          className={`absolute left-0 z-50 w-72 max-w-[calc(100vw-2rem)] animate-pop overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl shadow-black/50 ${
+            upward ? "bottom-full mb-1.5 origin-bottom-left" : "top-full mt-1.5 origin-top-left"
           }`}
         >
           <div className="px-3 pt-2.5 pb-1 text-[11px] font-medium tracking-wide text-zinc-500 uppercase">MCP servers for this chat</div>

@@ -19,6 +19,7 @@ import {
 } from "lucide-react"
 import { useState } from "react"
 import type { LiveTool } from "~/client/lib/transcript"
+import { Collapse } from "./collapse"
 
 const icons: Record<string, LucideIcon> = {
   bash: Terminal,
@@ -68,7 +69,7 @@ export function ToolCard({ call, result, live }: { call: ToolCall; result?: Tool
   const showLive = onVm && pending && output.length > 0
 
   return (
-    <div className="my-2 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900/60 text-xs">
+    <div className="my-2 animate-fade overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900/60 text-xs">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
@@ -110,7 +111,7 @@ export function ToolCard({ call, result, live }: { call: ToolCall; result?: Tool
           {output.slice(-4000)}
         </pre>
       )}
-      {open && (
+      <Collapse open={open}>
         <div className="space-y-2 border-t border-zinc-800 px-3 py-2">
           <pre className="scrollbar-thin max-h-48 overflow-auto font-mono whitespace-pre-wrap text-zinc-400">
             {JSON.stringify(call.arguments, null, 2)}
@@ -123,7 +124,7 @@ export function ToolCard({ call, result, live }: { call: ToolCall; result?: Tool
             </pre>
           )}
         </div>
-      )}
+      </Collapse>
     </div>
   )
 }

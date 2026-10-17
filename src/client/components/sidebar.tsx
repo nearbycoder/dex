@@ -23,9 +23,14 @@ export function Sidebar() {
 
   return (
     <>
-      {open && <div className="fixed inset-0 z-30 bg-black/60 backdrop-blur-[1px] md:hidden" onClick={onClose} aria-hidden="true" />}
+      {/* Always rendered so it can fade in and out with the drawer. */}
+      <div
+        className={`fixed inset-0 z-30 bg-black/60 transition-opacity duration-300 ease-fluid md:hidden ${open ? "opacity-100" : "pointer-events-none opacity-0"}`}
+        onClick={onClose}
+        aria-hidden="true"
+      />
       <aside
-        className={`dex-sidebar dex-chrome fixed inset-y-0 left-0 z-40 flex h-full w-[min(18rem,85vw)] shrink-0 flex-col border-r border-zinc-900 bg-zinc-950 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] shadow-2xl shadow-black/60 transition-transform duration-200 ease-out md:static md:w-64 md:translate-x-0 md:pt-0 md:pl-0 md:shadow-none lg:w-72 ${
+        className={`dex-sidebar dex-chrome fixed inset-y-0 left-0 z-40 flex h-full w-[min(18rem,85vw)] shrink-0 flex-col border-r border-zinc-900 bg-zinc-950 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] shadow-2xl shadow-black/60 transition-transform duration-300 ease-fluid md:static md:w-64 md:translate-x-0 md:pt-0 md:pl-0 md:shadow-none lg:w-72 ${
           open ? "translate-x-0" : "-translate-x-full"
         } ${collapsed ? "md:hidden" : ""}`}
       >
@@ -60,7 +65,7 @@ export function Sidebar() {
         <div className="px-2 pb-1 text-[11px] font-medium tracking-wide text-zinc-600 uppercase">Chats</div>
         {state?.sessions.length === 0 && <div className="px-2 py-1 text-xs text-zinc-600">No chats yet</div>}
         {state?.sessions.map((session) => (
-          <div key={session.id} className="group relative">
+          <div key={session.id} className="group relative animate-fade">
             <Link
               to="/chat/$sessionId"
               params={{ sessionId: session.id }}

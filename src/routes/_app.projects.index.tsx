@@ -45,8 +45,8 @@ function ProjectsPage() {
           </p>
         ) : (
           <ul className="grid gap-3 sm:grid-cols-2">
-            {projects.map((project) => (
-              <li key={project.id} className="flex min-w-0 flex-col rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+            {projects.map((project, index) => (
+              <li key={project.id} style={{ animationDelay: `${Math.min(index, 12) * 35}ms` }} className="flex min-w-0 animate-rise flex-col rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
                 <div className="flex items-start gap-3">
                   <AgentAvatar icon={project.icon} color={project.color} size={40} />
                   <div className="min-w-0 flex-1">

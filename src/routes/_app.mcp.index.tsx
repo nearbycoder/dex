@@ -17,7 +17,7 @@ export const Route = createFileRoute("/_app/mcp/")({
   component: McpPage
 })
 
-function ServerCard({ server }: { server: McpServerInfo }) {
+function ServerCard({ server, index }: { server: McpServerInfo; index: number }) {
   const { stub } = useDex()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -36,7 +36,7 @@ function ServerCard({ server }: { server: McpServerInfo }) {
   }
 
   return (
-    <li className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+    <li className="animate-rise rounded-xl border border-zinc-800 bg-zinc-900/40 p-4" style={{ animationDelay: `${Math.min(index, 12) * 35}ms` }}>
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -157,7 +157,7 @@ function McpPage() {
 
         {(search.connected || search.error) && (
           <div
-            className={`mb-4 flex items-start gap-3 rounded-xl border px-4 py-3 text-sm ${
+            className={`mb-4 flex animate-rise items-start gap-3 rounded-xl border px-4 py-3 text-sm ${
               search.error ? "border-red-900/60 bg-red-950/30 text-red-200" : "border-emerald-900/60 bg-emerald-950/30 text-emerald-200"
             }`}
           >
@@ -176,8 +176,8 @@ function McpPage() {
           </p>
         ) : (
           <ul className="grid gap-3">
-            {servers.map((server) => (
-              <ServerCard key={server.id} server={server} />
+            {servers.map((server, index) => (
+              <ServerCard key={server.id} server={server} index={index} />
             ))}
           </ul>
         )}

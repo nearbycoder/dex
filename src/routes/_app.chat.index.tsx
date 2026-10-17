@@ -94,7 +94,7 @@ function NewChat() {
       {/* Agents and projects scroll; the composer stays at the bottom, as in a chat. Short content sits just above it. */}
       <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-4">
         <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col justify-end pt-6 pb-4 md:pt-10">
-          <h1 className="mb-5 text-center text-2xl font-semibold tracking-tight md:text-3xl">
+          <h1 className="mb-5 animate-fade text-center text-2xl font-semibold tracking-tight md:text-3xl">
             {agent ? `What should ${agent.name} do${project ? ` in ${project.name}` : ""}?` : project ? `What should Dex do in ${project.name}?` : "What should Dex do?"}
           </h1>
           {state && !state.cline.connected && (
@@ -116,16 +116,17 @@ function NewChat() {
                 </Link>
               </div>
               <div className="flex flex-wrap gap-2">
-                {projects.map((candidate) => {
+                {projects.map((candidate, index) => {
                   const selected = candidate.id === projectId
                   return (
                     <button
                       key={candidate.id}
+                      style={{ animationDelay: `${Math.min(index, 12) * 35}ms` }}
                       type="button"
                       onClick={() => pickProject(candidate)}
                       aria-pressed={selected}
                       title={candidate.description || candidate.name}
-                      className={`flex max-w-full items-center gap-2 rounded-lg border py-1.5 pr-3 pl-1.5 text-sm ${
+                      className={`flex max-w-full animate-rise items-center gap-2 rounded-lg border py-1.5 pr-3 pl-1.5 text-sm ${
                         selected ? "border-emerald-600/70 bg-emerald-950/30 text-zinc-100" : "border-zinc-800/80 text-zinc-300 hover:border-zinc-700 hover:bg-zinc-900/60"
                       }`}
                     >
@@ -155,15 +156,16 @@ function NewChat() {
             </Link>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            {agents.map((candidate) => {
+            {agents.map((candidate, index) => {
               const selected = candidate.id === agentId
               return (
                 <button
                   key={candidate.id}
+                  style={{ animationDelay: `${Math.min(index, 12) * 35}ms` }}
                   type="button"
                   onClick={() => pick(candidate)}
                   aria-pressed={selected}
-                  className={`flex min-w-0 items-start gap-2.5 rounded-xl border p-2.5 text-left transition-colors sm:gap-3 sm:px-3.5 sm:py-3 ${
+                  className={`flex min-w-0 animate-rise items-start gap-2.5 rounded-xl border p-2.5 text-left sm:gap-3 sm:px-3.5 sm:py-3 ${
                     selected ? "border-emerald-600/70 bg-emerald-950/30" : "border-zinc-800/80 hover:border-zinc-700 hover:bg-zinc-900/60"
                   }`}
                 >
@@ -182,7 +184,8 @@ function NewChat() {
             <Link
               to="/agents/$agentId"
               params={{ agentId: "new" }}
-              className="flex items-center gap-2.5 rounded-xl border border-dashed border-zinc-800 p-2.5 text-sm text-zinc-500 hover:border-zinc-700 hover:text-zinc-200 sm:gap-3 sm:px-3.5 sm:py-3"
+              style={{ animationDelay: `${Math.min(agents.length, 12) * 35}ms` }}
+              className="flex animate-rise items-center gap-2.5 rounded-xl border border-dashed border-zinc-800 p-2.5 text-sm text-zinc-500 hover:border-zinc-700 hover:text-zinc-200 sm:gap-3 sm:px-3.5 sm:py-3"
             >
               <span className="flex size-8 shrink-0 items-center justify-center rounded-[10px] border border-zinc-800">
                 <Plus className="size-4" />
@@ -205,7 +208,7 @@ function NewChat() {
             (agent || project) && (
               <div className="flex flex-wrap items-center gap-2 px-3 pt-3">
                 {project && (
-                  <span className="flex min-w-0 items-center gap-2 rounded-full border border-zinc-700/80 bg-zinc-800/60 py-1 pr-1 pl-1 text-xs text-zinc-200" title="This chat's VM starts now, with the project's repos cloned">
+                  <span key={project.id} className="flex min-w-0 animate-pop items-center gap-2 rounded-full border border-zinc-700/80 bg-zinc-800/60 py-1 pr-1 pl-1 text-xs text-zinc-200" title="This chat's VM starts now, with the project's repos cloned">
                     <AgentAvatar icon={project.icon} color={project.color} size={20} />
                     <span className="truncate">{project.name}</span>
                     <button type="button" onClick={() => pickProject(null)} title="No project" className="rounded-full p-0.5 text-zinc-500 hover:text-zinc-200">
@@ -214,7 +217,7 @@ function NewChat() {
                   </span>
                 )}
                 {agent && (
-                  <span className="flex min-w-0 items-center gap-2 rounded-full border border-zinc-700/80 bg-zinc-800/60 py-1 pr-1 pl-1 text-xs text-zinc-200">
+                  <span key={agent.id} className="flex min-w-0 animate-pop items-center gap-2 rounded-full border border-zinc-700/80 bg-zinc-800/60 py-1 pr-1 pl-1 text-xs text-zinc-200">
                     <AgentAvatar icon={agent.icon} color={agent.color} size={20} />
                     <span className="truncate">{agent.name}</span>
                     <button type="button" onClick={() => pick(null)} title="Use no agent" className="rounded-full p-0.5 text-zinc-500 hover:text-zinc-200">

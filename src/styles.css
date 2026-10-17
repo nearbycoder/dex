@@ -6,6 +6,30 @@
 @theme {
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+
+  /* Motion: one curve (fast start, soft landing) and three entrances, used everywhere. */
+  --ease-fluid: cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-rise: dex-rise 320ms var(--ease-fluid) backwards;
+  --animate-fade: dex-fade 220ms ease-out backwards;
+  --animate-pop: dex-pop 180ms var(--ease-fluid) backwards;
+
+  @keyframes dex-rise {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+  }
+  @keyframes dex-fade {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes dex-pop {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+  }
 }
 
 html,
@@ -110,5 +134,73 @@ label,
   .dex-sidebar > nav {
     flex: none;
     overflow: visible;
+  }
+}
+
+/* ── Motion ──────────────────────────────────────────────────────────────── */
+
+/* Controls ease between states instead of snapping. */
+@layer base {
+  a,
+  button,
+  input,
+  select,
+  textarea,
+  [role="button"] {
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+    transition-duration: 160ms;
+    transition-timing-function: var(--ease-fluid);
+  }
+}
+
+/* Buttons give under the finger. Full-width rows (menus, lists) and overlays don't shrink. */
+button:not(.w-full, [data-no-press]):active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* Page changes: only the content area moves; the sidebar stays put. */
+.dex-main {
+  view-transition-name: dex-main;
+}
+.dex-sidebar {
+  view-transition-name: dex-sidebar;
+}
+::view-transition-old(dex-main) {
+  animation: dex-page-out 160ms ease-in both;
+}
+::view-transition-new(dex-main) {
+  animation: dex-page-in 280ms var(--ease-fluid) both;
+}
+::view-transition-group(dex-sidebar) {
+  animation: none;
+}
+@keyframes dex-page-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes dex-page-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+/* Reduce Motion: no movement, no fades; spinners still turn so loading stays visible. */
+@media (prefers-reduced-motion: reduce) {
+  *:not(.animate-spin, .animate-pulse),
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+  button:active {
+    transform: none !important;
   }
 }

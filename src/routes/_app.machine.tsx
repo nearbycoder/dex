@@ -19,6 +19,7 @@ import {
 } from "lucide-react"
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
 import { AgentAvatar } from "~/client/components/agent-avatar"
+import { Collapse } from "~/client/components/collapse"
 import { useDex } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
 import { MenuButton } from "~/client/lib/mobile-nav"
@@ -118,7 +119,7 @@ function ActivityItem({ item, defaultOpen }: { item: VmActivity; defaultOpen: bo
           <span className="shrink-0 text-zinc-600">{timeAgo(item.at)}</span>
         )}
       </button>
-      {open && hasOutput && (
+      <Collapse open={open && hasOutput}>
         <pre
           className={`scrollbar-thin mt-1.5 ml-5 max-h-72 overflow-auto rounded bg-zinc-950 p-2 font-mono whitespace-pre-wrap ${
             item.status === "error" ? "text-red-300" : "text-zinc-300"
@@ -126,7 +127,7 @@ function ActivityItem({ item, defaultOpen }: { item: VmActivity; defaultOpen: bo
         >
           {item.output}
         </pre>
-      )}
+      </Collapse>
     </div>
   )
 }
@@ -256,6 +257,7 @@ function Desktop({ vmKey, running }: { vmKey: string; running: boolean }) {
               <button
                 type="button"
                 onClick={() => setControl(true)}
+                data-no-press
                 className="group absolute inset-0 flex items-end justify-center bg-transparent pb-4"
                 title="Take control"
               >
@@ -486,13 +488,13 @@ function MachinePage() {
         </div>
 
         {vm.setup.status === "running" && (
-          <div className="mb-3 flex items-center gap-2 rounded-xl border border-sky-900/60 bg-sky-950/30 px-3 py-2 text-sm text-sky-200">
+          <div className="mb-3 flex animate-rise items-center gap-2 rounded-xl border border-sky-900/60 bg-sky-950/30 px-3 py-2 text-sm text-sky-200">
             <LoaderCircle className="size-4 shrink-0 animate-spin" />
             <span className="min-w-0">Setting up: {vm.setup.step ?? "preparing"}…</span>
           </div>
         )}
         {vm.setup.status === "error" && (
-          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-amber-900/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">
+          <div className="mb-3 flex animate-rise flex-wrap items-center gap-2 rounded-xl border border-amber-900/60 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">
             <Wrench className="size-4 shrink-0" />
             <span className="min-w-0 flex-1 break-words">
               Setup failed{vm.setup.step ? ` at “${vm.setup.step}”` : ""}: {vm.setup.error}
@@ -509,7 +511,7 @@ function MachinePage() {
         )}
         {(error || vm.error) && <p className="mb-3 rounded-lg bg-red-950/40 px-3 py-2 text-sm text-red-300">{error ?? vm.error}</p>}
 
-        <div className="dex-machine-grid grid gap-3 lg:grid-cols-5 lg:items-start">
+        <div key={vm.key} className="dex-machine-grid grid animate-fade gap-3 lg:grid-cols-5 lg:items-start">
           <Desktop key={vm.key} vmKey={vm.key} running={running} />
 
           <Panel

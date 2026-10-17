@@ -69,8 +69,8 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
       </button>
       {open && (
         <div
-          className={`absolute left-0 z-50 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl shadow-black/50 ${
-            upward ? "bottom-full mb-1.5" : "top-full mt-1.5"
+          className={`absolute left-0 z-50 w-80 max-w-[calc(100vw-2rem)] animate-pop overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl shadow-black/50 ${
+            upward ? "bottom-full mb-1.5 origin-bottom-left" : "top-full mt-1.5 origin-top-left"
           }`}
         >
           <ul className="scrollbar-thin max-h-80 overflow-y-auto py-1">

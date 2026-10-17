@@ -42,7 +42,7 @@ export function Composer(props: {
   }
 
   return (
-    <div className="rounded-2xl border border-zinc-800 bg-zinc-900/80 shadow-lg shadow-black/20 focus-within:border-zinc-700">
+    <div className="rounded-2xl border border-zinc-800 bg-zinc-900/80 shadow-lg shadow-black/20 transition-colors duration-200 focus-within:border-zinc-700">
       {props.header}
       <textarea
         ref={ref}
