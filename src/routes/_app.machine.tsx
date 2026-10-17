@@ -318,9 +318,9 @@ function MachinePage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <PageHeader>
-        <span className="flex items-center gap-1.5 text-xs text-zinc-400">
-          <span className={`size-2 rounded-full ${statusStyle[vm.status].dot}`} />
-          {statusStyle[vm.status].label}
+        <span className="flex min-w-0 items-center gap-1.5 truncate text-xs text-zinc-400">
+          <span className={`size-2 shrink-0 rounded-full ${statusStyle[vm.status].dot}`} />
+          <span className="truncate">{statusStyle[vm.status].label}</span>
           {vm.size && <span className="hidden text-zinc-600 sm:inline">· {vm.size}</span>}
           {running && (
             <span className="hidden text-zinc-600 sm:inline">
@@ -334,7 +334,7 @@ function MachinePage() {
             </span>
           )}
         </span>
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1">
           {(vm.status === "none" || vm.status === "stopped" || vm.status === "error") && (
             <button type="button" disabled={busy !== null} onClick={() => act("start", () => stub.vmStart())} className={iconButton}>
               {busy === "start" ? <LoaderCircle className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
@@ -514,9 +514,9 @@ function MachinePage() {
 
 function PageHeader({ children }: { children?: ReactNode }) {
   return (
-    <header className="dex-chrome flex h-12 shrink-0 items-center gap-3 border-b border-zinc-900 px-4">
+    <header className="dex-chrome flex h-12 shrink-0 items-center gap-2 border-b border-zinc-900 px-3 sm:gap-3 sm:px-4">
       <MenuButton />
-      <span className="text-sm font-medium">Machine</span>
+      <span className="shrink-0 text-sm font-medium">Machine</span>
       {children}
     </header>
   )

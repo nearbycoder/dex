@@ -40,13 +40,13 @@ function Tile(props: { icon: ReactNode; label: string; value: string; detail: Re
 
 function Section({ title, icon, children, aside }: { title: string; icon: ReactNode; children: ReactNode; aside?: ReactNode }) {
   return (
-    <section className="rounded-xl border border-zinc-800 bg-zinc-900/40">
+    <section className="min-w-0 rounded-xl border border-zinc-800 bg-zinc-900/40">
       <div className="flex items-center gap-2 border-b border-zinc-800 px-4 py-3 text-sm">
         {icon}
-        <h2 className="font-medium text-zinc-200">{title}</h2>
-        <div className="ml-auto text-xs text-zinc-500">{aside}</div>
+        <h2 className="min-w-0 truncate font-medium text-zinc-200">{title}</h2>
+        <div className="ml-auto shrink-0 text-xs text-zinc-500">{aside}</div>
       </div>
-      <div className="p-4">{children}</div>
+      <div className="min-w-0 p-4">{children}</div>
     </section>
   )
 }
@@ -333,31 +333,33 @@ function UsagePage() {
                   {report.cline.byModel.length === 0 ? (
                     <p className="text-sm text-zinc-500">No model usage in this period.</p>
                   ) : (
-                    <table className="w-full text-sm tabular-nums">
-                      <thead className="text-xs text-zinc-500">
-                        <tr>
-                          <th className="pb-2 text-left font-normal">Model</th>
-                          <th className="pb-2 text-right font-normal">Responses</th>
-                          <th className="pb-2 text-right font-normal">Tokens</th>
-                          <th className="pb-2 text-right font-normal">List price</th>
-                        </tr>
-                      </thead>
-                      <tbody className="text-zinc-300">
-                        {report.cline.byModel.map((row) => (
-                          <tr key={row.model} className="border-t border-zinc-800/70">
-                            <td className="py-2">
-                              <span className="flex items-center gap-2">
-                                <ModelLogo modelId={row.model} className="size-4" />
-                                {findModel(row.model)?.name ?? row.model}
-                              </span>
-                            </td>
-                            <td className="py-2 text-right">{row.responses}</td>
-                            <td className="py-2 text-right">{compact(row.totalTokens)}</td>
-                            <td className="py-2 text-right">{usd(row.listCost)}</td>
+                    <div className="scrollbar-thin -mx-1 overflow-x-auto px-1">
+                      <table className="w-full text-sm tabular-nums">
+                        <thead className="text-xs text-zinc-500">
+                          <tr>
+                            <th className="pb-2 text-left font-normal">Model</th>
+                            <th className="pb-2 text-right font-normal">Responses</th>
+                            <th className="pb-2 text-right font-normal">Tokens</th>
+                            <th className="pb-2 text-right font-normal">List price</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody className="text-zinc-300">
+                          {report.cline.byModel.map((row) => (
+                            <tr key={row.model} className="border-t border-zinc-800/70">
+                              <td className="py-2">
+                                <span className="flex items-center gap-2">
+                                  <ModelLogo modelId={row.model} className="size-4" />
+                                  {findModel(row.model)?.name ?? row.model}
+                                </span>
+                              </td>
+                              <td className="py-2 text-right">{row.responses}</td>
+                              <td className="py-2 text-right">{compact(row.totalTokens)}</td>
+                              <td className="py-2 text-right">{usd(row.listCost)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   )}
                   {report.cline.byChat.length > 0 && (
                     <>
@@ -366,9 +368,9 @@ function UsagePage() {
                         {report.cline.byChat.map((chat) => (
                           <li key={chat.sessionId} className="flex items-center gap-3">
                             {chat.title === "Deleted chat" ? (
-                              <span className="truncate text-zinc-500">{chat.title}</span>
+                              <span className="min-w-0 truncate text-zinc-500">{chat.title}</span>
                             ) : (
-                              <Link to="/chat/$sessionId" params={{ sessionId: chat.sessionId }} className="truncate text-zinc-300 hover:text-zinc-100 hover:underline">
+                              <Link to="/chat/$sessionId" params={{ sessionId: chat.sessionId }} className="min-w-0 truncate text-zinc-300 hover:text-zinc-100 hover:underline">
                                 {chat.title}
                               </Link>
                             )}
@@ -394,27 +396,29 @@ function UsagePage() {
                           </span>
                         ))}
                       </div>
-                      <table className="w-full text-sm tabular-nums">
-                        <thead className="text-xs text-zinc-500">
-                          <tr>
-                            <th className="pb-2 text-left font-normal">Started</th>
-                            <th className="pb-2 text-right font-normal">Duration</th>
-                            <th className="pb-2 text-right font-normal">Cost</th>
-                          </tr>
-                        </thead>
-                        <tbody className="text-zinc-300">
-                          {report.boat.runs.map((run) => (
-                            <tr key={run.startedAt} className="border-t border-zinc-800/70">
-                              <td className="py-2">
-                                {new Date(run.startedAt).toLocaleString("en", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
-                                {run.endedAt === null && <span className="ml-1.5 text-xs text-emerald-400">running</span>}
-                              </td>
-                              <td className="py-2 text-right">{run.hours < 1 ? `${Math.round(run.hours * 60)} min` : `${run.hours.toFixed(1)} h`}</td>
-                              <td className="py-2 text-right">{usd(run.cost)}</td>
+                      <div className="scrollbar-thin -mx-1 overflow-x-auto px-1">
+                        <table className="w-full text-sm tabular-nums">
+                          <thead className="text-xs text-zinc-500">
+                            <tr>
+                              <th className="pb-2 text-left font-normal">Started</th>
+                              <th className="pb-2 text-right font-normal">Duration</th>
+                              <th className="pb-2 text-right font-normal">Cost</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody className="text-zinc-300">
+                            {report.boat.runs.map((run) => (
+                              <tr key={run.startedAt} className="border-t border-zinc-800/70">
+                                <td className="py-2">
+                                  {new Date(run.startedAt).toLocaleString("en", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                                  {run.endedAt === null && <span className="ml-1.5 text-xs text-emerald-400">running</span>}
+                                </td>
+                                <td className="py-2 text-right">{run.hours < 1 ? `${Math.round(run.hours * 60)} min` : `${run.hours.toFixed(1)} h`}</td>
+                                <td className="py-2 text-right">{usd(run.cost)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </>
                   )}
                 </Section>
@@ -441,45 +445,47 @@ function UsagePage() {
                 ) : report.cloudflare.error ? (
                   <p className="text-sm text-amber-300">{report.cloudflare.error}</p>
                 ) : (
-                  <table className="w-full text-sm tabular-nums">
-                    <thead className="text-xs text-zinc-500">
-                      <tr>
-                        <th className="pb-2 text-left font-normal">Meter</th>
-                        <th className="pb-2 text-right font-normal">Used</th>
-                        <th className="hidden pb-2 pl-4 text-left font-normal sm:table-cell">Of monthly allowance</th>
-                        <th className="pb-2 text-right font-normal">At list rate</th>
-                      </tr>
-                    </thead>
-                    <tbody className="text-zinc-300">
-                      {report.cloudflare.lines.map((line) => (
-                        <tr key={line.label} className="border-t border-zinc-800/70">
-                          <td className="py-2">
-                            {line.label}
-                            {line.accountWide && <span className="ml-1.5 text-[10px] text-zinc-500">whole account</span>}
-                          </td>
-                          <td className="py-2 text-right">
-                            {compact(line.quantity)} <span className="text-xs text-zinc-500">{line.unit}</span>
-                          </td>
-                          <td className="hidden py-2 pl-4 sm:table-cell">
-                            {line.allowanceUsed !== null && (
-                              <span className="flex items-center gap-2">
-                                <span className="h-1.5 w-24 overflow-hidden rounded-full bg-zinc-800">
-                                  <span
-                                    className="block h-full rounded-full"
-                                    style={{ width: `${Math.min(100, Math.max(1, line.allowanceUsed * 100))}%`, background: SERIES[2].color }}
-                                  />
-                                </span>
-                                <span className="text-xs text-zinc-500">
-                                  {line.allowanceUsed < 0.001 ? "<0.1%" : `${(line.allowanceUsed * 100).toFixed(1)}%`}
-                                </span>
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-2 text-right">{usd(line.cost)}</td>
+                  <div className="scrollbar-thin -mx-1 overflow-x-auto px-1">
+                    <table className="w-full text-sm tabular-nums">
+                      <thead className="text-xs text-zinc-500">
+                        <tr>
+                          <th className="pb-2 text-left font-normal">Meter</th>
+                          <th className="pb-2 text-right font-normal">Used</th>
+                          <th className="hidden pb-2 pl-4 text-left font-normal sm:table-cell">Of monthly allowance</th>
+                          <th className="pb-2 text-right font-normal">At list rate</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="text-zinc-300">
+                        {report.cloudflare.lines.map((line) => (
+                          <tr key={line.label} className="border-t border-zinc-800/70">
+                            <td className="py-2">
+                              {line.label}
+                              {line.accountWide && <span className="ml-1.5 text-[10px] text-zinc-500">whole account</span>}
+                            </td>
+                            <td className="py-2 text-right">
+                              {compact(line.quantity)} <span className="text-xs text-zinc-500">{line.unit}</span>
+                            </td>
+                            <td className="hidden py-2 pl-4 sm:table-cell">
+                              {line.allowanceUsed !== null && (
+                                <span className="flex items-center gap-2">
+                                  <span className="h-1.5 w-24 overflow-hidden rounded-full bg-zinc-800">
+                                    <span
+                                      className="block h-full rounded-full"
+                                      style={{ width: `${Math.min(100, Math.max(1, line.allowanceUsed * 100))}%`, background: SERIES[2].color }}
+                                    />
+                                  </span>
+                                  <span className="text-xs text-zinc-500">
+                                    {line.allowanceUsed < 0.001 ? "<0.1%" : `${(line.allowanceUsed * 100).toFixed(1)}%`}
+                                  </span>
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-2 text-right">{usd(line.cost)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
               </Section>
 
