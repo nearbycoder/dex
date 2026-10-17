@@ -17,3 +17,16 @@ body {
   scrollbar-width: thin;
   scrollbar-color: var(--color-zinc-700) transparent;
 }
+
+/* Never let wide content pan the whole page sideways (iOS Safari does this for escaped content). */
+html,
+body {
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
+}
+
+/* Long URLs and paths in generative UI wrap instead of being cut off. Tables, code, tabs, and
+   carousels keep their own horizontal scrolling. */
+.dex-openui :is(.openui-markdown-renderer, .openui-text-content, .openui-callout, .openui-steps) {
+  overflow-wrap: anywhere;
+}

@@ -13,7 +13,7 @@ const toModelMessage = (event: ActionEvent) => {
 export default function OpenUIBlock(props: { code: string; streaming: boolean; onSend: (message: string) => void }) {
   return (
     <ThemeProvider mode="dark">
-      <div className="my-3 overflow-hidden rounded-xl">
+      <div className="dex-openui my-3 w-full max-w-full overflow-hidden rounded-xl [contain:inline-size_paint]">
         <Renderer
           library={library}
           response={props.code}

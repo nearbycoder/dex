@@ -31,7 +31,7 @@ function AssistantBlocks(props: {
 }) {
   const { message } = props
   return (
-    <div className="min-w-0">
+    <div className="min-w-0 flex-1">
       {message.content.map((block, index) => {
         const last = index === message.content.length - 1
         switch (block.type) {
@@ -77,7 +77,7 @@ export function MessageList({ transcript, onSend }: { transcript: TranscriptStat
   return (
     <div
       ref={scroller}
-      className="scrollbar-thin flex-1 overflow-y-auto"
+      className="scrollbar-thin flex-1 overflow-x-hidden overflow-y-auto overscroll-x-none"
       onScroll={(event) => {
         const element = event.currentTarget
         pinned.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80
@@ -89,7 +89,7 @@ export function MessageList({ transcript, onSend }: { transcript: TranscriptStat
             case "user":
               return (
                 <div key={item.id} className="flex justify-end">
-                  <div className="max-w-[85%] rounded-2xl rounded-br-md bg-zinc-800 px-4 py-2.5 text-sm whitespace-pre-wrap text-zinc-100">
+                  <div className="max-w-[85%] rounded-2xl rounded-br-md bg-zinc-800 px-4 py-2.5 text-sm whitespace-pre-wrap text-zinc-100 [overflow-wrap:anywhere]">
                     {item.text}
                     {item.images > 0 && <div className="mt-1 text-xs text-zinc-400">+{item.images} image(s)</div>}
                   </div>
