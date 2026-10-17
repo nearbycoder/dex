@@ -18,6 +18,7 @@ function Chat() {
   const session = state?.sessions.find((candidate) => candidate.id === sessionId)
   const [editing, setEditing] = useState<string | null>(null)
   const agent = session?.agentId ? state?.agents.find((candidate) => candidate.id === session.agentId) : undefined
+  const project = session?.projectId ? state?.projects.find((candidate) => candidate.id === session.projectId) : undefined
 
   const send = (text: string) => void stub.sendMessage(sessionId, text)
 
@@ -29,6 +30,11 @@ function Chat() {
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="dex-chrome flex h-12 shrink-0 items-center gap-3 border-b border-zinc-900 px-4">
         <MenuButton />
+        {project && (
+          <Link to="/projects/$projectId" params={{ projectId: project.id }} title={`${project.name} project`} className="shrink-0">
+            <AgentAvatar icon={project.icon} color={project.color} size={24} />
+          </Link>
+        )}
         {agent && (
           <Link to="/agents/$agentId" params={{ agentId: agent.id }} title={`${agent.name} agent`} className="shrink-0">
             <AgentAvatar icon={agent.icon} color={agent.color} size={24} />
@@ -61,17 +67,26 @@ function Chat() {
           </form>
         )}
         {transcript.queued > 0 && <span className="text-xs text-zinc-500">{transcript.queued} queued</span>}
-        {state?.vm.configured && state.vm.status !== "none" && (
-          <Link
-            to="/machine"
-            title="Watch or take over the VM"
-            className="ml-auto flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
-          >
-            <span className={`size-1.5 rounded-full ${state.vm.status === "running" ? "bg-emerald-500" : "bg-zinc-600"}`} />
-            <Monitor className="size-3.5" />
-            <span className="hidden sm:inline">Machine</span>
-          </Link>
-        )}
+        {(() => {
+          const vm = state?.vms.find((candidate) => candidate.key === sessionId)
+          if (!state?.vmConfigured || !vm) return null
+          return (
+            <Link
+              to="/machine"
+              search={{ vm: sessionId }}
+              title="Watch or take over this chat's VM"
+              className="ml-auto flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
+            >
+              <span
+                className={`size-1.5 rounded-full ${
+                  vm.setup.status === "running" || vm.status === "starting" ? "animate-pulse bg-amber-500" : vm.status === "running" ? "bg-emerald-500" : "bg-zinc-600"
+                }`}
+              />
+              <Monitor className="size-3.5" />
+              <span className="hidden sm:inline">{vm.setup.status === "running" ? "Setting up" : "Machine"}</span>
+            </Link>
+          )
+        })()}
       </header>
 
       <MessageList transcript={transcript} onSend={send} />

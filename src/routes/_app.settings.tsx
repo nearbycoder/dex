@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router"
 import { Clock, Trash2 } from "lucide-react"
 import { type ReactNode, useCallback, useEffect, useState } from "react"
 import { ClineConnect } from "~/client/components/cline-connect"
+import { GitHubConnect } from "~/client/components/github-connect"
 import { InstallApp } from "~/client/components/install-app"
 import { ModelPicker } from "~/client/components/model-picker"
 import { useDex } from "~/client/lib/dex"
@@ -47,6 +48,10 @@ function SettingsPage() {
 
         <Section title="ClinePass" description="Dex runs on open-weight coding models through your ClinePass subscription.">
           <ClineConnect />
+        </Section>
+
+        <Section title="GitHub" description="Lets each chat's VM clone private repos, push branches, and open pull requests.">
+          <GitHubConnect />
         </Section>
 
         <Section title="Defaults for new chats">

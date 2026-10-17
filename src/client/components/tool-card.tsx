@@ -1,6 +1,6 @@
 import type { ToolCall, ToolResultMessage } from "@earendil-works/pi-ai"
 import { Predicate } from "effect"
-import { Link } from "@tanstack/react-router"
+import { Link, useParams } from "@tanstack/react-router"
 import {
   BookOpen,
   Camera,
@@ -55,6 +55,8 @@ export const resultText = (result: ToolResultMessage | undefined) =>
 
 export function ToolCard({ call, result, live }: { call: ToolCall; result?: ToolResultMessage; live?: LiveTool }) {
   const [open, setOpen] = useState(false)
+  const params = useParams({ strict: false })
+  const chatId = "sessionId" in params ? params.sessionId : undefined
   const Icon = call.name.includes("skill") ? BookOpen : (icons[call.name] ?? (call.name.includes("__") ? Plug : Wrench))
   const pending = !result
   const running = pending && live?.status === "running"
@@ -79,9 +81,10 @@ export function ToolCard({ call, result, live }: { call: ToolCall; result?: Tool
         {onVm && (
           <Link
             to="/machine"
+            search={chatId ? { vm: chatId } : {}}
             onClick={(event) => event.stopPropagation()}
             className="ml-auto shrink-0 rounded px-1.5 py-0.5 text-[10px] text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
-            title="Watch the VM live"
+            title="Watch this chat's VM live"
           >
             watch
           </Link>

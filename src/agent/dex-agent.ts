@@ -28,9 +28,11 @@ import type {
   VmActivity,
   VmInfo,
   VmSize,
+  GitHubStatus,
   WorkspaceFile
 } from "~/shared/protocol"
-import { NO_VM } from "~/shared/protocol"
+import { SHARED_VM } from "~/shared/protocol"
+import { normalizeRepoUrl, type ProjectDraft, type ProjectProfile, type ProjectRepo, PROJECT_ROOT, repoDirName, repoLabel } from "~/shared/projects"
 import { CLOUDFLARE_RATES, type CloudflareLine, type UsageRange, type UsageReport } from "~/shared/usage"
 import { AGENT_COLORS, AGENT_ICONS, type AgentDraft, type AgentProfile, STARTER_AGENTS } from "~/shared/agents"
 import type { McpAuth, McpConnectResult, McpServerDraft, McpServerInfo, McpStatus, McpTransport } from "~/shared/mcp"
@@ -44,7 +46,9 @@ import { loadUiGuideTool, renderUiTool } from "./tools/render-ui"
 import { scheduleTools } from "./tools/schedule-tools"
 import { vmTools } from "./tools/vm-tools"
 import { workspaceTools } from "./tools/workspace-tools"
-import { VmManager } from "./vm"
+import { verifyGitHubToken, type GitHubIdentity } from "./github-token"
+import { provisionVm } from "./provision"
+import { migrateVmTables, storedVmKeys, type VmHost, VmManager } from "./vm"
 import { Workspace, WORKSPACE_ROOT } from "./workspace"
 
 const AgentLayer = (env: object) =>
@@ -65,7 +69,7 @@ const decodeClientMessage = Schema.decodeUnknownOption(ClientMessageJson)
 const PREAMBLE = `You are Dex, a capable personal agent. You run durably on Cloudflare: your chats, files, and schedules persist across restarts.
 
 You can:
-- Use your own cloud VM, a full Ubuntu machine with a desktop (vm_exec, vm_screenshot, vm_read_file, vm_write_file, vm_expose_port, vm_stop). Use it for real work: cloning repos, installing packages, running code, tests, servers, Docker, and driving a browser. The user can watch it live and take over.
+- Use this chat's own cloud VM, a full Ubuntu machine with a desktop (vm_exec, vm_screenshot, vm_read_file, vm_write_file, vm_expose_port, vm_stop). Use it for real work: cloning repos, installing packages, running code, tests, servers, Docker, and driving a browser. The user can watch it live and take over. It is created the first time you call a VM tool in this chat, which costs time and money, so only use it when the task needs real execution; answer questions, research, and light file work without it.
 - Keep notes and small files in ${WORKSPACE_ROOT} with a lightweight simulated shell (bash, read_file, write_file, edit_file). It cannot install or run programs; use the VM for that.
 - Research the web (web_search, web_fetch, and curl inside bash).
 - Show rich interactive UI with render_ui. Call load_ui_guide once per chat before your first render_ui.
@@ -96,6 +100,7 @@ interface SessionRow {
   updated_at: number
   agent_id: string | null
   mcp_servers: string | null
+  project_id: string | null
   [key: string]: SqlStorageValue
 }
 
@@ -156,9 +161,12 @@ export class DexAgent extends Agent<Env, DexState> {
     cline: { connected: false, source: null, keyHint: null, verifiedAt: null },
     settings: DEFAULT_SETTINGS,
     sessions: [],
-    vm: NO_VM,
+    vms: [],
+    vmConfigured: false,
     agents: [],
-    mcp: []
+    mcp: [],
+    projects: [],
+    github: { connected: false, login: null }
   }
 
   readonly runtime = ManagedRuntime.make(AgentLayer(this.env))
@@ -172,17 +180,35 @@ export class DexAgent extends Agent<Env, DexState> {
   /** Connection errors the SDK doesn't keep, e.g. when the first connect fails. */
   private readonly mcpErrors = new Map<string, string>()
 
-  readonly vm = new VmManager({
+  /** One VM per chat (plus `shared`, from before VMs were per chat), created when a chat first needs one. */
+  private readonly vms = new Map<string, VmManager>()
+  private readonly vmHost: VmHost = {
     sql: this.ctx.storage.sql,
     configured: Boolean((this.env as unknown as Record<string, unknown>).BOAT_API_KEY),
     run: (effect, signal) => this.runtime.runPromise(effect, { signal }),
-    settings: () => ({ size: this.state.settings.vmSize, minutes: this.state.settings.vmMinutes }),
-    publish: (vm: VmInfo) => this.publish({ vm }),
+    settings: (key) => ({
+      size: this.projectForSession(key)?.vmSize ?? this.state.settings.vmSize,
+      minutes: this.state.settings.vmMinutes
+    }),
+    publish: () => this.publishVms(),
     broadcast: (message: ServerMessage) => this.broadcast(JSON.stringify(message)),
     scheduleIdleCheck: () => void this.scheduleVmIdleCheck(),
     runStarted: (sandboxId, size) => this.ledger.runStarted(sandboxId, size),
-    runEnded: (at) => this.ledger.runEnded(at)
-  })
+    runEnded: (sandboxId, at) => this.ledger.runEnded(sandboxId, at),
+    provision: async (key, setup) => {
+      const github = await this.githubCredentials()
+      await provisionVm(setup, { github, project: this.projectForSession(key) ?? null })
+    },
+    makeRoom: async (exceptKey) => {
+      // The least recently used VM that nothing is running on.
+      const candidate = [...this.vms.values()]
+        .filter((vm) => vm.key !== exceptKey && vm.idle)
+        .sort((a, b) => (a.current.lastActiveAt ?? 0) - (b.current.lastActiveAt ?? 0))[0]
+      if (!candidate) return false
+      await candidate.stop("system", "Stop VM to make room for another chat's VM (disk is kept)")
+      return true
+    }
+  }
 
   readonly harness = new PiHarness({
     harness: ({ storage, context }) => {
@@ -226,6 +252,11 @@ export class DexAgent extends Agent<Env, DexState> {
     const sessionColumns = ctx.storage.sql.exec<{ name: string }>(`PRAGMA table_info(dex_sessions)`).toArray().map((column) => column.name)
     if (!sessionColumns.includes("agent_id")) ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN agent_id TEXT`)
     if (!sessionColumns.includes("mcp_servers")) ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN mcp_servers TEXT`)
+    if (!sessionColumns.includes("project_id")) ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN project_id TEXT`)
+    ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_projects (
+      id TEXT PRIMARY KEY, data TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
+    migrateVmTables(ctx.storage.sql)
+    for (const key of storedVmKeys(ctx.storage.sql)) this.vmFor(key)
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_mcp (
       id TEXT PRIMARY KEY, data TEXT NOT NULL, headers TEXT, tools TEXT NOT NULL DEFAULT '[]',
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
@@ -240,14 +271,17 @@ export class DexAgent extends Agent<Env, DexState> {
       if (settings.vmMinutes === 30) settings.vmMinutes = 5
       this.ctx.storage.sql.exec(`INSERT INTO dex_meta (key, value) VALUES ('vm_idle_default_5', '1')`)
     }
-    this.publish({ settings, vm: this.vm.current })
+    this.publish({ settings, vmConfigured: this.vmHost.configured })
+    this.publishVms()
+    this.refreshProjects()
+    this.refreshGitHubStatus()
     void this.backfillUsage()
     this.seedAgents()
     this.refreshAgents()
     this.startMcp()
     await this.refreshClineStatus()
     await this.refreshSessions()
-    void this.vm.refresh()
+    for (const vm of this.vms.values()) void vm.refresh()
   }
 
   // ── Pi wiring ─────────────────────────────────────────────────────────────
@@ -268,7 +302,9 @@ export class DexAgent extends Agent<Env, DexState> {
         section("agent", (input) => {
           const agent = this.agentForSession(String(input.conversationId))
           return agent ? `You are Dex acting as the "${agent.name}" agent.\n\n${agent.instructions}`.trim() : undefined
-        })
+        }),
+        // The chat's project, with where its repos are and how far the VM's setup got.
+        section("project", (input) => this.projectContext(String(input.conversationId)))
       ],
       // Every model response's tokens and list-price cost, for the Usage page.
       hooks: [hook(GenerationTask, { afterResponse: (message, api) => this.ledger.recordResponse(String(api.conversationId), message) })],
@@ -278,7 +314,7 @@ export class DexAgent extends Agent<Env, DexState> {
         loadUiGuideTool,
         renderUiTool,
         ...scheduleTools(this),
-        ...(this.vm.current.configured ? vmTools(this.vm) : [])
+        ...(this.vmHost.configured ? vmTools((chatId) => this.vmFor(chatId)) : [])
       ]
     })
   }
@@ -326,7 +362,8 @@ export class DexAgent extends Agent<Env, DexState> {
         updatedAt: row.updated_at,
         busy: busy.get(row.id) ?? false,
         agentId: row.agent_id ?? null,
-        mcpServers: parseIds(row.mcp_servers)
+        mcpServers: parseIds(row.mcp_servers),
+        projectId: row.project_id ?? null
       }))
     this.publish({ sessions })
   }
@@ -390,9 +427,17 @@ export class DexAgent extends Agent<Env, DexState> {
 
   @callable()
   async createSession(
-    options: { model?: string; thinking?: ThinkingLevel; title?: string; agentId?: string | null; mcpServers?: readonly string[] } = {}
+    options: {
+      model?: string
+      thinking?: ThinkingLevel
+      title?: string
+      agentId?: string | null
+      mcpServers?: readonly string[]
+      projectId?: string | null
+    } = {}
   ): Promise<SessionMeta> {
     const agent = options.agentId ? this.agentById(options.agentId) : undefined
+    const project = options.projectId ? this.projectById(options.projectId) : undefined
     const fallbackModel = agent?.model ?? this.state.settings.defaultModel
     const model = options.model && findModel(options.model) ? options.model : findModel(fallbackModel) ? fallbackModel : DEFAULT_MODEL_ID
     const thinking = clampThinking(findModel(model), options.thinking ?? agent?.thinking ?? this.state.settings.defaultThinking)
@@ -403,11 +448,28 @@ export class DexAgent extends Agent<Env, DexState> {
     const now = Date.now()
     const title = options.title?.trim() || "New chat"
     this.ctx.storage.sql.exec(
-      `INSERT INTO dex_sessions (id, title, model, thinking, created_at, updated_at, agent_id, mcp_servers) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      session.id, title, model, thinking, now, now, agent?.id ?? null, JSON.stringify(mcpServers)
+      `INSERT INTO dex_sessions (id, title, model, thinking, created_at, updated_at, agent_id, mcp_servers, project_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      session.id, title, model, thinking, now, now, agent?.id ?? null, JSON.stringify(mcpServers), project?.id ?? null
     )
     await this.refreshSessions()
-    return { id: session.id, title, model, thinking, createdAt: now, updatedAt: now, busy: false, agentId: agent?.id ?? null, mcpServers }
+    // A project chat will need its VM, so it starts now and is set up (repos, setup script) by the time the
+    // model wants it. Other chats get a VM only when the model first uses one.
+    if (project && this.vmHost.configured) {
+      const vm = this.vmFor(session.id)
+      void this.keepAliveWhile(() => vm.ensureRunning()).catch(() => undefined)
+    }
+    return {
+      id: session.id,
+      title,
+      model,
+      thinking,
+      createdAt: now,
+      updatedAt: now,
+      busy: false,
+      agentId: agent?.id ?? null,
+      mcpServers,
+      projectId: project?.id ?? null
+    }
   }
 
   @callable()
@@ -466,6 +528,13 @@ export class DexAgent extends Agent<Env, DexState> {
     await this.harness.session(sessionId).abort().catch(() => false)
     this.ctx.storage.sql.exec(`DELETE FROM dex_sessions WHERE id = ?`, sessionId)
     await this.refreshSessions()
+    // Its VM goes with it, disk and all.
+    const vm = this.vms.get(sessionId)
+    if (vm) {
+      this.vms.delete(sessionId)
+      this.publishVms()
+      this.ctx.waitUntil(vm.destroy("system", { forget: true }).catch(() => undefined))
+    }
   }
 
   // ── Live transcript streaming ─────────────────────────────────────────────
@@ -1026,35 +1095,74 @@ export class DexAgent extends Agent<Env, DexState> {
     }
   }
 
-  // ── VM (Machine page) ─────────────────────────────────────────────────────
+  // ── VMs (one per chat) ────────────────────────────────────────────────────
 
-  @callable()
-  async vmRefresh(): Promise<VmInfo> {
-    return this.vm.refresh()
+  private vmFor(key: string): VmManager {
+    let vm = this.vms.get(key)
+    if (!vm) {
+      vm = new VmManager(this.vmHost, key)
+      this.vms.set(key, vm)
+    }
+    return vm
+  }
+
+  /** A VM the Machine page asks about: an existing one, or a chat's (possibly not created yet). */
+  private vmForUser(key: string): VmManager {
+    if (this.vms.has(key)) return this.vmFor(key)
+    if (key !== SHARED_VM && this.hasSession(key)) return this.vmFor(key)
+    throw new Error("No such VM")
+  }
+
+  /** VMs that exist or are being created. */
+  private publishVms() {
+    const vms = [...this.vms.values()]
+      .map((vm) => vm.current)
+      .filter((info) => info.status !== "none" || info.busy || info.setup.status === "running")
+    this.publish({ vms })
   }
 
   @callable()
-  async vmStart(): Promise<VmInfo> {
-    await this.vm.ensureRunning()
-    return this.vm.current
+  async vmRefresh(key: string): Promise<VmInfo> {
+    return this.vmForUser(key).refresh()
   }
 
   @callable()
-  async vmStop(): Promise<VmInfo> {
-    await this.vm.stop("user")
-    return this.vm.current
+  async vmStart(key: string): Promise<VmInfo> {
+    const vm = this.vmForUser(key)
+    await this.keepAliveWhile(() => vm.ensureRunning())
+    return vm.current
   }
 
   @callable()
-  async vmDestroy(): Promise<VmInfo> {
-    await this.vm.destroy()
-    return this.vm.current
+  async vmStop(key: string): Promise<VmInfo> {
+    const vm = this.vmForUser(key)
+    await vm.stop("user")
+    return vm.current
+  }
+
+  @callable()
+  async vmDestroy(key: string): Promise<VmInfo> {
+    const vm = this.vmForUser(key)
+    // The shared VM belongs to no chat, so it is forgotten entirely.
+    await vm.destroy("user", { forget: key === SHARED_VM })
+    if (key === SHARED_VM) {
+      this.vms.delete(key)
+      this.publishVms()
+    }
+    return vm.current
+  }
+
+  /** Runs the VM's setup again (GitHub sign-in, project repos, setup script). */
+  @callable()
+  async vmRerunSetup(key: string) {
+    const vm = this.vmForUser(key)
+    await this.keepAliveWhile(() => vm.resetSetup())
   }
 
   /** Heartbeat from the Machine page while the user has control of the desktop. */
   @callable()
-  async vmTouch() {
-    this.vm.touch()
+  async vmTouch(key: string) {
+    this.vms.get(key)?.touch()
   }
 
   private async scheduleVmIdleCheck() {
@@ -1063,29 +1171,177 @@ export class DexAgent extends Agent<Env, DexState> {
   }
 
   async vmIdleCheck() {
-    if (await this.vm.idleCheck()) await this.schedule(60, "vmIdleCheck")
+    let again = false
+    for (const vm of this.vms.values()) if (await vm.idleCheck()) again = true
+    if (again) await this.schedule(60, "vmIdleCheck")
   }
 
   @callable()
-  async vmActivity(limit = 100): Promise<VmActivity[]> {
-    return this.vm.recentActivity(Math.min(300, Math.max(1, limit)))
+  async vmActivity(key: string, limit = 100): Promise<VmActivity[]> {
+    return this.vms.get(key)?.recentActivity(Math.min(300, Math.max(1, limit))) ?? []
   }
 
   /** A command the user runs from the Machine page terminal; output streams to every watcher. */
   @callable()
-  async vmRun(command: string) {
-    const result = await this.vm.exec(command, { actor: "user", timeoutSeconds: 600 })
+  async vmRun(key: string, command: string) {
+    const result = await this.vmForUser(key).exec(command, { actor: "user", timeoutSeconds: 600 })
     return { exitCode: result.exitCode }
   }
 
   @callable()
-  async vmDesktopUrl(mode: "stream" | "vnc"): Promise<string | null> {
-    return this.vm.desktopUrl(mode === "vnc" ? "vnc" : "stream")
+  async vmDesktopUrl(key: string, mode: "stream" | "vnc"): Promise<string | null> {
+    return this.vms.get(key)?.desktopUrl(mode === "vnc" ? "vnc" : "stream") ?? null
   }
 
   @callable()
-  async vmExposePort(port: number, isPublic: boolean): Promise<string> {
-    return this.vm.exposePort(port, isPublic, "user")
+  async vmExposePort(key: string, port: number, isPublic: boolean): Promise<string> {
+    return this.vmForUser(key).exposePort(port, isPublic, "user")
+  }
+
+  // ── GitHub access for the VMs ─────────────────────────────────────────────
+
+  /** The token and git identity each new VM signs in with, if the user connected GitHub. */
+  private async githubCredentials(): Promise<{ token: string; name: string; email: string } | null> {
+    const sealed = this.secret("github_token")
+    const identity = this.secret("github_identity")
+    if (!sealed || !identity) return null
+    const token = await this.runtime.runPromise(Keys.use((keys) => keys.decrypt(sealed)).pipe(Effect.option))
+    if (Option.isNone(token)) return null
+    const { name, email } = JSON.parse(identity) as GitHubIdentity
+    return { token: token.value, name, email }
+  }
+
+  private refreshGitHubStatus() {
+    const identity = this.secret("github_identity")
+    const github: GitHubStatus = identity && this.secret("github_token")
+      ? { connected: true, login: (JSON.parse(identity) as GitHubIdentity).login }
+      : { connected: false, login: null }
+    this.publish({ github })
+  }
+
+  /** Saves a GitHub personal access token (encrypted); new VMs sign in to gh and git with it. */
+  @callable()
+  async connectGitHub(token: string): Promise<{ ok: true; login: string } | { ok: false; error: string }> {
+    const value = token.trim()
+    if (!value) return { ok: false, error: "Paste a GitHub personal access token." }
+    const result = await this.runtime.runPromise(
+      Effect.gen(function*() {
+        const identity = yield* verifyGitHubToken(value)
+        const sealed = yield* (yield* Keys).encrypt(value)
+        return { ok: true as const, identity, sealed }
+      }).pipe(Effect.catchTag("GitHubTokenError", (error) => Effect.succeed({ ok: false as const, error: error.message })))
+    )
+    if (!result.ok) return result
+    const upsert = `INSERT INTO dex_secrets (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value`
+    this.ctx.storage.sql.exec(upsert, "github_token", result.sealed)
+    this.ctx.storage.sql.exec(upsert, "github_identity", JSON.stringify(result.identity))
+    this.refreshGitHubStatus()
+    return { ok: true, login: result.identity.login }
+  }
+
+  @callable()
+  async disconnectGitHub() {
+    this.ctx.storage.sql.exec(`DELETE FROM dex_secrets WHERE name IN ('github_token', 'github_identity')`)
+    this.refreshGitHubStatus()
+  }
+
+  // ── Projects ──────────────────────────────────────────────────────────────
+
+  private loadProjects(): ProjectProfile[] {
+    return this.ctx.storage.sql
+      .exec<AgentRow>(`SELECT * FROM dex_projects ORDER BY created_at, id`)
+      .toArray()
+      .map((row) => ({ ...(JSON.parse(row.data) as ProjectDraft), id: row.id, createdAt: row.created_at, updatedAt: row.updated_at }))
+  }
+
+  private projectById(id: string): ProjectProfile | undefined {
+    return this.loadProjects().find((project) => project.id === id)
+  }
+
+  private projectForSession(sessionId: string): ProjectProfile | undefined {
+    const projectId = this.ctx.storage.sql.exec<{ project_id: string | null }>(`SELECT project_id FROM dex_sessions WHERE id = ?`, sessionId).toArray()[0]?.project_id
+    return projectId ? this.projectById(projectId) : undefined
+  }
+
+  private refreshProjects() {
+    this.publish({ projects: this.loadProjects() })
+  }
+
+  /** The project section of a chat's system prompt. */
+  private projectContext(sessionId: string): string | undefined {
+    const project = this.projectForSession(sessionId)
+    if (!project) return undefined
+    const setup = this.vms.get(sessionId)?.current.setup
+    const lines = [`This chat works on the project "${project.name}"${project.description ? `: ${project.description}` : ""}.`]
+    if (project.repos.length) {
+      lines.push(
+        `Its repos are cloned on this chat's VM:\n${project.repos
+          .map((repo) => `- ${PROJECT_ROOT}/${repo.dir}: ${repoLabel(repo.url)}${repo.branch ? ` (branch ${repo.branch})` : ""}`)
+          .join("\n")}`
+      )
+    }
+    if (project.setupScript.trim()) lines.push(`A setup script (${PROJECT_ROOT}/.dex/setup.sh) runs once when the VM is created; its log is ${PROJECT_ROOT}/.dex/setup.log.`)
+    lines.push(
+      setup?.status === "done"
+        ? "The VM is set up and ready."
+        : setup?.status === "error"
+          ? `The VM's setup failed at "${setup.step ?? "setup"}": ${setup.error}. Check what is missing before relying on it, and tell the user.`
+          : "The VM is being set up now; VM tools wait until it is ready."
+    )
+    lines.push(this.state.github.connected ? `The GitHub CLI and git are signed in as @${this.state.github.login}.` : "GitHub is not connected (Settings → GitHub), so private repos and pushing need the user's help.")
+    if (project.instructions.trim()) lines.push(`Project notes from the user:\n${project.instructions.trim()}`)
+    return lines.join("\n\n")
+  }
+
+  /** Create (no id) or update a project. Repos are normalized to clone URLs with unique folders. */
+  @callable()
+  async saveProject(draft: ProjectDraft): Promise<ProjectProfile> {
+    const name = String(draft.name ?? "").trim().slice(0, 60)
+    if (!name) throw new Error("Give the project a name.")
+    const repos: ProjectRepo[] = []
+    const dirs = new Set<string>()
+    for (const repo of draft.repos ?? []) {
+      if (!String(repo.url ?? "").trim()) continue
+      const url = normalizeRepoUrl(String(repo.url))
+      if (!url) throw new Error(`"${repo.url}" isn't a repo. Use owner/repo or an https:// git URL.`)
+      const base = String(repo.dir ?? "").trim().replace(/[^\w.-]/g, "-").replace(/^[.-]+/, "") || repoDirName(url)
+      let dir = base
+      for (let n = 2; dirs.has(dir); n++) dir = `${base}-${n}`
+      dirs.add(dir)
+      const branch = String(repo.branch ?? "").trim()
+      if (branch && !/^[\w./-]+$/.test(branch)) throw new Error(`"${branch}" isn't a valid branch name.`)
+      repos.push({ url, branch, dir })
+    }
+    const clean: Omit<ProjectDraft, "id"> = {
+      name,
+      description: String(draft.description ?? "").trim().slice(0, 200),
+      icon: AGENT_ICONS.includes(draft.icon) ? draft.icon : "briefcase",
+      color: draft.color in AGENT_COLORS ? draft.color : "sky",
+      repos: repos.slice(0, 20),
+      setupScript: String(draft.setupScript ?? "").slice(0, 20_000),
+      instructions: String(draft.instructions ?? "").slice(0, 20_000),
+      starter: String(draft.starter ?? "").slice(0, 2_000),
+      vmSize: draft.vmSize && VM_SIZES.has(draft.vmSize) ? draft.vmSize : null
+    }
+    const now = Date.now()
+    const existing = draft.id ? this.projectById(draft.id) : undefined
+    const id = existing?.id ?? `${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 32) || "project"}-${crypto.randomUUID().slice(0, 6)}`
+    this.ctx.storage.sql.exec(
+      `INSERT INTO dex_projects (id, data, created_at, updated_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
+      id, JSON.stringify(clean), existing?.createdAt ?? now, now
+    )
+    this.refreshProjects()
+    return { ...clean, id, createdAt: existing?.createdAt ?? now, updatedAt: now }
+  }
+
+  /** Deletes a project. Its chats and their VMs stay. */
+  @callable()
+  async deleteProject(id: string) {
+    this.ctx.storage.sql.exec(`DELETE FROM dex_projects WHERE id = ?`, id)
+    this.ctx.storage.sql.exec(`UPDATE dex_sessions SET project_id = NULL WHERE project_id = ?`, id)
+    this.refreshProjects()
+    await this.refreshSessions()
   }
 
   // ── Scheduled prompts ─────────────────────────────────────────────────────

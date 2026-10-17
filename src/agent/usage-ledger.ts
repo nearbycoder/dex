@@ -139,19 +139,19 @@ export class UsageLedger {
 
   // ── VM runs ───────────────────────────────────────────────────────────────
 
-  private openRun(): RunRow | undefined {
-    return this.sql.exec<RunRow>(`SELECT * FROM dex_vm_runs WHERE ended_at IS NULL ORDER BY id DESC LIMIT 1`).toArray()[0]
+  private openRun(sandboxId: string): RunRow | undefined {
+    return this.sql.exec<RunRow>(`SELECT * FROM dex_vm_runs WHERE sandbox_id = ? AND ended_at IS NULL ORDER BY id DESC LIMIT 1`, sandboxId).toArray()[0]
   }
 
-  /** The VM is running (billed from now) unless a run is already open. */
+  /** A VM is running (billed from now) unless its run is already open. */
   runStarted(sandboxId: string, size: string) {
-    if (this.openRun()) return
+    if (this.openRun(sandboxId)) return
     this.sql.exec(`INSERT INTO dex_vm_runs (sandbox_id, size, started_at) VALUES (?, ?, ?)`, sandboxId, size, Date.now())
   }
 
-  /** The VM stopped at `at` (when boat last changed its state, if known). */
-  runEnded(at: number) {
-    const run = this.openRun()
+  /** A VM stopped at `at` (when boat last changed its state, if known). */
+  runEnded(sandboxId: string, at: number) {
+    const run = this.openRun(sandboxId)
     if (!run) return
     this.sql.exec(`UPDATE dex_vm_runs SET ended_at = ? WHERE id = ?`, Math.max(run.started_at, Math.min(at, Date.now())), run.id)
   }
@@ -187,7 +187,13 @@ export class UsageLedger {
       }
     }
     return {
-      usage: { hours, cost, running: Boolean(this.openRun()), bySize: [...bySize.values()], runs: runs.slice(0, 20) },
+      usage: {
+        hours,
+        cost,
+        running: this.sql.exec(`SELECT 1 FROM dex_vm_runs WHERE ended_at IS NULL LIMIT 1`).toArray().length > 0,
+        bySize: [...bySize.values()],
+        runs: runs.slice(0, 20)
+      },
       daily
     }
   }

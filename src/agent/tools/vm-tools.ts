@@ -7,9 +7,10 @@ const MAX_MODEL_OUTPUT = 30_000
 const clip = (value: string) =>
   value.length > MAX_MODEL_OUTPUT ? `… [${value.length - MAX_MODEL_OUTPUT} earlier chars cut]\n${value.slice(-MAX_MODEL_OUTPUT)}` : value
 
-export const VM_GUIDE = `Your VM is a full Ubuntu machine (user \`user\`, passwordless sudo) with Docker, Node 24, Bun, Python 3.12, git, the GitHub CLI and Google Chrome. Home is /home/user. It starts on demand (first call can take ~30s) and keeps its disk across stops. It stops itself after a few minutes with no VM tool calls running, even if a background server is still up, so check that servers you started are still running before relying on them later. A desktop runs on DISPLAY=:0: GUI apps you launch there (e.g. \`DISPLAY=:0 google-chrome --no-first-run URL &\`) appear on it. The user can watch the desktop and every command you run live on the Machine page, and may take control of the desktop at any time; if something you did changed unexpectedly, take a fresh screenshot.`
+export const VM_GUIDE = `This chat has its own VM (other chats have their own), a full Ubuntu machine (user \`user\`, passwordless sudo) with Docker, Node 24, Bun, Python 3.12, git, the GitHub CLI and Google Chrome. Home is /home/user. It starts the first time you use a VM tool in this chat (that call can take ~30s) and keeps its disk across stops. It stops itself after a few minutes with no VM tool calls running, even if a background server is still up, so check that servers you started are still running before relying on them later. A desktop runs on DISPLAY=:0: GUI apps you launch there (e.g. \`DISPLAY=:0 google-chrome --no-first-run URL &\`) appear on it. The user can watch the desktop and every command you run live on the Machine page, and may take control of the desktop at any time; if something you did changed unexpectedly, take a fresh screenshot.`
 
-export const vmTools = (vm: VmManager) => [
+/** Each chat has its own VM; `vmFor` finds the calling chat's. */
+export const vmTools = (vmFor: (chatId: string) => VmManager) => [
   defineTool({
     name: "vm_exec",
     description:
@@ -24,6 +25,7 @@ export const vmTools = (vm: VmManager) => [
       background: Type.Optional(Type.Boolean({ description: "Start it and return immediately with its process id and log paths." }))
     }),
     execute: async ({ command, cwd, timeout_seconds, background }, api, context) => {
+      const vm = vmFor(String(api.conversationId))
       // A trailing `&` would keep the call open until the process exits; start it detached instead.
       const trailingAmpersand = /(^|[^&])&\s*$/.test(command)
       if (background || trailingAmpersand) {
@@ -54,7 +56,8 @@ export const vmTools = (vm: VmManager) => [
       "Take a screenshot of your VM's desktop (DISPLAY=:0) to see what is on screen, e.g. before and after clicking with xdotool. " +
       "Returns the image (scaled to fit 1280px) and the real screen size so you can map coordinates.",
     parameters: Type.Object({}),
-    execute: async (_args, _api, context) => {
+    execute: async (_args, api, context) => {
+      const vm = vmFor(String(api.conversationId))
       const shot = await vm.screenshot("agent", context.abortSignal)
       const note =
         shot.scale < 1
@@ -69,7 +72,8 @@ export const vmTools = (vm: VmManager) => [
     description: "Read a text file from the VM (under /home/user or /tmp, up to 5 MB).",
     parameters: Type.Object({ path: Type.String() }),
     replay: "safe",
-    execute: async ({ path }, _api, context) => {
+    execute: async ({ path }, api, context) => {
+      const vm = vmFor(String(api.conversationId))
       const file = await vm.readFile(path, "agent", "utf8", context.abortSignal)
       return { output: text(clip(file.content)) }
     }
@@ -80,7 +84,8 @@ export const vmTools = (vm: VmManager) => [
     description: "Create or overwrite a file on the VM (under /home/user or /tmp, up to 5 MB). Parent directories are created.",
     parameters: Type.Object({ path: Type.String(), content: Type.String() }),
     replay: "safe",
-    execute: async ({ path, content }, _api, context) => {
+    execute: async ({ path, content }, api, context) => {
+      const vm = vmFor(String(api.conversationId))
       await vm.writeFile(path, content, "agent", context.abortSignal)
       return { output: text(`Wrote ${content.length} characters to ${path} on the VM.`) }
     }
@@ -97,7 +102,8 @@ export const vmTools = (vm: VmManager) => [
     }),
     replay: "safe",
     // Never public from here: a prompt-injected agent could otherwise open a backdoor to the VM.
-    execute: async ({ port }, _api, context) => {
+    execute: async ({ port }, api, context) => {
+      const vm = vmFor(String(api.conversationId))
       const url = await vm.exposePort(port, false, "agent", context.abortSignal)
       return { output: text(`Port ${port} is at ${url}`) }
     }
@@ -107,7 +113,8 @@ export const vmTools = (vm: VmManager) => [
     name: "vm_stop",
     description: "Stop your VM to save cost when you are done with it. Its disk is kept; the next VM command resumes it.",
     parameters: Type.Object({}),
-    execute: async () => {
+    execute: async (_args, api) => {
+      const vm = vmFor(String(api.conversationId))
       await vm.stop("agent")
       return { output: text("VM stopped. Its disk is saved and it resumes on the next VM command.") }
     }

@@ -2,6 +2,7 @@ import type { AgentEvent, SnapshotEvent } from "@earendil-works/pi-durable"
 import { Predicate } from "effect"
 import type { AgentProfile } from "./agents"
 import type { McpServerInfo } from "./mcp"
+import type { ProjectProfile } from "./projects"
 import type { ThinkingLevel } from "./models"
 
 /** Durable Object binding / class name; the client addresses it as `DexAgent`. */
@@ -19,6 +20,13 @@ export interface SessionMeta {
   readonly agentId: string | null
   /** MCP servers whose tools this chat can use. */
   readonly mcpServers: ReadonlyArray<string>
+  /** The project this chat works on, if any: its repos are cloned on the chat's VM. */
+  readonly projectId: string | null
+}
+
+export interface GitHubStatus {
+  readonly connected: boolean
+  readonly login: string | null
 }
 
 export interface ClineStatus {
@@ -49,9 +57,23 @@ export const VM_SIZES: ReadonlyArray<{ readonly id: VmSize; readonly label: stri
 
 export type VmStatus = "none" | "starting" | "running" | "stopping" | "stopped" | "error"
 
+/** Preparing a new VM: GitHub sign-in, then the project's repos and setup script. */
+export interface VmSetup {
+  readonly status: "none" | "running" | "done" | "error"
+  /** What it is doing now, or the step that failed. */
+  readonly step: string | null
+  readonly error: string | null
+}
+
+export const NO_SETUP: VmSetup = { status: "none", step: null, error: null }
+
+/** The VM key of the one VM that existed before VMs were per chat. */
+export const SHARED_VM = "shared"
+
 export interface VmInfo {
-  /** Whether this deployment has a boat.dev key. */
-  readonly configured: boolean
+  /** The chat this VM belongs to, or `shared` for the VM from before VMs were per chat. */
+  readonly key: string
+  /** boat.dev sandbox id. */
   readonly id: string | null
   readonly status: VmStatus
   readonly size: string | null
@@ -61,6 +83,7 @@ export interface VmInfo {
   readonly lastActiveAt: number | null
   /** Something is running on the VM right now, so it will not idle-stop. */
   readonly busy: boolean
+  readonly setup: VmSetup
 }
 
 /** One thing done on the VM, by the agent or the user, shown live on the Machine page. */
@@ -75,15 +98,33 @@ export interface VmActivity {
   readonly output: string
 }
 
-export const NO_VM: VmInfo = { configured: false, id: null, status: "none", size: null, archiveAfter: null, error: null, lastActiveAt: null, busy: false }
+export const noVm = (key: string): VmInfo => ({
+  key,
+  id: null,
+  status: "none",
+  size: null,
+  archiveAfter: null,
+  error: null,
+  lastActiveAt: null,
+  busy: false,
+  setup: NO_SETUP
+})
 
 /** Fills fields an agent saved before they existed, so older state never breaks the UI. */
 export const withStateDefaults = (state: DexState): DexState => ({
   ...state,
-  vm: { ...NO_VM, ...state.vm },
+  vms: (state.vms ?? []).map((vm) => ({ ...noVm(vm.key), ...vm })),
+  vmConfigured: state.vmConfigured ?? false,
+  projects: state.projects ?? [],
+  github: state.github ?? { connected: false, login: null },
   agents: (state.agents ?? []).map((agent) => ({ ...agent, mcpServers: agent.mcpServers ?? [] })),
   mcp: state.mcp ?? [],
-  sessions: state.sessions.map((session) => ({ ...session, agentId: session.agentId ?? null, mcpServers: session.mcpServers ?? [] })),
+  sessions: state.sessions.map((session) => ({
+    ...session,
+    agentId: session.agentId ?? null,
+    mcpServers: session.mcpServers ?? [],
+    projectId: session.projectId ?? null
+  })),
   settings: { ...state.settings, vmSize: state.settings.vmSize ?? "small", vmMinutes: state.settings.vmMinutes ?? 5 }
 })
 
@@ -92,7 +133,12 @@ export interface DexState {
   readonly cline: ClineStatus
   readonly settings: DexSettings
   readonly sessions: ReadonlyArray<SessionMeta>
-  readonly vm: VmInfo
+  /** VMs that exist (running or stopped with a saved disk), one per chat that has used one. */
+  readonly vms: ReadonlyArray<VmInfo>
+  /** Whether this deployment has a boat.dev key. */
+  readonly vmConfigured: boolean
+  readonly projects: ReadonlyArray<ProjectProfile>
+  readonly github: GitHubStatus
   readonly agents: ReadonlyArray<AgentProfile>
   readonly mcp: ReadonlyArray<McpServerInfo>
 }
@@ -124,8 +170,8 @@ export type ServerMessage =
   | { readonly type: "dex.snapshot"; readonly sessionId: string; readonly snapshot: SnapshotEvent }
   | { readonly type: "dex.events"; readonly sessionId: string; readonly events: ReadonlyArray<AgentEvent> }
   | { readonly type: "dex.error"; readonly sessionId: string | null; readonly message: string }
-  | { readonly type: "dex.vm.activity"; readonly sessionId: null; readonly activity: VmActivity }
-  | { readonly type: "dex.vm.output"; readonly sessionId: null; readonly id: number; readonly data: string }
+  | { readonly type: "dex.vm.activity"; readonly sessionId: null; readonly vmKey: string; readonly activity: VmActivity }
+  | { readonly type: "dex.vm.output"; readonly sessionId: null; readonly vmKey: string; readonly id: number; readonly data: string }
 
 export const isServerMessage = (value: unknown): value is ServerMessage =>
   Predicate.hasProperty(value, "type") && Predicate.isString(value.type) && value.type.startsWith("dex.")

@@ -1,5 +1,5 @@
 import { Link, useNavigate, useParams } from "@tanstack/react-router"
-import { BarChart3, Bot, FolderOpen, LogOut, MessageSquarePlus, Monitor, PanelLeftClose, Plug, Settings, Trash2, X } from "lucide-react"
+import { BarChart3, Bot, FolderGit2, FolderOpen, LogOut, MessageSquarePlus, Monitor, PanelLeftClose, Plug, Settings, Trash2, X } from "lucide-react"
 import { AgentAvatar } from "./agent-avatar"
 import { mcpNeedsAttention } from "./mcp-picker"
 import { useNav } from "~/client/lib/mobile-nav"
@@ -72,7 +72,14 @@ export function Sidebar() {
               <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-zinc-500">
                 {(() => {
                   const agent = session.agentId ? state.agents.find((candidate) => candidate.id === session.agentId) : undefined
-                  return agent ? (
+                  const project = session.projectId ? state.projects.find((candidate) => candidate.id === session.projectId) : undefined
+                  return project ? (
+                    <>
+                      <AgentAvatar icon={project.icon} color={project.color} size={14} />
+                      <span className="max-w-24 shrink-0 truncate text-zinc-400">{project.name}</span>
+                      {agent && <span className="truncate text-zinc-500">· {agent.name}</span>}
+                    </>
+                  ) : agent ? (
                     <>
                       <AgentAvatar icon={agent.icon} color={agent.color} size={14} />
                       <span className="shrink-0 text-zinc-400">{agent.name}</span>
@@ -114,26 +121,30 @@ export function Sidebar() {
         ))}
       </nav>
       <div className="space-y-0.5 border-t border-zinc-900 p-3">
-        {state?.vm.configured && (
+        {state?.vmConfigured && (
           <Link
             to="/machine"
             className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 [&.active]:bg-zinc-900 [&.active]:text-zinc-100"
           >
-            <Monitor className="size-4" /> Machine
-            <span
-              className={`ml-auto size-2 rounded-full ${
-                state.vm.status === "running"
-                  ? "bg-emerald-500"
-                  : state.vm.status === "starting" || state.vm.status === "stopping"
-                    ? "animate-pulse bg-amber-500"
-                    : state.vm.status === "error"
-                      ? "bg-red-500"
-                      : "bg-zinc-700"
-              }`}
-              title={`VM: ${state.vm.status}`}
-            />
+            <Monitor className="size-4" /> Machines
+            {(() => {
+              const running = state.vms.filter((vm) => vm.status === "running").length
+              const changing = state.vms.some((vm) => vm.status === "starting" || vm.status === "stopping")
+              return (
+                <span className="ml-auto flex items-center gap-1.5 text-[11px] text-zinc-500" title={`${running} running of ${state.vms.length}`}>
+                  {running > 0 && running}
+                  <span className={`size-2 rounded-full ${changing ? "animate-pulse bg-amber-500" : running ? "bg-emerald-500" : "bg-zinc-700"}`} />
+                </span>
+              )
+            })()}
           </Link>
         )}
+        <Link
+          to="/projects"
+          className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 [&.active]:bg-zinc-900 [&.active]:text-zinc-100"
+        >
+          <FolderGit2 className="size-4" /> Projects
+        </Link>
         <Link
           to="/agents"
           className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 [&.active]:bg-zinc-900 [&.active]:text-zinc-100"
