@@ -1,6 +1,16 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context"
 import { createModels } from "@earendil-works/pi-ai/models"
-import { type AgentEventStream, createRegistry, defineExtension, GenerationTask, Harness, hook, section, UsageDoc } from "@earendil-works/pi-durable"
+import {
+  type AgentEventStream,
+  createRegistry,
+  defineExtension,
+  GenerationTask,
+  Harness,
+  hook,
+  section,
+  type ToolExecutionResult,
+  UsageDoc
+} from "@earendil-works/pi-durable"
 import { Agent, callable, type Connection, getCurrentAgent, type Schedule, type WSMessage } from "agents"
 import { PiHarness } from "agents/harness/pi"
 import { Effect, Layer, ManagedRuntime, Option, Redacted, Schema } from "effect"
@@ -23,10 +33,12 @@ import type {
 import { NO_VM } from "~/shared/protocol"
 import { CLOUDFLARE_RATES, type CloudflareLine, type UsageRange, type UsageReport } from "~/shared/usage"
 import { AGENT_COLORS, AGENT_ICONS, type AgentDraft, type AgentProfile, STARTER_AGENTS } from "~/shared/agents"
+import type { McpAuth, McpConnectResult, McpServerDraft, McpServerInfo, McpStatus, McpTransport } from "~/shared/mcp"
 import { BoatClient } from "./boat"
 import { CloudflareAnalytics, type CloudflareDay, dayCost, emptyDay } from "./cloudflare-analytics"
 import { datesBetween, UsageLedger, utcDate } from "./usage-ledger"
 import { CLINEPASS_PROVIDER_ID, ClinePassClient, clinePassProvider } from "./clinepass"
+import { isMcpExtension, type McpCallResult, mcpExtension, mcpExtensionName, type McpToolSpec, toToolResult } from "./mcp-tools"
 import { webTools } from "./tools/agents-tools"
 import { loadUiGuideTool, renderUiTool } from "./tools/render-ui"
 import { scheduleTools } from "./tools/schedule-tools"
@@ -58,6 +70,7 @@ You can:
 - Research the web (web_search, web_fetch, and curl inside bash).
 - Show rich interactive UI with render_ui. Call load_ui_guide once per chat before your first render_ui.
 - Schedule prompts for yourself to run later or on a cron (schedule_prompt).
+- Use tools from MCP servers the user attached to this chat (named <server>__<tool>), when any are.
 
 Work autonomously: break tasks into steps, use tools, check your results, and report back concisely in Markdown. Prefer render_ui for data, comparisons, dashboards, plans, and collecting input. ${WORKSPACE_ROOT}/MEMORY.md is your long-term memory across chats: when the user asks you to remember something, or you learn a durable preference, update it.`
 
@@ -82,7 +95,28 @@ interface SessionRow {
   created_at: number
   updated_at: number
   agent_id: string | null
+  mcp_servers: string | null
   [key: string]: SqlStorageValue
+}
+
+interface McpRowData {
+  name: string
+  url: string
+  transport: McpTransport
+  auth: McpAuth
+  headerNames: string[]
+  defaultOn: boolean
+  prefix: string
+}
+
+interface McpRow extends McpRowData {
+  id: string
+  /** Header values, encrypted as one JSON object. */
+  sealedHeaders: string | null
+  /** The tools from the last discovery, so chats keep them while the server reconnects. */
+  tools: McpToolSpec[]
+  createdAt: number
+  updatedAt: number
 }
 
 interface AgentRow {
@@ -98,6 +132,18 @@ interface ScheduledPayload {
   sessionId: string | null
 }
 
+const MCP_TRANSPORTS = new Set<McpTransport>(["auto", "streamable-http", "sse"])
+const MCP_AUTHS = new Set<McpAuth>(["none", "headers", "oauth"])
+const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error))
+const parseIds = (value: string | null | undefined): string[] => {
+  try {
+    const parsed: unknown = JSON.parse(value ?? "[]")
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : []
+  } catch {
+    return []
+  }
+}
+
 const keyHint = (key: string) => (key.length > 8 ? `${key.slice(0, 4)}…${key.slice(-4)}` : "••••")
 
 /**
@@ -111,7 +157,8 @@ export class DexAgent extends Agent<Env, DexState> {
     settings: DEFAULT_SETTINGS,
     sessions: [],
     vm: NO_VM,
-    agents: []
+    agents: [],
+    mcp: []
   }
 
   readonly runtime = ManagedRuntime.make(AgentLayer(this.env))
@@ -120,6 +167,10 @@ export class DexAgent extends Agent<Env, DexState> {
   readonly ledger = new UsageLedger(this.ctx.storage.sql)
   /** Cloudflare analytics by date range, cached briefly to stay under GraphQL rate limits. */
   private readonly cloudflareCache = new Map<string, { at: number; days: Map<string, CloudflareDay> | null; error: string | null }>()
+  /** What each installed MCP extension was built from, so unchanged servers aren't reinstalled. */
+  private readonly mcpInstalled = new Map<string, string>()
+  /** Connection errors the SDK doesn't keep, e.g. when the first connect fails. */
+  private readonly mcpErrors = new Map<string, string>()
 
   readonly vm = new VmManager({
     sql: this.ctx.storage.sql,
@@ -136,6 +187,7 @@ export class DexAgent extends Agent<Env, DexState> {
   readonly harness = new PiHarness({
     harness: ({ storage, context }) => {
       this.registry.install(this.coreExtension())
+      const registry = this.registry
       const models = createModels()
       models.setProvider(clinePassProvider(() => this.resolveClineKey()))
       return Harness.open(
@@ -143,7 +195,13 @@ export class DexAgent extends Agent<Env, DexState> {
         {
           models,
           registry: this.registry,
-          settings: { retry: { enabled: true, maxRetries: 2, baseDelayMs: 1_000 } }
+          settings: {
+            retry: { enabled: true, maxRetries: 2, baseDelayMs: 1_000 },
+            // MCP servers are off unless a chat selects them.
+            get extensions() {
+              return registry.snapshot().installed().filter((extension) => !isMcpExtension(extension.name))
+            }
+          }
         },
         context
       )
@@ -167,6 +225,10 @@ export class DexAgent extends Agent<Env, DexState> {
     // Chats remember the agent they were started with (added to databases created before agents existed).
     const sessionColumns = ctx.storage.sql.exec<{ name: string }>(`PRAGMA table_info(dex_sessions)`).toArray().map((column) => column.name)
     if (!sessionColumns.includes("agent_id")) ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN agent_id TEXT`)
+    if (!sessionColumns.includes("mcp_servers")) ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN mcp_servers TEXT`)
+    ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_mcp (
+      id TEXT PRIMARY KEY, data TEXT NOT NULL, headers TEXT, tools TEXT NOT NULL DEFAULT '[]',
+      created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
     this.lifecycle.use(this.harness)
   }
 
@@ -182,6 +244,7 @@ export class DexAgent extends Agent<Env, DexState> {
     void this.backfillUsage()
     this.seedAgents()
     this.refreshAgents()
+    this.startMcp()
     await this.refreshClineStatus()
     await this.refreshSessions()
     void this.vm.refresh()
@@ -262,7 +325,8 @@ export class DexAgent extends Agent<Env, DexState> {
         createdAt: row.created_at,
         updatedAt: row.updated_at,
         busy: busy.get(row.id) ?? false,
-        agentId: row.agent_id ?? null
+        agentId: row.agent_id ?? null,
+        mcpServers: parseIds(row.mcp_servers)
       }))
     this.publish({ sessions })
   }
@@ -271,10 +335,15 @@ export class DexAgent extends Agent<Env, DexState> {
     return this.ctx.storage.sql.exec(`SELECT 1 FROM dex_sessions WHERE id = ?`, id).toArray().length > 0
   }
 
-  private async configureConversation(sessionId: string, model: string, thinking: ThinkingLevel) {
+  /** `mcpServers` replaces the chat's MCP servers; omitted, they stay as they are. */
+  private async configureConversation(sessionId: string, model: string, thinking: ThinkingLevel, mcpServers?: readonly string[]) {
     const conversation = await this.harness.conversation(sessionId)
     await conversation.configure(
-      { model: { provider: CLINEPASS_PROVIDER_ID, modelId: model }, thinkingLevel: thinking },
+      {
+        model: { provider: CLINEPASS_PROVIDER_ID, modelId: model },
+        thinkingLevel: thinking,
+        ...(mcpServers && { extensions: { add: mcpServers.map((id) => ({ name: mcpExtensionName(id) })) } })
+      },
       BACKGROUND_CONTEXT
     )
   }
@@ -320,21 +389,25 @@ export class DexAgent extends Agent<Env, DexState> {
   // ── Chats ─────────────────────────────────────────────────────────────────
 
   @callable()
-  async createSession(options: { model?: string; thinking?: ThinkingLevel; title?: string; agentId?: string | null } = {}): Promise<SessionMeta> {
+  async createSession(
+    options: { model?: string; thinking?: ThinkingLevel; title?: string; agentId?: string | null; mcpServers?: readonly string[] } = {}
+  ): Promise<SessionMeta> {
     const agent = options.agentId ? this.agentById(options.agentId) : undefined
     const fallbackModel = agent?.model ?? this.state.settings.defaultModel
     const model = options.model && findModel(options.model) ? options.model : findModel(fallbackModel) ? fallbackModel : DEFAULT_MODEL_ID
     const thinking = clampThinking(findModel(model), options.thinking ?? agent?.thinking ?? this.state.settings.defaultThinking)
+    // Picked in the composer, else the agent's, else the servers marked for new chats.
+    const mcpServers = this.knownMcpIds(options.mcpServers ?? agent?.mcpServers ?? this.mcpRows().filter((row) => row.defaultOn).map((row) => row.id))
     const session = await this.harness.sessions.create()
-    await this.configureConversation(session.id, model, thinking)
+    await this.configureConversation(session.id, model, thinking, mcpServers)
     const now = Date.now()
     const title = options.title?.trim() || "New chat"
     this.ctx.storage.sql.exec(
-      `INSERT INTO dex_sessions (id, title, model, thinking, created_at, updated_at, agent_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      session.id, title, model, thinking, now, now, agent?.id ?? null
+      `INSERT INTO dex_sessions (id, title, model, thinking, created_at, updated_at, agent_id, mcp_servers) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      session.id, title, model, thinking, now, now, agent?.id ?? null, JSON.stringify(mcpServers)
     )
     await this.refreshSessions()
-    return { id: session.id, title, model, thinking, createdAt: now, updatedAt: now, busy: false, agentId: agent?.id ?? null }
+    return { id: session.id, title, model, thinking, createdAt: now, updatedAt: now, busy: false, agentId: agent?.id ?? null, mcpServers }
   }
 
   @callable()
@@ -367,13 +440,17 @@ export class DexAgent extends Agent<Env, DexState> {
   }
 
   @callable()
-  async configureSession(sessionId: string, options: { model?: string; thinking?: ThinkingLevel }) {
+  async configureSession(sessionId: string, options: { model?: string; thinking?: ThinkingLevel; mcpServers?: readonly string[] }) {
     const row = this.ctx.storage.sql.exec<SessionRow>(`SELECT * FROM dex_sessions WHERE id = ?`, sessionId).toArray()[0]
     if (!row) throw new Error("Chat not found")
     const model = options.model && findModel(options.model) ? options.model : row.model
     const thinking = clampThinking(findModel(model), options.thinking ?? (row.thinking as ThinkingLevel))
-    await this.configureConversation(sessionId, model, thinking)
-    this.ctx.storage.sql.exec(`UPDATE dex_sessions SET model = ?, thinking = ? WHERE id = ?`, model, thinking, sessionId)
+    const mcpServers = options.mcpServers ? this.knownMcpIds(options.mcpServers) : undefined
+    await this.configureConversation(sessionId, model, thinking, mcpServers)
+    this.ctx.storage.sql.exec(
+      `UPDATE dex_sessions SET model = ?, thinking = ?, mcp_servers = ? WHERE id = ?`,
+      model, thinking, mcpServers ? JSON.stringify(mcpServers) : row.mcp_servers, sessionId
+    )
     await this.refreshSessions()
   }
 
@@ -499,12 +576,17 @@ export class DexAgent extends Agent<Env, DexState> {
     return this.ctx.storage.sql
       .exec<AgentRow>(`SELECT * FROM dex_agents ORDER BY created_at, id`)
       .toArray()
-      .map((row) => ({ ...(JSON.parse(row.data) as AgentDraft), id: row.id, createdAt: row.created_at, updatedAt: row.updated_at }))
+      .map((row) => this.toAgent(row))
+  }
+
+  private toAgent(row: AgentRow): AgentProfile {
+    const draft = JSON.parse(row.data) as AgentDraft
+    return { ...draft, mcpServers: draft.mcpServers ?? [], id: row.id, createdAt: row.created_at, updatedAt: row.updated_at }
   }
 
   private agentById(id: string): AgentProfile | undefined {
     const row = this.ctx.storage.sql.exec<AgentRow>(`SELECT * FROM dex_agents WHERE id = ?`, id).toArray()[0]
-    return row && { ...(JSON.parse(row.data) as AgentDraft), id: row.id, createdAt: row.created_at, updatedAt: row.updated_at }
+    return row && this.toAgent(row)
   }
 
   private agentForSession(sessionId: string): AgentProfile | undefined {
@@ -544,7 +626,8 @@ export class DexAgent extends Agent<Env, DexState> {
       instructions: String(draft.instructions ?? "").slice(0, 20_000),
       starter: String(draft.starter ?? "").slice(0, 2_000),
       model,
-      thinking: clampThinking(findModel(model), draft.thinking)
+      thinking: clampThinking(findModel(model), draft.thinking),
+      mcpServers: this.knownMcpIds(draft.mcpServers ?? [])
     }
     const now = Date.now()
     const existing = draft.id ? this.agentById(draft.id) : undefined
@@ -555,7 +638,7 @@ export class DexAgent extends Agent<Env, DexState> {
       id, JSON.stringify(clean), existing?.createdAt ?? now, now
     )
     this.refreshAgents()
-    return { ...clean, id, createdAt: existing?.createdAt ?? now, updatedAt: now }
+    return { ...clean, mcpServers: clean.mcpServers ?? [], id, createdAt: existing?.createdAt ?? now, updatedAt: now }
   }
 
   /** Deletes an agent. Its chats keep working as plain chats. */
@@ -563,6 +646,293 @@ export class DexAgent extends Agent<Env, DexState> {
   async deleteAgent(id: string) {
     this.ctx.storage.sql.exec(`DELETE FROM dex_agents WHERE id = ?`, id)
     this.ctx.storage.sql.exec(`UPDATE dex_sessions SET agent_id = NULL WHERE agent_id = ?`, id)
+    this.refreshAgents()
+    await this.refreshSessions()
+  }
+
+  // ── MCP servers ───────────────────────────────────────────────────────────
+
+  private mcpRows(): McpRow[] {
+    return this.ctx.storage.sql
+      .exec<{ id: string; data: string; headers: string | null; tools: string; created_at: number; updated_at: number }>(
+        `SELECT * FROM dex_mcp ORDER BY created_at, id`
+      )
+      .toArray()
+      .map((row) => ({
+        ...(JSON.parse(row.data) as McpRowData),
+        id: row.id,
+        sealedHeaders: row.headers,
+        tools: JSON.parse(row.tools) as McpToolSpec[],
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      }))
+  }
+
+  private mcpRow(id: string): McpRow | undefined {
+    return this.mcpRows().find((row) => row.id === id)
+  }
+
+  /** Drops ids of servers that no longer exist, keeping order and removing repeats. */
+  private knownMcpIds(ids: readonly string[]): string[] {
+    const known = new Set(this.mcpRows().map((row) => row.id))
+    return [...new Set(ids)].filter((id) => known.has(id))
+  }
+
+  private async mcpHeaders(row: McpRow): Promise<Record<string, string>> {
+    if (!row.sealedHeaders) return {}
+    const sealed = row.sealedHeaders
+    return JSON.parse(await this.runtime.runPromise(Keys.use((keys) => keys.decrypt(sealed)))) as Record<string, string>
+  }
+
+  /** OAuth sends the user back to the host they connected from; remembered for reconnects started by the agent. */
+  private mcpCallbackHost(): string | undefined {
+    const { connection } = getCurrentAgent()
+    if (connection?.uri) {
+      const host = new URL(connection.uri).origin
+      this.ctx.storage.sql.exec(`INSERT OR REPLACE INTO dex_meta (key, value) VALUES ('mcp_callback_host', ?)`, host)
+      return host
+    }
+    return this.ctx.storage.sql.exec<{ value: string }>(`SELECT value FROM dex_meta WHERE key = 'mcp_callback_host'`).toArray()[0]?.value
+  }
+
+  private startMcp() {
+    // Back from the server's sign-in page: show the MCP page, which reflects the new state.
+    this.mcp.configureOAuthCallback({
+      customHandler: (result) => {
+        void Promise.resolve().then(() => this.syncMcp())
+        const query = result.authSuccess
+          ? `connected=${encodeURIComponent(result.serverId)}`
+          : `error=${encodeURIComponent(result.authError.slice(0, 300))}${result.serverId ? `&server=${encodeURIComponent(result.serverId)}` : ""}`
+        return new Response(null, { status: 302, headers: { Location: `/mcp?${query}` } })
+      }
+    })
+    this.mcp.onServerStateChanged(() => this.syncMcp())
+    this.syncMcp()
+  }
+
+  /**
+   * Connects a saved server through the Agents SDK, which keeps the connection (and OAuth tokens)
+   * in this object's storage and restores it after an eviction. `fresh` drops the old connection first.
+   */
+  private async connectMcp(row: McpRow, { fresh }: { fresh: boolean }): Promise<McpConnectResult> {
+    this.mcpErrors.delete(row.id)
+    try {
+      if (fresh) await this.removeMcpServer(row.id).catch(() => undefined)
+      const headers = row.auth === "headers" ? await this.mcpHeaders(row) : undefined
+      // The SDK's name is the stable id, so renaming a server never conflicts with its stored connection.
+      const result = await this.addMcpServer(row.id, row.url, {
+        id: row.id,
+        callbackHost: this.mcpCallbackHost(),
+        transport: { type: row.transport, ...(headers && { headers }) }
+      })
+      return result.state === "authenticating" ? { ok: true, id: row.id, authUrl: result.authUrl } : { ok: true, id: row.id }
+    } catch (error) {
+      this.mcpErrors.set(row.id, errorMessage(error))
+      return { ok: false, id: row.id, error: errorMessage(error) }
+    } finally {
+      this.syncMcp()
+    }
+  }
+
+  private mcpStatus(id: string): McpStatus {
+    return this.mcp.mcpConnections[id]?.connectionState ?? (this.mcpErrors.has(id) ? "failed" : "disconnected")
+  }
+
+  private mcpError(id: string): string | null {
+    return this.mcp.mcpConnections[id]?.connectionError ?? this.mcpErrors.get(id) ?? null
+  }
+
+  /** What the model is told when a server's tools can't be used right now. */
+  private mcpProblem(id: string): string | null {
+    switch (this.mcpStatus(id)) {
+      case "ready":
+        return null
+      case "authenticating":
+        return "it needs the user to sign in again on the MCP page, so its tools will fail until then. Tell the user if you need it."
+      case "failed":
+        return `it failed to connect (${this.mcpError(id) ?? "unknown error"}). Calls retry the connection once.`
+      default:
+        return "it is connecting; calls wait for it."
+    }
+  }
+
+  /** Reinstalls the Pi extensions of servers whose tools changed and publishes every server's state. */
+  private syncMcp() {
+    const rows = this.mcpRows()
+    const servers: McpServerInfo[] = []
+    for (const row of rows) {
+      const connection = this.mcp.mcpConnections[row.id]
+      let tools = row.tools
+      if (connection?.connectionState === "ready") {
+        const live: McpToolSpec[] = connection.tools.map((tool) => ({
+          name: tool.name,
+          ...(tool.description && { description: tool.description }),
+          inputSchema: tool.inputSchema as Record<string, unknown>
+        }))
+        if (JSON.stringify(live) !== JSON.stringify(tools)) {
+          tools = live
+          this.ctx.storage.sql.exec(`UPDATE dex_mcp SET tools = ? WHERE id = ?`, JSON.stringify(live), row.id)
+        }
+      }
+      const built = JSON.stringify([row.name, row.url, row.prefix, tools])
+      if (this.mcpInstalled.get(row.id) !== built) {
+        this.registry.install(
+          mcpExtension({
+            id: row.id,
+            name: row.name,
+            url: row.url,
+            prefix: row.prefix,
+            tools,
+            instructions: () => this.mcp.mcpConnections[row.id]?.instructions ?? null,
+            problem: () => this.mcpProblem(row.id),
+            call: (tool, args, signal) => this.callMcpTool(row.id, tool, args, signal)
+          })
+        )
+        this.mcpInstalled.set(row.id, built)
+      }
+      servers.push({
+        id: row.id,
+        name: row.name,
+        url: row.url,
+        transport: row.transport,
+        auth: row.auth,
+        headerNames: row.headerNames,
+        defaultOn: row.defaultOn,
+        prefix: row.prefix,
+        status: this.mcpStatus(row.id),
+        error: this.mcpError(row.id),
+        tools: tools.map((tool) => ({ name: tool.name, description: (tool.description ?? "").slice(0, 300) })),
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt
+      })
+    }
+    for (const id of [...this.mcpInstalled.keys()]) {
+      if (rows.some((row) => row.id === id)) continue
+      this.registry.uninstall({ name: mcpExtensionName(id) })
+      this.mcpInstalled.delete(id)
+    }
+    if (JSON.stringify(servers) !== JSON.stringify(this.state.mcp)) this.publish({ mcp: servers })
+  }
+
+  /** Null once the server is ready, else why its tools can't run. Reconnects a dropped or failed server once. */
+  private async ensureMcpReady(id: string): Promise<string | null> {
+    const status = () => this.mcpStatus(id)
+    if (status() === "ready") return null
+    const row = this.mcpRow(id)
+    if (!row) return "This MCP server was removed."
+    if (status() === "disconnected" || status() === "failed") await this.connectMcp(row, { fresh: status() === "failed" })
+    const deadline = Date.now() + 20_000
+    while (Date.now() < deadline && !["ready", "failed", "authenticating", "disconnected"].includes(status())) {
+      await this.mcp.waitForConnections({ timeout: Math.max(1, deadline - Date.now()) })
+      if (!["ready", "failed", "authenticating"].includes(status())) await new Promise((resolve) => setTimeout(resolve, 250))
+    }
+    this.syncMcp()
+    return status() === "ready" ? null : `The ${row.name} MCP server isn't available: ${this.mcpProblem(id) ?? status()}`
+  }
+
+  private async callMcpTool(id: string, tool: string, args: Record<string, unknown>, signal: AbortSignal | undefined): Promise<ToolExecutionResult> {
+    const problem = await this.ensureMcpReady(id)
+    if (problem) return { output: [{ type: "text", text: problem }], isError: true }
+    try {
+      const result = await this.mcp.callTool({ serverId: id, name: tool, arguments: args }, { signal, timeout: 5 * 60_000 })
+      return toToolResult(result as McpCallResult)
+    } catch (error) {
+      return { output: [{ type: "text", text: `MCP call failed: ${errorMessage(error)}` }], isError: true }
+    }
+  }
+
+  /** Add (no id) or edit a server, then connect it. Returns an `authUrl` when the server wants the user to sign in. */
+  @callable()
+  async saveMcpServer(draft: McpServerDraft): Promise<McpConnectResult> {
+    const name = String(draft.name ?? "").trim().slice(0, 60)
+    if (!name) return { ok: false, error: "Give the server a name." }
+    let url: URL
+    try {
+      url = new URL(String(draft.url ?? "").trim())
+    } catch {
+      return { ok: false, error: "Enter the server's full URL, e.g. https://example.com/mcp." }
+    }
+    const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
+    if (url.protocol !== "https:" && !(url.protocol === "http:" && local)) return { ok: false, error: "MCP servers need an https:// URL." }
+    const transport: McpTransport = MCP_TRANSPORTS.has(draft.transport) ? draft.transport : "auto"
+    const auth: McpAuth = MCP_AUTHS.has(draft.auth) ? draft.auth : "none"
+
+    const existing = draft.id ? this.mcpRow(draft.id) : undefined
+    let headers: Record<string, string> = {}
+    if (auth === "headers") {
+      const saved = existing ? await this.mcpHeaders(existing).catch(() => ({}) as Record<string, string>) : {}
+      for (const header of draft.headers ?? []) {
+        const headerName = String(header.name ?? "").trim()
+        if (!headerName) continue
+        if (!/^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/.test(headerName)) return { ok: false, error: `"${headerName}" isn't a valid header name.` }
+        const value = String(header.value ?? "").trim() || saved[headerName]
+        if (!value) return { ok: false, error: `Enter a value for the ${headerName} header.` }
+        headers[headerName] = value
+      }
+      if (!Object.keys(headers).length) return { ok: false, error: "Add at least one header, e.g. Authorization: Bearer <key>." }
+    }
+
+    // Tool names are `<prefix>__<tool>`; prefixes stay unique across servers.
+    const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 24) || "mcp"
+    const taken = new Set(this.mcpRows().filter((row) => row.id !== existing?.id).map((row) => row.prefix))
+    let prefix = /^[a-z]/.test(base) ? base : `mcp_${base}`
+    for (let n = 2; taken.has(prefix); n++) prefix = `${base}_${n}`
+
+    const sealedHeaders = auth === "headers" ? await this.runtime.runPromise(Keys.use((keys) => keys.encrypt(JSON.stringify(headers)))) : null
+    const data: McpRowData = { name, url: url.href, transport, auth, headerNames: Object.keys(headers), defaultOn: Boolean(draft.defaultOn), prefix }
+    const now = Date.now()
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32)
+    const id = existing?.id ?? `${/^[a-z]/.test(slug) ? slug : `mcp-${slug}`}-${crypto.randomUUID().slice(0, 6)}`.replace(/-+/g, "-")
+    this.ctx.storage.sql.exec(
+      `INSERT INTO dex_mcp (id, data, headers, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET data = excluded.data, headers = excluded.headers, updated_at = excluded.updated_at`,
+      id, JSON.stringify(data), sealedHeaders, existing?.createdAt ?? now, now
+    )
+    const row = this.mcpRow(id)!
+    const changed =
+      !existing ||
+      existing.url !== row.url ||
+      existing.transport !== row.transport ||
+      existing.auth !== row.auth ||
+      JSON.stringify(headers) !== JSON.stringify(existing.auth === "headers" ? await this.mcpHeaders(existing).catch(() => null) : {})
+    if (changed || this.mcpStatus(id) !== "ready") return this.connectMcp(row, { fresh: Boolean(existing) })
+    this.syncMcp()
+    return { ok: true, id }
+  }
+
+  /** Reconnects a server, or restarts its sign-in. */
+  @callable()
+  async connectMcpServer(id: string): Promise<McpConnectResult> {
+    const row = this.mcpRow(id)
+    if (!row) return { ok: false, error: "No such MCP server." }
+    // A pending sign-in is reused; anything else starts over.
+    return this.connectMcp(row, { fresh: this.mcpStatus(id) !== "authenticating" })
+  }
+
+  @callable()
+  async setMcpServerDefault(id: string, defaultOn: boolean) {
+    const row = this.mcpRow(id)
+    if (!row) return
+    const { id: _id, sealedHeaders: _headers, tools: _tools, createdAt: _created, updatedAt: _updated, ...data } = row
+    this.ctx.storage.sql.exec(`UPDATE dex_mcp SET data = ? WHERE id = ?`, JSON.stringify({ ...data, defaultOn }), id)
+    this.syncMcp()
+  }
+
+  /** Disconnects and forgets a server (and its OAuth tokens), and detaches it from chats and agents. */
+  @callable()
+  async deleteMcpServer(id: string) {
+    await this.removeMcpServer(id).catch(() => undefined)
+    this.ctx.storage.sql.exec(`DELETE FROM dex_mcp WHERE id = ?`, id)
+    this.mcpErrors.delete(id)
+    for (const row of this.ctx.storage.sql.exec<SessionRow>(`SELECT * FROM dex_sessions WHERE mcp_servers LIKE ?`, `%"${id}"%`).toArray()) {
+      this.ctx.storage.sql.exec(`UPDATE dex_sessions SET mcp_servers = ? WHERE id = ?`, JSON.stringify(parseIds(row.mcp_servers).filter((other) => other !== id)), row.id)
+    }
+    for (const row of this.ctx.storage.sql.exec<AgentRow>(`SELECT * FROM dex_agents`).toArray()) {
+      const draft = JSON.parse(row.data) as AgentDraft
+      if (!draft.mcpServers?.includes(id)) continue
+      this.ctx.storage.sql.exec(`UPDATE dex_agents SET data = ? WHERE id = ?`, JSON.stringify({ ...draft, mcpServers: draft.mcpServers.filter((other) => other !== id) }), row.id)
+    }
+    this.syncMcp()
     this.refreshAgents()
     await this.refreshSessions()
   }

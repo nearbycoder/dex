@@ -3,6 +3,7 @@ import { Check, KeyRound, Monitor, Pencil } from "lucide-react"
 import { useState } from "react"
 import { Composer } from "~/client/components/composer"
 import { MessageList } from "~/client/components/message-list"
+import { McpPicker } from "~/client/components/mcp-picker"
 import { ModelPicker } from "~/client/components/model-picker"
 import { AgentAvatar } from "~/client/components/agent-avatar"
 import { useDex, useTranscript } from "~/client/lib/dex"
@@ -90,11 +91,19 @@ function Chat() {
           placeholder={transcript.running ? "Queue a follow-up…" : "Message Dex…"}
           toolbar={
             session && (
-              <ModelPicker
-                model={session.model}
-                thinking={session.thinking}
-                onChange={(value) => void stub.configureSession(sessionId, value)}
-              />
+              <div className="flex flex-wrap items-center gap-1.5">
+                <ModelPicker
+                  model={session.model}
+                  thinking={session.thinking}
+                  onChange={(value) => void stub.configureSession(sessionId, value)}
+                />
+                {/* Takes effect from the next model request, also mid-run. */}
+                <McpPicker
+                  servers={state?.mcp ?? []}
+                  selected={session.mcpServers}
+                  onChange={(mcpServers) => void stub.configureSession(sessionId, { mcpServers })}
+                />
+              </div>
             )
           }
         />

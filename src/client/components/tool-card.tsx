@@ -12,6 +12,7 @@ import {
   Globe,
   LoaderCircle,
   type LucideIcon,
+  Plug,
   Search,
   Terminal,
   Wrench
@@ -54,7 +55,7 @@ export const resultText = (result: ToolResultMessage | undefined) =>
 
 export function ToolCard({ call, result, live }: { call: ToolCall; result?: ToolResultMessage; live?: LiveTool }) {
   const [open, setOpen] = useState(false)
-  const Icon = call.name.includes("skill") ? BookOpen : (icons[call.name] ?? Wrench)
+  const Icon = call.name.includes("skill") ? BookOpen : (icons[call.name] ?? (call.name.includes("__") ? Plug : Wrench))
   const pending = !result
   const running = pending && live?.status === "running"
   const output = result ? resultText(result) : (live?.output ?? "")

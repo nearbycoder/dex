@@ -54,11 +54,16 @@ export interface AgentProfile {
   readonly starter: string
   readonly model: string
   readonly thinking: ThinkingLevel
+  /** MCP servers attached to chats started with this agent. */
+  readonly mcpServers: ReadonlyArray<string>
   readonly createdAt: number
   readonly updatedAt: number
 }
 
-export type AgentDraft = Omit<AgentProfile, "id" | "createdAt" | "updatedAt"> & { readonly id?: string }
+export type AgentDraft = Omit<AgentProfile, "id" | "createdAt" | "updatedAt" | "mcpServers"> & {
+  readonly id?: string
+  readonly mcpServers?: ReadonlyArray<string>
+}
 
 /** Seeded once for every new Dex. Each is an ordinary agent: edit or delete it freely. */
 export const STARTER_AGENTS: ReadonlyArray<AgentDraft & { readonly id: string }> = [

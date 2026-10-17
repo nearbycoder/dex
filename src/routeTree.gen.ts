@@ -23,6 +23,8 @@ import { Route as AppAgentsIndexRouteImport } from './routes/_app.agents.index'
 import { Route as AppAgentsAgentIdRouteImport } from './routes/_app.agents.$agentId'
 import { Route as AppChatIndexRouteImport } from './routes/_app.chat.index'
 import { Route as AppChatSessionIdRouteImport } from './routes/_app.chat.$sessionId'
+import { Route as AppMcpIndexRouteImport } from './routes/_app.mcp.index'
+import { Route as AppMcpServerIdRouteImport } from './routes/_app.mcp.$serverId'
 import { Route as AuthGithubCallbackRouteImport } from './routes/auth.github.callback'
 import { Route as AuthGithubStartRouteImport } from './routes/auth.github.start'
 
@@ -95,6 +97,16 @@ const AppChatSessionIdRoute = AppChatSessionIdRouteImport.update({
   path: '/chat/$sessionId',
   getParentRoute: () => AppRoute,
 } as any)
+const AppMcpIndexRoute = AppMcpIndexRouteImport.update({
+  id: '/mcp/',
+  path: '/mcp/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppMcpServerIdRoute = AppMcpServerIdRouteImport.update({
+  id: '/mcp/$serverId',
+  path: '/mcp/$serverId',
+  getParentRoute: () => AppRoute,
+} as any)
 const AuthGithubCallbackRoute = AuthGithubCallbackRouteImport.update({
   id: '/auth/github/callback',
   path: '/auth/github/callback',
@@ -118,10 +130,12 @@ export interface FileRoutesByFullPath {
   '/auth/password': typeof AuthPasswordRoute
   '/agents/$agentId': typeof AppAgentsAgentIdRoute
   '/chat/$sessionId': typeof AppChatSessionIdRoute
+  '/mcp/$serverId': typeof AppMcpServerIdRoute
   '/auth/github/callback': typeof AuthGithubCallbackRoute
   '/auth/github/start': typeof AuthGithubStartRoute
   '/agents/': typeof AppAgentsIndexRoute
   '/chat/': typeof AppChatIndexRoute
+  '/mcp/': typeof AppMcpIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -135,10 +149,12 @@ export interface FileRoutesByTo {
   '/auth/password': typeof AuthPasswordRoute
   '/agents/$agentId': typeof AppAgentsAgentIdRoute
   '/chat/$sessionId': typeof AppChatSessionIdRoute
+  '/mcp/$serverId': typeof AppMcpServerIdRoute
   '/auth/github/callback': typeof AuthGithubCallbackRoute
   '/auth/github/start': typeof AuthGithubStartRoute
   '/agents': typeof AppAgentsIndexRoute
   '/chat': typeof AppChatIndexRoute
+  '/mcp': typeof AppMcpIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -154,10 +170,12 @@ export interface FileRoutesById {
   '/auth/password': typeof AuthPasswordRoute
   '/_app/agents/$agentId': typeof AppAgentsAgentIdRoute
   '/_app/chat/$sessionId': typeof AppChatSessionIdRoute
+  '/_app/mcp/$serverId': typeof AppMcpServerIdRoute
   '/auth/github/callback': typeof AuthGithubCallbackRoute
   '/auth/github/start': typeof AuthGithubStartRoute
   '/_app/agents/': typeof AppAgentsIndexRoute
   '/_app/chat/': typeof AppChatIndexRoute
+  '/_app/mcp/': typeof AppMcpIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -173,10 +191,12 @@ export interface FileRouteTypes {
     | '/auth/password'
     | '/agents/$agentId'
     | '/chat/$sessionId'
+    | '/mcp/$serverId'
     | '/auth/github/callback'
     | '/auth/github/start'
     | '/agents/'
     | '/chat/'
+    | '/mcp/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -190,10 +210,12 @@ export interface FileRouteTypes {
     | '/auth/password'
     | '/agents/$agentId'
     | '/chat/$sessionId'
+    | '/mcp/$serverId'
     | '/auth/github/callback'
     | '/auth/github/start'
     | '/agents'
     | '/chat'
+    | '/mcp'
   id:
     | '__root__'
     | '/'
@@ -208,10 +230,12 @@ export interface FileRouteTypes {
     | '/auth/password'
     | '/_app/agents/$agentId'
     | '/_app/chat/$sessionId'
+    | '/_app/mcp/$serverId'
     | '/auth/github/callback'
     | '/auth/github/start'
     | '/_app/agents/'
     | '/_app/chat/'
+    | '/_app/mcp/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -325,6 +349,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppChatSessionIdRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/mcp/': {
+      id: '/_app/mcp/'
+      path: '/mcp'
+      fullPath: '/mcp/'
+      preLoaderRoute: typeof AppMcpIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/mcp/$serverId': {
+      id: '/_app/mcp/$serverId'
+      path: '/mcp/$serverId'
+      fullPath: '/mcp/$serverId'
+      preLoaderRoute: typeof AppMcpServerIdRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/auth/github/callback': {
       id: '/auth/github/callback'
       path: '/auth/github/callback'
@@ -349,8 +387,10 @@ interface AppRouteChildren {
   AppUsageRoute: typeof AppUsageRoute
   AppAgentsAgentIdRoute: typeof AppAgentsAgentIdRoute
   AppChatSessionIdRoute: typeof AppChatSessionIdRoute
+  AppMcpServerIdRoute: typeof AppMcpServerIdRoute
   AppAgentsIndexRoute: typeof AppAgentsIndexRoute
   AppChatIndexRoute: typeof AppChatIndexRoute
+  AppMcpIndexRoute: typeof AppMcpIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -360,8 +400,10 @@ const AppRouteChildren: AppRouteChildren = {
   AppUsageRoute: AppUsageRoute,
   AppAgentsAgentIdRoute: AppAgentsAgentIdRoute,
   AppChatSessionIdRoute: AppChatSessionIdRoute,
+  AppMcpServerIdRoute: AppMcpServerIdRoute,
   AppAgentsIndexRoute: AppAgentsIndexRoute,
   AppChatIndexRoute: AppChatIndexRoute,
+  AppMcpIndexRoute: AppMcpIndexRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

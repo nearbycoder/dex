@@ -3,6 +3,7 @@ import { KeyRound, Plus, Settings2, X } from "lucide-react"
 import { useEffect, useState } from "react"
 import { AgentAvatar } from "~/client/components/agent-avatar"
 import { Composer } from "~/client/components/composer"
+import { McpPicker } from "~/client/components/mcp-picker"
 import { ModelLogo } from "~/client/components/model-logo"
 import { ModelPicker } from "~/client/components/model-picker"
 import { useDex } from "~/client/lib/dex"
@@ -21,11 +22,14 @@ function NewChat() {
   const { agent: agentParam } = Route.useSearch()
   const [choice, setChoice] = useState<{ model: string; thinking: ThinkingLevel }>({ model: DEFAULT_MODEL_ID, thinking: DEFAULT_THINKING })
   const [agentId, setAgentId] = useState<string | null>(null)
+  // null: follow the default (servers marked for new chats); a list once the user or an agent picks.
+  const [mcpChoice, setMcpChoice] = useState<string[] | null>(null)
   const [draft, setDraft] = useState<{ text: string; key: number } | undefined>()
   const [error, setError] = useState<string | null>(null)
 
   const agents = state?.agents ?? []
   const agent = agents.find((candidate) => candidate.id === agentId)
+  const mcpServers = mcpChoice ?? (state?.mcp ?? []).filter((server) => server.defaultOn).map((server) => server.id)
 
   // With no agent picked, follow the defaults from Settings.
   useEffect(() => {
@@ -35,10 +39,12 @@ function NewChat() {
   const pick = (next: AgentProfile | null) => {
     if (!next || next.id === agentId) {
       setAgentId(null)
+      setMcpChoice(null)
       if (state) setChoice({ model: state.settings.defaultModel, thinking: state.settings.defaultThinking })
       return
     }
     setAgentId(next.id)
+    setMcpChoice([...next.mcpServers])
     setChoice({ model: next.model, thinking: clampThinking(findModel(next.model), next.thinking) })
     setDraft({ text: next.starter, key: Date.now() })
   }
@@ -52,7 +58,7 @@ function NewChat() {
   const start = async (text: string) => {
     setError(null)
     try {
-      const session = await stub.createSession({ ...choice, agentId })
+      const session = await stub.createSession({ ...choice, agentId, mcpServers })
       await stub.sendMessage(session.id, text)
       await navigate({ to: "/chat/$sessionId", params: { sessionId: session.id } })
     } catch (cause) {
@@ -94,7 +100,12 @@ function NewChat() {
               </div>
             )
           }
-          toolbar={<ModelPicker model={choice.model} thinking={choice.thinking} onChange={setChoice} />}
+          toolbar={
+            <div className="flex flex-wrap items-center gap-1.5">
+              <ModelPicker model={choice.model} thinking={choice.thinking} onChange={setChoice} />
+              <McpPicker servers={state?.mcp ?? []} selected={mcpServers} onChange={setMcpChoice} />
+            </div>
+          }
         />
         {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
 

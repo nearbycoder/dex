@@ -1,6 +1,7 @@
 import type { AgentEvent, SnapshotEvent } from "@earendil-works/pi-durable"
 import { Predicate } from "effect"
 import type { AgentProfile } from "./agents"
+import type { McpServerInfo } from "./mcp"
 import type { ThinkingLevel } from "./models"
 
 /** Durable Object binding / class name; the client addresses it as `DexAgent`. */
@@ -16,6 +17,8 @@ export interface SessionMeta {
   readonly busy: boolean
   /** The custom agent this chat was started with, if any. */
   readonly agentId: string | null
+  /** MCP servers whose tools this chat can use. */
+  readonly mcpServers: ReadonlyArray<string>
 }
 
 export interface ClineStatus {
@@ -78,8 +81,9 @@ export const NO_VM: VmInfo = { configured: false, id: null, status: "none", size
 export const withStateDefaults = (state: DexState): DexState => ({
   ...state,
   vm: { ...NO_VM, ...state.vm },
-  agents: state.agents ?? [],
-  sessions: state.sessions.map((session) => ({ ...session, agentId: session.agentId ?? null })),
+  agents: (state.agents ?? []).map((agent) => ({ ...agent, mcpServers: agent.mcpServers ?? [] })),
+  mcp: state.mcp ?? [],
+  sessions: state.sessions.map((session) => ({ ...session, agentId: session.agentId ?? null, mcpServers: session.mcpServers ?? [] })),
   settings: { ...state.settings, vmSize: state.settings.vmSize ?? "small", vmMinutes: state.settings.vmMinutes ?? 5 }
 })
 
@@ -90,6 +94,7 @@ export interface DexState {
   readonly sessions: ReadonlyArray<SessionMeta>
   readonly vm: VmInfo
   readonly agents: ReadonlyArray<AgentProfile>
+  readonly mcp: ReadonlyArray<McpServerInfo>
 }
 
 export interface WorkspaceFile {

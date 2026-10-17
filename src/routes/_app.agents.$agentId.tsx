@@ -1,7 +1,8 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
-import { ArrowLeft, Check, LoaderCircle, MessageSquarePlus, Trash2 } from "lucide-react"
+import { ArrowLeft, Check, LoaderCircle, MessageSquarePlus, Plug, Trash2 } from "lucide-react"
 import { type ReactNode, useEffect, useState } from "react"
 import { AGENT_ICON_COMPONENTS, AgentAvatar } from "~/client/components/agent-avatar"
+import { McpStatusDot } from "~/client/components/mcp-picker"
 import { ModelPicker } from "~/client/components/model-picker"
 import { useDex } from "~/client/lib/dex"
 import { AGENT_COLORS, AGENT_ICONS, type AgentColor, type AgentDraft } from "~/shared/agents"
@@ -17,7 +18,8 @@ const blank = (model: string, thinking: AgentDraft["thinking"]): AgentDraft => (
   instructions: "",
   starter: "",
   model,
-  thinking
+  thinking,
+  mcpServers: []
 })
 
 const field = "w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-base text-zinc-100 placeholder:text-zinc-600 focus:border-emerald-600 focus:outline-none md:text-sm"
@@ -168,6 +170,42 @@ function AgentEditor() {
 
           <Field label="Model and thinking" hint="New chats with this agent start with these; you can still change them per chat.">
             <ModelPicker model={draft.model} thinking={draft.thinking} onChange={(value) => update(value)} />
+          </Field>
+
+          <Field label="MCP servers" hint="Attached to new chats with this agent; you can still change them per chat.">
+            {state.mcp.length === 0 ? (
+              <p className="text-sm text-zinc-500">
+                No MCP servers yet.{" "}
+                <Link to="/mcp/$serverId" params={{ serverId: "new" }} className="text-emerald-400 hover:underline">
+                  Connect one
+                </Link>
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {state.mcp.map((server) => {
+                  const selected = draft.mcpServers?.includes(server.id) ?? false
+                  return (
+                    <button
+                      key={server.id}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() =>
+                        update({
+                          mcpServers: selected ? (draft.mcpServers ?? []).filter((id) => id !== server.id) : [...(draft.mcpServers ?? []), server.id]
+                        })
+                      }
+                      className={`flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm ${
+                        selected ? "border-emerald-600/70 bg-emerald-950/40 text-emerald-200" : "border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200"
+                      }`}
+                    >
+                      {selected ? <Check className="size-3.5" /> : <Plug className="size-3.5" />}
+                      {server.name}
+                      <McpStatusDot status={server.status} />
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </Field>
 
           <Field label="Instructions" hint="The agent's role and workflow, added to the system prompt of its chats. Edits apply to existing chats too.">
