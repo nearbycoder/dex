@@ -14,7 +14,9 @@ export const Route = createRootRoute({
       // Home-screen app: full screen, content under a translucent status bar.
       { name: "mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-capable", content: "yes" },
-      { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },
+      // Opaque, not black-translucent: on iOS 26 a translucent status bar makes Home Screen apps one status bar
+      // short (WebKit bug 301108), leaving a band under the composer. Against Dex's near-black UI they look alike.
+      { name: "apple-mobile-web-app-status-bar-style", content: "black" },
       { name: "apple-mobile-web-app-title", content: "Dex" },
       { name: "application-name", content: "Dex" },
       { name: "format-detection", content: "telephone=no" },

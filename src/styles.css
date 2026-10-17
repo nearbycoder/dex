@@ -39,14 +39,6 @@ html {
   text-size-adjust: 100%;
 }
 
-/* As a Home Screen app the frame is sized to the screen (see useVisualViewportHeight), which can be taller
-   than iOS's idea of the page; pinning it keeps the page itself from scrolling. */
-html[data-standalone="true"] .dex-app {
-  position: fixed;
-  inset-inline: 0;
-  top: 0;
-}
-
 body {
   /* No rubber-band bounce or pull-to-refresh on the app frame; inner lists still scroll. */
   overscroll-behavior: none;
