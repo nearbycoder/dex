@@ -70,6 +70,14 @@ npm run deploy
 
 The current deployment is https://dex.nearbycoder.workers.dev. Its secrets were uploaded from the gitignored `.prod.vars` (`npx wrangler deploy --secrets-file .prod.vars`).
 
+## Security
+
+- Each user's agent only accepts WebSocket and HTTP requests from the same origin, carrying a signed session cookie for that user (HttpOnly, SameSite=Lax, 30 days). Password sign-in is rate limited to 10 attempts per minute per IP and compared by HMAC.
+- API keys and MCP header values are AES-GCM encrypted with a key derived from `AUTH_SECRET`. Nothing secret is synced to the browser.
+- Pages send a Content Security Policy: images only from Dex itself (plus GitHub avatars), no framing by other sites, no plugins, forms only to Dex. Markdown images from other sites render as links. Both block prompt-injected "image" URLs from leaking chat content.
+- Model-written UI can only open http(s) links. Only the user can make a VM port public; the agent gets token-protected URLs.
+- Tools run without approval, so text from web pages and MCP servers can steer the agent (prompt injection). Connect only MCP servers you trust, and keep sensitive credentials off the VM unless a task needs them.
+
 ## Limits
 
 - Cline has no third-party OAuth, so users connect with an API key.

@@ -90,14 +90,15 @@ export const vmTools = (vm: VmManager) => [
     name: "vm_expose_port",
     description:
       "Give a port on the VM an HTTPS URL (https://<vm>-<port>.on.boat.dev), e.g. to show the user a web app or API you started. " +
-      "Private URLs carry an access token; public ones are open to anyone.",
+      "The URL carries an access token, so only people you give it to can open it. Only the user can make a port public " +
+      "(on the Machine page); ask them if something needs a public URL.",
     parameters: Type.Object({
-      port: Type.Integer({ minimum: 1, maximum: 65535 }),
-      public: Type.Optional(Type.Boolean({ description: "Default false." }))
+      port: Type.Integer({ minimum: 1, maximum: 65535 })
     }),
     replay: "safe",
-    execute: async ({ port, public: isPublic }, _api, context) => {
-      const url = await vm.exposePort(port, isPublic ?? false, "agent", context.abortSignal)
+    // Never public from here: a prompt-injected agent could otherwise open a backdoor to the VM.
+    execute: async ({ port }, _api, context) => {
+      const url = await vm.exposePort(port, false, "agent", context.abortSignal)
       return { output: text(`Port ${port} is at ${url}`) }
     }
   }),

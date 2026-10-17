@@ -2,6 +2,16 @@ import { type ActionEvent, BuiltinActionType, Renderer } from "@openuidev/react-
 import { ThemeProvider } from "@openuidev/react-ui"
 import { library } from "~/client/openui/library"
 
+/** Model-written UI can carry any URL; only open web pages, never `javascript:` or `data:` ones. */
+const safeHttpUrl = (value: unknown) => {
+  try {
+    const url = new URL(String(value))
+    return url.protocol === "https:" || url.protocol === "http:" ? url.href : null
+  } catch {
+    return null
+  }
+}
+
 const toModelMessage = (event: ActionEvent) => {
   const lines = [`[UI action] ${event.humanFriendlyMessage}`]
   if (event.formState && Object.keys(event.formState).length > 0) lines.push(`Form values: ${JSON.stringify(event.formState)}`)
@@ -21,7 +31,8 @@ export default function OpenUIBlock(props: { code: string; streaming: boolean; o
           onAction={(event) => {
             if (event.type === BuiltinActionType.ContinueConversation) props.onSend(toModelMessage(event))
             else if (event.type === BuiltinActionType.OpenUrl) {
-              window.open(String(event.params?.url), "_blank", "noopener,noreferrer")
+              const url = safeHttpUrl(event.params?.url)
+              if (url) window.open(url, "_blank", "noopener,noreferrer")
             }
           }}
         />
