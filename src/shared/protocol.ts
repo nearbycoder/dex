@@ -65,6 +65,15 @@ export interface VmActivity {
   readonly output: string
 }
 
+export const NO_VM: VmInfo = { configured: false, id: null, status: "none", size: null, archiveAfter: null, error: null }
+
+/** Fills fields an agent saved before they existed, so older state never breaks the UI. */
+export const withStateDefaults = (state: DexState): DexState => ({
+  ...state,
+  vm: state.vm ?? NO_VM,
+  settings: { ...state.settings, vmSize: state.settings.vmSize ?? "small", vmMinutes: state.settings.vmMinutes ?? 30 }
+})
+
 /** Synced to every connected client through the Agents SDK state channel. Never put secrets here. */
 export interface DexState {
   readonly cline: ClineStatus

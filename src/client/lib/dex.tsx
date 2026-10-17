@@ -2,7 +2,7 @@ import { useAgent } from "agents/react"
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from "react"
 import type { DexAgent } from "~/agent/dex-agent"
 import type { Viewer } from "~/server/viewer"
-import { AGENT_CLASS, type ClientMessage, type DexState, isServerMessage, type ServerMessage } from "~/shared/protocol"
+import { AGENT_CLASS, type ClientMessage, type DexState, isServerMessage, type ServerMessage, withStateDefaults } from "~/shared/protocol"
 import { applyEvent, emptyTranscript, fromSnapshot, type TranscriptState } from "./transcript"
 
 type Listener = (message: ServerMessage) => void
@@ -37,9 +37,10 @@ export function DexProvider({ viewer, children }: { viewer: Viewer; children: Re
     return () => void listeners.current.delete(listener)
   }, [])
 
+  const state = useMemo(() => agent.state && withStateDefaults(agent.state), [agent.state])
   const value = useMemo<DexContextValue>(
-    () => ({ viewer, state: agent.state, connected: agent.identified, stub: agent.stub, send, listen }),
-    [viewer, agent.state, agent.identified, agent.stub, send, listen]
+    () => ({ viewer, state, connected: agent.identified, stub: agent.stub, send, listen }),
+    [viewer, state, agent.identified, agent.stub, send, listen]
   )
   return <DexContext.Provider value={value}>{children}</DexContext.Provider>
 }

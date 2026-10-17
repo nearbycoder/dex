@@ -20,6 +20,7 @@ import type {
   VmSize,
   WorkspaceFile
 } from "~/shared/protocol"
+import { NO_VM } from "~/shared/protocol"
 import { BoatClient } from "./boat"
 import { CLINEPASS_PROVIDER_ID, ClinePassClient, clinePassProvider } from "./clinepass"
 import { webTools } from "./tools/agents-tools"
@@ -96,7 +97,7 @@ export class DexAgent extends Agent<Env, DexState> {
     cline: { connected: false, source: null, keyHint: null, verifiedAt: null },
     settings: DEFAULT_SETTINGS,
     sessions: [],
-    vm: { configured: false, id: null, status: "none", size: null, archiveAfter: null, error: null }
+    vm: NO_VM
   }
 
   readonly runtime = ManagedRuntime.make(AgentLayer(this.env))
