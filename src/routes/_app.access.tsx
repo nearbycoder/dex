@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { Bot, Check, Copy, KeyRound, LoaderCircle, MessageSquare, Plug, ShieldAlert, Trash2, X } from "lucide-react"
-import { type ReactNode, useEffect, useState } from "react"
+import { Bot, Check, Copy, KeyRound, LoaderCircle, Plug, ShieldAlert, Trash2, X } from "lucide-react"
+import { useEffect, useState } from "react"
 import { PageSkeleton } from "~/client/components/skeleton"
+import { Page, Section } from "~/client/components/ui"
 import { useDex } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
 import { ACCESS_RISKS, type AccessRisk, type CreatedAccessToken } from "~/shared/access"
@@ -15,16 +16,6 @@ const EXPIRY = [
   { days: 365, label: "1 year" },
   { days: 0, label: "Never" }
 ]
-
-function Section({ title, description, children }: { title: string; description?: ReactNode; children: ReactNode }) {
-  return (
-    <section className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4 md:p-6">
-      <h2 className="font-medium">{title}</h2>
-      {description && <div className="mt-1 text-sm text-zinc-400">{description}</div>}
-      <div className="mt-4">{children}</div>
-    </section>
-  )
-}
 
 function CopyField({ label, value, secret = false }: { label: string; value: string; secret?: boolean }) {
   const [copied, setCopied] = useState(false)
@@ -60,6 +51,7 @@ function AccessPage() {
   const [error, setError] = useState<string | null>(null)
   const [created, setCreated] = useState<CreatedAccessToken | null>(null)
   const [answering, setAnswering] = useState<string | null>(null)
+  const [allActivity, setAllActivity] = useState(false)
 
   useEffect(() => setOrigin(window.location.origin), [])
 
@@ -95,18 +87,18 @@ function AccessPage() {
   const jsonConfig = JSON.stringify({ mcpServers: { dex: { type: "http", url: endpoint, headers: { Authorization: `Bearer ${token}` } } } }, null, 2)
 
   return (
-    <div className="scrollbar-thin flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-2xl space-y-6 px-4 pt-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] md:pt-10">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Access & API</h1>
-          <p className="mt-1 text-sm text-zinc-400">
-            Chats and external agents can manage Dex for you: start and message chats, create agents and projects, run VMs, and more.
-            Deleting things and changing settings always needs your say-so.
-          </p>
-        </div>
-
+    <Page
+      title="Access & API"
+      info={
+        <>
+          Chats and external agents can manage Dex: start and message chats, create agents and projects, run VMs, and more. In a chat, just ask
+          (“start a chat per repo”). Deleting anything, changing settings, editing existing agents or projects, and adding MCP servers need your
+          confirmation in the chat, or a Full token over MCP. Chats started by chats go at most two levels deep, and every operation is logged below.
+        </>
+      }
+    >
         {pending.length > 0 && (
-          <Section title="Waiting for you" description="Chats asked to do these. Nothing happens until you confirm.">
+          <Section title="Waiting for you" info="Chats asked to do these. Nothing happens until you confirm.">
             <ul className="divide-y divide-zinc-800/80">
               {pending.map((action) => (
                 <li key={action.id} className="flex flex-wrap items-center gap-3 py-2.5">
@@ -141,27 +133,7 @@ function AccessPage() {
           </Section>
         )}
 
-        <Section
-          title="From chats"
-          description={
-            <>
-              Every chat can manage Dex with its <code className="text-zinc-300">app_call</code> tool: ask it to “start three chats, one per repo” or “make
-              a project for owner/repo”. Reading, creating, starting, and messaging happen right away. Deleting anything, changing settings, editing
-              existing agents or projects, and adding MCP servers show a Confirm button in the chat first. Chats started by chats can go two levels deep,
-              and chats can start at most 20 chats an hour.
-            </>
-          }
-        >
-          <p className="flex items-start gap-2 text-xs text-zinc-500">
-            <MessageSquare className="mt-0.5 size-3.5 shrink-0" />
-            Text from web pages and MCP servers can try to steer a chat. Confirmations keep it from deleting or reconfiguring anything without you.
-          </p>
-        </Section>
-
-        <Section
-          title="External agents (MCP)"
-          description="Connect Claude Code, Claude Desktop, Cursor, or any MCP client to Dex. Each token has its own access level and can be revoked at any time."
-        >
+        <Section title="MCP" info="Connect Claude Code, Claude Desktop, Cursor, or any MCP client. Each token has its own access level and expiry, and can be revoked any time.">
           <div className="space-y-4">
             <CopyField label="Endpoint (Streamable HTTP)" value={endpoint} />
 
@@ -189,29 +161,29 @@ function AccessPage() {
                 }}
               >
                 <label className="block">
-                  <span className="mb-1 block text-xs text-zinc-500">Name it after the agent that will use it</span>
+                  <span className="mb-1 block text-xs text-zinc-500">New token</span>
                   <input
                     value={label}
                     onChange={(event) => setLabel(event.target.value)}
-                    placeholder="Claude Code on my laptop"
+                    placeholder="Name, e.g. Claude Code on my laptop"
                     maxLength={60}
                     className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm outline-none focus:border-zinc-600"
                   />
                 </label>
                 <fieldset>
                   <legend className="mb-1 text-xs text-zinc-500">Access</legend>
-                  <div className="grid gap-2 sm:grid-cols-3">
+                  <div className="flex rounded-lg border border-zinc-800 bg-zinc-950 p-0.5">
                     {ACCESS_RISKS.map((risk) => (
                       <label
                         key={risk.id}
-                        className={`cursor-pointer rounded-lg border p-2.5 text-xs ${scope === risk.id ? "border-emerald-700 bg-emerald-950/30" : "border-zinc-800 hover:border-zinc-700"}`}
+                        className={`relative flex-1 cursor-pointer rounded-md px-2 py-1.5 text-center text-sm transition-colors ${scope === risk.id ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-200"}`}
                       >
                         <input type="radio" name="scope" value={risk.id} checked={scope === risk.id} onChange={() => setScope(risk.id)} className="sr-only" />
-                        <span className="block text-sm font-medium text-zinc-100">{risk.label}</span>
-                        <span className="mt-0.5 block text-zinc-500">{risk.description}</span>
+                        {risk.label}
                       </label>
                     ))}
                   </div>
+                  <p className="mt-1.5 text-xs text-zinc-500">{ACCESS_RISKS.find((risk) => risk.id === scope)?.description}</p>
                 </fieldset>
                 <div className="flex flex-wrap items-center gap-3">
                   <label className="flex items-center gap-2 text-xs text-zinc-500">
@@ -272,12 +244,12 @@ function AccessPage() {
           </div>
         </Section>
 
-        <Section title="Activity" description="Every app operation run by a chat or an external agent, newest first.">
+        <Section title="Activity" info="Every app operation run by a chat or an external agent, newest first.">
           {access.audit.length === 0 ? (
             <p className="text-sm text-zinc-500">Nothing yet.</p>
           ) : (
             <ul className="divide-y divide-zinc-800/80">
-              {access.audit.map((entry) => (
+              {(allActivity ? access.audit : access.audit.slice(0, 8)).map((entry) => (
                 <li key={entry.id} className="flex items-start gap-3 py-2">
                   {entry.actor === "mcp" ? (
                     <Plug className="mt-0.5 size-3.5 shrink-0 text-sky-400" />
@@ -298,8 +270,12 @@ function AccessPage() {
               ))}
             </ul>
           )}
+          {!allActivity && access.audit.length > 8 && (
+            <button type="button" onClick={() => setAllActivity(true)} className="mt-1 text-xs text-zinc-400 hover:text-zinc-100">
+              Show all {access.audit.length}
+            </button>
+          )}
         </Section>
-      </div>
-    </div>
+    </Page>
   )
 }

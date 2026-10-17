@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { FolderGit2, GitBranch, MessageSquarePlus, Pencil, Plus } from "lucide-react"
+import { ChevronRight, FolderGit2, GitBranch, MessageSquarePlus, Pencil, Plus } from "lucide-react"
 import { AgentAvatar } from "~/client/components/agent-avatar"
 import { CardGridSkeleton } from "~/client/components/skeleton"
+import { InfoTip } from "~/client/components/info-tip"
 import { useDex } from "~/client/lib/dex"
 import { repoLabel } from "~/shared/projects"
 
@@ -19,9 +20,9 @@ function ProjectsPage() {
     <div className="scrollbar-thin flex-1 overflow-y-auto">
       <div className="mx-auto max-w-3xl px-4 pt-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] md:pt-10">
         <div className="mb-6 flex items-center gap-3">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
-            <p className="mt-1 text-sm text-zinc-400">Repos and a setup script. Each chat on a project gets its own VM with everything cloned.</p>
+          <div className="flex min-w-0 items-center gap-2">
+            <h1 className="truncate text-2xl font-semibold tracking-tight">Projects</h1>
+            <InfoTip label="About projects">Repos and a setup script. Each chat on a project gets its own VM with everything cloned into ~/work.</InfoTip>
           </div>
           <Link
             to="/projects/$projectId"
@@ -34,10 +35,11 @@ function ProjectsPage() {
         {state && !state.github.connected && (
           <Link
             to="/settings"
-            className="mb-4 flex items-center gap-3 rounded-xl border border-amber-900/60 bg-amber-950/30 px-4 py-3 text-sm text-amber-200 hover:bg-amber-950/50"
+            className="mb-4 flex items-center gap-2.5 rounded-xl border border-amber-900/60 bg-amber-950/30 px-3 py-2 text-xs text-amber-200 hover:bg-amber-950/50"
           >
             <FolderGit2 className="size-4 shrink-0" />
-            Connect GitHub in Settings so VMs can clone private repos and push.
+            Connect GitHub to clone private repos and push
+            <ChevronRight className="ml-auto size-4 shrink-0 opacity-70" />
           </Link>
         )}
         {!state ? (

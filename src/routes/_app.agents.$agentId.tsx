@@ -5,11 +5,12 @@ import { AGENT_ICON_COMPONENTS, AgentAvatar } from "~/client/components/agent-av
 import { McpStatusDot } from "~/client/components/mcp-picker"
 import { ModelPicker } from "~/client/components/model-picker"
 import { PageSkeleton } from "~/client/components/skeleton"
+import { InfoTip } from "~/client/components/info-tip"
 import { useDex } from "~/client/lib/dex"
 import { AGENT_COLORS, AGENT_ICONS, type AgentColor, type AgentDraft } from "~/shared/agents"
 import { DEFAULT_MODEL_ID, DEFAULT_THINKING } from "~/shared/models"
 
-export const Route = createFileRoute("/_app/agents/$agentId")({ component: AgentEditor })
+export const Route = createFileRoute("/_app/agents/$agentId")({ component: AgentEditorPage })
 
 const blank = (model: string, thinking: AgentDraft["thinking"]): AgentDraft => ({
   name: "",
@@ -28,11 +29,20 @@ const field = "w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 te
 function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
     <label className="block">
-      <span className="text-sm font-medium text-zinc-200">{label}</span>
-      {hint && <span className="mt-0.5 block text-xs text-zinc-500">{hint}</span>}
+      <span className="flex items-center gap-1 text-sm font-medium text-zinc-200">
+        {label}
+        {hint && <InfoTip>{hint}</InfoTip>}
+      </span>
+      
       <div className="mt-2">{children}</div>
     </label>
   )
+}
+
+/** Keyed by id: moving from one item (or “new”) to another starts a fresh draft instead of keeping the last one. */
+function AgentEditorPage() {
+  const { agentId } = Route.useParams()
+  return <AgentEditor key={agentId} />
 }
 
 function AgentEditor() {
@@ -125,7 +135,7 @@ function AgentEditor() {
           </div>
 
           <Field label="Icon">
-            <div className="grid grid-cols-8 gap-1.5 sm:grid-cols-12">
+            <div className="flex flex-wrap gap-1.5">
               {AGENT_ICONS.map((icon) => {
                 const Icon = AGENT_ICON_COMPONENTS[icon]
                 const selected = icon === draft.icon
@@ -136,7 +146,7 @@ function AgentEditor() {
                     title={icon}
                     aria-pressed={selected}
                     onClick={() => update({ icon })}
-                    className={`flex aspect-square items-center justify-center rounded-lg border ${
+                    className={`flex size-9 items-center justify-center rounded-lg border ${
                       selected ? "border-emerald-500 bg-emerald-950/40 text-emerald-300" : "border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-100"
                     }`}
                   >
@@ -230,7 +240,7 @@ function AgentEditor() {
 
           {error && <p className="text-sm text-red-400">{error}</p>}
 
-          <div className="flex flex-wrap items-center gap-2 border-t border-zinc-900 pt-5">
+          <div className="sticky bottom-0 z-10 -mx-4 flex flex-wrap items-center gap-2 border-t border-zinc-900 bg-zinc-950/90 px-4 py-3 backdrop-blur">
             <button
               type="submit"
               disabled={saving || !draft.name.trim()}

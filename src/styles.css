@@ -199,6 +199,8 @@ button:disabled > [data-haptic-trigger] {
 /* Page changes: only the content area moves; the sidebar stays put. */
 .dex-main {
   view-transition-name: dex-main;
+  /* Contains absolutely positioned helpers (e.g. visually hidden inputs) so they can't make the document scroll. */
+  position: relative;
 }
 .dex-sidebar {
   view-transition-name: dex-sidebar;
@@ -241,4 +243,11 @@ button:disabled > [data-haptic-trigger] {
   button:active {
     transform: none !important;
   }
+}
+
+/* Inline code gets a chip (markdown.tsx); code inside a block stays plain. */
+.prose pre code {
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
 }

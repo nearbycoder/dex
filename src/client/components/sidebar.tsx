@@ -90,7 +90,7 @@ export function Sidebar() {
       label: "Machines",
       icon: <Monitor className="size-4" />,
       show: state?.vmConfigured ?? false,
-      hint: (state?.vms.length ?? 0) > 0 && (
+      hint: (running > 0 || vmChanging) && (
         <Hint
           count={running}
           dot={vmChanging ? "animate-pulse bg-amber-500" : running ? "bg-emerald-500" : "bg-zinc-700"}

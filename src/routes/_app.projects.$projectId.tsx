@@ -3,12 +3,13 @@ import { ArrowLeft, Check, LoaderCircle, MessageSquarePlus, Plus, Trash2, X } fr
 import { type ReactNode, useEffect, useState } from "react"
 import { AGENT_ICON_COMPONENTS, AgentAvatar } from "~/client/components/agent-avatar"
 import { PageSkeleton } from "~/client/components/skeleton"
+import { InfoTip } from "~/client/components/info-tip"
 import { useDex } from "~/client/lib/dex"
 import { AGENT_COLORS, AGENT_ICONS, type AgentColor } from "~/shared/agents"
 import { type ProjectDraft, repoDirName } from "~/shared/projects"
 import { VM_SIZES, type VmSize } from "~/shared/protocol"
 
-export const Route = createFileRoute("/_app/projects/$projectId")({ component: ProjectEditor })
+export const Route = createFileRoute("/_app/projects/$projectId")({ component: ProjectEditorPage })
 
 const blank: ProjectDraft = {
   name: "",
@@ -29,11 +30,20 @@ const field = `w-full ${fieldBase}`
 function Field({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
   return (
     <div>
-      <span className="text-sm font-medium text-zinc-200">{label}</span>
-      {hint && <span className="mt-0.5 block text-xs text-zinc-500">{hint}</span>}
+      <span className="flex items-center gap-1 text-sm font-medium text-zinc-200">
+        {label}
+        {hint && <InfoTip>{hint}</InfoTip>}
+      </span>
+      
       <div className="mt-2">{children}</div>
     </div>
   )
+}
+
+/** Keyed by id: moving from one item (or “new”) to another starts a fresh draft instead of keeping the last one. */
+function ProjectEditorPage() {
+  const { projectId } = Route.useParams()
+  return <ProjectEditor key={projectId} />
 }
 
 function ProjectEditor() {
@@ -175,10 +185,11 @@ function ProjectEditor() {
               </button>
               {!state.github.connected && (
                 <p className="text-xs text-amber-300/90">
-                  GitHub isn't connected, so only public repos clone.{" "}
+                  Public repos only until you{" "}
                   <Link to="/settings" className="underline">
-                    Connect it in Settings
+                    connect GitHub
                   </Link>
+                  .
                 </p>
               )}
             </div>
@@ -188,7 +199,8 @@ function ProjectEditor() {
             label="Setup script"
             hint={
               <>
-                Bash, run once in ~/work after cloning each new VM, with <code>set -e</code>. It can run for up to 30 minutes; its log is ~/work/.dex/setup.log.
+                Bash, run once in ~/work after cloning each new VM, with <code>set -e</code>. It can run for up to 30 minutes; its log is
+                ~/work/.dex/setup.log. Changes apply to new VMs; on an existing one, use “Re-run setup” on its Machine page.
               </>
             }
           >
@@ -233,7 +245,7 @@ function ProjectEditor() {
           </div>
 
           <Field label="Icon">
-            <div className="grid grid-cols-8 gap-1.5 sm:grid-cols-12">
+            <div className="flex flex-wrap gap-1.5">
               {AGENT_ICONS.map((icon) => {
                 const Icon = AGENT_ICON_COMPONENTS[icon]
                 const selected = icon === draft.icon
@@ -244,7 +256,7 @@ function ProjectEditor() {
                     title={icon}
                     aria-pressed={selected}
                     onClick={() => update({ icon })}
-                    className={`flex aspect-square items-center justify-center rounded-lg border ${
+                    className={`flex size-9 items-center justify-center rounded-lg border ${
                       selected ? "border-emerald-500 bg-emerald-950/40 text-emerald-300" : "border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-100"
                     }`}
                   >
@@ -279,7 +291,7 @@ function ProjectEditor() {
 
           {error && <p className="text-sm break-words text-red-400">{error}</p>}
 
-          <div className="flex flex-wrap items-center gap-2 border-t border-zinc-900 pt-5">
+          <div className="sticky bottom-0 z-10 -mx-4 flex flex-wrap items-center gap-2 border-t border-zinc-900 bg-zinc-950/90 px-4 py-3 backdrop-blur">
             <button
               type="submit"
               disabled={saving || !draft.name.trim()}
@@ -311,7 +323,6 @@ function ProjectEditor() {
               </>
             )}
           </div>
-          <p className="text-xs text-zinc-600">Changes apply to new chats' VMs. On an existing VM, use “Re-run setup” on the Machines page.</p>
         </form>
       </div>
     </div>

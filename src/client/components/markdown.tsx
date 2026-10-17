@@ -7,7 +7,7 @@ const isInlineImage = (src: string) => src.startsWith("data:image/") || src.star
 
 export function Markdown({ children }: { children: string }) {
   return (
-    <div className="prose prose-invert prose-sm max-w-none [overflow-wrap:anywhere] prose-pre:bg-zinc-900 prose-pre:border prose-pre:border-zinc-800 prose-code:before:content-none prose-code:after:content-none prose-a:text-emerald-400">
+    <div className="prose prose-invert prose-sm max-w-none [overflow-wrap:anywhere] prose-pre:bg-zinc-900 prose-pre:border prose-pre:border-zinc-800 prose-code:before:content-none prose-code:after:content-none prose-code:rounded prose-code:bg-zinc-800/70 prose-code:px-1 prose-code:py-0.5 prose-code:text-[0.85em] prose-code:font-normal prose-code:text-zinc-200 prose-a:text-emerald-400">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{

@@ -3,6 +3,7 @@ import { ArrowLeft, LoaderCircle, Plus, Trash2, X } from "lucide-react"
 import { type ReactNode, useEffect, useState } from "react"
 import { McpStatusDot } from "~/client/components/mcp-picker"
 import { PageSkeleton } from "~/client/components/skeleton"
+import { InfoTip } from "~/client/components/info-tip"
 import { useDex } from "~/client/lib/dex"
 import { AUTH_ICON, AUTH_LABEL, followConnect } from "~/client/lib/mcp"
 import { MCP_STATUS_LABEL, type McpAuth, type McpServerDraft, type McpTransport } from "~/shared/mcp"
@@ -10,7 +11,7 @@ import { MCP_TEMPLATES } from "~/shared/mcp-templates"
 
 export const Route = createFileRoute("/_app/mcp/$serverId")({
   validateSearch: (search: Record<string, unknown>): { template?: string } => (typeof search.template === "string" ? { template: search.template } : {}),
-  component: McpEditor
+  component: McpEditorPage
 })
 
 type HeaderRow = { name: string; value: string; saved: boolean }
@@ -28,11 +29,20 @@ const AUTH_HINT: Record<McpAuth, string> = {
 function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
     <div>
-      <span className="text-sm font-medium text-zinc-200">{label}</span>
-      {hint && <span className="mt-0.5 block text-xs text-zinc-500">{hint}</span>}
+      <span className="flex items-center gap-1 text-sm font-medium text-zinc-200">
+        {label}
+        {hint && <InfoTip>{hint}</InfoTip>}
+      </span>
+      
       <div className="mt-2">{children}</div>
     </div>
   )
+}
+
+/** Keyed by id: moving from one item (or “new”) to another starts a fresh draft instead of keeping the last one. */
+function McpEditorPage() {
+  const { serverId } = Route.useParams()
+  return <McpEditor key={serverId} />
 }
 
 function McpEditor() {
@@ -233,14 +243,16 @@ function McpEditor() {
           <label className="flex cursor-pointer items-start gap-3">
             <input type="checkbox" checked={draft.defaultOn} onChange={(event) => update({ defaultOn: event.target.checked })} className="mt-0.5 size-4 accent-emerald-600" />
             <span>
-              <span className="block text-sm text-zinc-200">On for new chats</span>
-              <span className="block text-xs text-zinc-500">Attach it to new chats that don't use an agent. Agents choose their own servers.</span>
+              <span className="flex items-center gap-1 text-sm text-zinc-200">
+                On for new chats
+                <InfoTip>Attach it to new chats that don't use an agent. Agents choose their own servers.</InfoTip>
+              </span>
             </span>
           </label>
 
           {error && <p className="text-sm break-words text-red-400">{error}</p>}
 
-          <div className="flex flex-wrap items-center gap-2 border-t border-zinc-900 pt-5">
+          <div className="sticky bottom-0 z-10 -mx-4 flex flex-wrap items-center gap-2 border-t border-zinc-900 bg-zinc-950/90 px-4 py-3 backdrop-blur">
             <button
               type="submit"
               disabled={saving || !draft.name.trim() || !draft.url.trim()}

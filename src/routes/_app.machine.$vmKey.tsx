@@ -95,7 +95,7 @@ function ActivityItem({ item, defaultOpen }: { item: VmActivity; defaultOpen: bo
       <button type="button" onClick={() => setOpen((value) => !value)} className="flex w-full items-center gap-2 text-left">
         <ChevronRight className={`size-3 shrink-0 text-zinc-600 transition-transform ${open ? "rotate-90" : ""} ${hasOutput ? "" : "invisible"}`} />
         <ActorBadge actor={item.actor} />
-        <span className={`min-w-0 flex-1 truncate font-mono ${item.kind === "lifecycle" ? "text-zinc-400" : "text-zinc-200"}`}>{item.title}</span>
+        <span className={`min-w-0 flex-1 truncate ${item.kind === "lifecycle" || item.kind === "screenshot" ? "text-zinc-400" : "font-mono text-zinc-200"}`}>{item.title}</span>
         {running ? (
           <LoaderCircle className="size-3.5 shrink-0 animate-spin text-zinc-500" />
         ) : item.status === "error" ? (
@@ -439,7 +439,6 @@ function MachinePage() {
               <>
                 <SquareTerminal className="size-3.5 text-zinc-500" />
                 <span className="font-medium text-zinc-300">Activity</span>
-                <span className="text-zinc-600">commands by Dex and you</span>
               </>
             }
           >
@@ -449,7 +448,7 @@ function MachinePage() {
                   <Lines count={4} />
                 </div>
               )}
-              {activity?.length === 0 && <p className="p-4 text-xs text-zinc-600">Nothing yet. Dex's commands on this chat's VM appear here, or run one below.</p>}
+              {activity?.length === 0 && <p className="p-4 text-xs text-zinc-600">No activity yet.</p>}
               {activity?.map((item, index) => (
                 <ActivityItem key={item.id} item={item} defaultOpen={index === activity!.length - 1} />
               ))}
@@ -470,7 +469,7 @@ function MachinePage() {
                 value={command}
                 onChange={(event) => setCommand(event.target.value)}
                 disabled={!connected}
-                placeholder={running ? "Run a command on this VM" : "Run a command (starts the VM)"}
+                placeholder={running ? "Run a command" : "Run a command (starts the VM)"}
                 className="min-w-0 flex-1 bg-transparent font-mono text-base text-zinc-200 placeholder:text-zinc-600 focus:outline-none md:text-xs"
               />
               {busy === "run" && <LoaderCircle className="size-3.5 animate-spin text-zinc-500" />}

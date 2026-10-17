@@ -3,6 +3,7 @@ import { MessageSquarePlus, Pencil, Plus } from "lucide-react"
 import { AgentAvatar } from "~/client/components/agent-avatar"
 import { ModelLogo } from "~/client/components/model-logo"
 import { CardGridSkeleton } from "~/client/components/skeleton"
+import { InfoTip } from "~/client/components/info-tip"
 import { useDex } from "~/client/lib/dex"
 import { findModel } from "~/shared/models"
 
@@ -20,9 +21,9 @@ function AgentsPage() {
     <div className="scrollbar-thin flex-1 overflow-y-auto">
       <div className="mx-auto max-w-3xl px-4 pt-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] md:pt-10">
         <div className="mb-6 flex items-center gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Agents</h1>
-            <p className="mt-1 text-sm text-zinc-400">Presets for a job: instructions, a model, and a thinking level.</p>
+          <div className="flex min-w-0 items-center gap-2">
+            <h1 className="truncate text-2xl font-semibold tracking-tight">Agents</h1>
+            <InfoTip label="About agents">Presets for a job: instructions, a model, a thinking level, and MCP servers. Pick one when starting a chat.</InfoTip>
           </div>
           <Link
             to="/agents/$agentId"

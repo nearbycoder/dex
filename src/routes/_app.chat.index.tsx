@@ -94,7 +94,7 @@ function NewChat() {
       {/* Agents and projects scroll; the composer stays at the bottom, as in a chat. Short content sits just above it. */}
       <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-4">
         <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col justify-end pt-6 pb-4 md:pt-10">
-          <h1 className="mb-5 animate-fade text-center text-2xl font-semibold tracking-tight md:text-3xl">
+          <h1 className="mb-5 animate-fade text-center text-2xl font-semibold tracking-tight md:text-3xl [@media(max-height:500px)]:mb-3 [@media(max-height:500px)]:text-xl">
             {agent ? `What should ${agent.name} do${project ? ` in ${project.name}` : ""}?` : project ? `What should Dex do in ${project.name}?` : "What should Dex do?"}
           </h1>
           {state && !state.cline.connected && (

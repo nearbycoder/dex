@@ -18,7 +18,7 @@ const isStandalone = () =>
 // iPadOS reports itself as a Mac; touch support gives it away.
 const isIos = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.userAgent.includes("Mac") && navigator.maxTouchPoints > 1)
 
-/** Add-to-Home-Screen: a native install button where the browser offers one, steps on iOS. */
+/** Add-to-Home-Screen, as the control of a settings row: a native install button where the browser offers one, steps otherwise. */
 export function InstallApp() {
   const [standalone, setStandalone] = useState(false)
   const [ios, setIos] = useState(false)
@@ -41,9 +41,9 @@ export function InstallApp() {
 
   if (standalone || installed) {
     return (
-      <p className="flex items-center gap-2 text-sm text-emerald-400">
-        <CheckCircle2 className="size-4" /> Dex is installed on this device.
-      </p>
+      <span className="flex items-center gap-1.5 text-xs text-emerald-400">
+        <CheckCircle2 className="size-3.5" /> Installed
+      </span>
     )
   }
 
@@ -58,36 +58,22 @@ export function InstallApp() {
           setPrompt(undefined)
           if (outcome === "accepted") setInstalled(true)
         }}
-        className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500"
+        className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-500"
       >
-        <Download className="size-4" /> Install Dex
+        <Download className="size-4" /> Install
       </button>
     )
   }
 
-  if (ios) {
-    return (
-      <ol className="space-y-2 text-sm text-zinc-300">
-        <li className="flex items-center gap-2">
-          <span className="flex size-5 items-center justify-center rounded-full bg-zinc-800 text-xs">1</span>
-          Tap <Share className="inline size-4 text-sky-400" /> <span className="text-zinc-400">Share</span> in Safari's toolbar
-        </li>
-        <li className="flex items-center gap-2">
-          <span className="flex size-5 items-center justify-center rounded-full bg-zinc-800 text-xs">2</span>
-          Choose <SquarePlus className="inline size-4" /> <span className="text-zinc-400">Add to Home Screen</span>
-        </li>
-        <li className="flex items-center gap-2">
-          <span className="flex size-5 items-center justify-center rounded-full bg-zinc-800 text-xs">3</span>
-          Open Dex from your Home Screen and sign in once
-        </li>
-      </ol>
-    )
-  }
-
   return (
-    <p className="text-sm text-zinc-400">
-      Use your browser's menu and choose <span className="text-zinc-200">Install app</span> or{" "}
-      <span className="text-zinc-200">Add to Home screen</span>.
-    </p>
+    <span className="flex items-center gap-1 text-xs text-zinc-400">
+      {ios ? (
+        <>
+          <Share className="size-3.5 text-sky-400" /> Share <span className="text-zinc-600">→</span> <SquarePlus className="size-3.5" /> Add to Home Screen
+        </>
+      ) : (
+        "Browser menu → Install app"
+      )}
+    </span>
   )
 }

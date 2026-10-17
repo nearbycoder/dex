@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router"
 import { BarChart3, Cloud, Cpu, RefreshCw, Sparkles, Table2 } from "lucide-react"
 import { type ReactNode, useCallback, useLayoutEffect, useRef, useState } from "react"
 import { ModelLogo } from "~/client/components/model-logo"
+import { InfoTip } from "~/client/components/info-tip"
 import { Bone, Lines } from "~/client/components/skeleton"
 import { useCachedFetch } from "~/client/lib/cache"
 import { useDex } from "~/client/lib/dex"
@@ -26,26 +27,30 @@ const compact = (value: number) =>
 
 const shortDate = (date: string) => new Date(`${date}T00:00:00Z`).toLocaleDateString("en", { month: "short", day: "numeric", timeZone: "UTC" })
 
+/** A headline number. On phones it's a compact row (label left, value right); wider, a tile. */
 function Tile(props: { icon: ReactNode; label: string; value: string; detail: ReactNode; swatch?: string }) {
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-      <div className="flex items-center gap-2 text-xs text-zinc-400">
-        {props.swatch && <span className="size-2.5 rounded-sm" style={{ background: props.swatch }} />}
-        {props.icon}
-        {props.label}
+    <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-4 py-3 sm:p-4">
+      <div className="flex items-baseline justify-between gap-3 sm:block">
+        <div className="flex min-w-0 items-center gap-2 text-xs text-zinc-400">
+          {props.swatch && <span className="size-2.5 shrink-0 rounded-sm" style={{ background: props.swatch }} />}
+          {props.icon}
+          <span className="truncate">{props.label}</span>
+        </div>
+        <div className="shrink-0 text-lg font-semibold tracking-tight text-zinc-50 tabular-nums sm:mt-2 sm:text-2xl">{props.value}</div>
       </div>
-      <div className="mt-2 text-2xl font-semibold tracking-tight text-zinc-50 tabular-nums">{props.value}</div>
-      <div className="mt-1 text-xs leading-relaxed text-zinc-500">{props.detail}</div>
+      <div className="mt-0.5 text-xs leading-relaxed text-zinc-500 sm:mt-1">{props.detail}</div>
     </div>
   )
 }
 
-function Section({ title, icon, children, aside }: { title: string; icon: ReactNode; children: ReactNode; aside?: ReactNode }) {
+function Section({ title, icon, info, children, aside }: { title: string; icon: ReactNode; info?: ReactNode; children: ReactNode; aside?: ReactNode }) {
   return (
     <section className="min-w-0 rounded-xl border border-zinc-800 bg-zinc-900/40">
       <div className="flex items-center gap-2 border-b border-zinc-800 px-4 py-3 text-sm">
         {icon}
         <h2 className="min-w-0 truncate font-medium text-zinc-200">{title}</h2>
+        {info && <InfoTip label={`About ${title}`}>{info}</InfoTip>}
         <div className="ml-auto shrink-0 text-xs text-zinc-500">{aside}</div>
       </div>
       <div className="min-w-0 p-4">{children}</div>
@@ -264,7 +269,7 @@ function UsagePage() {
                   value={usd(isMonth ? plans + report.boat.cost : report.boat.cost)}
                   detail={
                     isMonth
-                      ? `Plans ${usd(plans)} (ClinePass + Workers Paid) + boat.dev ${usd(report.boat.cost)}`
+                      ? `Plans ${usd(plans)} + boat.dev ${usd(report.boat.cost)}`
                       : `boat.dev VM time. Plans add ${usd(plans)}/month.`
                   }
                 />
@@ -273,7 +278,7 @@ function UsagePage() {
                   icon={<Sparkles className="size-3.5" />}
                   label="ClinePass"
                   value={`${usd(PLAN_FEES.clinePass)}/mo`}
-                  detail={`${compact(report.cline.totalTokens)} tokens in ${report.cline.responses} responses · worth ${usd(report.cline.listCost)} at API list prices`}
+                  detail={`${compact(report.cline.totalTokens)} tokens · ${usd(report.cline.listCost)} at list prices`}
                 />
                 <Tile
                   swatch={SERIES[1].color}
@@ -304,6 +309,7 @@ function UsagePage() {
 
               <Section
                 title="Daily usage"
+                info="ClinePass is shown at what its tokens would cost at API list prices; you pay the flat plan. Cloudflare is metered usage at list rates, before the plan's included allowance."
                 icon={<BarChart3 className="size-4 text-zinc-500" />}
                 aside={
                   <div className="flex items-center gap-3">
@@ -334,10 +340,6 @@ function UsagePage() {
                   ))}
                 </div>
                 {view === "chart" ? <DailyChart daily={report.daily} /> : <DailyTable daily={report.daily} />}
-                <p className="mt-2 text-[11px] text-zinc-600">
-                  ClinePass is shown at what its tokens would cost at API list prices; you pay the flat plan. Cloudflare is metered usage at
-                  list rates before the included allowance.
-                </p>
               </Section>
 
               <div className="grid gap-4 lg:grid-cols-2">

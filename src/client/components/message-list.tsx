@@ -96,7 +96,7 @@ function Activity(props: {
         : PHRASES[phrase % PHRASES.length]!
   const detail = active && current ? summarize(current.arguments) : ""
   const counts = [
-    calls.length > 0 && plural(calls.length, "tool call"),
+    calls.length > 0 && plural(calls.length, "tool"),
     thoughts > 0 && plural(thoughts, "thought"),
     failed > 0 && `${failed} failed`,
     active && duration(now - props.startedAt)

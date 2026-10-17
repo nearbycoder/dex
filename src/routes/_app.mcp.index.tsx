@@ -3,6 +3,8 @@ import { ChevronRight, LoaderCircle, LogIn, Pencil, Plus, RefreshCw, Trash2, X }
 import { useState } from "react"
 import { McpStatusDot } from "~/client/components/mcp-picker"
 import { CardGridSkeleton } from "~/client/components/skeleton"
+import { InfoTip } from "~/client/components/info-tip"
+import { Switch } from "~/client/components/ui"
 import { useDex } from "~/client/lib/dex"
 import { AUTH_ICON, AUTH_LABEL, followConnect } from "~/client/lib/mcp"
 import { MCP_STATUS_LABEL, type McpServerInfo } from "~/shared/mcp"
@@ -17,6 +19,8 @@ export const Route = createFileRoute("/_app/mcp/")({
   }),
   component: McpPage
 })
+
+const iconButton = "rounded-md p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-50"
 
 function ServerCard({ server, index }: { server: McpServerInfo; index: number }) {
   const { stub } = useDex()
@@ -49,39 +53,58 @@ function ServerCard({ server, index }: { server: McpServerInfo; index: number })
           </div>
           <p className="mt-0.5 truncate font-mono text-xs text-zinc-500">{server.url}</p>
         </div>
-        <Link
-          to="/mcp/$serverId"
-          params={{ serverId: server.id }}
-          title="Edit"
-          className="rounded-md p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
-        >
-          <Pencil className="size-4" />
-        </Link>
+        <div className="-mt-1 -mr-1.5 flex shrink-0 items-center">
+          {server.status !== "authenticating" && (
+            <button type="button" onClick={connect} disabled={busy} title="Reconnect" aria-label={`Reconnect ${server.name}`} className={iconButton}>
+              <RefreshCw className={`size-4 ${busy ? "animate-spin" : ""}`} />
+            </button>
+          )}
+          <Link to="/mcp/$serverId" params={{ serverId: server.id }} title="Edit" aria-label={`Edit ${server.name}`} className={iconButton}>
+            <Pencil className="size-4" />
+          </Link>
+          <button
+            type="button"
+            title="Remove"
+            aria-label={`Remove ${server.name}`}
+            onClick={async () => {
+              if (!confirm(`Remove “${server.name}”? Chats and agents using it lose its tools, and its sign-in is forgotten.`)) return
+              await stub.deleteMcpServer(server.id)
+            }}
+            className={`${iconButton} hover:text-red-400`}
+          >
+            <Trash2 className="size-4" />
+          </button>
+        </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs">
         <span className="flex items-center gap-1.5 text-zinc-300">
           <McpStatusDot status={server.status} />
           {MCP_STATUS_LABEL[server.status]}
-          {server.status === "ready" && <span className="text-zinc-500">· {server.tools.length} tools</span>}
         </span>
-        <label className="ml-auto flex cursor-pointer items-center gap-2 text-zinc-400">
-          <input
-            type="checkbox"
-            checked={server.defaultOn}
-            onChange={(event) => void stub.setMcpServerDefault(server.id, event.target.checked)}
-            className="size-3.5 accent-emerald-600"
-          />
-          On for new chats
-        </label>
+        {server.status === "authenticating" && (
+          <button
+            type="button"
+            onClick={connect}
+            disabled={busy}
+            className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-60"
+          >
+            {busy ? <LoaderCircle className="size-3.5 animate-spin" /> : <LogIn className="size-3.5" />} Sign in
+          </button>
+        )}
+        <span className="ml-auto flex items-center gap-2 text-zinc-400">
+          New chats
+          <Switch label={`Attach ${server.name} to new chats`} checked={server.defaultOn} onChange={(on) => void stub.setMcpServerDefault(server.id, on)} />
+        </span>
       </div>
       {(error ?? server.error) && server.status !== "ready" && <p className="mt-2 text-xs break-words text-red-400">{error ?? server.error}</p>}
 
       {server.tools.length > 0 && (
-        <details className="group mt-3">
+        <details className="group mt-2">
           <summary className="flex cursor-pointer list-none items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300">
             <ChevronRight className="size-3.5 transition-transform group-open:rotate-90" />
-            Tools ({server.tools.length}), used as <code className="text-zinc-400">{server.prefix}__…</code>
+            {server.tools.length} {server.tools.length === 1 ? "tool" : "tools"}
+            <span className="text-zinc-600">· {server.prefix}__…</span>
           </summary>
           <ul className="mt-2 space-y-1.5 border-l border-zinc-800 pl-3">
             {server.tools.map((tool) => (
@@ -93,38 +116,6 @@ function ServerCard({ server, index }: { server: McpServerInfo; index: number })
           </ul>
         </details>
       )}
-
-      <div className="mt-3 flex gap-2">
-        {server.status === "authenticating" ? (
-          <button
-            type="button"
-            onClick={connect}
-            disabled={busy}
-            className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-60"
-          >
-            {busy ? <LoaderCircle className="size-4 animate-spin" /> : <LogIn className="size-4" />} Sign in
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={connect}
-            disabled={busy}
-            className="flex items-center gap-1.5 rounded-lg border border-zinc-700 px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800 disabled:opacity-60"
-          >
-            <RefreshCw className={`size-3.5 ${busy ? "animate-spin" : ""}`} /> Reconnect
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={async () => {
-            if (!confirm(`Remove “${server.name}”? Chats and agents using it lose its tools, and its sign-in is forgotten.`)) return
-            await stub.deleteMcpServer(server.id)
-          }}
-          className="ml-auto flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-zinc-500 hover:text-red-400"
-        >
-          <Trash2 className="size-4" /> Remove
-        </button>
-      </div>
     </li>
   )
 }
@@ -143,9 +134,9 @@ function McpPage() {
     <div className="scrollbar-thin flex-1 overflow-y-auto">
       <div className="mx-auto max-w-3xl px-4 pt-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] md:pt-10">
         <div className="mb-6 flex items-center gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">MCP servers</h1>
-            <p className="mt-1 text-sm text-zinc-400">Remote tools for Dex. Pick which ones each chat or agent uses.</p>
+          <div className="flex min-w-0 items-center gap-2">
+            <h1 className="truncate text-2xl font-semibold tracking-tight">MCP servers</h1>
+            <InfoTip label="About mcp servers">Remote tools for Dex. Each chat and agent picks the servers it uses; servers marked “On for new chats” attach to plain new chats.</InfoTip>
           </div>
           <Link
             to="/mcp/$serverId"

@@ -7,6 +7,7 @@ import { CardGridSkeleton } from "~/client/components/skeleton"
 import { useDex } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
 import { MenuButton } from "~/client/lib/mobile-nav"
+import { InfoTip } from "~/client/components/info-tip"
 import { VM_SIZES, type VmInfo, type VmSize } from "~/shared/protocol"
 
 /** Every chat's VM at a glance; each opens its desktop, activity, and terminal. */
@@ -153,6 +154,10 @@ function MachinesPage() {
       <header className="dex-chrome dex-topbar flex h-12 shrink-0 items-center gap-2 border-b border-zinc-900 px-3 sm:gap-3 sm:px-4">
         <MenuButton />
         <span className="shrink-0 text-sm font-medium">Machines</span>
+        <InfoTip label="About machines">
+          Each chat gets its own VM the first time Dex needs one; project chats get theirs right away, with the repos cloned. A VM stops when idle,
+          keeps its disk while stopped, and is deleted with its chat.
+        </InfoTip>
         {vms.length > 0 && (
           <span className="truncate text-xs text-zinc-500">
             {running} running · {vms.length} total
@@ -173,10 +178,6 @@ function MachinesPage() {
             </p>
           ) : (
             <>
-              <p className="mb-4 text-sm text-zinc-400">
-                Each chat gets its own VM the first time Dex needs one; project chats get theirs right away, with the repos cloned. A VM
-                stops when idle and keeps its disk until its chat is deleted, which deletes the VM too.
-              </p>
               {vms.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-zinc-800 px-4 py-10 text-center text-sm text-zinc-500">
                   <Monitor className="mx-auto mb-3 size-7 text-zinc-600" />
@@ -194,7 +195,7 @@ function MachinesPage() {
                 <div className="flex h-10 items-center gap-2 border-b border-zinc-800 px-3 text-xs">
                   <Cpu className="size-3.5 text-zinc-500" />
                   <span className="font-medium text-zinc-300">VM defaults</span>
-                  <span className="truncate text-zinc-600">for new VMs; projects can pick a size</span>
+                  <InfoTip label="About VM defaults">For new VMs. Projects can pick their own size.</InfoTip>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 p-3 text-sm">
                   <select
