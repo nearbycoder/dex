@@ -1,6 +1,6 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context"
 import { createModels } from "@earendil-works/pi-ai/models"
-import { type AgentEventStream, createRegistry, defineExtension, Harness, section } from "@earendil-works/pi-durable"
+import { type AgentEventStream, createRegistry, defineExtension, GenerationTask, Harness, hook, section, UsageDoc } from "@earendil-works/pi-durable"
 import { Agent, callable, type Connection, getCurrentAgent, type Schedule, type WSMessage } from "agents"
 import { PiHarness } from "agents/harness/pi"
 import { Effect, Layer, ManagedRuntime, Option, Redacted, Schema } from "effect"
@@ -21,7 +21,10 @@ import type {
   WorkspaceFile
 } from "~/shared/protocol"
 import { NO_VM } from "~/shared/protocol"
+import { CLOUDFLARE_RATES, type CloudflareLine, type UsageRange, type UsageReport } from "~/shared/usage"
 import { BoatClient } from "./boat"
+import { CloudflareAnalytics, type CloudflareDay, dayCost, emptyDay } from "./cloudflare-analytics"
+import { datesBetween, UsageLedger, utcDate } from "./usage-ledger"
 import { CLINEPASS_PROVIDER_ID, ClinePassClient, clinePassProvider } from "./clinepass"
 import { webTools } from "./tools/agents-tools"
 import { loadUiGuideTool, renderUiTool } from "./tools/render-ui"
@@ -32,7 +35,7 @@ import { VmManager } from "./vm"
 import { Workspace, WORKSPACE_ROOT } from "./workspace"
 
 const AgentLayer = (env: object) =>
-  Layer.mergeAll(Keys.layer, ClinePassClient.layer, BoatClient.layer).pipe(
+  Layer.mergeAll(Keys.layer, ClinePassClient.layer, BoatClient.layer, CloudflareAnalytics.layer).pipe(
     Layer.provideMerge(AppConfig.layer),
     Layer.provide(envConfigProvider(env))
   )
@@ -103,6 +106,9 @@ export class DexAgent extends Agent<Env, DexState> {
   readonly runtime = ManagedRuntime.make(AgentLayer(this.env))
   readonly workspace = new Workspace(this.ctx.storage.sql)
   readonly registry = createRegistry()
+  readonly ledger = new UsageLedger(this.ctx.storage.sql)
+  /** Cloudflare analytics by date range, cached briefly to stay under GraphQL rate limits. */
+  private readonly cloudflareCache = new Map<string, { at: number; days: Map<string, CloudflareDay> | null; error: string | null }>()
 
   readonly vm = new VmManager({
     sql: this.ctx.storage.sql,
@@ -111,7 +117,9 @@ export class DexAgent extends Agent<Env, DexState> {
     settings: () => ({ size: this.state.settings.vmSize, minutes: this.state.settings.vmMinutes }),
     publish: (vm: VmInfo) => this.publish({ vm }),
     broadcast: (message: ServerMessage) => this.broadcast(JSON.stringify(message)),
-    scheduleIdleCheck: () => void this.scheduleVmIdleCheck()
+    scheduleIdleCheck: () => void this.scheduleVmIdleCheck(),
+    runStarted: (sandboxId, size) => this.ledger.runStarted(sandboxId, size),
+    runEnded: (at) => this.ledger.runEnded(at)
   })
 
   readonly harness = new PiHarness({
@@ -155,6 +163,7 @@ export class DexAgent extends Agent<Env, DexState> {
       this.ctx.storage.sql.exec(`INSERT INTO dex_meta (key, value) VALUES ('vm_idle_default_5', '1')`)
     }
     this.publish({ settings, vm: this.vm.current })
+    void this.backfillUsage()
     await this.refreshClineStatus()
     await this.refreshSessions()
     void this.vm.refresh()
@@ -175,6 +184,8 @@ export class DexAgent extends Agent<Env, DexState> {
         }),
         section("user_instructions", () => this.state.settings.instructions.trim() || undefined)
       ],
+      // Every model response's tokens and list-price cost, for the Usage page.
+      hooks: [hook(GenerationTask, { afterResponse: (message, api) => this.ledger.recordResponse(String(api.conversationId), message) })],
       tools: [
         ...workspaceTools(this.workspace),
         ...webTools(this.env.AI),
@@ -454,6 +465,95 @@ export class DexAgent extends Agent<Env, DexState> {
   @callable()
   async deleteFile(path: string) {
     return this.workspace.remove(path)
+  }
+
+  // ── Usage ─────────────────────────────────────────────────────────────────
+
+  /** Once: copy each chat's usage totals from before the ledger existed. */
+  private async backfillUsage() {
+    if (this.ctx.storage.sql.exec(`SELECT 1 FROM dex_meta WHERE key = 'usage_backfill_v2'`).toArray().length) return
+    const pi = await this.harness.pi()
+    for (const session of this.state.sessions) {
+      // Pi's conversation ids are numbers; chat ids are their string form.
+      const usage = await pi.snapshot(UsageDoc, Number(session.id) as never, BACKGROUND_CONTEXT).catch(() => undefined)
+      if (usage) this.ledger.backfill(session.id, session.updatedAt, usage.models as never)
+    }
+    this.ctx.storage.sql.exec(`INSERT OR REPLACE INTO dex_meta (key, value) VALUES ('usage_backfill_v2', '1')`)
+  }
+
+  private async cloudflareDays(since: string, until: string) {
+    const key = `${since}|${until}`
+    const cached = this.cloudflareCache.get(key)
+    // Good results are reused for 10 minutes, failures retried after one.
+    if (cached && Date.now() - cached.at < (cached.error ? 60_000 : 10 * 60_000)) return cached
+    const entry = await this.runtime
+      .runPromise(CloudflareAnalytics.use((analytics) => analytics.daily(since, until)))
+      .then(
+        (days) => ({ at: Date.now(), days, error: null }),
+        (error: unknown) => ({ at: Date.now(), days: null, error: error instanceof Error ? error.message : String(error) })
+      )
+    // If a refresh fails (e.g. GraphQL rate limits), keep showing the last good numbers.
+    if (entry.error && cached?.days) return cached
+    this.cloudflareCache.set(key, entry)
+    return entry
+  }
+
+  /** Spending across ClinePass, boat.dev, and Cloudflare for a period. */
+  @callable()
+  async usageReport(range: UsageRange): Promise<UsageReport> {
+    const DAY = 86_400_000
+    const until = Date.now()
+    const now = new Date(until)
+    const since =
+      range === "month"
+        ? Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)
+        : range === "30d"
+          ? until - 30 * DAY
+          : Math.min(this.ledger.earliest() ?? until, until - DAY)
+
+    const titles = new Map(this.state.sessions.map((session) => [session.id, session.title]))
+    const cline = this.ledger.clineUsage(since, until, titles)
+    const clineDaily = this.ledger.clineDaily(since, until)
+    const { usage: boat, daily: boatDaily } = this.ledger.boatUsage(since, until)
+
+    // Cloudflare keeps these analytics for about a month.
+    const configured = await this.runtime.runPromise(CloudflareAnalytics.use((analytics) => Effect.succeed(analytics.configured)))
+    const cloudflareSince = Math.max(since, until - 30 * DAY)
+    const cloudflare = configured ? await this.cloudflareDays(utcDate(cloudflareSince), utcDate(until)) : null
+    const total = emptyDay()
+    for (const day of cloudflare?.days?.values() ?? []) {
+      for (const field of Object.keys(total) as Array<keyof CloudflareDay>) total[field] += day[field]
+    }
+    const share = (used: number, included: number) => (range === "all" ? null : used / included)
+    const r = CLOUDFLARE_RATES
+    const lines: CloudflareLine[] = [
+      { label: "Worker requests", quantity: total.workerRequests, unit: "requests", cost: (total.workerRequests / 1e6) * r.workerRequests.perMillion, allowanceUsed: share(total.workerRequests, r.workerRequests.includedMonthly) },
+      { label: "Worker CPU time", quantity: total.cpuMs, unit: "ms", cost: (total.cpuMs / 1e6) * r.cpuMs.perMillion, allowanceUsed: share(total.cpuMs, r.cpuMs.includedMonthly) },
+      { label: "Durable Object requests", quantity: total.doRequests, unit: "requests", cost: (total.doRequests / 1e6) * r.doRequests.perMillion, allowanceUsed: share(total.doRequests, r.doRequests.includedMonthly) },
+      { label: "Durable Object duration", quantity: total.doGbSeconds, unit: "GB-s", cost: (total.doGbSeconds / 1e6) * r.doGbSeconds.perMillion, allowanceUsed: share(total.doGbSeconds, r.doGbSeconds.includedMonthly) },
+      { label: "SQLite rows written", quantity: total.rowsWritten, unit: "rows", cost: (total.rowsWritten / 1e6) * r.rowsWritten.perMillion, allowanceUsed: share(total.rowsWritten, r.rowsWritten.includedMonthly) },
+      { label: "SQLite rows read", quantity: total.rowsRead, unit: "rows", cost: (total.rowsRead / 1e6) * r.rowsRead.perMillion, allowanceUsed: share(total.rowsRead, r.rowsRead.includedMonthly) },
+      { label: "Workers AI", quantity: total.aiNeurons, unit: "neurons", cost: [...(cloudflare?.days?.values() ?? [])].reduce((sum, day) => sum + (Math.max(0, day.aiNeurons - r.aiNeurons.includedDaily) / 1000) * r.aiNeurons.perThousand, 0), allowanceUsed: null, accountWide: true }
+    ]
+
+    return {
+      range,
+      since,
+      until,
+      cline,
+      boat,
+      cloudflare: {
+        configured,
+        error: cloudflare?.error ?? null,
+        since: cloudflareSince,
+        lines,
+        meteredCost: lines.reduce((sum, line) => sum + line.cost, 0)
+      },
+      daily: datesBetween(since, until).map((date) => {
+        const day = cloudflare?.days?.get(date)
+        return { date, cline: clineDaily.get(date) ?? 0, boat: boatDaily.get(date) ?? 0, cloudflare: day ? dayCost(day) : 0 }
+      })
+    }
   }
 
   // ── VM (Machine page) ─────────────────────────────────────────────────────

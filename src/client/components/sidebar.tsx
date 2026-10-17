@@ -1,5 +1,5 @@
 import { Link, useNavigate, useParams } from "@tanstack/react-router"
-import { FolderOpen, LogOut, MessageSquarePlus, Monitor, Settings, Trash2, X } from "lucide-react"
+import { BarChart3, FolderOpen, LogOut, MessageSquarePlus, Monitor, Settings, Trash2, X } from "lucide-react"
 import { useDex } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
 import { findModel } from "~/shared/models"
@@ -113,6 +113,12 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
           className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 [&.active]:bg-zinc-900 [&.active]:text-zinc-100"
         >
           <FolderOpen className="size-4" /> Workspace
+        </Link>
+        <Link
+          to="/usage"
+          className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 [&.active]:bg-zinc-900 [&.active]:text-zinc-100"
+        >
+          <BarChart3 className="size-4" /> Usage
         </Link>
         <Link
           to="/settings"

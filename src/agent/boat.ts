@@ -21,6 +21,7 @@ export const Sandbox = Schema.Struct({
   url: OptionalString,
   ip: OptionalString,
   archiveAfter: OptionalString,
+  updatedAt: OptionalString,
   desktopAvailable: Schema.optional(Schema.NullOr(Schema.Boolean)),
   stop: Schema.optional(Schema.NullOr(Schema.Struct({ status: OptionalString })))
 })

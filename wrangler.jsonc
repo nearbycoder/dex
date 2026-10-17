@@ -15,7 +15,10 @@
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["DexAgent"] }],
   "vars": {
     // Comma-separated GitHub logins allowed to sign in.
-    "ALLOWED_GITHUB_USERS": "nearbycoder"
+    "ALLOWED_GITHUB_USERS": "nearbycoder",
+    // The account whose analytics the Usage page reads (with the CLOUDFLARE_API_TOKEN secret).
+    "CLOUDFLARE_ACCOUNT_ID": "0a4ba75d9277c4e96b49255f3109e7b6"
   }
-  // Secrets (wrangler secret put): AUTH_SECRET, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, optional CLINE_API_KEY.
+  // Secrets (wrangler secret put): AUTH_SECRET, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, optional CLINE_API_KEY,
+  // OWNER_PASSWORD, BOAT_API_KEY, CLOUDFLARE_API_TOKEN (Account Analytics: Read).
 }

@@ -18,6 +18,9 @@ export class AppConfig extends Context.Service<AppConfig, {
   readonly clineApiKey: Option.Option<Redacted.Redacted<string>>
   /** boat.dev API key: gives each user's agent a cloud VM. */
   readonly boatApiKey: Option.Option<Redacted.Redacted<string>>
+  /** Read-only Cloudflare token (Account Analytics: Read) for the Usage page. */
+  readonly cloudflareApiToken: Option.Option<Redacted.Redacted<string>>
+  readonly cloudflareAccountId: Option.Option<string>
 }>()("dex/server/AppConfig") {
   static readonly layer = Layer.effect(
     AppConfig,
@@ -33,9 +36,11 @@ export class AppConfig extends Context.Service<AppConfig, {
       const clineApiKey = yield* Config.option(Config.Redacted("CLINE_API_KEY"))
       const ownerPassword = yield* Config.option(Config.Redacted("OWNER_PASSWORD"))
       const boatApiKey = yield* Config.option(Config.Redacted("BOAT_API_KEY"))
+      const cloudflareApiToken = yield* Config.option(Config.Redacted("CLOUDFLARE_API_TOKEN"))
+      const cloudflareAccountId = yield* Config.option(Config.NonEmptyString("CLOUDFLARE_ACCOUNT_ID"))
 
       const github = Option.all({ clientId, clientSecret })
-      return AppConfig.of({ authSecret, github, allowedUsers, devLogin, ownerPassword, clineApiKey, boatApiKey })
+      return AppConfig.of({ authSecret, github, allowedUsers, devLogin, ownerPassword, clineApiKey, boatApiKey, cloudflareApiToken, cloudflareAccountId })
     })
   )
 }

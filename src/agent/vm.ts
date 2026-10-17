@@ -20,6 +20,9 @@ export interface VmHost {
   broadcast(message: ServerMessage): void
   /** Ensures `idleCheck()` runs within a minute or so. */
   scheduleIdleCheck(): void
+  /** Billing: the VM is running (no-op if a run is already open) / stopped at `at`. */
+  runStarted(sandboxId: string, size: string): void
+  runEnded(at: number): void
 }
 
 interface ActivityRow {
@@ -163,6 +166,13 @@ export class VmManager {
           : sandbox.state === "archived"
             ? "stopped"
             : "error"
+    if (status === "running") this.host.runStarted(sandbox.id, sandbox.type ?? this.host.settings().size)
+    else if (status === "stopped" || status === "error") {
+      // Seen live, the stop just finished (boat bills until the disk is saved). Seen long after (the agent was
+      // asleep), boat's last state change is the best estimate of when it ended.
+      const changedAt = sandbox.updatedAt ? Date.parse(sandbox.updatedAt) : Number.NaN
+      this.host.runEnded(Number.isFinite(changedAt) && Date.now() - changedAt > 120_000 ? changedAt : Date.now())
+    }
     this.update({
       id: sandbox.id,
       status,
@@ -235,6 +245,7 @@ export class VmManager {
     } catch (error) {
       if (error instanceof BoatError && error.status === 404) {
         this.setSandboxId(null)
+        this.host.runEnded(Date.now())
         this.update({ id: null, status: "none", size: null, archiveAfter: null, error: null })
       } else {
         this.update({ error: errorText(error) })
@@ -365,6 +376,7 @@ export class VmManager {
         if (!(error instanceof BoatError && error.status === 404)) throw error
       })
       this.setSandboxId(null)
+      this.host.runEnded(Date.now())
       this.update({ id: null, status: "none", size: null, archiveAfter: null, error: null })
     })
   }

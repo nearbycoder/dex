@@ -14,6 +14,7 @@ A personal agent harness: [Pi Durable](https://developers.cloudflare.com/agents/
 - **Tools**: `bash` (a simulated shell with grep, sed, jq, sqlite3, curl and more, over a persistent `/workspace`), `read_file` / `write_file` / `edit_file`, `web_search` / `web_fetch` (Workers AI), `render_ui` (OpenUI cards, tables, charts, forms), and `schedule_prompt` (one-off or cron).
 - **Memory**: `/workspace/MEMORY.md` is injected into every chat's system prompt.
 - **Workspace page**: browse and edit the agent's files, and run shell commands yourself.
+- **Usage page**: what Dex costs across ClinePass (tokens per model and chat, at API list prices), boat.dev (VM run time × hourly rate), and Cloudflare (Workers, Durable Objects, and Workers AI from the Analytics API, against the plan's allowance), with a daily chart.
 
 ## Architecture
 
@@ -60,6 +61,7 @@ npx wrangler secret put GITHUB_CLIENT_SECRET
 npx wrangler secret put CLINE_API_KEY   # optional shared key
 npx wrangler secret put OWNER_PASSWORD  # optional: password sign-in as the first allowlisted login
 npx wrangler secret put BOAT_API_KEY    # optional: boat.dev key for the agent's cloud VM
+npx wrangler secret put CLOUDFLARE_API_TOKEN  # optional: Account Analytics: Read, for the Usage page
 npm run deploy
 ```
 

@@ -8,3 +8,5 @@ GITHUB_CLIENT_ID=
 GITHUB_CLIENT_SECRET=
 # Optional shared ClinePass key, used when a user has not connected their own.
 CLINE_API_KEY=
+# Optional: read-only Cloudflare token (Account > Account Analytics > Read) for the Usage page.
+CLOUDFLARE_API_TOKEN=
