@@ -1,0 +1,825 @@
+import { Type } from "@earendil-works/pi-ai"
+import type { Static, TSchema } from "typebox"
+import type { AccessRisk } from "~/shared/access"
+import { AGENT_COLORS, AGENT_ICONS, type AgentProfile } from "~/shared/agents"
+import { CLINEPASS_MODELS, THINKING_LEVELS, type ThinkingLevel } from "~/shared/models"
+import type { McpAuth, McpTransport } from "~/shared/mcp"
+import { NOTIFY_KINDS, type NotifyKind } from "~/shared/notifications"
+import type { ProjectProfile, ProjectRepo } from "~/shared/projects"
+import { type DexState, type VmSize, VM_SIZES } from "~/shared/protocol"
+import { USAGE_RANGES, type UsageRange } from "~/shared/usage"
+import type { DexAgent } from "./dex-agent"
+
+/**
+ * Everything Dex can do, as operations that chats (through their `app_*` tools) and external agents (through the
+ * MCP endpoint) can run. This is the one place app functionality is exposed programmatically: when you add a
+ * `@callable()` to DexAgent, add an operation here that covers it (or list it in EXCLUDED with the reason).
+ * `npm run check:ops` (part of `npm run deploy`) fails until you do.
+ *
+ * Every run goes through AccessCenter.execute, which validates arguments against `parameters`, enforces `risk`
+ * (an MCP token's scope; a chat must get the user's confirmation for `admin`), rate-limits, and audits it.
+ */
+
+/** Who is asking. A chat runs operations from its own tools; an MCP caller holds a token. */
+export type Caller =
+  | { readonly kind: "chat"; readonly sessionId: string }
+  | { readonly kind: "mcp"; readonly tokenId: string; readonly label: string }
+  | { readonly kind: "user"; readonly sessionId: string }
+
+/** The parts of DexAgent operations use: its callables plus a few helpers for programmatic callers. */
+export type OperationHost = Pick<
+  DexAgent,
+  | "createSession"
+  | "sendMessage"
+  | "abort"
+  | "configureSession"
+  | "renameSession"
+  | "deleteSession"
+  | "setSessionMuted"
+  | "listFiles"
+  | "readFile"
+  | "writeFile"
+  | "deleteFile"
+  | "runCommand"
+  | "saveAgent"
+  | "deleteAgent"
+  | "saveProject"
+  | "deleteProject"
+  | "saveMcpServer"
+  | "connectMcpServer"
+  | "setMcpServerDefault"
+  | "deleteMcpServer"
+  | "updateSettings"
+  | "usageReport"
+  | "vmRefresh"
+  | "vmStart"
+  | "vmStop"
+  | "vmDestroy"
+  | "vmRerunSetup"
+  | "vmActivity"
+  | "vmRun"
+  | "vmExposePort"
+  | "pushUpdate"
+  | "pushTest"
+  | "pushUnsubscribe"
+  | "listScheduledPrompts"
+  | "cancelScheduledPrompt"
+  | "schedulePrompt"
+  | "readTranscript"
+  | "appState"
+  | "noteSessionParent"
+  | "sessionDepth"
+>
+
+export interface Operation<P extends TSchema = TSchema> {
+  readonly name: string
+  readonly description: string
+  /** Fixed, or decided by the arguments (e.g. creating an agent is `write`, changing an existing one is `admin`). */
+  readonly risk: AccessRisk | ((args: Static<P>) => AccessRisk)
+  readonly parameters: P
+  /** The DexAgent callables this operation makes available (checked by `npm run check:ops`). */
+  readonly covers: ReadonlyArray<string>
+  /**
+   * False when chats already have a native tool for it (workspace files, scheduling), so it only appears over MCP.
+   * Chats see everything else through `app_operations` / `app_call`.
+   */
+  readonly inChats?: boolean
+  /** One line for the audit log and the confirmation card, e.g. `Delete 3 chats`. */
+  readonly summarize: (args: Static<P>, state: DexState) => string
+  readonly run: (host: OperationHost, args: Static<P>, caller: Caller) => Promise<unknown>
+}
+
+/** Callables deliberately not exposed, and why. */
+export const EXCLUDED: Readonly<Record<string, string>> = {
+  connectCline: "Credentials are entered only in Settings, never through a chat or an external agent.",
+  disconnectCline: "Credentials are managed only in Settings.",
+  connectGitHub: "Credentials are entered only in Settings, never through a chat or an external agent.",
+  disconnectGitHub: "Credentials are managed only in Settings.",
+  pushSubscribe: "A browser subscribes itself to push; there is nothing for an agent to do.",
+  vmTouch: "Heartbeat from the Machine page while you control the desktop.",
+  vmDesktopUrl: "A desktop URL lets whoever holds it control the VM; only the signed-in app opens one.",
+  createAccessToken: "Access is granted only by the signed-in user, so no token can mint more access.",
+  revokeAccessToken: "Access is managed only by the signed-in user.",
+  resolvePendingAction: "Confirming an admin operation must come from the user, not from an agent."
+}
+
+const define = <P extends TSchema>(operation: Operation<P>): Operation => operation as unknown as Operation
+
+// ── Shared parameter pieces ────────────────────────────────────────────────
+
+const id = (description: string) => Type.String({ minLength: 1, maxLength: 120, description })
+const thinking = Type.Union(THINKING_LEVELS.map((level) => Type.Literal(level)), {
+  description: "Thinking level; clamped to what the model supports."
+})
+const modelId = Type.String({ maxLength: 120, description: "A model id from app_list_models, e.g. cline-pass/glm-5.3." })
+const icon = Type.Optional(Type.Union(AGENT_ICONS.map((value) => Type.Literal(value)), { description: "Icon name." }))
+const color = Type.Optional(Type.Union(Object.keys(AGENT_COLORS).map((value) => Type.Literal(value)), { description: "Accent color." }))
+const vmKey = Type.String({ minLength: 1, maxLength: 64, description: "The VM's key: its chat's id (from app_list_vms)." })
+
+const agentFields = {
+  name: Type.String({ minLength: 1, maxLength: 60 }),
+  description: Type.Optional(Type.String({ maxLength: 200 })),
+  instructions: Type.Optional(Type.String({ maxLength: 20_000, description: "Added to the system prompt of this agent's chats." })),
+  starter: Type.Optional(Type.String({ maxLength: 2_000, description: "Prefilled in the message box when picked." })),
+  model: Type.Optional(modelId),
+  thinking: Type.Optional(thinking),
+  mcp_servers: Type.Optional(Type.Array(id("MCP server id"), { maxItems: 20 })),
+  icon,
+  color
+}
+
+const repo = Type.Object({
+  url: Type.String({ minLength: 1, maxLength: 300, description: "GitHub owner/repo or an https git URL." }),
+  branch: Type.Optional(Type.String({ maxLength: 120 })),
+  dir: Type.Optional(Type.String({ maxLength: 120, description: "Folder under ~/work; defaults to the repo name." }))
+})
+
+const projectFields = {
+  name: Type.String({ minLength: 1, maxLength: 60 }),
+  description: Type.Optional(Type.String({ maxLength: 300 })),
+  repos: Type.Optional(Type.Array(repo, { maxItems: 10 })),
+  setup_script: Type.Optional(Type.String({ maxLength: 20_000, description: "Bash run in ~/work after cloning." })),
+  instructions: Type.Optional(Type.String({ maxLength: 20_000, description: "Context for the model in this project's chats." })),
+  starter: Type.Optional(Type.String({ maxLength: 2_000 })),
+  vm_size: Type.Optional(Type.Union([...VM_SIZES.map((size) => Type.Literal(size.id)), Type.Null()])),
+  icon,
+  color
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+const chatTitle = (state: DexState, sessionId: string) => state.sessions.find((session) => session.id === sessionId)?.title ?? `chat ${sessionId}`
+const quote = (text: string, max = 60) => `“${text.length > max ? `${text.slice(0, max)}…` : text}”`
+
+const sessionSummary = (state: DexState) => (session: DexState["sessions"][number]) => ({
+  id: session.id,
+  title: session.title,
+  model: session.model,
+  thinking: session.thinking,
+  busy: session.busy,
+  muted: session.muted,
+  agent: session.agentId ? (state.agents.find((agent) => agent.id === session.agentId)?.name ?? session.agentId) : null,
+  project: session.projectId ? (state.projects.find((project) => project.id === session.projectId)?.name ?? session.projectId) : null,
+  mcpServers: session.mcpServers,
+  vm: state.vms.find((vm) => vm.key === session.id)?.status ?? "none",
+  createdAt: new Date(session.createdAt).toISOString(),
+  updatedAt: new Date(session.updatedAt).toISOString()
+})
+
+const agentDraft = (args: Static<typeof createAgentParams>, existing?: AgentProfile) => ({
+  id: existing?.id,
+  name: args.name ?? existing?.name ?? "",
+  description: args.description ?? existing?.description ?? "",
+  instructions: args.instructions ?? existing?.instructions ?? "",
+  starter: args.starter ?? existing?.starter ?? "",
+  model: args.model ?? existing?.model ?? "",
+  thinking: (args.thinking ?? existing?.thinking ?? "medium") as ThinkingLevel,
+  mcpServers: args.mcp_servers ?? existing?.mcpServers ?? [],
+  icon: (args.icon ?? existing?.icon ?? "bot") as AgentProfile["icon"],
+  color: (args.color ?? existing?.color ?? "emerald") as AgentProfile["color"]
+})
+
+const projectDraft = (args: Static<typeof createProjectParams>, existing?: ProjectProfile) => ({
+  id: existing?.id,
+  name: args.name ?? existing?.name ?? "",
+  description: args.description ?? existing?.description ?? "",
+  repos: args.repos
+    ? args.repos.map((entry): ProjectRepo => ({ url: entry.url, branch: entry.branch ?? "", dir: entry.dir ?? "" }))
+    : (existing?.repos ?? []),
+  setupScript: args.setup_script ?? existing?.setupScript ?? "",
+  instructions: args.instructions ?? existing?.instructions ?? "",
+  starter: args.starter ?? existing?.starter ?? "",
+  vmSize: (args.vm_size !== undefined ? args.vm_size : (existing?.vmSize ?? null)) as VmSize | null,
+  icon: (args.icon ?? existing?.icon ?? "briefcase") as ProjectProfile["icon"],
+  color: (args.color ?? existing?.color ?? "sky") as ProjectProfile["color"]
+})
+
+const createAgentParams = Type.Object(agentFields)
+const createProjectParams = Type.Object(projectFields)
+
+/** A chat may start chats, and those may start chats, but no deeper: no runaway trees of agents. */
+const MAX_CHAT_DEPTH = 2
+
+// ── The operations ─────────────────────────────────────────────────────────
+
+export const OPERATIONS: ReadonlyArray<Operation> = [
+  // Overview and reading
+  define({
+    name: "app_overview",
+    description: "A summary of this Dex: counts of chats, agents, projects, MCP servers, and VMs; what's connected; and the settings.",
+    risk: "read",
+    parameters: Type.Object({}),
+    covers: [],
+    summarize: () => "Overview",
+    run: async (host) => {
+      const state = host.appState()
+      return {
+        chats: { total: state.sessions.length, busy: state.sessions.filter((session) => session.busy).length },
+        agents: state.agents.length,
+        projects: state.projects.length,
+        mcpServers: state.mcp.map((server) => ({ id: server.id, name: server.name, status: server.status })),
+        vms: { configured: state.vmConfigured, running: state.vms.filter((vm) => vm.status === "running").length, total: state.vms.length },
+        connected: { clinePass: state.cline.connected, github: state.github.connected ? state.github.login : null },
+        pushDevices: state.push.devices.length,
+        settings: state.settings
+      }
+    }
+  }),
+  define({
+    name: "app_list_sessions",
+    description: "List chats, most recently active first. Filter by text in the title, agent, project, or whether a run is going.",
+    risk: "read",
+    parameters: Type.Object({
+      query: Type.Optional(Type.String({ maxLength: 200, description: "Case-insensitive text to find in titles." })),
+      agent_id: Type.Optional(id("Only chats with this agent.")),
+      project_id: Type.Optional(id("Only chats on this project.")),
+      busy: Type.Optional(Type.Boolean({ description: "Only chats with (true) or without (false) a run going." })),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200, description: "Default 50." }))
+    }),
+    covers: [],
+    summarize: (args) => (args.query ? `List chats matching ${quote(args.query)}` : "List chats"),
+    run: async (host, args) => {
+      const state = host.appState()
+      const query = args.query?.toLowerCase()
+      return state.sessions
+        .filter((session) => !query || session.title.toLowerCase().includes(query))
+        .filter((session) => !args.agent_id || session.agentId === args.agent_id)
+        .filter((session) => !args.project_id || session.projectId === args.project_id)
+        .filter((session) => args.busy === undefined || session.busy === args.busy)
+        .slice(0, args.limit ?? 50)
+        .map(sessionSummary(state))
+    }
+  }),
+  define({
+    name: "app_read_session",
+    description: "One chat's details and its latest messages (text only; tool calls are listed by name).",
+    risk: "read",
+    parameters: Type.Object({
+      session_id: id("The chat's id."),
+      last_messages: Type.Optional(Type.Integer({ minimum: 1, maximum: 50, description: "How many recent messages (default 10)." }))
+    }),
+    covers: [],
+    summarize: (args, state) => `Read ${quote(chatTitle(state, args.session_id))}`,
+    run: async (host, args) => {
+      const state = host.appState()
+      const session = state.sessions.find((candidate) => candidate.id === args.session_id)
+      if (!session) throw new Error(`No chat ${args.session_id}.`)
+      return { ...sessionSummary(state)(session), messages: await host.readTranscript(args.session_id, args.last_messages ?? 10) }
+    }
+  }),
+  define({
+    name: "app_list_agents",
+    description: "List custom agents: presets with instructions, model, thinking level, and MCP servers.",
+    risk: "read",
+    parameters: Type.Object({}),
+    covers: [],
+    summarize: () => "List agents",
+    run: async (host) => host.appState().agents
+  }),
+  define({
+    name: "app_list_projects",
+    description: "List projects: repos, setup script, notes for the model, and VM size.",
+    risk: "read",
+    parameters: Type.Object({}),
+    covers: [],
+    summarize: () => "List projects",
+    run: async (host) => host.appState().projects
+  }),
+  define({
+    name: "app_list_mcp_servers",
+    description: "List connected MCP servers with their status and tools (header values are never shown).",
+    risk: "read",
+    parameters: Type.Object({}),
+    covers: [],
+    summarize: () => "List MCP servers",
+    run: async (host) =>
+      host.appState().mcp.map((server) => ({ ...server, tools: server.tools.map((tool) => tool.name) }))
+  }),
+  define({
+    name: "app_list_models",
+    description: "Models chats and agents can use, with the thinking levels each supports.",
+    risk: "read",
+    parameters: Type.Object({}),
+    covers: [],
+    summarize: () => "List models",
+    run: async () => CLINEPASS_MODELS
+  }),
+  define({
+    name: "app_list_vms",
+    description: "List every chat's VM with its status, size, last use, and setup state. `refresh` re-checks each with boat.dev first.",
+    risk: "read",
+    parameters: Type.Object({ refresh: Type.Optional(Type.Boolean()) }),
+    covers: ["vmRefresh"],
+    summarize: () => "List VMs",
+    run: async (host, args) => {
+      if (args.refresh) await Promise.all(host.appState().vms.map((vm) => host.vmRefresh(vm.key).catch(() => undefined)))
+      const state = host.appState()
+      return state.vms.map((vm) => ({ ...vm, chat: state.sessions.find((session) => session.id === vm.key)?.title ?? null }))
+    }
+  }),
+  define({
+    name: "app_vm_activity",
+    description: "Recent commands, file actions, and lifecycle events on a VM, with their output.",
+    risk: "read",
+    parameters: Type.Object({ vm_key: vmKey, limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })) }),
+    covers: ["vmActivity"],
+    summarize: (args, state) => `Read VM activity of ${quote(chatTitle(state, args.vm_key))}`,
+    run: async (host, args) =>
+      (await host.vmActivity(args.vm_key, args.limit ?? 30)).map((item) => ({ ...item, output: item.output.slice(-2_000) }))
+  }),
+  define({
+    name: "app_usage_report",
+    description: "What Dex costs: ClinePass tokens per model and chat, boat.dev VM time, and Cloudflare usage, with daily totals.",
+    risk: "read",
+    parameters: Type.Object({ range: Type.Optional(Type.Union(USAGE_RANGES.map((range) => Type.Literal(range.id)))) }),
+    covers: ["usageReport"],
+    summarize: (args) => `Usage report (${args.range ?? "month"})`,
+    run: async (host, args) => host.usageReport((args.range ?? "month") as UsageRange)
+  }),
+  define({
+    name: "app_list_schedules",
+    description: "List scheduled prompts.",
+    risk: "read",
+    inChats: false,
+    parameters: Type.Object({}),
+    covers: ["listScheduledPrompts"],
+    summarize: () => "List scheduled prompts",
+    run: async (host) => host.listScheduledPrompts()
+  }),
+  define({
+    name: "app_list_files",
+    description: "List files in the agent's /workspace.",
+    risk: "read",
+    inChats: false,
+    parameters: Type.Object({}),
+    covers: ["listFiles"],
+    summarize: () => "List workspace files",
+    run: async (host) => host.listFiles()
+  }),
+  define({
+    name: "app_read_file",
+    description: "Read a file from the agent's /workspace.",
+    risk: "read",
+    inChats: false,
+    parameters: Type.Object({ path: Type.String({ minLength: 1, maxLength: 500 }) }),
+    covers: ["readFile"],
+    summarize: (args) => `Read ${args.path}`,
+    run: async (host, args) => host.readFile(args.path)
+  }),
+  define({
+    name: "app_list_push_devices",
+    description: "Devices that get push notifications, and what each wants to hear about.",
+    risk: "read",
+    parameters: Type.Object({}),
+    covers: [],
+    summarize: () => "List notification devices",
+    run: async (host) => host.appState().push.devices
+  }),
+
+  // Chats
+  define({
+    name: "app_create_session",
+    description:
+      "Start a new chat, optionally with an agent, a project (its VM boots with the repos cloned), a model, and MCP servers. " +
+      "Give `message` to send its first message right away; the chat then works on it independently.",
+    risk: "write",
+    parameters: Type.Object({
+      title: Type.Optional(Type.String({ maxLength: 120 })),
+      message: Type.Optional(Type.String({ maxLength: 50_000, description: "First message; the chat starts working on it." })),
+      agent_id: Type.Optional(id("Start with this agent's instructions, model, and MCP servers.")),
+      project_id: Type.Optional(id("Work on this project.")),
+      model: Type.Optional(modelId),
+      thinking: Type.Optional(thinking),
+      mcp_servers: Type.Optional(Type.Array(id("MCP server id"), { maxItems: 20 }))
+    }),
+    covers: ["createSession"],
+    summarize: (args) => `Start a chat${args.title ? ` ${quote(args.title)}` : args.message ? ` about ${quote(args.message)}` : ""}`,
+    run: async (host, args, caller) => {
+      const parent = caller.kind === "chat" ? caller.sessionId : null
+      if (parent && host.sessionDepth(parent) >= MAX_CHAT_DEPTH) {
+        throw new Error(`Chats started by chats can't start more chats (at most ${MAX_CHAT_DEPTH} levels).`)
+      }
+      const state = host.appState()
+      if (args.agent_id && !state.agents.some((agent) => agent.id === args.agent_id)) throw new Error(`No agent ${args.agent_id}.`)
+      if (args.project_id && !state.projects.some((project) => project.id === args.project_id)) throw new Error(`No project ${args.project_id}.`)
+      const session = await host.createSession({
+        title: args.title,
+        agentId: args.agent_id ?? null,
+        projectId: args.project_id ?? null,
+        model: args.model,
+        thinking: args.thinking as ThinkingLevel | undefined,
+        mcpServers: args.mcp_servers
+      })
+      if (parent) host.noteSessionParent(session.id, parent)
+      if (args.message?.trim()) await host.sendMessage(session.id, args.message)
+      return { id: session.id, title: args.message?.trim() && !args.title ? args.message.slice(0, 60) : session.title, url: `/chat/${session.id}` }
+    }
+  }),
+  define({
+    name: "app_send_message",
+    description: "Send a message to another chat. If it is busy, the message is queued and runs after the current one.",
+    risk: "write",
+    parameters: Type.Object({ session_id: id("The chat's id."), text: Type.String({ minLength: 1, maxLength: 50_000 }) }),
+    covers: ["sendMessage"],
+    summarize: (args, state) => `Message ${quote(chatTitle(state, args.session_id))}: ${quote(args.text, 80)}`,
+    run: async (host, args, caller) => {
+      if (caller.kind === "chat" && caller.sessionId === args.session_id) throw new Error("A chat can't message itself; just keep working.")
+      if (!host.appState().sessions.some((session) => session.id === args.session_id)) throw new Error(`No chat ${args.session_id}.`)
+      await host.sendMessage(args.session_id, args.text)
+      return { sent: true }
+    }
+  }),
+  define({
+    name: "app_stop_session",
+    description: "Stop a chat's current run.",
+    risk: "write",
+    parameters: Type.Object({ session_id: id("The chat's id.") }),
+    covers: ["abort"],
+    summarize: (args, state) => `Stop ${quote(chatTitle(state, args.session_id))}`,
+    run: async (host, args) => {
+      await host.abort(args.session_id)
+      return { stopped: true }
+    }
+  }),
+  define({
+    name: "app_update_session",
+    description: "Rename a chat, change its model, thinking level, or MCP servers, or mute its notifications.",
+    risk: "write",
+    parameters: Type.Object({
+      session_id: id("The chat's id."),
+      title: Type.Optional(Type.String({ minLength: 1, maxLength: 120 })),
+      model: Type.Optional(modelId),
+      thinking: Type.Optional(thinking),
+      mcp_servers: Type.Optional(Type.Array(id("MCP server id"), { maxItems: 20 })),
+      muted: Type.Optional(Type.Boolean())
+    }),
+    covers: ["renameSession", "configureSession", "setSessionMuted"],
+    summarize: (args, state) => `Update ${quote(chatTitle(state, args.session_id))}`,
+    run: async (host, args) => {
+      if (!host.appState().sessions.some((session) => session.id === args.session_id)) throw new Error(`No chat ${args.session_id}.`)
+      if (args.title !== undefined) await host.renameSession(args.session_id, args.title)
+      if (args.model !== undefined || args.thinking !== undefined || args.mcp_servers !== undefined) {
+        await host.configureSession(args.session_id, { model: args.model, thinking: args.thinking as ThinkingLevel | undefined, mcpServers: args.mcp_servers })
+      }
+      if (args.muted !== undefined) await host.setSessionMuted(args.session_id, args.muted)
+      return sessionSummary(host.appState())(host.appState().sessions.find((session) => session.id === args.session_id)!)
+    }
+  }),
+  define({
+    name: "app_delete_sessions",
+    description: "Delete chats (they're hidden; their VMs and disks are deleted).",
+    risk: "admin",
+    parameters: Type.Object({ session_ids: Type.Array(id("A chat's id."), { minItems: 1, maxItems: 50 }) }),
+    covers: ["deleteSession"],
+    summarize: (args, state) =>
+      args.session_ids.length === 1 ? `Delete ${quote(chatTitle(state, args.session_ids[0]!))}` : `Delete ${args.session_ids.length} chats`,
+    run: async (host, args, caller) => {
+      const ids = args.session_ids.filter((sessionId) => !(caller.kind !== "mcp" && caller.sessionId === sessionId))
+      for (const sessionId of ids) await host.deleteSession(sessionId)
+      return { deleted: ids }
+    }
+  }),
+
+  // Agents
+  define({
+    name: "app_create_agent",
+    description: "Create a custom agent: a preset with instructions, model, thinking level, and MCP servers that new chats can start with.",
+    risk: "write",
+    parameters: createAgentParams,
+    covers: ["saveAgent"],
+    summarize: (args) => `Create agent ${quote(args.name)}`,
+    run: async (host, args) => host.saveAgent(agentDraft(args))
+  }),
+  define({
+    name: "app_update_agent",
+    description: "Change an existing agent. Only the fields you give change; edits apply to its existing chats too.",
+    risk: "admin",
+    parameters: Type.Object({ agent_id: id("The agent's id."), ...agentFields, name: Type.Optional(agentFields.name) }),
+    covers: ["saveAgent"],
+    summarize: (args, state) => `Update agent ${quote(state.agents.find((agent) => agent.id === args.agent_id)?.name ?? args.agent_id)}`,
+    run: async (host, args) => {
+      const existing = host.appState().agents.find((agent) => agent.id === args.agent_id)
+      if (!existing) throw new Error(`No agent ${args.agent_id}.`)
+      return host.saveAgent(agentDraft({ ...args, name: args.name ?? existing.name }, existing))
+    }
+  }),
+  define({
+    name: "app_delete_agent",
+    description: "Delete an agent. Its chats keep working as plain chats.",
+    risk: "admin",
+    parameters: Type.Object({ agent_id: id("The agent's id.") }),
+    covers: ["deleteAgent"],
+    summarize: (args, state) => `Delete agent ${quote(state.agents.find((agent) => agent.id === args.agent_id)?.name ?? args.agent_id)}`,
+    run: async (host, args) => {
+      await host.deleteAgent(args.agent_id)
+      return { deleted: args.agent_id }
+    }
+  }),
+
+  // Projects
+  define({
+    name: "app_create_project",
+    description: "Create a project: repos to clone into ~/work on a chat's VM, a setup script, and notes for the model.",
+    risk: "write",
+    parameters: createProjectParams,
+    covers: ["saveProject"],
+    summarize: (args) => `Create project ${quote(args.name)}`,
+    run: async (host, args) => host.saveProject(projectDraft(args))
+  }),
+  define({
+    name: "app_update_project",
+    description: "Change an existing project. Only the fields you give change; `repos` replaces the whole list.",
+    risk: "admin",
+    parameters: Type.Object({ project_id: id("The project's id."), ...projectFields, name: Type.Optional(projectFields.name) }),
+    covers: ["saveProject"],
+    summarize: (args, state) => `Update project ${quote(state.projects.find((project) => project.id === args.project_id)?.name ?? args.project_id)}`,
+    run: async (host, args) => {
+      const existing = host.appState().projects.find((project) => project.id === args.project_id)
+      if (!existing) throw new Error(`No project ${args.project_id}.`)
+      return host.saveProject(projectDraft({ ...args, name: args.name ?? existing.name }, existing))
+    }
+  }),
+  define({
+    name: "app_delete_project",
+    description: "Delete a project. Its chats keep their VMs and files.",
+    risk: "admin",
+    parameters: Type.Object({ project_id: id("The project's id.") }),
+    covers: ["deleteProject"],
+    summarize: (args, state) => `Delete project ${quote(state.projects.find((project) => project.id === args.project_id)?.name ?? args.project_id)}`,
+    run: async (host, args) => {
+      await host.deleteProject(args.project_id)
+      return { deleted: args.project_id }
+    }
+  }),
+
+  // MCP servers
+  define({
+    name: "app_save_mcp_server",
+    description:
+      "Add or change a remote MCP server. Its tools become available to chats that attach it. `headers` values are encrypted at rest " +
+      "(an empty value keeps the saved one). OAuth servers need the user to sign in on the MCP servers page.",
+    risk: "admin",
+    parameters: Type.Object({
+      server_id: Type.Optional(id("Give to change an existing server.")),
+      name: Type.String({ minLength: 1, maxLength: 60 }),
+      url: Type.String({ minLength: 1, maxLength: 500, description: "https URL of the server." }),
+      transport: Type.Optional(Type.Union([Type.Literal("auto"), Type.Literal("streamable-http"), Type.Literal("sse")])),
+      auth: Type.Optional(Type.Union([Type.Literal("none"), Type.Literal("headers"), Type.Literal("oauth")])),
+      headers: Type.Optional(Type.Array(Type.Object({ name: Type.String({ minLength: 1, maxLength: 100 }), value: Type.String({ maxLength: 4_000 }) }), { maxItems: 10 })),
+      default_on: Type.Optional(Type.Boolean({ description: "Attach to new chats that don't use an agent." }))
+    }),
+    covers: ["saveMcpServer"],
+    summarize: (args) =>
+      `${args.server_id ? "Change" : "Add"} MCP server ${quote(args.name)} at ${args.url}${args.headers?.length ? ` with headers ${args.headers.map((header) => header.name).join(", ")}` : ""}`,
+    run: async (host, args) =>
+      host.saveMcpServer({
+        id: args.server_id,
+        name: args.name,
+        url: args.url,
+        transport: (args.transport ?? "auto") as McpTransport,
+        auth: (args.auth ?? (args.headers?.length ? "headers" : "none")) as McpAuth,
+        headers: args.headers,
+        defaultOn: args.default_on ?? false
+      })
+  }),
+  define({
+    name: "app_reconnect_mcp_server",
+    description: "Reconnect an MCP server (e.g. after it was down) and refresh its tool list.",
+    risk: "write",
+    parameters: Type.Object({ server_id: id("The server's id.") }),
+    covers: ["connectMcpServer"],
+    summarize: (args, state) => `Reconnect MCP server ${quote(state.mcp.find((server) => server.id === args.server_id)?.name ?? args.server_id)}`,
+    run: async (host, args) => host.connectMcpServer(args.server_id)
+  }),
+  define({
+    name: "app_set_mcp_default",
+    description: "Choose whether an MCP server is attached to new chats that don't use an agent.",
+    risk: "admin",
+    parameters: Type.Object({ server_id: id("The server's id."), default_on: Type.Boolean() }),
+    covers: ["setMcpServerDefault"],
+    summarize: (args, state) =>
+      `${args.default_on ? "Attach" : "Stop attaching"} MCP server ${quote(state.mcp.find((server) => server.id === args.server_id)?.name ?? args.server_id)} ${args.default_on ? "to" : "on"} new chats`,
+    run: async (host, args) => {
+      await host.setMcpServerDefault(args.server_id, args.default_on)
+      return { serverId: args.server_id, defaultOn: args.default_on }
+    }
+  }),
+  define({
+    name: "app_delete_mcp_server",
+    description: "Remove an MCP server and its saved credentials.",
+    risk: "admin",
+    parameters: Type.Object({ server_id: id("The server's id.") }),
+    covers: ["deleteMcpServer"],
+    summarize: (args, state) => `Remove MCP server ${quote(state.mcp.find((server) => server.id === args.server_id)?.name ?? args.server_id)}`,
+    run: async (host, args) => {
+      await host.deleteMcpServer(args.server_id)
+      return { deleted: args.server_id }
+    }
+  }),
+
+  // Settings
+  define({
+    name: "app_update_settings",
+    description: "Change settings: default model and thinking level for new chats, instructions added to every chat, and VM defaults.",
+    risk: "admin",
+    parameters: Type.Object({
+      default_model: Type.Optional(modelId),
+      default_thinking: Type.Optional(thinking),
+      instructions: Type.Optional(Type.String({ maxLength: 20_000, description: "Added to the system prompt of every chat." })),
+      vm_size: Type.Optional(Type.Union(VM_SIZES.map((size) => Type.Literal(size.id)))),
+      vm_idle_minutes: Type.Optional(Type.Union([5, 10, 15, 30, 60].map((minutes) => Type.Literal(minutes))))
+    }),
+    covers: ["updateSettings"],
+    summarize: (args) =>
+      `Change settings: ${Object.keys(args).map((key) => key.replace(/_/g, " ")).join(", ") || "nothing"}`,
+    run: async (host, args) => {
+      await host.updateSettings({
+        ...(args.default_model !== undefined && { defaultModel: args.default_model }),
+        ...(args.default_thinking !== undefined && { defaultThinking: args.default_thinking as ThinkingLevel }),
+        ...(args.instructions !== undefined && { instructions: args.instructions }),
+        ...(args.vm_size !== undefined && { vmSize: args.vm_size as VmSize }),
+        ...(args.vm_idle_minutes !== undefined && { vmMinutes: args.vm_idle_minutes })
+      })
+      return host.appState().settings
+    }
+  }),
+
+  // VMs
+  define({
+    name: "app_vm_start",
+    description: "Start (or resume) a chat's VM. A project chat's VM is set up with its repos first.",
+    risk: "write",
+    parameters: Type.Object({ vm_key: vmKey }),
+    covers: ["vmStart"],
+    summarize: (args, state) => `Start the VM of ${quote(chatTitle(state, args.vm_key))}`,
+    run: async (host, args) => host.vmStart(args.vm_key)
+  }),
+  define({
+    name: "app_vm_stop",
+    description: "Stop a chat's VM. Its disk is kept; it resumes when needed.",
+    risk: "write",
+    parameters: Type.Object({ vm_key: vmKey }),
+    covers: ["vmStop"],
+    summarize: (args, state) => `Stop the VM of ${quote(chatTitle(state, args.vm_key))}`,
+    run: async (host, args) => host.vmStop(args.vm_key)
+  }),
+  define({
+    name: "app_vm_run",
+    description: "Run a shell command on a chat's VM (starting it if needed), up to 10 minutes. Returns its output and exit code.",
+    risk: "write",
+    parameters: Type.Object({ vm_key: vmKey, command: Type.String({ minLength: 1, maxLength: 20_000 }) }),
+    covers: ["vmRun"],
+    summarize: (args, state) => `Run on the VM of ${quote(chatTitle(state, args.vm_key))}: ${quote(args.command, 80)}`,
+    run: async (host, args) => host.vmRun(args.vm_key, args.command)
+  }),
+  define({
+    name: "app_vm_rerun_setup",
+    description: "Run a project VM's setup again: GitHub sign-in, cloning the repos, and the setup script.",
+    risk: "write",
+    parameters: Type.Object({ vm_key: vmKey }),
+    covers: ["vmRerunSetup"],
+    summarize: (args, state) => `Re-run setup on the VM of ${quote(chatTitle(state, args.vm_key))}`,
+    run: async (host, args) => {
+      await host.vmRerunSetup(args.vm_key)
+      return { started: true }
+    }
+  }),
+  define({
+    name: "app_vm_expose_port",
+    description: "Get a private, token-protected URL for a port on a chat's VM (e.g. a dev server). Only the user can make a port public.",
+    risk: "write",
+    parameters: Type.Object({ vm_key: vmKey, port: Type.Integer({ minimum: 1, maximum: 65_535 }) }),
+    covers: ["vmExposePort"],
+    summarize: (args, state) => `Open port ${args.port} on the VM of ${quote(chatTitle(state, args.vm_key))}`,
+    run: async (host, args) => ({ url: await host.vmExposePort(args.vm_key, args.port, false) })
+  }),
+  define({
+    name: "app_vm_destroy",
+    description: "Delete a chat's VM and everything on its disk. The chat gets a fresh VM if it needs one later.",
+    risk: "admin",
+    parameters: Type.Object({ vm_key: vmKey }),
+    covers: ["vmDestroy"],
+    summarize: (args, state) => `Delete the VM of ${quote(chatTitle(state, args.vm_key))} and its disk`,
+    run: async (host, args) => host.vmDestroy(args.vm_key)
+  }),
+
+  // Scheduling (chats have native schedule tools)
+  define({
+    name: "app_schedule_prompt",
+    description: "Schedule a prompt: once at a time (ISO 8601), after a delay, or on a cron schedule (UTC). Runs in the given chat, or a new chat each time.",
+    risk: "write",
+    inChats: false,
+    parameters: Type.Object({
+      prompt: Type.String({ minLength: 1, maxLength: 20_000 }),
+      at: Type.Optional(Type.String({ maxLength: 40 })),
+      delay_seconds: Type.Optional(Type.Integer({ minimum: 1 })),
+      cron: Type.Optional(Type.String({ maxLength: 100 })),
+      session_id: Type.Optional(id("Run in this chat; omit for a new chat each time."))
+    }),
+    covers: [],
+    summarize: (args) => `Schedule ${quote(args.prompt)}`,
+    run: async (host, args) => {
+      const choices = [args.at, args.delay_seconds, args.cron].filter((value) => value !== undefined)
+      if (choices.length !== 1) throw new Error("Give exactly one of at, delay_seconds, or cron.")
+      const when = args.at !== undefined ? new Date(args.at) : (args.delay_seconds ?? args.cron!)
+      if (when instanceof Date && Number.isNaN(when.getTime())) throw new Error(`Not a valid date: ${args.at}`)
+      return host.schedulePrompt({ prompt: args.prompt, when, sessionId: args.session_id ?? null })
+    }
+  }),
+  define({
+    name: "app_cancel_schedule",
+    description: "Cancel a scheduled prompt.",
+    risk: "write",
+    inChats: false,
+    parameters: Type.Object({ schedule_id: id("The scheduled prompt's id.") }),
+    covers: ["cancelScheduledPrompt"],
+    summarize: (args) => `Cancel scheduled prompt ${args.schedule_id}`,
+    run: async (host, args) => ({ cancelled: await host.cancelScheduledPrompt(args.schedule_id) })
+  }),
+
+  // Workspace (chats have native file and shell tools)
+  define({
+    name: "app_write_file",
+    description: "Write a file in the agent's /workspace (memory lives in /workspace/MEMORY.md).",
+    risk: "write",
+    inChats: false,
+    parameters: Type.Object({ path: Type.String({ minLength: 1, maxLength: 500 }), content: Type.String({ maxLength: 1_000_000 }) }),
+    covers: ["writeFile"],
+    summarize: (args) => `Write ${args.path}`,
+    run: async (host, args) => {
+      await host.writeFile(args.path, args.content)
+      return { written: args.path }
+    }
+  }),
+  define({
+    name: "app_delete_file",
+    description: "Delete a file from the agent's /workspace.",
+    risk: "admin",
+    inChats: false,
+    parameters: Type.Object({ path: Type.String({ minLength: 1, maxLength: 500 }) }),
+    covers: ["deleteFile"],
+    summarize: (args) => `Delete ${args.path}`,
+    run: async (host, args) => {
+      await host.deleteFile(args.path)
+      return { deleted: args.path }
+    }
+  }),
+  define({
+    name: "app_run_workspace_command",
+    description: "Run a command in the agent's simulated /workspace shell (grep, sed, jq, sqlite3, curl, …).",
+    risk: "write",
+    inChats: false,
+    parameters: Type.Object({ command: Type.String({ minLength: 1, maxLength: 20_000 }) }),
+    covers: ["runCommand"],
+    summarize: (args) => `Run in /workspace: ${quote(args.command, 80)}`,
+    run: async (host, args) => host.runCommand(args.command)
+  }),
+
+  // Notifications
+  define({
+    name: "app_update_push_device",
+    description: `Change what a device is notified about (kinds: ${NOTIFY_KINDS.map((kind) => kind.id).join(", ")}) or whether it skips what's on screen.`,
+    risk: "write",
+    parameters: Type.Object({
+      device_id: id("The device's id."),
+      kinds: Type.Optional(Type.Array(Type.Union(NOTIFY_KINDS.map((kind) => Type.Literal(kind.id))), { maxItems: NOTIFY_KINDS.length })),
+      only_when_away: Type.Optional(Type.Boolean())
+    }),
+    covers: ["pushUpdate"],
+    summarize: (args) => `Change notifications for device ${args.device_id}`,
+    run: async (host, args) => {
+      await host.pushUpdate(args.device_id, { kinds: args.kinds as NotifyKind[] | undefined, onlyWhenAway: args.only_when_away })
+      return host.appState().push.devices.find((device) => device.id === args.device_id) ?? null
+    }
+  }),
+  define({
+    name: "app_test_push",
+    description: "Send a test notification to a device.",
+    risk: "write",
+    parameters: Type.Object({ device_id: id("The device's id.") }),
+    covers: ["pushTest"],
+    summarize: (args) => `Send a test notification to ${args.device_id}`,
+    run: async (host, args) => {
+      const error = await host.pushTest(args.device_id)
+      if (error) throw new Error(error)
+      return { sent: true }
+    }
+  }),
+  define({
+    name: "app_remove_push_device",
+    description: "Stop notifications on a device.",
+    risk: "admin",
+    parameters: Type.Object({ device_id: id("The device's id.") }),
+    covers: ["pushUnsubscribe"],
+    summarize: (args) => `Stop notifications on device ${args.device_id}`,
+    run: async (host, args) => {
+      await host.pushUnsubscribe(args.device_id)
+      return { removed: args.device_id }
+    }
+  })
+]
+
+export const operationByName = new Map(OPERATIONS.map((operation) => [operation.name, operation]))
+
+export const riskOf = (operation: Operation, args: unknown): AccessRisk =>
+  typeof operation.risk === "function" ? operation.risk(args as never) : operation.risk

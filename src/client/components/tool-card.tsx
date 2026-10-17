@@ -39,7 +39,7 @@ const icons: Record<string, LucideIcon> = {
   vm_stop: Monitor
 }
 
-const summaryKeys = ["command", "path", "query", "url", "prompt", "name", "id"]
+const summaryKeys = ["command", "path", "query", "url", "prompt", "name", "id", "operation"]
 
 export const summarize = (args: unknown) => {
   if (!Predicate.isObject(args)) return ""
@@ -76,7 +76,9 @@ const activities: Record<string, string> = {
   vm_write_file: "Writing a file on the VM",
   vm_expose_port: "Opening a port",
   vm_screenshot: "Looking at the VM's screen",
-  vm_stop: "Stopping the VM"
+  vm_stop: "Stopping the VM",
+  app_operations: "Looking up app operations",
+  app_call: "Managing Dex"
 }
 
 export function ToolCard({ call, result, live }: { call: ToolCall; result?: ToolResultMessage; live?: LiveTool }) {

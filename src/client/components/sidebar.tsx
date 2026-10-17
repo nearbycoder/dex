@@ -7,6 +7,7 @@ import {
   ChevronRight,
   FolderGit2,
   FolderOpen,
+  KeyRound,
   LogOut,
   MessageSquarePlus,
   Monitor,
@@ -28,7 +29,7 @@ import { ModelLogo } from "./model-logo"
 import { Bone } from "./skeleton"
 
 /** Configuration pages: on these the sidebar shows the settings links instead of the chats. */
-const SETTINGS_AREA = ["/settings", "/notifications", "/machine", "/projects", "/agents", "/mcp", "/files", "/usage"]
+const SETTINGS_AREA = ["/settings", "/notifications", "/machine", "/projects", "/agents", "/mcp", "/files", "/usage", "/access"]
 const inSettingsArea = (pathname: string) => SETTINGS_AREA.some((path) => pathname === path || pathname.startsWith(`${path}/`))
 
 const linkClass =
@@ -79,6 +80,8 @@ export function Sidebar() {
     void (chat ? navigate({ to: "/chat/$sessionId", params: { sessionId: chat } }) : navigate({ to: "/chat" }))
   }
 
+  const waiting = state?.access.pending.filter((action) => action.status === "pending" && Date.now() - action.createdAt < 3_600_000).length ?? 0
+
   const settingsLinks: Array<{ to: string; label: string; icon: ReactNode; hint?: ReactNode; show?: boolean }> = [
     { to: "/settings", label: "General", icon: <SlidersHorizontal className="size-4" />, hint: clineMissing && <Hint dot="bg-amber-500" title="Connect ClinePass" /> },
     { to: "/notifications", label: "Notifications", icon: <Bell className="size-4" /> },
@@ -99,7 +102,13 @@ export function Sidebar() {
     { to: "/agents", label: "Agents", icon: <Bot className="size-4" /> },
     { to: "/mcp", label: "MCP servers", icon: <Plug className="size-4" />, hint: mcpAttention && <Hint dot="bg-amber-500" title="A server needs attention" /> },
     { to: "/files", label: "Workspace", icon: <FolderOpen className="size-4" /> },
-    { to: "/usage", label: "Usage", icon: <BarChart3 className="size-4" /> }
+    { to: "/usage", label: "Usage", icon: <BarChart3 className="size-4" /> },
+    {
+      to: "/access",
+      label: "Access & API",
+      icon: <KeyRound className="size-4" />,
+      hint: waiting > 0 && <Hint count={waiting} dot="bg-amber-500" title={`${waiting} waiting for your confirmation`} />
+    }
   ]
 
   return (

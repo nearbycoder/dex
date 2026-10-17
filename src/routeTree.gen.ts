@@ -12,10 +12,12 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as AppAccessRouteImport } from './routes/_app.access'
 import { Route as AppFilesRouteImport } from './routes/_app.files'
 import { Route as AppNotificationsRouteImport } from './routes/_app.notifications'
 import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppUsageRouteImport } from './routes/_app.usage'
+import { Route as ApiMcpRouteImport } from './routes/api.mcp'
 import { Route as AuthDevRouteImport } from './routes/auth.dev'
 import { Route as AuthLogoutRouteImport } from './routes/auth.logout'
 import { Route as AuthPasswordRouteImport } from './routes/auth.password'
@@ -47,6 +49,11 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppAccessRoute = AppAccessRouteImport.update({
+  id: '/access',
+  path: '/access',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppFilesRoute = AppFilesRouteImport.update({
   id: '/files',
   path: '/files',
@@ -66,6 +73,11 @@ const AppUsageRoute = AppUsageRouteImport.update({
   id: '/usage',
   path: '/usage',
   getParentRoute: () => AppRoute,
+} as any)
+const ApiMcpRoute = ApiMcpRouteImport.update({
+  id: '/api/mcp',
+  path: '/api/mcp',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AuthDevRoute = AuthDevRouteImport.update({
   id: '/auth/dev',
@@ -151,10 +163,12 @@ const AuthGithubStartRoute = AuthGithubStartRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/access': typeof AppAccessRoute
   '/files': typeof AppFilesRoute
   '/notifications': typeof AppNotificationsRoute
   '/settings': typeof AppSettingsRoute
   '/usage': typeof AppUsageRoute
+  '/api/mcp': typeof ApiMcpRoute
   '/auth/dev': typeof AuthDevRoute
   '/auth/logout': typeof AuthLogoutRoute
   '/auth/password': typeof AuthPasswordRoute
@@ -175,10 +189,12 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/access': typeof AppAccessRoute
   '/files': typeof AppFilesRoute
   '/notifications': typeof AppNotificationsRoute
   '/settings': typeof AppSettingsRoute
   '/usage': typeof AppUsageRoute
+  '/api/mcp': typeof ApiMcpRoute
   '/auth/dev': typeof AuthDevRoute
   '/auth/logout': typeof AuthLogoutRoute
   '/auth/password': typeof AuthPasswordRoute
@@ -201,10 +217,12 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
+  '/_app/access': typeof AppAccessRoute
   '/_app/files': typeof AppFilesRoute
   '/_app/notifications': typeof AppNotificationsRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/usage': typeof AppUsageRoute
+  '/api/mcp': typeof ApiMcpRoute
   '/auth/dev': typeof AuthDevRoute
   '/auth/logout': typeof AuthLogoutRoute
   '/auth/password': typeof AuthPasswordRoute
@@ -227,10 +245,12 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/login'
+    | '/access'
     | '/files'
     | '/notifications'
     | '/settings'
     | '/usage'
+    | '/api/mcp'
     | '/auth/dev'
     | '/auth/logout'
     | '/auth/password'
@@ -251,10 +271,12 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/login'
+    | '/access'
     | '/files'
     | '/notifications'
     | '/settings'
     | '/usage'
+    | '/api/mcp'
     | '/auth/dev'
     | '/auth/logout'
     | '/auth/password'
@@ -276,10 +298,12 @@ export interface FileRouteTypes {
     | '/'
     | '/_app'
     | '/login'
+    | '/_app/access'
     | '/_app/files'
     | '/_app/notifications'
     | '/_app/settings'
     | '/_app/usage'
+    | '/api/mcp'
     | '/auth/dev'
     | '/auth/logout'
     | '/auth/password'
@@ -302,6 +326,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
+  ApiMcpRoute: typeof ApiMcpRoute
   AuthDevRoute: typeof AuthDevRoute
   AuthLogoutRoute: typeof AuthLogoutRoute
   AuthPasswordRoute: typeof AuthPasswordRoute
@@ -333,6 +358,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app/access': {
+      id: '/_app/access'
+      path: '/access'
+      fullPath: '/access'
+      preLoaderRoute: typeof AppAccessRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/files': {
       id: '/_app/files'
       path: '/files'
@@ -360,6 +392,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/usage'
       preLoaderRoute: typeof AppUsageRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/api/mcp': {
+      id: '/api/mcp'
+      path: '/api/mcp'
+      fullPath: '/api/mcp'
+      preLoaderRoute: typeof ApiMcpRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/auth/dev': {
       id: '/auth/dev'
@@ -477,6 +516,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppRouteChildren {
+  AppAccessRoute: typeof AppAccessRoute
   AppFilesRoute: typeof AppFilesRoute
   AppNotificationsRoute: typeof AppNotificationsRoute
   AppSettingsRoute: typeof AppSettingsRoute
@@ -494,6 +534,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppAccessRoute: AppAccessRoute,
   AppFilesRoute: AppFilesRoute,
   AppNotificationsRoute: AppNotificationsRoute,
   AppSettingsRoute: AppSettingsRoute,
@@ -516,6 +557,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
+  ApiMcpRoute: ApiMcpRoute,
   AuthDevRoute: AuthDevRoute,
   AuthLogoutRoute: AuthLogoutRoute,
   AuthPasswordRoute: AuthPasswordRoute,

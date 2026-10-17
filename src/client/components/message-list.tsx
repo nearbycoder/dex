@@ -4,6 +4,7 @@ import { AlertTriangle, ChevronRight, ListChecks, LoaderCircle } from "lucide-re
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react"
 import { displayItems, type LiveTool, toolResults, type TranscriptState } from "~/client/lib/transcript"
 import { Collapse } from "./collapse"
+import { ConfirmCard } from "./confirm-card"
 import { Markdown } from "./markdown"
 import { summarize, ToolCard, toolActivity } from "./tool-card"
 import { useNow } from "./vm-status"
@@ -112,14 +113,14 @@ function Activity(props: {
         ) : (
           <ListChecks className="size-3.5 shrink-0 text-emerald-400" />
         )}
-        <span className="flex min-w-0 flex-1 items-baseline gap-1.5 overflow-hidden">
+        <span className="flex min-w-[8.5rem] flex-1 items-baseline gap-1.5 overflow-hidden">
           <span key={status} className={`shrink-0 font-medium text-zinc-300 ${active ? "animate-rise" : ""}`}>
             {status}
             {active && "…"}
           </span>
           {detail && <span className="truncate font-mono text-zinc-500">{detail}</span>}
         </span>
-        <span className="shrink-0 text-zinc-500 tabular-nums">{counts.join(" · ")}</span>
+        <span className="min-w-0 truncate text-zinc-500 tabular-nums">{counts.join(" · ")}</span>
       </button>
       <Collapse open={open}>
         <div className="border-t border-zinc-800 px-3 py-1">
@@ -168,6 +169,12 @@ function AssistantTurn(props: {
   const shown = [...blocks.slice(0, lastWork + 1).filter((step) => isUi(step.block)), ...blocks.slice(lastWork + 1)]
   const final = messages.at(-1)
   const errors = messages.filter((message) => message.stopReason === "error")
+  // Admin operations the chat asked for stay in view until you answer them.
+  const confirmations = blocks.flatMap((step) => {
+    if (step.block.type !== "toolCall" || step.block.name !== "app_call") return []
+    const details = props.results.get(step.block.id)?.details as { confirmation?: { id: string; summary: string } } | undefined
+    return details?.confirmation ? [details.confirmation] : []
+  })
 
   return (
     <div className="min-w-0 flex-1">
@@ -182,6 +189,9 @@ function AssistantTurn(props: {
           tools={props.tools}
         />
       )}
+      {confirmations.map((confirmation) => (
+        <ConfirmCard key={confirmation.id} id={confirmation.id} summary={confirmation.summary} />
+      ))}
       {shown.map((step) => {
         const { block } = step
         if (block.type === "text") return block.text ? <Markdown key={step.key}>{block.text}</Markdown> : null

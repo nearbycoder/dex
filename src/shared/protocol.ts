@@ -1,5 +1,6 @@
 import type { AgentEvent, SnapshotEvent } from "@earendil-works/pi-durable"
 import { Predicate } from "effect"
+import { type AccessState, NO_ACCESS } from "./access"
 import type { AgentProfile } from "./agents"
 import type { McpServerInfo } from "./mcp"
 import type { PushStatus } from "./notifications"
@@ -123,6 +124,7 @@ export const withStateDefaults = (state: DexState): DexState => ({
   push: state.push ?? { configured: false, publicKey: null, devices: [] },
   agents: (state.agents ?? []).map((agent) => ({ ...agent, mcpServers: agent.mcpServers ?? [] })),
   mcp: state.mcp ?? [],
+  access: state.access ?? NO_ACCESS,
   sessions: state.sessions.map((session) => ({
     ...session,
     agentId: session.agentId ?? null,
@@ -147,6 +149,8 @@ export interface DexState {
   readonly push: PushStatus
   readonly agents: ReadonlyArray<AgentProfile>
   readonly mcp: ReadonlyArray<McpServerInfo>
+  /** MCP access tokens, the audit log of app operations, and admin operations waiting for confirmation. */
+  readonly access: AccessState
 }
 
 export interface WorkspaceFile {

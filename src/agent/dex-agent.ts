@@ -35,13 +35,17 @@ import { SHARED_VM } from "~/shared/protocol"
 import { normalizeRepoUrl, type ProjectDraft, type ProjectProfile, type ProjectRepo, PROJECT_ROOT, repoDirName, repoLabel } from "~/shared/projects"
 import { CLOUDFLARE_RATES, type CloudflareLine, type UsageRange, type UsageReport } from "~/shared/usage"
 import { AGENT_COLORS, AGENT_ICONS, type AgentDraft, type AgentProfile, STARTER_AGENTS } from "~/shared/agents"
+import { type AccessRisk, type CreatedAccessToken, NO_ACCESS } from "~/shared/access"
 import type { McpAuth, McpConnectResult, McpServerDraft, McpServerInfo, McpStatus, McpTransport } from "~/shared/mcp"
 import { BoatClient } from "./boat"
 import { CloudflareAnalytics, type CloudflareDay, dayCost, emptyDay } from "./cloudflare-analytics"
 import { datesBetween, UsageLedger, utcDate } from "./usage-ledger"
 import { CLINEPASS_PROVIDER_ID, ClinePassClient, clinePassProvider } from "./clinepass"
 import { isMcpExtension, type McpCallResult, mcpExtension, mcpExtensionName, type McpToolSpec, toToolResult } from "./mcp-tools"
+import { AccessCenter, parseAccessToken } from "./access"
+import { handleMcpBody } from "./mcp-server"
 import { webTools } from "./tools/agents-tools"
+import { appTools } from "./tools/app-tools"
 import { loadUiGuideTool, renderUiTool } from "./tools/render-ui"
 import { scheduleTools } from "./tools/schedule-tools"
 import { vmTools } from "./tools/vm-tools"
@@ -78,6 +82,7 @@ You can:
 - Show rich interactive UI with render_ui. Call load_ui_guide once per chat before your first render_ui.
 - Schedule prompts for yourself to run later or on a cron (schedule_prompt).
 - Use tools from MCP servers the user attached to this chat (named <server>__<tool>), when any are.
+- Manage Dex itself with app_operations and app_call: start chats (optionally with an agent, a project, and a first message) and hand work to them, message, read, and stop other chats, create agents and projects, manage MCP servers, VMs, settings, and notifications, and read usage. Admin operations (deleting things, changing settings, existing agents and projects, or MCP servers) ask the user to confirm in this chat: after requesting one, end your turn and wait for their answer.
 
 Work autonomously: break tasks into steps, use tools, check your results, and report back concisely in Markdown. Prefer render_ui for data, comparisons, dashboards, plans, and collecting input. ${WORKSPACE_ROOT}/MEMORY.md is your long-term memory across chats: when the user asks you to remember something, or you learn a durable preference, update it.`
 
@@ -105,6 +110,7 @@ interface SessionRow {
   mcp_servers: string | null
   project_id: string | null
   muted: number | null
+  parent_id: string | null
   [key: string]: SqlStorageValue
 }
 
@@ -181,7 +187,8 @@ export class DexAgent extends Agent<Env, DexState> {
     mcp: [],
     projects: [],
     github: { connected: false, login: null },
-    push: { configured: false, publicKey: null, devices: [] }
+    push: { configured: false, publicKey: null, devices: [] },
+    access: NO_ACCESS
   }
 
   readonly runtime = ManagedRuntime.make(AgentLayer(this.env))
@@ -209,6 +216,16 @@ export class DexAgent extends Agent<Env, DexState> {
     publish: (push) => this.publish({ push }),
     isWatching: (sessionId) =>
       [...this.presence.values()].some((entry) => entry.visible && (sessionId === undefined || entry.sessionId === sessionId))
+  })
+
+  /** Who may run app operations (chats and MCP tokens), confirmations, and the audit log. */
+  readonly access: AccessCenter = new AccessCenter({
+    sql: this.ctx.storage.sql,
+    operations: this,
+    state: () => this.state,
+    publish: (access) => this.publish({ access }),
+    sign: (payload) => this.runtime.runPromise(Keys.use((keys) => keys.sign(payload))),
+    tellChat: (sessionId, text) => this.sendMessage(sessionId, text)
   })
 
   /** One VM per chat (plus `shared`, from before VMs were per chat), created when a chat first needs one. */
@@ -286,6 +303,8 @@ export class DexAgent extends Agent<Env, DexState> {
     if (!sessionColumns.includes("mcp_servers")) ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN mcp_servers TEXT`)
     if (!sessionColumns.includes("project_id")) ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN project_id TEXT`)
     if (!sessionColumns.includes("muted")) ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN muted INTEGER`)
+    // The chat that started this one through app_create_session, if any.
+    if (!sessionColumns.includes("parent_id")) ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN parent_id TEXT`)
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_projects (
       id TEXT PRIMARY KEY, data TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
     migrateVmTables(ctx.storage.sql)
@@ -314,7 +333,7 @@ export class DexAgent extends Agent<Env, DexState> {
     this.publishVms()
     this.refreshProjects()
     this.refreshGitHubStatus()
-    this.publish({ push: this.push.status() })
+    this.publish({ push: this.push.status(), access: this.access.status() })
     void this.backfillUsage()
     this.seedAgents()
     this.refreshAgents()
@@ -364,6 +383,7 @@ export class DexAgent extends Agent<Env, DexState> {
         loadUiGuideTool,
         renderUiTool,
         ...scheduleTools(this),
+        ...appTools(this.access),
         ...(this.vmHost.configured ? vmTools((chatId) => this.vmFor(chatId)) : [])
       ]
     })
@@ -1276,7 +1296,7 @@ export class DexAgent extends Agent<Env, DexState> {
   @callable()
   async vmRun(key: string, command: string) {
     const result = await this.vmForUser(key).exec(command, { actor: "user", timeoutSeconds: 600 })
-    return { exitCode: result.exitCode }
+    return { exitCode: result.exitCode, output: result.output.slice(-16_000) }
   }
 
   @callable()
@@ -1530,6 +1550,83 @@ export class DexAgent extends Agent<Env, DexState> {
   @callable()
   async cancelScheduledPrompt(id: string) {
     return this.cancelSchedule(id)
+  }
+
+  // ── Programmatic access: chats' app tools and the MCP endpoint ────────────
+
+  /** The synced state, for operations. */
+  appState(): DexState {
+    return this.state
+  }
+
+  /** A chat's latest messages as text, for operations that read chats. */
+  async readTranscript(sessionId: string, limit: number) {
+    const stream = await this.harness.session(sessionId).events()
+    try {
+      const messages = stream.snapshot.entries.flatMap((entry) => entry.model ?? [])
+      return messages
+        .filter((message) => message.role === "user" || message.role === "assistant")
+        .slice(-limit)
+        .map((message) => {
+          if (message.role === "user") {
+            const text = typeof message.content === "string" ? message.content : message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n")
+            return { role: "user", at: new Date(message.timestamp).toISOString(), text: text.slice(0, 4_000) }
+          }
+          const text = message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("\n")
+          const tools = message.content.flatMap((block) => (block.type === "toolCall" ? [block.name] : []))
+          return { role: "assistant", at: new Date(message.timestamp).toISOString(), text: text.slice(0, 8_000), ...(tools.length ? { tools } : {}) }
+        })
+    } finally {
+      await stream.stop().catch(() => undefined)
+    }
+  }
+
+  noteSessionParent(sessionId: string, parentId: string) {
+    this.ctx.storage.sql.exec(`UPDATE dex_sessions SET parent_id = ? WHERE id = ?`, parentId, sessionId)
+  }
+
+  /** How many chats started this one, through app_create_session (0 for a chat you started). */
+  sessionDepth(sessionId: string): number {
+    let depth = 0
+    let current: string | null = sessionId
+    while (current && depth < 10) {
+      const row: { parent_id: string | null } | undefined = this.ctx.storage.sql
+        .exec<{ parent_id: string | null }>(`SELECT parent_id FROM dex_sessions WHERE id = ?`, current)
+        .toArray()[0]
+      current = row?.parent_id ?? null
+      if (current) depth++
+    }
+    return depth
+  }
+
+  /** A token for an external agent; the secret is returned once and stored only as a hash. */
+  @callable()
+  async createAccessToken(label: string, scope: AccessRisk, days: number | null): Promise<CreatedAccessToken> {
+    return this.access.createToken(this.name, label, scope, days)
+  }
+
+  @callable()
+  async revokeAccessToken(id: string) {
+    this.access.revokeToken(id)
+  }
+
+  /** Your answer to an admin operation a chat asked for. Only the signed-in app can call this. */
+  @callable()
+  async resolvePendingAction(id: string, approve: boolean) {
+    await this.access.resolve(id, approve)
+  }
+
+  /**
+   * One MCP request from an external agent, forwarded by the Worker after it checked the token's signature.
+   * Returns the HTTP status and JSON body to send back.
+   */
+  async mcpRequest(secret: string, body: unknown): Promise<{ status: number; body: unknown }> {
+    const parsed = parseAccessToken(secret)
+    if (!parsed || parsed.userId !== this.name) return { status: 401, body: { error: "invalid_token" } }
+    const token = await this.access.authenticate(secret)
+    if (!token) return { status: 401, body: { error: "invalid_token" } }
+    const response = await this.keepAliveWhile(() => handleMcpBody(body, this.access, token))
+    return response === null ? { status: 202, body: null } : { status: 200, body: response }
   }
 
   async runScheduledPrompt(payload: ScheduledPayload) {
