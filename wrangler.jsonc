@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dex",
+  "main": "src/server.ts",
+  "compatibility_date": "2026-10-17",
+  "compatibility_flags": ["nodejs_compat"],
+  "upload_source_maps": true,
+  "observability": { "enabled": true },
+  // Workers AI: powers the web_fetch and web_search tools.
+  "ai": { "binding": "AI" },
+  // One DexAgent per user. Pi Durable keeps every chat in the object's SQLite.
+  "durable_objects": {
+    "bindings": [{ "name": "DexAgent", "class_name": "DexAgent" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["DexAgent"] }],
+  "vars": {
+    // Comma-separated GitHub logins allowed to sign in.
+    "ALLOWED_GITHUB_USERS": "nearbycoder"
+  }
+  // Secrets (wrangler secret put): AUTH_SECRET, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, optional CLINE_API_KEY.
+}

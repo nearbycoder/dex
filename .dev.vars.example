@@ -1,0 +1,10 @@
+# Signs session cookies and encrypts stored API keys. Generate with:
+#   node -e 'console.log(require("crypto").randomBytes(32).toString("base64url"))'
+AUTH_SECRET=
+# Shows a "Continue as local dev" button on the login page. Never set in production.
+DEV_LOGIN=true
+# GitHub OAuth app (callback: http://localhost:5173/auth/github/callback)
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+# Optional shared ClinePass key, used when a user has not connected their own.
+CLINE_API_KEY=
