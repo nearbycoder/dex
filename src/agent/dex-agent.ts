@@ -264,6 +264,11 @@ export class DexAgent extends Agent<Env, DexState> {
   }
 
   override async onStart() {
+    // State saved before VMs were per chat has a single `vm`; `vms` replaced it.
+    if ("vm" in this.state) {
+      const { vm: _single, ...current } = this.state as DexState & { vm?: unknown }
+      this.setState(current)
+    }
     // Settings saved before a field existed get its default.
     const settings = { ...DEFAULT_SETTINGS, ...this.state.settings }
     // One-time: agents created when the idle default was 30 minutes move to 5.
