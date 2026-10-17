@@ -4,6 +4,7 @@ import { useState } from "react"
 import { Composer } from "~/client/components/composer"
 import { MessageList } from "~/client/components/message-list"
 import { ModelPicker } from "~/client/components/model-picker"
+import { AgentAvatar } from "~/client/components/agent-avatar"
 import { useDex, useTranscript } from "~/client/lib/dex"
 import { MenuButton } from "~/client/lib/mobile-nav"
 
@@ -15,6 +16,7 @@ function Chat() {
   const transcript = useTranscript(sessionId)
   const session = state?.sessions.find((candidate) => candidate.id === sessionId)
   const [editing, setEditing] = useState<string | null>(null)
+  const agent = session?.agentId ? state?.agents.find((candidate) => candidate.id === session.agentId) : undefined
 
   const send = (text: string) => void stub.sendMessage(sessionId, text)
 
@@ -26,6 +28,11 @@ function Chat() {
     <div className="flex min-h-0 flex-1 flex-col">
       <header className="dex-chrome flex h-12 shrink-0 items-center gap-3 border-b border-zinc-900 px-4">
         <MenuButton />
+        {agent && (
+          <Link to="/agents/$agentId" params={{ agentId: agent.id }} title={`${agent.name} agent`} className="shrink-0">
+            <AgentAvatar icon={agent.icon} color={agent.color} size={24} />
+          </Link>
+        )}
         {editing === null ? (
           <button type="button" onClick={() => setEditing(session?.title ?? "")} className="group flex min-w-0 items-center gap-2">
             <span className="truncate text-sm font-medium">{session?.title ?? "…"}</span>

@@ -1,5 +1,6 @@
 import { Link, useNavigate, useParams } from "@tanstack/react-router"
-import { BarChart3, FolderOpen, LogOut, MessageSquarePlus, Monitor, PanelLeftClose, Settings, Trash2, X } from "lucide-react"
+import { BarChart3, Bot, FolderOpen, LogOut, MessageSquarePlus, Monitor, PanelLeftClose, Settings, Trash2, X } from "lucide-react"
+import { AgentAvatar } from "./agent-avatar"
 import { useNav } from "~/client/lib/mobile-nav"
 import { useDex } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
@@ -68,8 +69,22 @@ export function Sidebar() {
             >
               <div className="truncate text-sm">{session.title}</div>
               <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-zinc-500">
-                <ModelLogo modelId={session.model} className="size-3.5" />
-                <span className="truncate">{findModel(session.model)?.name ?? session.model}</span>
+                {(() => {
+                  const agent = session.agentId ? state.agents.find((candidate) => candidate.id === session.agentId) : undefined
+                  return agent ? (
+                    <>
+                      <AgentAvatar icon={agent.icon} color={agent.color} size={14} />
+                      <span className="shrink-0 text-zinc-400">{agent.name}</span>
+                      <span className="text-zinc-700">·</span>
+                      <span className="truncate">{findModel(session.model)?.name ?? session.model}</span>
+                    </>
+                  ) : (
+                    <>
+                      <ModelLogo modelId={session.model} className="size-3.5" />
+                      <span className="truncate">{findModel(session.model)?.name ?? session.model}</span>
+                    </>
+                  )
+                })()}
                 <span className="text-zinc-700">·</span>
                 {session.busy ? (
                   <span className="flex shrink-0 items-center gap-1 text-emerald-400">
@@ -118,6 +133,12 @@ export function Sidebar() {
             />
           </Link>
         )}
+        <Link
+          to="/agents"
+          className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 [&.active]:bg-zinc-900 [&.active]:text-zinc-100"
+        >
+          <Bot className="size-4" /> Agents
+        </Link>
         <Link
           to="/files"
           className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 [&.active]:bg-zinc-900 [&.active]:text-zinc-100"

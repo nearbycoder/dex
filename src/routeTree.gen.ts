@@ -19,6 +19,8 @@ import { Route as AppUsageRouteImport } from './routes/_app.usage'
 import { Route as AuthDevRouteImport } from './routes/auth.dev'
 import { Route as AuthLogoutRouteImport } from './routes/auth.logout'
 import { Route as AuthPasswordRouteImport } from './routes/auth.password'
+import { Route as AppAgentsIndexRouteImport } from './routes/_app.agents.index'
+import { Route as AppAgentsAgentIdRouteImport } from './routes/_app.agents.$agentId'
 import { Route as AppChatIndexRouteImport } from './routes/_app.chat.index'
 import { Route as AppChatSessionIdRouteImport } from './routes/_app.chat.$sessionId'
 import { Route as AuthGithubCallbackRouteImport } from './routes/auth.github.callback'
@@ -73,6 +75,16 @@ const AuthPasswordRoute = AuthPasswordRouteImport.update({
   path: '/auth/password',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppAgentsIndexRoute = AppAgentsIndexRouteImport.update({
+  id: '/agents/',
+  path: '/agents/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAgentsAgentIdRoute = AppAgentsAgentIdRouteImport.update({
+  id: '/agents/$agentId',
+  path: '/agents/$agentId',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppChatIndexRoute = AppChatIndexRouteImport.update({
   id: '/chat/',
   path: '/chat/',
@@ -104,9 +116,11 @@ export interface FileRoutesByFullPath {
   '/auth/dev': typeof AuthDevRoute
   '/auth/logout': typeof AuthLogoutRoute
   '/auth/password': typeof AuthPasswordRoute
+  '/agents/$agentId': typeof AppAgentsAgentIdRoute
   '/chat/$sessionId': typeof AppChatSessionIdRoute
   '/auth/github/callback': typeof AuthGithubCallbackRoute
   '/auth/github/start': typeof AuthGithubStartRoute
+  '/agents/': typeof AppAgentsIndexRoute
   '/chat/': typeof AppChatIndexRoute
 }
 export interface FileRoutesByTo {
@@ -119,9 +133,11 @@ export interface FileRoutesByTo {
   '/auth/dev': typeof AuthDevRoute
   '/auth/logout': typeof AuthLogoutRoute
   '/auth/password': typeof AuthPasswordRoute
+  '/agents/$agentId': typeof AppAgentsAgentIdRoute
   '/chat/$sessionId': typeof AppChatSessionIdRoute
   '/auth/github/callback': typeof AuthGithubCallbackRoute
   '/auth/github/start': typeof AuthGithubStartRoute
+  '/agents': typeof AppAgentsIndexRoute
   '/chat': typeof AppChatIndexRoute
 }
 export interface FileRoutesById {
@@ -136,9 +152,11 @@ export interface FileRoutesById {
   '/auth/dev': typeof AuthDevRoute
   '/auth/logout': typeof AuthLogoutRoute
   '/auth/password': typeof AuthPasswordRoute
+  '/_app/agents/$agentId': typeof AppAgentsAgentIdRoute
   '/_app/chat/$sessionId': typeof AppChatSessionIdRoute
   '/auth/github/callback': typeof AuthGithubCallbackRoute
   '/auth/github/start': typeof AuthGithubStartRoute
+  '/_app/agents/': typeof AppAgentsIndexRoute
   '/_app/chat/': typeof AppChatIndexRoute
 }
 export interface FileRouteTypes {
@@ -153,9 +171,11 @@ export interface FileRouteTypes {
     | '/auth/dev'
     | '/auth/logout'
     | '/auth/password'
+    | '/agents/$agentId'
     | '/chat/$sessionId'
     | '/auth/github/callback'
     | '/auth/github/start'
+    | '/agents/'
     | '/chat/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -168,9 +188,11 @@ export interface FileRouteTypes {
     | '/auth/dev'
     | '/auth/logout'
     | '/auth/password'
+    | '/agents/$agentId'
     | '/chat/$sessionId'
     | '/auth/github/callback'
     | '/auth/github/start'
+    | '/agents'
     | '/chat'
   id:
     | '__root__'
@@ -184,9 +206,11 @@ export interface FileRouteTypes {
     | '/auth/dev'
     | '/auth/logout'
     | '/auth/password'
+    | '/_app/agents/$agentId'
     | '/_app/chat/$sessionId'
     | '/auth/github/callback'
     | '/auth/github/start'
+    | '/_app/agents/'
     | '/_app/chat/'
   fileRoutesById: FileRoutesById
 }
@@ -273,6 +297,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app/agents/': {
+      id: '/_app/agents/'
+      path: '/agents'
+      fullPath: '/agents/'
+      preLoaderRoute: typeof AppAgentsIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/agents/$agentId': {
+      id: '/_app/agents/$agentId'
+      path: '/agents/$agentId'
+      fullPath: '/agents/$agentId'
+      preLoaderRoute: typeof AppAgentsAgentIdRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/chat/': {
       id: '/_app/chat/'
       path: '/chat'
@@ -309,7 +347,9 @@ interface AppRouteChildren {
   AppMachineRoute: typeof AppMachineRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppUsageRoute: typeof AppUsageRoute
+  AppAgentsAgentIdRoute: typeof AppAgentsAgentIdRoute
   AppChatSessionIdRoute: typeof AppChatSessionIdRoute
+  AppAgentsIndexRoute: typeof AppAgentsIndexRoute
   AppChatIndexRoute: typeof AppChatIndexRoute
 }
 
@@ -318,7 +358,9 @@ const AppRouteChildren: AppRouteChildren = {
   AppMachineRoute: AppMachineRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppUsageRoute: AppUsageRoute,
+  AppAgentsAgentIdRoute: AppAgentsAgentIdRoute,
   AppChatSessionIdRoute: AppChatSessionIdRoute,
+  AppAgentsIndexRoute: AppAgentsIndexRoute,
   AppChatIndexRoute: AppChatIndexRoute,
 }
 

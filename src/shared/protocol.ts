@@ -1,5 +1,6 @@
 import type { AgentEvent, SnapshotEvent } from "@earendil-works/pi-durable"
 import { Predicate } from "effect"
+import type { AgentProfile } from "./agents"
 import type { ThinkingLevel } from "./models"
 
 /** Durable Object binding / class name; the client addresses it as `DexAgent`. */
@@ -13,6 +14,8 @@ export interface SessionMeta {
   readonly createdAt: number
   readonly updatedAt: number
   readonly busy: boolean
+  /** The custom agent this chat was started with, if any. */
+  readonly agentId: string | null
 }
 
 export interface ClineStatus {
@@ -75,6 +78,8 @@ export const NO_VM: VmInfo = { configured: false, id: null, status: "none", size
 export const withStateDefaults = (state: DexState): DexState => ({
   ...state,
   vm: { ...NO_VM, ...state.vm },
+  agents: state.agents ?? [],
+  sessions: state.sessions.map((session) => ({ ...session, agentId: session.agentId ?? null })),
   settings: { ...state.settings, vmSize: state.settings.vmSize ?? "small", vmMinutes: state.settings.vmMinutes ?? 5 }
 })
 
@@ -84,6 +89,7 @@ export interface DexState {
   readonly settings: DexSettings
   readonly sessions: ReadonlyArray<SessionMeta>
   readonly vm: VmInfo
+  readonly agents: ReadonlyArray<AgentProfile>
 }
 
 export interface WorkspaceFile {

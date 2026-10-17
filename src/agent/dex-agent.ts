@@ -22,6 +22,7 @@ import type {
 } from "~/shared/protocol"
 import { NO_VM } from "~/shared/protocol"
 import { CLOUDFLARE_RATES, type CloudflareLine, type UsageRange, type UsageReport } from "~/shared/usage"
+import { AGENT_COLORS, AGENT_ICONS, type AgentDraft, type AgentProfile, STARTER_AGENTS } from "~/shared/agents"
 import { BoatClient } from "./boat"
 import { CloudflareAnalytics, type CloudflareDay, dayCost, emptyDay } from "./cloudflare-analytics"
 import { datesBetween, UsageLedger, utcDate } from "./usage-ledger"
@@ -80,6 +81,15 @@ interface SessionRow {
   thinking: string
   created_at: number
   updated_at: number
+  agent_id: string | null
+  [key: string]: SqlStorageValue
+}
+
+interface AgentRow {
+  id: string
+  data: string
+  created_at: number
+  updated_at: number
   [key: string]: SqlStorageValue
 }
 
@@ -100,7 +110,8 @@ export class DexAgent extends Agent<Env, DexState> {
     cline: { connected: false, source: null, keyHint: null, verifiedAt: null },
     settings: DEFAULT_SETTINGS,
     sessions: [],
-    vm: NO_VM
+    vm: NO_VM,
+    agents: []
   }
 
   readonly runtime = ManagedRuntime.make(AgentLayer(this.env))
@@ -151,6 +162,11 @@ export class DexAgent extends Agent<Env, DexState> {
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_secrets (name TEXT PRIMARY KEY, value TEXT NOT NULL)`)
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`)
+    ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_agents (
+      id TEXT PRIMARY KEY, data TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
+    // Chats remember the agent they were started with (added to databases created before agents existed).
+    const sessionColumns = ctx.storage.sql.exec<{ name: string }>(`PRAGMA table_info(dex_sessions)`).toArray().map((column) => column.name)
+    if (!sessionColumns.includes("agent_id")) ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN agent_id TEXT`)
     this.lifecycle.use(this.harness)
   }
 
@@ -164,6 +180,8 @@ export class DexAgent extends Agent<Env, DexState> {
     }
     this.publish({ settings, vm: this.vm.current })
     void this.backfillUsage()
+    this.seedAgents()
+    this.refreshAgents()
     await this.refreshClineStatus()
     await this.refreshSessions()
     void this.vm.refresh()
@@ -182,7 +200,12 @@ export class DexAgent extends Agent<Env, DexState> {
           if (!memory?.trim()) return undefined
           return memory.length > MAX_MEMORY_CHARS ? `${memory.slice(0, MAX_MEMORY_CHARS)}\n… (truncated; read the file for the rest)` : memory
         }),
-        section("user_instructions", () => this.state.settings.instructions.trim() || undefined)
+        section("user_instructions", () => this.state.settings.instructions.trim() || undefined),
+        // The chat's custom agent, read at each request so edits to the agent apply right away.
+        section("agent", (input) => {
+          const agent = this.agentForSession(String(input.conversationId))
+          return agent ? `You are Dex acting as the "${agent.name}" agent.\n\n${agent.instructions}`.trim() : undefined
+        })
       ],
       // Every model response's tokens and list-price cost, for the Usage page.
       hooks: [hook(GenerationTask, { afterResponse: (message, api) => this.ledger.recordResponse(String(api.conversationId), message) })],
@@ -238,7 +261,8 @@ export class DexAgent extends Agent<Env, DexState> {
         thinking: row.thinking as ThinkingLevel,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
-        busy: busy.get(row.id) ?? false
+        busy: busy.get(row.id) ?? false,
+        agentId: row.agent_id ?? null
       }))
     this.publish({ sessions })
   }
@@ -296,19 +320,21 @@ export class DexAgent extends Agent<Env, DexState> {
   // ── Chats ─────────────────────────────────────────────────────────────────
 
   @callable()
-  async createSession(options: { model?: string; thinking?: ThinkingLevel; title?: string } = {}): Promise<SessionMeta> {
-    const model = options.model && findModel(options.model) ? options.model : this.state.settings.defaultModel
-    const thinking = clampThinking(findModel(model), options.thinking ?? this.state.settings.defaultThinking)
+  async createSession(options: { model?: string; thinking?: ThinkingLevel; title?: string; agentId?: string | null } = {}): Promise<SessionMeta> {
+    const agent = options.agentId ? this.agentById(options.agentId) : undefined
+    const fallbackModel = agent?.model ?? this.state.settings.defaultModel
+    const model = options.model && findModel(options.model) ? options.model : findModel(fallbackModel) ? fallbackModel : DEFAULT_MODEL_ID
+    const thinking = clampThinking(findModel(model), options.thinking ?? agent?.thinking ?? this.state.settings.defaultThinking)
     const session = await this.harness.sessions.create()
     await this.configureConversation(session.id, model, thinking)
     const now = Date.now()
     const title = options.title?.trim() || "New chat"
     this.ctx.storage.sql.exec(
-      `INSERT INTO dex_sessions (id, title, model, thinking, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
-      session.id, title, model, thinking, now, now
+      `INSERT INTO dex_sessions (id, title, model, thinking, created_at, updated_at, agent_id) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      session.id, title, model, thinking, now, now, agent?.id ?? null
     )
     await this.refreshSessions()
-    return { id: session.id, title, model, thinking, createdAt: now, updatedAt: now, busy: false }
+    return { id: session.id, title, model, thinking, createdAt: now, updatedAt: now, busy: false, agentId: agent?.id ?? null }
   }
 
   @callable()
@@ -465,6 +491,80 @@ export class DexAgent extends Agent<Env, DexState> {
   @callable()
   async deleteFile(path: string) {
     return this.workspace.remove(path)
+  }
+
+  // ── Custom agents ─────────────────────────────────────────────────────────
+
+  private loadAgents(): AgentProfile[] {
+    return this.ctx.storage.sql
+      .exec<AgentRow>(`SELECT * FROM dex_agents ORDER BY created_at, id`)
+      .toArray()
+      .map((row) => ({ ...(JSON.parse(row.data) as AgentDraft), id: row.id, createdAt: row.created_at, updatedAt: row.updated_at }))
+  }
+
+  private agentById(id: string): AgentProfile | undefined {
+    const row = this.ctx.storage.sql.exec<AgentRow>(`SELECT * FROM dex_agents WHERE id = ?`, id).toArray()[0]
+    return row && { ...(JSON.parse(row.data) as AgentDraft), id: row.id, createdAt: row.created_at, updatedAt: row.updated_at }
+  }
+
+  private agentForSession(sessionId: string): AgentProfile | undefined {
+    const agentId = this.ctx.storage.sql.exec<{ agent_id: string | null }>(`SELECT agent_id FROM dex_sessions WHERE id = ?`, sessionId).toArray()[0]?.agent_id
+    return agentId ? this.agentById(agentId) : undefined
+  }
+
+  private refreshAgents() {
+    this.publish({ agents: this.loadAgents() })
+  }
+
+  /** Once per Dex: the starter agents (PR Author, PR Reviewer, …). */
+  private seedAgents() {
+    if (this.ctx.storage.sql.exec(`SELECT 1 FROM dex_meta WHERE key = 'agents_seeded'`).toArray().length) return
+    const now = Date.now()
+    STARTER_AGENTS.forEach((agent, index) => {
+      const { id, ...draft } = agent
+      this.ctx.storage.sql.exec(
+        `INSERT OR IGNORE INTO dex_agents (id, data, created_at, updated_at) VALUES (?, ?, ?, ?)`,
+        id, JSON.stringify(draft), now + index, now + index
+      )
+    })
+    this.ctx.storage.sql.exec(`INSERT OR REPLACE INTO dex_meta (key, value) VALUES ('agents_seeded', '1')`)
+  }
+
+  /** Create (no id) or update an agent. Unknown icons, colors, and models fall back to defaults. */
+  @callable()
+  async saveAgent(draft: AgentDraft): Promise<AgentProfile> {
+    const name = String(draft.name ?? "").trim().slice(0, 60)
+    if (!name) throw new Error("Give the agent a name.")
+    const model = findModel(draft.model) ? draft.model : DEFAULT_MODEL_ID
+    const clean: Omit<AgentDraft, "id"> = {
+      name,
+      description: String(draft.description ?? "").trim().slice(0, 200),
+      icon: AGENT_ICONS.includes(draft.icon) ? draft.icon : "bot",
+      color: draft.color in AGENT_COLORS ? draft.color : "emerald",
+      instructions: String(draft.instructions ?? "").slice(0, 20_000),
+      starter: String(draft.starter ?? "").slice(0, 2_000),
+      model,
+      thinking: clampThinking(findModel(model), draft.thinking)
+    }
+    const now = Date.now()
+    const existing = draft.id ? this.agentById(draft.id) : undefined
+    const id = existing?.id ?? `${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 32) || "agent"}-${crypto.randomUUID().slice(0, 6)}`
+    this.ctx.storage.sql.exec(
+      `INSERT INTO dex_agents (id, data, created_at, updated_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
+      id, JSON.stringify(clean), existing?.createdAt ?? now, now
+    )
+    this.refreshAgents()
+    return { ...clean, id, createdAt: existing?.createdAt ?? now, updatedAt: now }
+  }
+
+  /** Deletes an agent. Its chats keep working as plain chats. */
+  @callable()
+  async deleteAgent(id: string) {
+    this.ctx.storage.sql.exec(`DELETE FROM dex_agents WHERE id = ?`, id)
+    this.ctx.storage.sql.exec(`UPDATE dex_sessions SET agent_id = NULL WHERE agent_id = ?`, id)
+    this.refreshAgents()
+    await this.refreshSessions()
   }
 
   // ── Usage ─────────────────────────────────────────────────────────────────

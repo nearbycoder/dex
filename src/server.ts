@@ -19,10 +19,12 @@ const authorizeAgent = (env: Env) => async (request: Request, route: { name: str
 
 export default {
   async fetch(request, env) {
+    // Agent sockets live at /agents/<class>/<instance>. Other /agents/* paths (the Agents pages, e.g.
+    // /agents/pr-reviewer) don't match the SDK's two-segment route and fall through to the app.
     if (new URL(request.url).pathname.startsWith("/agents/")) {
       const authorize = authorizeAgent(env)
       const response = await routeAgentRequest(request, env, { onBeforeConnect: authorize, onBeforeRequest: authorize })
-      return response ?? new Response("Not found", { status: 404 })
+      if (response) return response
     }
     return handler.fetch(request)
   }

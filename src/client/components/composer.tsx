@@ -1,5 +1,5 @@
 import { ArrowUp, Square } from "lucide-react"
-import { type ReactNode, useLayoutEffect, useRef, useState } from "react"
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react"
 
 export function Composer(props: {
   onSend: (text: string) => void | Promise<void>
@@ -9,9 +9,23 @@ export function Composer(props: {
   placeholder?: string
   autoFocus?: boolean
   toolbar?: ReactNode
+  /** Replaces the text when `key` changes, e.g. with a picked agent's starter prompt. */
+  draft?: { readonly text: string; readonly key: number }
+  /** Shown above the text box, inside the composer (e.g. the selected agent). */
+  header?: ReactNode
 }) {
   const [text, setText] = useState("")
   const ref = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    if (!props.draft) return
+    setText(props.draft.text)
+    const element = ref.current
+    if (!element) return
+    element.focus()
+    // Caret at the end, ready to finish the starter sentence.
+    requestAnimationFrame(() => element.setSelectionRange(element.value.length, element.value.length))
+  }, [props.draft?.key])
 
   useLayoutEffect(() => {
     const element = ref.current
@@ -29,6 +43,7 @@ export function Composer(props: {
 
   return (
     <div className="rounded-2xl border border-zinc-800 bg-zinc-900/80 shadow-lg shadow-black/20 focus-within:border-zinc-700">
+      {props.header}
       <textarea
         ref={ref}
         rows={1}

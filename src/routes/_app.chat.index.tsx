@@ -1,37 +1,58 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
-import { KeyRound } from "lucide-react"
+import { KeyRound, Plus, Settings2, X } from "lucide-react"
 import { useEffect, useState } from "react"
+import { AgentAvatar } from "~/client/components/agent-avatar"
 import { Composer } from "~/client/components/composer"
+import { ModelLogo } from "~/client/components/model-logo"
 import { ModelPicker } from "~/client/components/model-picker"
 import { useDex } from "~/client/lib/dex"
-import { DEFAULT_MODEL_ID, DEFAULT_THINKING, type ThinkingLevel } from "~/shared/models"
+import type { AgentProfile } from "~/shared/agents"
+import { clampThinking, DEFAULT_MODEL_ID, DEFAULT_THINKING, findModel, type ThinkingLevel } from "~/shared/models"
 
-export const Route = createFileRoute("/_app/chat/")({ component: NewChat })
-
-const suggestions = [
-  "Research the top 5 open-weight coding models and show a comparison table",
-  "Build me a dashboard of this week's Hacker News front page by points",
-  "Every weekday at 9am UTC, send me a short tech news briefing",
-  "Remember that I prefer TypeScript and concise answers"
-]
+export const Route = createFileRoute("/_app/chat/")({
+  // `?agent=<id>` preselects an agent, e.g. from the Agents page.
+  validateSearch: (search: Record<string, unknown>): { agent?: string } => (typeof search.agent === "string" ? { agent: search.agent } : {}),
+  component: NewChat
+})
 
 function NewChat() {
   const { state, stub, connected } = useDex()
   const navigate = useNavigate()
-  const [choice, setChoice] = useState<{ model: string; thinking: ThinkingLevel }>({
-    model: DEFAULT_MODEL_ID,
-    thinking: DEFAULT_THINKING
-  })
+  const { agent: agentParam } = Route.useSearch()
+  const [choice, setChoice] = useState<{ model: string; thinking: ThinkingLevel }>({ model: DEFAULT_MODEL_ID, thinking: DEFAULT_THINKING })
+  const [agentId, setAgentId] = useState<string | null>(null)
+  const [draft, setDraft] = useState<{ text: string; key: number } | undefined>()
   const [error, setError] = useState<string | null>(null)
 
+  const agents = state?.agents ?? []
+  const agent = agents.find((candidate) => candidate.id === agentId)
+
+  // With no agent picked, follow the defaults from Settings.
   useEffect(() => {
-    if (state) setChoice({ model: state.settings.defaultModel, thinking: state.settings.defaultThinking })
-  }, [state?.settings.defaultModel, state?.settings.defaultThinking])
+    if (state && !agentId) setChoice({ model: state.settings.defaultModel, thinking: state.settings.defaultThinking })
+  }, [state?.settings.defaultModel, state?.settings.defaultThinking, agentId])
+
+  const pick = (next: AgentProfile | null) => {
+    if (!next || next.id === agentId) {
+      setAgentId(null)
+      if (state) setChoice({ model: state.settings.defaultModel, thinking: state.settings.defaultThinking })
+      return
+    }
+    setAgentId(next.id)
+    setChoice({ model: next.model, thinking: clampThinking(findModel(next.model), next.thinking) })
+    setDraft({ text: next.starter, key: Date.now() })
+  }
+
+  useEffect(() => {
+    if (!agentParam || !state) return
+    const preselected = state.agents.find((candidate) => candidate.id === agentParam)
+    if (preselected && preselected.id !== agentId) pick(preselected)
+  }, [agentParam, state?.agents.length])
 
   const start = async (text: string) => {
     setError(null)
     try {
-      const session = await stub.createSession(choice)
+      const session = await stub.createSession({ ...choice, agentId })
       await stub.sendMessage(session.id, text)
       await navigate({ to: "/chat/$sessionId", params: { sessionId: session.id } })
     } catch (cause) {
@@ -40,9 +61,11 @@ function NewChat() {
   }
 
   return (
-    <div className="scrollbar-thin flex flex-1 flex-col items-center overflow-y-auto px-4 pt-10 pb-10 md:justify-center md:pt-0 md:pb-24">
+    <div className="scrollbar-thin flex flex-1 flex-col items-center overflow-y-auto px-4 pt-8 pb-10 md:justify-center md:pt-6 md:pb-16">
       <div className="w-full max-w-2xl">
-        <h1 className="mb-6 text-center text-2xl font-semibold tracking-tight md:text-3xl">What should Dex do?</h1>
+        <h1 className="mb-6 text-center text-2xl font-semibold tracking-tight md:text-3xl">
+          {agent ? `What should ${agent.name} do?` : "What should Dex do?"}
+        </h1>
         {state && !state.cline.connected && (
           <Link
             to="/settings"
@@ -56,21 +79,66 @@ function NewChat() {
           autoFocus
           disabled={!connected}
           onSend={start}
+          draft={draft}
+          placeholder={agent ? `Ask ${agent.name}…` : undefined}
+          header={
+            agent && (
+              <div className="flex items-center gap-2 px-3 pt-3">
+                <span className="flex items-center gap-2 rounded-full border border-zinc-700/80 bg-zinc-800/60 py-1 pr-1 pl-1 text-xs text-zinc-200">
+                  <AgentAvatar icon={agent.icon} color={agent.color} size={20} />
+                  {agent.name}
+                  <button type="button" onClick={() => pick(null)} title="Use no agent" className="rounded-full p-0.5 text-zinc-500 hover:text-zinc-200">
+                    <X className="size-3.5" />
+                  </button>
+                </span>
+              </div>
+            )
+          }
           toolbar={<ModelPicker model={choice.model} thinking={choice.thinking} onChange={setChoice} />}
         />
         {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
-        <div className="mt-6 grid gap-2 sm:grid-cols-2">
-          {suggestions.map((suggestion) => (
-            <button
-              key={suggestion}
-              type="button"
-              disabled={!connected}
-              onClick={() => void start(suggestion)}
-              className="rounded-xl border border-zinc-800/80 px-4 py-3 text-left text-sm text-zinc-400 hover:border-zinc-700 hover:bg-zinc-900/60 hover:text-zinc-200"
-            >
-              {suggestion}
-            </button>
-          ))}
+
+        <div className="mt-7 mb-2 flex items-center gap-2 px-1">
+          <h2 className="text-xs font-medium tracking-wide text-zinc-500 uppercase">Agents</h2>
+          <Link to="/agents" className="ml-auto flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-200">
+            <Settings2 className="size-3.5" /> Manage
+          </Link>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {agents.map((candidate) => {
+            const selected = candidate.id === agentId
+            return (
+              <button
+                key={candidate.id}
+                type="button"
+                onClick={() => pick(candidate)}
+                aria-pressed={selected}
+                className={`flex items-start gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors ${
+                  selected ? "border-emerald-600/70 bg-emerald-950/30" : "border-zinc-800/80 hover:border-zinc-700 hover:bg-zinc-900/60"
+                }`}
+              >
+                <AgentAvatar icon={candidate.icon} color={candidate.color} size={36} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-zinc-100">{candidate.name}</span>
+                  <span className="mt-0.5 line-clamp-2 block text-xs leading-relaxed text-zinc-500">{candidate.description || "Custom agent"}</span>
+                  <span className="mt-1.5 flex items-center gap-1 text-[11px] text-zinc-500">
+                    <ModelLogo modelId={candidate.model} className="size-3" />
+                    {findModel(candidate.model)?.name ?? candidate.model}
+                  </span>
+                </span>
+              </button>
+            )
+          })}
+          <Link
+            to="/agents/$agentId"
+            params={{ agentId: "new" }}
+            className="flex items-center gap-3 rounded-xl border border-dashed border-zinc-800 px-3.5 py-3 text-sm text-zinc-500 hover:border-zinc-700 hover:text-zinc-200"
+          >
+            <span className="flex size-9 items-center justify-center rounded-[10px] border border-zinc-800">
+              <Plus className="size-4" />
+            </span>
+            New agent
+          </Link>
         </div>
       </div>
     </div>
