@@ -518,7 +518,7 @@ function MachinePage() {
 
 function PageHeader({ children }: { children?: ReactNode }) {
   return (
-    <header className="dex-chrome flex h-12 shrink-0 items-center gap-2 border-b border-zinc-900 px-3 sm:gap-3 sm:px-4">
+    <header className="dex-chrome dex-topbar flex h-12 shrink-0 items-center gap-2 border-b border-zinc-900 px-3 sm:gap-3 sm:px-4">
       <MenuButton />
       <Link to="/machine" className="-ml-1 flex shrink-0 items-center gap-0.5 rounded-md py-1 pr-1.5 pl-0.5 text-sm font-medium text-zinc-300 hover:bg-zinc-900 hover:text-zinc-100" title="All machines">
         <ChevronLeft className="size-4" /> Machines

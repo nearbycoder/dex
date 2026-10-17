@@ -39,7 +39,7 @@ function AppLayout() {
           <Sidebar />
           <main className="dex-main flex min-w-0 flex-1 flex-col">
             {!ownHeader && (
-              <header className={`dex-chrome flex h-12 shrink-0 items-center gap-2 border-b border-zinc-900 px-4 ${nav.collapsed ? "" : "md:hidden"}`}>
+              <header className={`dex-chrome dex-topbar flex h-12 shrink-0 items-center gap-2 border-b border-zinc-900 px-4 ${nav.collapsed ? "" : "md:hidden"}`}>
                 <MenuButton />
                 <img src="/favicon.svg" alt="" className="size-6" />
                 <span className="font-semibold tracking-tight">Dex</span>

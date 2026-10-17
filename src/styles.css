@@ -69,6 +69,24 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* iOS 26 blurs the top edge of Home Screen apps (Liquid Glass) over whatever is there, unless a fixed or
+   sticky box with a solid background covers it; then it takes that color instead. So the frame is solid
+   and pinned when installed, and every top bar is solid and sticky. No backdrop-filter up there. */
+.dex-app {
+  background-color: #09090b;
+}
+html[data-standalone="true"] .dex-app {
+  position: fixed;
+  inset-inline: 0;
+  top: 0;
+}
+.dex-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background-color: #09090b;
+}
+
 /* No double-tap-to-zoom delay on controls. */
 a,
 button,
