@@ -6,9 +6,37 @@ import { GitHubConnect } from "~/client/components/github-connect"
 import { InstallApp } from "~/client/components/install-app"
 import { ModelPicker } from "~/client/components/model-picker"
 import { useDex } from "~/client/lib/dex"
+import { hapticsEnabled, hapticsSupported, onHapticsChange, setHapticsEnabled } from "~/client/lib/haptics"
 import type { ScheduledPrompt } from "~/shared/protocol"
 
 export const Route = createFileRoute("/_app/settings")({ component: SettingsPage })
+
+/** On/off for tap haptics, saved on this device. Hidden where there is no way to vibrate. */
+function HapticsToggle() {
+  const [enabled, setEnabled] = useState(hapticsEnabled)
+  useEffect(() => onHapticsChange(() => setEnabled(hapticsEnabled())), [])
+  if (!hapticsSupported()) return null
+  return (
+    <section className="rounded-2xl border border-zinc-800 bg-zinc-900/40 p-4 md:p-6">
+      <label className="flex cursor-pointer items-center gap-4">
+        <span className="min-w-0 flex-1">
+          <span className="block font-medium">Haptic feedback</span>
+          <span className="mt-1 block text-sm text-zinc-400">A light tap under your finger when you press buttons. Saved on this device.</span>
+        </span>
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(event) => setHapticsEnabled(event.target.checked)}
+          className="peer sr-only"
+        />
+        <span
+          aria-hidden="true"
+          className="relative h-6 w-10 shrink-0 rounded-full bg-zinc-700 transition-colors duration-200 peer-checked:bg-emerald-600 peer-focus-visible:ring-2 peer-focus-visible:ring-emerald-500 after:absolute after:top-0.5 after:left-0.5 after:size-5 after:rounded-full after:bg-white after:shadow after:transition-transform after:duration-200 after:ease-fluid peer-checked:after:translate-x-4"
+        />
+      </label>
+    </section>
+  )
+}
 
 function Section({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
   return (
@@ -43,8 +71,10 @@ function SettingsPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
 
         <Section title="Install Dex" description="Add Dex to your Home Screen to open it full screen, like a native app.">
-          <InstallApp />
-        </Section>
+  <InstallApp />
+</Section>
+
+<HapticsToggle />
 
         <Section title="ClinePass" description="Dex runs on open-weight coding models through your ClinePass subscription.">
           <ClineConnect />

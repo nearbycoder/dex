@@ -4,6 +4,7 @@ import { useEffect } from "react"
 import { Sidebar } from "~/client/components/sidebar"
 import { DexProvider } from "~/client/lib/dex"
 import { MenuButton, NavContext, useNavState, useVisualViewportHeight } from "~/client/lib/mobile-nav"
+import { useHaptics } from "~/client/lib/haptics"
 import { getViewer } from "~/server/viewer"
 
 /** Signed-in shell. Client-rendered: it holds the WebSocket to the user's agent. */
@@ -21,6 +22,7 @@ function AppLayout() {
   const { viewer } = Route.useRouteContext()
   const nav = useNavState()
   useVisualViewportHeight()
+  useHaptics()
   const { pathname } = useLocation()
   // Chat and Machine pages put the menu button in their own header.
   const inChat = useMatch({ from: "/_app/chat/$sessionId", shouldThrow: false }) !== undefined

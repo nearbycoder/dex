@@ -19,6 +19,7 @@ A personal agent harness: [Pi Durable](https://developers.cloudflare.com/agents/
 - **Memory**: `/workspace/MEMORY.md` is injected into every chat's system prompt.
 - **Workspace page**: browse and edit the agent's files, and run shell commands yourself.
 - **Installable app**: add Dex to a phone or tablet Home Screen (Settings → Install Dex). It runs full screen and edge to edge with safe-area insets, keeps the composer above the keyboard, swipes the sidebar in from the left edge, and adapts from folded phones to tablets, with a collapsible sidebar (⌘/Ctrl+B) and a split across the hinge on dual-screen devices. A service worker caches static assets and shows an offline screen; it never caches pages or API calls.
+- **Haptics**: a light tap when pressing buttons on phones (Settings → Haptic feedback, saved per device). iPhone uses [ios-haptics](https://github.com/tijnjh/ios-haptics), which plays the system haptic through a hidden `<input type="checkbox" switch>` (Safari has no Vibration API); only `type="button"` buttons get one, since it would swallow link navigation and form submits. Android uses `navigator.vibrate`.
 - **Usage page**: what Dex costs across ClinePass (tokens per model and chat, at API list prices), boat.dev (VM run time × hourly rate), and Cloudflare (Workers, Durable Objects, and Workers AI from the Analytics API, against the plan's allowance), with a daily chart.
 
 ## Architecture

@@ -16,6 +16,8 @@ export function Composer(props: {
 }) {
   const [text, setText] = useState("")
   const ref = useRef<HTMLTextAreaElement>(null)
+  /** When the message box last lost focus: a tap on Send can take it (iOS haptics), and typing should go on. */
+  const blurredAt = useRef(0)
 
   useEffect(() => {
     if (!props.draft) return
@@ -39,6 +41,8 @@ export function Composer(props: {
     if (!value || props.disabled) return
     setText("")
     void props.onSend(value)
+    // Still inside the tap, so iOS keeps the keyboard up.
+    if (Date.now() - blurredAt.current < 500) ref.current?.focus()
   }
 
   return (
@@ -52,6 +56,9 @@ export function Composer(props: {
         placeholder={props.placeholder ?? "Ask Dex to do anything…"}
         className="block w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-base text-zinc-100 md:text-sm placeholder:text-zinc-500 focus:outline-none"
         onChange={(event) => setText(event.target.value)}
+        onBlur={() => {
+          blurredAt.current = Date.now()
+        }}
         onKeyDown={(event) => {
           if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
             event.preventDefault()
