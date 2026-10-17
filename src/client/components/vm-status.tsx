@@ -19,7 +19,7 @@ export function VmStatusDot({ status, className = "" }: { status: VmStatus; clas
 export function useVmLabel() {
   const { state } = useDex()
   return (key: string) => {
-    if (key === SHARED_VM) return { title: "Shared VM", subtitle: "from before VMs were per chat", agent: undefined, project: undefined }
+    if (key === SHARED_VM) return { title: "Shared VM", subtitle: "Not linked to a chat (from before VMs were per chat)", agent: undefined, project: undefined }
     const session = state?.sessions.find((candidate) => candidate.id === key)
     return {
       title: session?.title ?? "Deleted chat",

@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { ChevronRight, Cpu, LoaderCircle, MessageSquare, Monitor, Play, RefreshCw, Square, Wrench } from "lucide-react"
+import { ChevronRight, Cpu, LoaderCircle, MessageSquare, Monitor, Play, RefreshCw, Square, Trash2, Wrench } from "lucide-react"
 import { useEffect, useState } from "react"
 import { AgentAvatar } from "~/client/components/agent-avatar"
 import { byRecentUse, idleText, useNow, useVmLabel, VM_STATUS, VmStatusDot } from "~/client/components/vm-status"
@@ -15,7 +15,7 @@ function MachineCard({ vm, index }: { vm: VmInfo; index: number }) {
   const { state, stub } = useDex()
   const label = useVmLabel()
   const now = useNow(15_000)
-  const [busy, setBusy] = useState<"start" | "stop" | null>(null)
+  const [busy, setBusy] = useState<"start" | "stop" | "delete" | null>(null)
   const [error, setError] = useState<string | null>(null)
   const { title, subtitle, agent, project } = label(vm.key)
   const badge = project ?? agent
@@ -23,11 +23,11 @@ function MachineCard({ vm, index }: { vm: VmInfo; index: number }) {
   const running = vm.status === "running"
   const canStart = vm.status === "stopped" || vm.status === "error" || vm.status === "none"
 
-  const act = async (kind: "start" | "stop") => {
+  const act = async (kind: "start" | "stop" | "delete") => {
     setBusy(kind)
     setError(null)
     try {
-      await (kind === "start" ? stub.vmStart(vm.key) : stub.vmStop(vm.key))
+      await (kind === "start" ? stub.vmStart(vm.key) : kind === "stop" ? stub.vmStop(vm.key) : stub.vmDestroy(vm.key))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -100,6 +100,18 @@ function MachineCard({ vm, index }: { vm: VmInfo; index: number }) {
             {vm.status === "stopped" ? "Resume" : "Start"}
           </button>
         )}
+        {!session && (
+          <button
+            type="button"
+            disabled={busy !== null}
+            onClick={() => {
+              if (confirm(`Delete “${title}” and everything on its disk? This cannot be undone.`)) void act("delete")
+            }}
+            className="ml-auto flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-red-400 disabled:opacity-40"
+          >
+            {busy === "delete" ? <LoaderCircle className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />} Delete
+          </button>
+        )}
         {session && (
           <Link
             to="/chat/$sessionId"
@@ -162,7 +174,7 @@ function MachinesPage() {
             <>
               <p className="mb-4 text-sm text-zinc-400">
                 Each chat gets its own VM the first time Dex needs one; project chats get theirs right away, with the repos cloned. A VM
-                stops when idle and keeps its disk until its chat is deleted.
+                stops when idle and keeps its disk until its chat is deleted, which deletes the VM too.
               </p>
               {vms.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-zinc-800 px-4 py-10 text-center text-sm text-zinc-500">

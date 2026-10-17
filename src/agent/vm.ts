@@ -123,6 +123,27 @@ export const migrateVmTables = (sql: SqlStorage) => {
   sql.exec(`DELETE FROM dex_vm`)
 }
 
+/**
+ * One-time: gives the VM from before VMs were per chat to the chat that used it, so it links to that chat and goes
+ * when the chat is deleted. The chat is the one whose lifetime (created to last message) holds most of the agent's
+ * work on the VM; a chat that already has its own VM is skipped. Without a match the VM stays `shared`.
+ */
+export const adoptSharedVm = (sql: SqlStorage) => {
+  if (!sql.exec(`SELECT 1 FROM dex_vms WHERE vm_key = ?`, SHARED_VM).toArray().length) return
+  const [match] = sql
+    .exec<{ id: string; hits: number }>(
+      `SELECT s.id AS id, COUNT(*) AS hits FROM dex_vm_activity a
+       JOIN dex_sessions s ON a.at BETWEEN s.created_at AND s.updated_at + 60000
+       WHERE a.vm_key = ? AND a.actor = 'agent' AND NOT EXISTS (SELECT 1 FROM dex_vms v WHERE v.vm_key = s.id)
+       GROUP BY s.id ORDER BY hits DESC, s.created_at DESC LIMIT 1`,
+      SHARED_VM
+    )
+    .toArray()
+  if (!match) return
+  sql.exec(`UPDATE dex_vms SET vm_key = ? WHERE vm_key = ?`, match.id, SHARED_VM)
+  sql.exec(`UPDATE dex_vm_activity SET vm_key = ? WHERE vm_key = ?`, match.id, SHARED_VM)
+}
+
 /** Keys of the VMs that have a row: a sandbox now, or one being created. */
 export const storedVmKeys = (sql: SqlStorage) => sql.exec<{ vm_key: string }>(`SELECT vm_key FROM dex_vms ORDER BY created_at`).toArray().map((row) => row.vm_key)
 
@@ -331,7 +352,7 @@ export class VmManager {
         this.host.runEnded(id, Date.now())
         this.update({ id: null, status: "none", size: null, archiveAfter: null, error: null })
       } else {
-        this.update({ error: errorText(error) })
+        this.update({ error: `Couldn't check on this VM: ${errorText(error)}` })
       }
     }
     return this.info

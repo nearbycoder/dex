@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Option, Redacted, Schema, Stream } from "effect"
+import { Context, Effect, Layer, Option, Redacted, Schedule, Schema, Stream } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
 import { AppConfig } from "~/server/config"
 
@@ -67,6 +67,19 @@ const MAX_COLLECTED_OUTPUT = 1_000_000
 
 const RETRYABLE = new Set(["sandbox_starting", "boat_starting", "no_ready_machine", "out_of_capacity", "rate_limited", "network"])
 
+/**
+ * Cloudflare's own errors for a Worker subrequest it couldn't connect to boat.dev's server (521 down, 522 timed out,
+ * 523 unreachable): the request never got there, so any of them is safe to send again.
+ */
+const UNREACHED = new Set([521, 522, 523])
+/** Gateway errors and dropped connections: the request may have arrived, so only idempotent ones are resent. */
+const TRANSIENT = new Set([0, 502, 503, 504, 520, 524])
+
+const describeStatus = (status: number) =>
+  UNREACHED.has(status)
+    ? `Couldn't connect to boat.dev (Cloudflare ${status}: ${status === 522 ? "connection timed out" : status === 521 ? "server down" : "server unreachable"})`
+    : `boat.dev returned ${status}`
+
 export type SandboxType = "small" | "default" | "large"
 
 export interface ExecOptions {
@@ -113,12 +126,12 @@ export class BoatClient extends Context.Service<BoatClient, {
         return yield* new BoatError({
           code,
           status: response.status,
-          message: body.message ?? `boat.dev returned ${response.status}`,
+          message: body.message ?? describeStatus(response.status),
           retryable: body.error?.details?.retryable ?? RETRYABLE.has(code)
         })
       })
 
-      const send = Effect.fnUntraced(function*(request: HttpClientRequest.HttpClientRequest) {
+      const attempt = Effect.fnUntraced(function*(request: HttpClientRequest.HttpClientRequest) {
         if (Option.isNone(boatApiKey)) return yield* notConfigured
         const response = yield* http.execute(request.pipe(HttpClientRequest.bearerToken(Redacted.value(boatApiKey.value)))).pipe(
           Effect.mapError((cause) => new BoatError({ code: "network", status: 0, message: `Could not reach boat.dev: ${cause}`, retryable: true }))
@@ -126,6 +139,19 @@ export class BoatClient extends Context.Service<BoatClient, {
         if (response.status >= 400) return yield* failFrom(response)
         return response
       })
+
+      // boat.dev is one server, and Cloudflare's path to it occasionally times out: try twice more before giving up.
+      // Running a command is the one request that isn't safe to repeat once it may have arrived.
+      const send = (request: HttpClientRequest.HttpClientRequest) => {
+        const repeatable = !(request.method === "POST" && request.url.endsWith("/commands"))
+        return attempt(request).pipe(
+          Effect.retry({
+            times: 2,
+            schedule: Schedule.exponential("750 millis"),
+            while: (error) => error.code !== "not_configured" && (UNREACHED.has(error.status) || (repeatable && TRANSIENT.has(error.status)))
+          })
+        )
+      }
 
       const json = <S extends Schema.Constraint>(schema: S) =>
         Effect.fnUntraced(function*(request: HttpClientRequest.HttpClientRequest) {

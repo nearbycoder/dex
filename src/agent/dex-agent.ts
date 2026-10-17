@@ -50,7 +50,7 @@ import { verifyGitHubToken, type GitHubIdentity } from "./github-token"
 import { provisionVm } from "./provision"
 import { PushCenter, type SubscriptionInput } from "./push"
 import type { BackgroundAction, NotifyKind, PushPayload } from "~/shared/notifications"
-import { migrateVmTables, storedVmKeys, type VmHost, VmManager } from "./vm"
+import { adoptSharedVm, errorText, migrateVmTables, storedVmKeys, type VmHost, VmManager } from "./vm"
 import { Workspace, WORKSPACE_ROOT } from "./workspace"
 
 const AgentLayer = (env: object) =>
@@ -289,6 +289,7 @@ export class DexAgent extends Agent<Env, DexState> {
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_projects (
       id TEXT PRIMARY KEY, data TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
     migrateVmTables(ctx.storage.sql)
+    adoptSharedVm(ctx.storage.sql)
     for (const key of storedVmKeys(ctx.storage.sql)) this.vmFor(key)
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_mcp (
       id TEXT PRIMARY KEY, data TEXT NOT NULL, headers TEXT, tools TEXT NOT NULL DEFAULT '[]',
@@ -321,6 +322,7 @@ export class DexAgent extends Agent<Env, DexState> {
     await this.refreshClineStatus()
     await this.refreshSessions()
     for (const vm of this.vms.values()) void vm.refresh()
+    this.ctx.waitUntil(this.reapOrphanVms())
   }
 
   // ── Pi wiring ─────────────────────────────────────────────────────────────
@@ -579,13 +581,29 @@ export class DexAgent extends Agent<Env, DexState> {
     await this.harness.session(sessionId).abort().catch(() => false)
     this.ctx.storage.sql.exec(`DELETE FROM dex_sessions WHERE id = ?`, sessionId)
     await this.refreshSessions()
-    // Its VM goes with it, disk and all.
-    const vm = this.vms.get(sessionId)
-    if (vm) {
-      this.vms.delete(sessionId)
-      this.publishVms()
-      this.ctx.waitUntil(vm.destroy("system", { forget: true }).catch(() => undefined))
+    // Its VM goes with it, disk and all (stopped first if it was running; deleting does both).
+    if (this.vms.has(sessionId)) this.ctx.waitUntil(this.reapOrphanVms())
+  }
+
+  /**
+   * Deletes the VMs whose chat is gone. Runs when a chat is deleted and whenever the agent starts; if boat.dev
+   * can't be reached, it tries again in five minutes, so a deleted chat never leaves a VM (and its bill) behind.
+   */
+  async reapOrphanVms() {
+    let failed = false
+    for (const key of storedVmKeys(this.ctx.storage.sql)) {
+      if (key === SHARED_VM || this.hasSession(key)) continue
+      const vm = this.vmFor(key)
+      try {
+        await vm.destroy("system", { forget: true })
+        this.vms.delete(key)
+      } catch (error) {
+        failed = true
+        console.warn(`Could not delete the VM of deleted chat ${key}: ${errorText(error)}`)
+      }
     }
+    this.publishVms()
+    if (failed && !this.getSchedules().some((schedule) => schedule.callback === "reapOrphanVms")) await this.schedule(300, "reapOrphanVms")
   }
 
   // ── Live transcript streaming ─────────────────────────────────────────────
