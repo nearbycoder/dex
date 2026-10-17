@@ -62,6 +62,8 @@ const reduce = (state: TranscriptState, action: Action): TranscriptState => {
       return message.events.reduce(applyEvent, state)
     case "dex.error":
       return { ...state, error: message.message }
+    default:
+      return state
   }
 }
 

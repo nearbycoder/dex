@@ -15,17 +15,23 @@ import type {
   ScheduledPrompt,
   ServerMessage,
   SessionMeta,
+  VmActivity,
+  VmInfo,
+  VmSize,
   WorkspaceFile
 } from "~/shared/protocol"
+import { BoatClient } from "./boat"
 import { CLINEPASS_PROVIDER_ID, ClinePassClient, clinePassProvider } from "./clinepass"
 import { webTools } from "./tools/agents-tools"
 import { loadUiGuideTool, renderUiTool } from "./tools/render-ui"
 import { scheduleTools } from "./tools/schedule-tools"
+import { vmTools } from "./tools/vm-tools"
 import { workspaceTools } from "./tools/workspace-tools"
+import { VmManager } from "./vm"
 import { Workspace, WORKSPACE_ROOT } from "./workspace"
 
 const AgentLayer = (env: object) =>
-  Layer.mergeAll(Keys.layer, ClinePassClient.layer).pipe(
+  Layer.mergeAll(Keys.layer, ClinePassClient.layer, BoatClient.layer).pipe(
     Layer.provideMerge(AppConfig.layer),
     Layer.provide(envConfigProvider(env))
   )
@@ -42,7 +48,8 @@ const decodeClientMessage = Schema.decodeUnknownOption(ClientMessageJson)
 const PREAMBLE = `You are Dex, a capable personal agent. You run durably on Cloudflare: your chats, files, and schedules persist across restarts.
 
 You can:
-- Run shell commands and keep files in ${WORKSPACE_ROOT} (bash, read_file, write_file, edit_file).
+- Use your own cloud VM, a full Ubuntu machine with a desktop (vm_exec, vm_screenshot, vm_read_file, vm_write_file, vm_expose_port, vm_stop). Use it for real work: cloning repos, installing packages, running code, tests, servers, Docker, and driving a browser. The user can watch it live and take over.
+- Keep notes and small files in ${WORKSPACE_ROOT} with a lightweight simulated shell (bash, read_file, write_file, edit_file). It cannot install or run programs; use the VM for that.
 - Research the web (web_search, web_fetch, and curl inside bash).
 - Show rich interactive UI with render_ui. Call load_ui_guide once per chat before your first render_ui.
 - Schedule prompts for yourself to run later or on a cron (schedule_prompt).
@@ -52,6 +59,15 @@ Work autonomously: break tasks into steps, use tools, check your results, and re
 const MEMORY_FILE = `${WORKSPACE_ROOT}/MEMORY.md`
 const MAX_MEMORY_CHARS = 8_000
 const SCHEDULE_CALLBACK = "runScheduledPrompt"
+const VM_SIZES = new Set<VmSize>(["small", "default", "large"])
+
+const DEFAULT_SETTINGS: DexSettings = {
+  defaultModel: DEFAULT_MODEL_ID,
+  defaultThinking: DEFAULT_THINKING,
+  instructions: "",
+  vmSize: "small",
+  vmMinutes: 30
+}
 
 interface SessionRow {
   id: string
@@ -78,13 +94,23 @@ const keyHint = (key: string) => (key.length > 8 ? `${key.slice(0, 4)}…${key.s
 export class DexAgent extends Agent<Env, DexState> {
   initialState: DexState = {
     cline: { connected: false, source: null, keyHint: null, verifiedAt: null },
-    settings: { defaultModel: DEFAULT_MODEL_ID, defaultThinking: DEFAULT_THINKING, instructions: "" },
-    sessions: []
+    settings: DEFAULT_SETTINGS,
+    sessions: [],
+    vm: { configured: false, id: null, status: "none", size: null, archiveAfter: null, error: null }
   }
 
   readonly runtime = ManagedRuntime.make(AgentLayer(this.env))
   readonly workspace = new Workspace(this.ctx.storage.sql)
   readonly registry = createRegistry()
+
+  readonly vm = new VmManager({
+    sql: this.ctx.storage.sql,
+    configured: Boolean((this.env as unknown as Record<string, unknown>).BOAT_API_KEY),
+    run: (effect, signal) => this.runtime.runPromise(effect, { signal }),
+    settings: () => ({ size: this.state.settings.vmSize, minutes: this.state.settings.vmMinutes }),
+    publish: (vm: VmInfo) => this.publish({ vm }),
+    broadcast: (message: ServerMessage) => this.broadcast(JSON.stringify(message))
+  })
 
   readonly harness = new PiHarness({
     harness: ({ storage, context }) => {
@@ -118,8 +144,11 @@ export class DexAgent extends Agent<Env, DexState> {
   }
 
   override async onStart() {
+    // Settings saved before a field existed get its default.
+    this.publish({ settings: { ...DEFAULT_SETTINGS, ...this.state.settings }, vm: this.vm.current })
     await this.refreshClineStatus()
     await this.refreshSessions()
+    void this.vm.refresh()
   }
 
   // ── Pi wiring ─────────────────────────────────────────────────────────────
@@ -142,7 +171,8 @@ export class DexAgent extends Agent<Env, DexState> {
         ...webTools(this.env.AI),
         loadUiGuideTool,
         renderUiTool,
-        ...scheduleTools(this)
+        ...scheduleTools(this),
+        ...(this.vm.current.configured ? vmTools(this.vm) : [])
       ]
     })
   }
@@ -237,6 +267,8 @@ export class DexAgent extends Agent<Env, DexState> {
   async updateSettings(patch: Partial<DexSettings>) {
     const settings = { ...this.state.settings, ...patch }
     if (!findModel(settings.defaultModel)) settings.defaultModel = DEFAULT_MODEL_ID
+    if (!VM_SIZES.has(settings.vmSize)) settings.vmSize = DEFAULT_SETTINGS.vmSize
+    settings.vmMinutes = Math.min(24 * 60, Math.max(5, Math.round(Number(settings.vmMinutes) || DEFAULT_SETTINGS.vmMinutes)))
     settings.defaultThinking = clampThinking(findModel(settings.defaultModel), settings.defaultThinking)
     this.publish({ settings })
   }
@@ -409,6 +441,53 @@ export class DexAgent extends Agent<Env, DexState> {
   @callable()
   async deleteFile(path: string) {
     return this.workspace.remove(path)
+  }
+
+  // ── VM (Machine page) ─────────────────────────────────────────────────────
+
+  @callable()
+  async vmRefresh(): Promise<VmInfo> {
+    return this.vm.refresh()
+  }
+
+  @callable()
+  async vmStart(): Promise<VmInfo> {
+    await this.vm.ensureRunning()
+    return this.vm.current
+  }
+
+  @callable()
+  async vmStop(): Promise<VmInfo> {
+    await this.vm.stop("user")
+    return this.vm.current
+  }
+
+  @callable()
+  async vmDestroy(): Promise<VmInfo> {
+    await this.vm.destroy()
+    return this.vm.current
+  }
+
+  @callable()
+  async vmActivity(limit = 100): Promise<VmActivity[]> {
+    return this.vm.recentActivity(Math.min(300, Math.max(1, limit)))
+  }
+
+  /** A command the user runs from the Machine page terminal; output streams to every watcher. */
+  @callable()
+  async vmRun(command: string) {
+    const result = await this.vm.exec(command, { actor: "user", timeoutSeconds: 600 })
+    return { exitCode: result.exitCode }
+  }
+
+  @callable()
+  async vmDesktopUrl(mode: "stream" | "vnc"): Promise<string | null> {
+    return this.vm.desktopUrl(mode === "vnc" ? "vnc" : "stream")
+  }
+
+  @callable()
+  async vmExposePort(port: number, isPublic: boolean): Promise<string> {
+    return this.vm.exposePort(port, isPublic, "user")
   }
 
   // ── Scheduled prompts ─────────────────────────────────────────────────────

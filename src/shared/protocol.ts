@@ -28,6 +28,41 @@ export interface DexSettings {
   readonly defaultThinking: ThinkingLevel
   /** Appended to the system prompt of every chat. */
   readonly instructions: string
+  readonly vmSize: VmSize
+  /** The VM stops (keeping its disk) after this many minutes without agent or user activity. */
+  readonly vmMinutes: number
+}
+
+export type VmSize = "small" | "default" | "large"
+
+export const VM_SIZES: ReadonlyArray<{ readonly id: VmSize; readonly label: string }> = [
+  { id: "small", label: "Small · 2 vCPU · 4 GB" },
+  { id: "default", label: "Default · 4 vCPU · 8 GB" },
+  { id: "large", label: "Large · 8 vCPU · 16 GB" }
+]
+
+export type VmStatus = "none" | "starting" | "running" | "stopping" | "stopped" | "error"
+
+export interface VmInfo {
+  /** Whether this deployment has a boat.dev key. */
+  readonly configured: boolean
+  readonly id: string | null
+  readonly status: VmStatus
+  readonly size: string | null
+  readonly archiveAfter: string | null
+  readonly error: string | null
+}
+
+/** One thing done on the VM, by the agent or the user, shown live on the Machine page. */
+export interface VmActivity {
+  readonly id: number
+  readonly at: number
+  readonly actor: "agent" | "user" | "system"
+  readonly kind: "exec" | "spawn" | "file" | "port" | "screenshot" | "lifecycle"
+  readonly title: string
+  readonly status: "running" | "done" | "error"
+  readonly exitCode: number | null
+  readonly output: string
 }
 
 /** Synced to every connected client through the Agents SDK state channel. Never put secrets here. */
@@ -35,6 +70,7 @@ export interface DexState {
   readonly cline: ClineStatus
   readonly settings: DexSettings
   readonly sessions: ReadonlyArray<SessionMeta>
+  readonly vm: VmInfo
 }
 
 export interface WorkspaceFile {
@@ -64,6 +100,8 @@ export type ServerMessage =
   | { readonly type: "dex.snapshot"; readonly sessionId: string; readonly snapshot: SnapshotEvent }
   | { readonly type: "dex.events"; readonly sessionId: string; readonly events: ReadonlyArray<AgentEvent> }
   | { readonly type: "dex.error"; readonly sessionId: string | null; readonly message: string }
+  | { readonly type: "dex.vm.activity"; readonly sessionId: null; readonly activity: VmActivity }
+  | { readonly type: "dex.vm.output"; readonly sessionId: null; readonly id: number; readonly data: string }
 
 export const isServerMessage = (value: unknown): value is ServerMessage =>
   Predicate.hasProperty(value, "type") && Predicate.isString(value.type) && value.type.startsWith("dex.")

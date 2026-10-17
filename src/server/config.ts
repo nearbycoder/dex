@@ -16,6 +16,8 @@ export class AppConfig extends Context.Service<AppConfig, {
   readonly ownerPassword: Option.Option<Redacted.Redacted<string>>
   /** Shared ClinePass key for users who have not connected their own. */
   readonly clineApiKey: Option.Option<Redacted.Redacted<string>>
+  /** boat.dev API key: gives each user's agent a cloud VM. */
+  readonly boatApiKey: Option.Option<Redacted.Redacted<string>>
 }>()("dex/server/AppConfig") {
   static readonly layer = Layer.effect(
     AppConfig,
@@ -30,9 +32,10 @@ export class AppConfig extends Context.Service<AppConfig, {
       const devLogin = yield* Config.Boolean("DEV_LOGIN").pipe(Config.withDefault(false))
       const clineApiKey = yield* Config.option(Config.Redacted("CLINE_API_KEY"))
       const ownerPassword = yield* Config.option(Config.Redacted("OWNER_PASSWORD"))
+      const boatApiKey = yield* Config.option(Config.Redacted("BOAT_API_KEY"))
 
       const github = Option.all({ clientId, clientSecret })
-      return AppConfig.of({ authSecret, github, allowedUsers, devLogin, ownerPassword, clineApiKey })
+      return AppConfig.of({ authSecret, github, allowedUsers, devLogin, ownerPassword, clineApiKey, boatApiKey })
     })
   )
 }

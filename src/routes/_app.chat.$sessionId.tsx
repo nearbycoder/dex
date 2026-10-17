@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { Check, KeyRound, Pencil } from "lucide-react"
+import { Check, KeyRound, Monitor, Pencil } from "lucide-react"
 import { useState } from "react"
 import { Composer } from "~/client/components/composer"
 import { MessageList } from "~/client/components/message-list"
@@ -53,6 +53,17 @@ function Chat() {
           </form>
         )}
         {transcript.queued > 0 && <span className="text-xs text-zinc-500">{transcript.queued} queued</span>}
+        {state?.vm.configured && state.vm.status !== "none" && (
+          <Link
+            to="/machine"
+            title="Watch or take over the VM"
+            className="ml-auto flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
+          >
+            <span className={`size-1.5 rounded-full ${state.vm.status === "running" ? "bg-emerald-500" : "bg-zinc-600"}`} />
+            <Monitor className="size-3.5" />
+            <span className="hidden sm:inline">Machine</span>
+          </Link>
+        )}
       </header>
 
       <MessageList transcript={transcript} onSend={send} />

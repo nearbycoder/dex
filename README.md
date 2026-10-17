@@ -9,6 +9,8 @@ A personal agent harness: [Pi Durable](https://developers.cloudflare.com/agents/
 - **Sign in** with GitHub (allowlisted logins), an owner password (`OWNER_PASSWORD`, until GitHub OAuth is set up), or a local dev login.
 - **Connect ClinePass** by pasting a Cline API key. Dex verifies it with Cline, then stores it AES-GCM encrypted in your agent.
 - **Chat** with any ClinePass model, with a per-chat model and thinking level. Responses stream live; runs survive restarts, evictions, and deploys.
+- **Cloud VM** ([boat.dev](https://boat.dev)): each user's agent gets a full Ubuntu VM with root, Docker, Node, Bun, Python, Chrome and a desktop. Tools: `vm_exec` (output streams live), `vm_screenshot` (the agent sees the desktop; it clicks and types with `xdotool`), `vm_read_file` / `vm_write_file`, `vm_expose_port`, `vm_stop`. The VM starts on demand, stops itself when idle, and keeps its disk.
+- **Machine page**: watch the VM's live desktop and every command Dex runs as it happens, take control of the desktop, run your own commands, open ports, and stop the agent mid-run to take over.
 - **Tools**: `bash` (a simulated shell with grep, sed, jq, sqlite3, curl and more, over a persistent `/workspace`), `read_file` / `write_file` / `edit_file`, `web_search` / `web_fetch` (Workers AI), `render_ui` (OpenUI cards, tables, charts, forms), and `schedule_prompt` (one-off or cron).
 - **Memory**: `/workspace/MEMORY.md` is injected into every chat's system prompt.
 - **Workspace page**: browse and edit the agent's files, and run shell commands yourself.
@@ -23,6 +25,7 @@ Worker (src/server.ts) ── auth check ──► DexAgent Durable Object, one 
   └─ TanStack Start handler                  ├─ PiHarness → Pi Durable (chats in the object's SQLite)
                                              ├─ ClinePass provider (openai-completions → api.cline.bot)
                                              ├─ tools + Workspace (SQLite-backed files, just-bash)
+                                             ├─ VmManager → boat.dev VM (commands, files, ports, desktop)
                                              └─ Agents SDK schedules (scheduled prompts)
 ```
 
@@ -56,6 +59,7 @@ npx wrangler secret put GITHUB_CLIENT_ID
 npx wrangler secret put GITHUB_CLIENT_SECRET
 npx wrangler secret put CLINE_API_KEY   # optional shared key
 npx wrangler secret put OWNER_PASSWORD  # optional: password sign-in as the first allowlisted login
+npx wrangler secret put BOAT_API_KEY    # optional: boat.dev key for the agent's cloud VM
 npm run deploy
 ```
 
@@ -64,6 +68,8 @@ The current deployment is https://dex.nearbycoder.workers.dev. Its secrets were 
 ## Limits
 
 - Cline has no third-party OAuth, so users connect with an API key.
-- The shell is simulated (just-bash): no package managers, compilers, Python, or Node. For a real Linux box, add [Cloudflare Sandbox](https://developers.cloudflare.com/sandbox/) as an execution environment.
+- The `/workspace` shell is simulated (just-bash) and can't install or run programs; real work happens on the boat.dev VM.
+- boat.dev's free trial allows 2 running VMs at once and a 2-hour maximum auto-stop. Stopped VM disks are kept 14 days.
+- The embedded desktop uses boat's stream mode. noVNC is available too but authenticates with a third-party cookie, so some browsers (Safari) only show it in a new tab.
 - `web_search` needs Web Search billing enabled on the Cloudflare account; until then it reports `web_search_payment_required`.
 - Pi Durable has no tool-approval step yet, and cannot delete conversations. Deleting a chat hides it.

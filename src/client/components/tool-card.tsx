@@ -1,7 +1,10 @@
 import type { ToolCall, ToolResultMessage } from "@earendil-works/pi-ai"
 import { Predicate } from "effect"
+import { Link } from "@tanstack/react-router"
 import {
   BookOpen,
+  Camera,
+  Monitor,
   ChevronRight,
   Clock,
   FilePen,
@@ -25,7 +28,13 @@ const icons: Record<string, LucideIcon> = {
   web_fetch: Globe,
   schedule_prompt: Clock,
   list_scheduled_prompts: Clock,
-  cancel_scheduled_prompt: Clock
+  cancel_scheduled_prompt: Clock,
+  vm_exec: Monitor,
+  vm_read_file: FileText,
+  vm_write_file: FilePen,
+  vm_expose_port: Globe,
+  vm_screenshot: Camera,
+  vm_stop: Monitor
 }
 
 const summaryKeys = ["command", "path", "query", "url", "prompt", "name", "id"]
@@ -50,6 +59,10 @@ export function ToolCard({ call, result, live }: { call: ToolCall; result?: Tool
   const running = pending && live?.status === "running"
   const output = result ? resultText(result) : (live?.output ?? "")
   const failed = result?.isError
+  const images = result?.content.flatMap((part) => (part.type === "image" ? [part] : [])) ?? []
+  const onVm = call.name.startsWith("vm_")
+  // Stream a running VM command open so its output is visible as it arrives.
+  const showLive = onVm && pending && output.length > 0
 
   return (
     <div className="my-2 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900/60 text-xs">
@@ -62,7 +75,17 @@ export function ToolCard({ call, result, live }: { call: ToolCall; result?: Tool
         <Icon className={`size-3.5 shrink-0 ${failed ? "text-red-400" : "text-emerald-400"}`} />
         <span className="shrink-0 font-medium text-zinc-300">{call.name}</span>
         <span className="truncate font-mono text-zinc-500">{summarize(call.arguments)}</span>
-        <span className="ml-auto shrink-0">
+        {onVm && (
+          <Link
+            to="/machine"
+            onClick={(event) => event.stopPropagation()}
+            className="ml-auto shrink-0 rounded px-1.5 py-0.5 text-[10px] text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
+            title="Watch the VM live"
+          >
+            watch
+          </Link>
+        )}
+        <span className={onVm ? "shrink-0" : "ml-auto shrink-0"}>
           {pending ? (
             <LoaderCircle className={`size-3.5 text-zinc-500 ${running || !live ? "animate-spin" : ""}`} />
           ) : failed ? (
@@ -70,6 +93,19 @@ export function ToolCard({ call, result, live }: { call: ToolCall; result?: Tool
           ) : null}
         </span>
       </button>
+      {images.map((image, index) => (
+        <img
+          key={index}
+          src={`data:${image.mimeType};base64,${image.data}`}
+          alt="VM screenshot"
+          className="block w-full border-t border-zinc-800"
+        />
+      ))}
+      {showLive && !open && (
+        <pre className="scrollbar-thin max-h-48 overflow-auto border-t border-zinc-800 bg-zinc-950 px-3 py-2 font-mono whitespace-pre-wrap text-zinc-300">
+          {output.slice(-4000)}
+        </pre>
+      )}
       {open && (
         <div className="space-y-2 border-t border-zinc-800 px-3 py-2">
           <pre className="scrollbar-thin max-h-48 overflow-auto font-mono whitespace-pre-wrap text-zinc-400">

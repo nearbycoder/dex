@@ -21,8 +21,9 @@ function AppLayout() {
   const { viewer } = Route.useRouteContext()
   const [navOpen, setNavOpen] = useState(false)
   const { pathname } = useLocation()
-  // Chat pages put the menu button in their own header.
+  // Chat and Machine pages put the menu button in their own header.
   const inChat = useMatch({ from: "/_app/chat/$sessionId", shouldThrow: false }) !== undefined
+  const ownHeader = inChat || pathname === "/machine"
 
   useEffect(() => setNavOpen(false), [pathname])
 
@@ -32,7 +33,7 @@ function AppLayout() {
         <div className="flex h-dvh overflow-hidden">
           <Sidebar open={navOpen} onClose={() => setNavOpen(false)} />
           <main className="flex min-w-0 flex-1 flex-col">
-            {!inChat && (
+            {!ownHeader && (
               <header className="flex h-12 shrink-0 items-center gap-2 border-b border-zinc-900 px-4 md:hidden">
                 <MenuButton />
                 <img src="/favicon.svg" alt="" className="size-6 rounded-md" />

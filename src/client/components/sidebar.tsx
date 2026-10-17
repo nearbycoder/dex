@@ -1,5 +1,5 @@
 import { Link, useNavigate, useParams } from "@tanstack/react-router"
-import { FolderOpen, LogOut, MessageSquarePlus, Settings, Trash2, X } from "lucide-react"
+import { FolderOpen, LogOut, MessageSquarePlus, Monitor, Settings, Trash2, X } from "lucide-react"
 import { useDex } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
 
@@ -68,6 +68,26 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
         ))}
       </nav>
       <div className="space-y-0.5 border-t border-zinc-900 p-3">
+        {state?.vm.configured && (
+          <Link
+            to="/machine"
+            className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 [&.active]:bg-zinc-900 [&.active]:text-zinc-100"
+          >
+            <Monitor className="size-4" /> Machine
+            <span
+              className={`ml-auto size-2 rounded-full ${
+                state.vm.status === "running"
+                  ? "bg-emerald-500"
+                  : state.vm.status === "starting" || state.vm.status === "stopping"
+                    ? "animate-pulse bg-amber-500"
+                    : state.vm.status === "error"
+                      ? "bg-red-500"
+                      : "bg-zinc-700"
+              }`}
+              title={`VM: ${state.vm.status}`}
+            />
+          </Link>
+        )}
         <Link
           to="/files"
           className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 [&.active]:bg-zinc-900 [&.active]:text-zinc-100"
