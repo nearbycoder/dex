@@ -1,15 +1,26 @@
 # Working on Dex
 
-Dex is a personal agent harness: a Durable Object agent (`src/agent/dex-agent.ts`) running Pi Durable, with a TanStack Start app on Cloudflare Workers. See README.md for the feature tour and architecture.
+Dex is a personal agent harness: a Durable Object agent (`apps/web/src/agent/dex-agent.ts`) running Pi Durable, with a TanStack Start app on Cloudflare Workers. See README.md for the feature tour and architecture.
+
+## Repository layout
+
+A monorepo. Each app lives in `apps/<name>` with its own build and deploy, and none depends on another's deploy:
+
+- `apps/web`: the web app, the Worker, and the agent. Its own `package.json` (`@dex/web`), `wrangler.jsonc`, and `npm run deploy`. Paths below are relative to it unless they start with `apps/`.
+- `apps/ios`, `apps/android` (planned): native apps with their own tooling (Xcode, Gradle) and release process. They talk to the same agent over its WebSocket and HTTP API; keep the wire protocol (`apps/web/src/shared/protocol.ts`) backward compatible, and move it to `packages/` once a second app needs it.
+- `packages/*` (none yet): code shared between apps, as npm workspaces.
+- Root: the npm workspace (`package.json`, one lockfile; `overrides` must live here), README, LICENSE, `docs/` (README media), `assets/` (brand).
+
+Run commands from the root: `npm run dev`, `npm run typecheck`, `npm run check:ops`, and `npm run deploy` forward to `@dex/web` (or `npm run <script> -w @dex/web`). A new JavaScript app joins by adding its folder to the root `workspaces` and gets its own `deploy:<name>` script at the root.
 
 ## Every feature is also an operation
 
-Anything a user can do in the app must also be doable by a chat (its `app_operations` / `app_call` tools) and by an external agent over MCP (`/api/mcp`). Both are generated from one registry: `src/agent/operations.ts`.
+Anything a user can do in the app must also be doable by a chat (its `app_operations` / `app_call` tools) and by an external agent over MCP (`/api/mcp`). Both are generated from one registry: `apps/web/src/agent/operations.ts`.
 
 When you add or change functionality:
 
 1. Expose it as a `@callable()` on DexAgent as usual for the UI.
-2. Add an operation to `OPERATIONS` in `src/agent/operations.ts` that `covers` the callable: a clear name (`app_<verb>_<thing>`), a description written for a model, a TypeBox `parameters` schema with limits, a `risk`, and a one-line `summarize`.
+2. Add an operation to `OPERATIONS` in `src/agent/operations.ts` (in `apps/web`) that `covers` the callable: a clear name (`app_<verb>_<thing>`), a description written for a model, a TypeBox `parameters` schema with limits, a `risk`, and a one-line `summarize`.
    - `read`: looks only. `write`: creates, starts, sends, stops, runs. `admin`: deletes, or changes what future chats see (settings, existing agents and projects, MCP servers). Chats must get the user's confirmation for `admin`; MCP tokens need admin scope.
    - Set `inChats: false` only when chats already have a native tool for it.
 3. If it must not be exposed (credentials, access control, browser-only actions), add it to `EXCLUDED` with the reason instead.
@@ -34,5 +45,6 @@ A busy agent (open apps ping it every 20s, running VMs schedule an idle check ev
 
 ## Workflow
 
-- `npm run typecheck`, then `npm run deploy` (checks operations, builds, deploys), then commit and push to main.
-- Secrets live in Cloudflare secrets and the gitignored `.dev.vars` / `.prod.vars`; never commit or print them.
+- From the root: `npm run typecheck`, then `npm run deploy` (checks operations, builds, deploys `apps/web`), then commit and push to main.
+- Secrets live in Cloudflare secrets and the gitignored `apps/web/.dev.vars` / `.prod.vars`; never commit or print them.
+- Per-deployment settings (the sign-in allowlist, the Cloudflare account ID, the VAPID public key) live in the gitignored `apps/web/.deploy.vars`, which `scripts/deploy.mjs` passes to Wrangler as `--var`s. Keep `wrangler.jsonc` generic (empty placeholders) so anyone can deploy their own Dex from this repo.

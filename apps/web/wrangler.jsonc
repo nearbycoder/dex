@@ -17,13 +17,15 @@
   "ratelimits": [{ "name": "LOGIN_LIMITER", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } }],
   // Videos and other media chats share (from a VM), served privately at /api/media/<key>.
   "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "dex-media" }],
+  // Per-deployment settings. Leave these empty here: `npm run deploy` fills them from the gitignored .deploy.vars
+  // (see .deploy.vars.example), so this file stays the same for everyone who deploys Dex.
   "vars": {
-    // Comma-separated GitHub logins allowed to sign in.
-    "ALLOWED_GITHUB_USERS": "nearbycoder",
-    // The account whose analytics the Usage page reads (with the CLOUDFLARE_API_TOKEN secret).
-    "CLOUDFLARE_ACCOUNT_ID": "0a4ba75d9277c4e96b49255f3109e7b6",
-    // Web Push: the public half of the VAPID key pair (the private half is the VAPID_PRIVATE_KEY secret).
-    "VAPID_PUBLIC_KEY": "BK10VeIRXeFvTdbagEQcpGXRAKZpqVMylnB__TS26ishhIPE3W5tMcRAaIALxcfhI5qHqKc7AS-iuzLy7QfhE0Q"
+    // Comma-separated GitHub logins allowed to sign in. The first is the owner. Required to deploy.
+    "ALLOWED_GITHUB_USERS": "",
+    // Optional: the account whose analytics the Usage page reads (with the CLOUDFLARE_API_TOKEN secret).
+    "CLOUDFLARE_ACCOUNT_ID": "",
+    // Optional: Web Push, the public half of the VAPID key pair (the private half is the VAPID_PRIVATE_KEY secret).
+    "VAPID_PUBLIC_KEY": ""
   }
   // Secrets (wrangler secret put): AUTH_SECRET, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, optional CLINE_API_KEY,
   // OWNER_PASSWORD, BOAT_API_KEY (the owner's VMs only: the first ALLOWED_GITHUB_USERS login), CLOUDFLARE_API_TOKEN (Account Analytics: Read), VAPID_PRIVATE_KEY (Web Push).

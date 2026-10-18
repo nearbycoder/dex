@@ -10,7 +10,7 @@
 
 **Dex** is a personal agent harness. Each user gets an agent in a Cloudflare Durable Object running [Pi Durable](https://developers.cloudflare.com/agents/harnesses/pi/), thinking with open-weight models through [ClinePass](https://docs.cline.bot/getting-started/clinepass), answering with generative UI from [OpenUI](https://www.openui.com/), and doing real work on its own cloud VM from [boat.dev](https://boat.dev). Built with TanStack Start, Effect, and the Cloudflare Agents SDK, and installable on your phone.
 
-[Highlights](#highlights) · [Features](#features) · [Architecture](#architecture) · [Develop](#develop) · [Deploy](#deploy) · [Security](#security) · [Limits](#limits)
+[Highlights](#highlights) · [Features](#features) · [Repository](#repository) · [Architecture](#architecture) · [Develop](#develop) · [Deploy](#deploy) · [Security](#security) · [Limits](#limits) · [License](#license)
 
 ## Highlights
 
@@ -154,6 +154,23 @@
 - **Always current:** after a deploy, the first page load restarts a long-running agent onto the new code.
 - **Sign in** with GitHub (allowlisted logins), an owner password, or a local dev login. **Sign out everywhere** revokes every session on every device.
 
+## Repository
+
+A monorepo, so the web app and future native apps live side by side and each deploys on its own:
+
+```
+apps/
+  web/        the app: TanStack Start UI, the Cloudflare Worker, and the DexAgent Durable Object
+              (its own package.json, wrangler.jsonc, and `npm run deploy`)
+  ios/        (planned) native iOS app
+  android/    (planned) native Android app
+packages/     (planned) code shared between apps, e.g. the wire protocol
+assets/       brand assets (the app icon source)
+docs/         README screenshots and the promo video
+```
+
+The root `package.json` is an npm workspace (`apps/web` and `packages/*`). Its scripts forward to the web app, so `npm run dev`, `npm run typecheck`, and `npm run deploy` work from the root; `npm run deploy:web` is the explicit form. A JavaScript app joins by adding its folder to `workspaces`; native apps keep their own tooling (Xcode, Gradle) in their folder and their own release process.
+
 ## Architecture
 
 ```
@@ -170,30 +187,34 @@ Worker (src/server.ts) ── auth check ──► DexAgent Durable Object, one 
                                              └─ Agents SDK schedules (scheduled prompts, queue checks)
 ```
 
-- `src/server/`: Effect services for config, keys (HMAC session signing, AES-GCM), sessions, and GitHub OAuth.
-- `src/agent/`: the Durable Object and its parts (operations, VMs, MCP and registry search, skills, secrets, queue, media, push, the ClinePass provider) and the tools.
-- `src/shared/`: model catalog, wire protocol, and shared types.
-- `src/client/`: the agent connection (`useAgent`), the Pi event reducer, and UI components.
-- `src/routes/`: pages and auth endpoints.
-- `docs/`: the screenshots and promo video in this README.
+In `apps/web/src/`:
+
+- `server/`: Effect services for config, keys (HMAC session signing, AES-GCM), sessions, and GitHub OAuth.
+- `agent/`: the Durable Object and its parts (operations, VMs, MCP and registry search, skills, secrets, queue, media, push, the ClinePass provider) and the tools.
+- `shared/`: model catalog, wire protocol, and shared types.
+- `client/`: the agent connection (`useAgent`), the Pi event reducer, and UI components.
+- `routes/`: pages and auth endpoints.
 
 ## Develop
 
 ```sh
-npm install
-cp .dev.vars.example .dev.vars   # set AUTH_SECRET; DEV_LOGIN=true enables the dev login
-npm run dev                      # http://localhost:5173
+npm install                                             # from the root: installs every workspace
+cp apps/web/.dev.vars.example apps/web/.dev.vars        # set AUTH_SECRET; DEV_LOGIN=true enables the dev login
+npm run dev                                             # http://localhost:5173
 ```
 
-Workers AI (web search and fetch) runs remotely even in dev, so run `wrangler login` first. After changing `src/client/openui/library.tsx`, run `npm run openui:spec` to regenerate the component spec the agent learns from. See [AGENTS.md](AGENTS.md) for the conventions every change follows (operations, skeletons, security, deploys).
+Workers AI (web search and fetch) runs remotely even in dev, so run `npx wrangler login` first. After changing `apps/web/src/client/openui/library.tsx`, run `npm run openui:spec -w @dex/web` to regenerate the component spec the agent learns from. See [AGENTS.md](AGENTS.md) for the conventions every change follows (operations, skeletons, security, deploys).
 
 ## Deploy
 
+The web app deploys to Cloudflare Workers from `apps/web`. `apps/web/wrangler.jsonc` is the same for everyone; your deployment's settings live in the gitignored `apps/web/.deploy.vars`, which `npm run deploy` passes to Wrangler.
+
 1. Create a GitHub OAuth app (github.com/settings/applications/new) with homepage `https://<your-worker>` and callback `https://<your-worker>/auth/github` (sign-in and "Connect with GitHub" use paths under it).
-2. Set `ALLOWED_GITHUB_USERS` in `wrangler.jsonc` (the first login is the owner).
-3. Add the secrets, then deploy:
+2. Copy `apps/web/.deploy.vars.example` to `apps/web/.deploy.vars` and set `ALLOWED_GITHUB_USERS` (the first login is the owner), plus `CLOUDFLARE_ACCOUNT_ID` and `VAPID_PUBLIC_KEY` if you use the Usage page and push notifications. The deploy refuses to run without an allowlist.
+3. Add the secrets (from `apps/web`), then deploy from the root:
 
 ```sh
+cd apps/web
 npx wrangler secret put AUTH_SECRET
 npx wrangler secret put GITHUB_CLIENT_ID
 npx wrangler secret put GITHUB_CLIENT_SECRET
@@ -202,10 +223,8 @@ npx wrangler secret put OWNER_PASSWORD        # optional: password sign-in as th
 npx wrangler secret put BOAT_API_KEY          # optional: boat.dev key for the owner's VMs; everyone else connects their own
 npx wrangler secret put CLOUDFLARE_API_TOKEN  # optional: Account Analytics: Read, for the Usage page
 npx wrangler secret put VAPID_PRIVATE_KEY     # optional: push notifications (a P-256 private JWK; its public key goes in VAPID_PUBLIC_KEY)
-npm run deploy
+cd ../.. && npm run deploy                    # checks operations, builds, and deploys apps/web
 ```
-
-The current deployment is https://dex.nearbycoder.workers.dev.
 
 ## Security
 
@@ -249,3 +268,7 @@ The current deployment is https://dex.nearbycoder.workers.dev.
 - `web_search` needs Web Search billing on the Cloudflare account.
 - Pi Durable has no tool-approval step yet and can't delete conversations, so deleting a chat hides it.
 - The official MCP Registry can take many seconds for a search it hasn't cached; Smithery is the fast default.
+
+## License
+
+[MIT](LICENSE)

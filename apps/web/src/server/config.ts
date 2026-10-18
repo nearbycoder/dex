@@ -38,7 +38,11 @@ export class AppConfig extends Context.Service<AppConfig, {
       // The owner's VMs only (see DexAgent.boatSource); everyone else connects their own key.
       const boatApiKey = yield* Config.option(Config.Redacted("BOAT_API_KEY"))
       const cloudflareApiToken = yield* Config.option(Config.Redacted("CLOUDFLARE_API_TOKEN"))
-      const cloudflareAccountId = yield* Config.option(Config.NonEmptyString("CLOUDFLARE_ACCOUNT_ID"))
+      // Empty in wrangler.jsonc unless the deployment sets it (.deploy.vars): empty means not set.
+      const cloudflareAccountId = yield* Config.String("CLOUDFLARE_ACCOUNT_ID").pipe(
+        Config.withDefault(""),
+        Config.map((value) => (value.trim() ? Option.some(value.trim()) : Option.none<string>()))
+      )
 
       const github = Option.all({ clientId, clientSecret })
       return AppConfig.of({ authSecret, github, allowedUsers, devLogin, ownerPassword, clineApiKey, boatApiKey, cloudflareApiToken, cloudflareAccountId })
