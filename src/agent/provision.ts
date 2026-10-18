@@ -2,7 +2,7 @@ import { PROJECT_ROOT, type ProjectProfile, repoLabel } from "~/shared/projects"
 import type { VmSetupContext } from "./vm"
 
 export interface ProvisionPlan {
-  readonly github: { readonly token: string; readonly name: string; readonly email: string } | null
+  readonly github: { readonly token: string; readonly login: string; readonly name: string; readonly email: string } | null
   readonly project: ProjectProfile | null
 }
 
@@ -21,10 +21,16 @@ export async function provisionVm(setup: VmSetupContext, plan: ProvisionPlan) {
     setup.step("Signing in to GitHub")
     // The token goes through a file, never a command line, so it stays out of the activity log.
     await setup.writeFile("/tmp/.dex-gh-token", plan.github.token)
+    // `gh auth login` refuses tokens without the scopes it wants (read:org), though everything Dex needs works
+    // without them: for those, it writes the CLI's credentials itself. Then it checks the token reaches GitHub.
     const login = await setup.run(
       "Sign in to GitHub (gh auth login)",
-      `gh auth login --hostname github.com --git-protocol https --with-token < /tmp/.dex-gh-token; status=$?; rm -f /tmp/.dex-gh-token
-       [ $status -eq 0 ] && gh auth setup-git && git config --global user.name ${shellQuote(plan.github.name)} && git config --global user.email ${shellQuote(plan.github.email)} && gh auth status`
+      `if ! gh auth login --hostname github.com --git-protocol https --with-token < /tmp/.dex-gh-token; then
+         echo "Signing the GitHub CLI in directly instead"
+         mkdir -p ~/.config/gh && (umask 077; printf 'github.com:\n    oauth_token: %s\n    user: %s\n    git_protocol: https\n' "$(cat /tmp/.dex-gh-token)" ${shellQuote(plan.github.login)} > ~/.config/gh/hosts.yml)
+       fi
+       rm -f /tmp/.dex-gh-token
+       gh auth setup-git && git config --global user.name ${shellQuote(plan.github.name)} && git config --global user.email ${shellQuote(plan.github.email)} && echo "Signed in as $(gh api user --jq .login)"`
     )
     if (login.exitCode !== 0) throw new Error("gh auth login failed; check the GitHub token in Settings")
   }

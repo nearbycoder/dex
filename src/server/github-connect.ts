@@ -8,7 +8,8 @@ import { serverRuntime } from "./runtime"
 
 const STATE_COOKIE = "dex_gh_connect_state"
 /** What VMs need to clone private repos, push branches (including workflow files), and open pull requests. */
-const SCOPE = "repo workflow read:user"
+// read:org: the GitHub CLI insists on it when signing in with a token.
+const SCOPE = "repo workflow read:org read:user"
 
 const callbackUrl = (request: Request) => new URL("/auth/github/connect/callback", request.url).toString()
 

@@ -1583,14 +1583,14 @@ export class DexAgent extends Agent<Env, DexState> {
   // ── GitHub access for the VMs ─────────────────────────────────────────────
 
   /** The token and git identity each new VM signs in with, if the user connected GitHub. */
-  private async githubCredentials(): Promise<{ token: string; name: string; email: string } | null> {
+  private async githubCredentials(): Promise<{ token: string; login: string; name: string; email: string } | null> {
     const sealed = this.secret("github_token")
     const identity = this.secret("github_identity")
     if (!sealed || !identity) return null
     const token = await this.runtime.runPromise(Keys.use((keys) => keys.decrypt(sealed)).pipe(Effect.option))
     if (Option.isNone(token)) return null
-    const { name, email } = JSON.parse(identity) as GitHubIdentity
-    return { token: token.value, name, email }
+    const { login, name, email } = JSON.parse(identity) as GitHubIdentity
+    return { token: token.value, login, name, email }
   }
 
   private refreshGitHubStatus() {
