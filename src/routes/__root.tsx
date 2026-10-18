@@ -1,5 +1,5 @@
 import { createRootRoute, HeadContent, Outlet, Scripts } from "@tanstack/react-router"
-import type { ReactNode } from "react"
+import { type ReactNode, useEffect } from "react"
 import styles from "~/styles.css?url"
 
 export const Route = createRootRoute({
@@ -51,7 +51,21 @@ export const Route = createRootRoute({
   component: RootComponent
 })
 
+/**
+ * iOS zooms the page in when you focus a field whose text is under 16px, and leaves it zoomed. `maximum-scale=1`
+ * stops that; iOS still lets you pinch-zoom (it ignores the limit for gestures). Only on iOS: elsewhere it would
+ * block pinch zoom, and nothing zooms on focus there.
+ */
+function useNoFocusZoom() {
+  useEffect(() => {
+    const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+    const meta = document.querySelector<HTMLMetaElement>('meta[name="viewport"]')
+    if (ios && meta && !meta.content.includes("maximum-scale")) meta.content = `${meta.content}, maximum-scale=1`
+  }, [])
+}
+
 function RootComponent() {
+  useNoFocusZoom()
   return (
     <RootDocument>
       <Outlet />

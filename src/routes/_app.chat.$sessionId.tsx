@@ -73,7 +73,7 @@ function Chat() {
               value={editing}
               onChange={(event) => setEditing(event.target.value)}
               onBlur={() => setEditing(null)}
-              className="rounded border border-zinc-700 bg-zinc-900 px-2 py-0.5 text-sm focus:outline-none"
+              className="rounded border border-zinc-700 bg-zinc-900 px-2 py-0.5 text-base focus:outline-none md:text-sm"
             />
             <button type="submit" onMouseDown={(event) => event.preventDefault()} className="p-1 text-emerald-400">
               <Check className="size-4" />
