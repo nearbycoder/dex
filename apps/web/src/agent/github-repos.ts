@@ -24,6 +24,8 @@ interface RawRepo {
   fork: boolean
   archived: boolean
   owner: { login: string; avatar_url: string }
+  language?: string | null
+  stargazers_count?: number
 }
 
 const toRepo = (raw: RawRepo, accessible: boolean): GitHubRepo => ({
@@ -36,7 +38,9 @@ const toRepo = (raw: RawRepo, accessible: boolean): GitHubRepo => ({
   archived: raw.archived,
   owner: raw.owner.login,
   ownerAvatar: raw.owner.avatar_url,
-  accessible
+  accessible,
+  language: raw.language ?? null,
+  stars: raw.stargazers_count ?? 0
 })
 
 /**
@@ -88,9 +92,13 @@ export class GitHubRepos {
     this.cache = null
   }
 
-  /** Repos matching `query` (all words, in the name or description): the user's first, then public ones. */
-  async search(query: string): Promise<GitHubRepo[]> {
+  /**
+   * Repos matching `query` (all words, in the name or description): the user's first, then public ones. With
+   * `owner`, only that account's or org's repos.
+   */
+  async search(query: string, owner?: string): Promise<GitHubRepo[]> {
     const q = query.trim().toLowerCase().slice(0, 100)
+    const only = owner && /^[\w.-]{1,100}$/.test(owner) ? owner.toLowerCase() : null
     let auth = await this.auth()
     // A rejected connection still finds public repos (anonymously) while it waits for a reconnect.
     const mine = auth
@@ -100,10 +108,16 @@ export class GitHubRepos {
           return [] as GitHubRepo[]
         })
       : []
-    if (!q) return mine.filter((repo) => !repo.archived).slice(0, 20)
+    const owned = only ? mine.filter((repo) => repo.owner.toLowerCase() === only) : mine
+    if (!q) {
+      if (owned.length || !only) return owned.filter((repo) => !repo.archived).slice(0, 40)
+      // An owner the connection can't list (someone else's): their public repos.
+      const theirs = await this.get<RawRepo[]>(`/users/${only}/repos?per_page=40&sort=pushed`, auth?.token ?? null).catch(() => [] as RawRepo[])
+      return theirs.map((raw) => toRepo(raw, false))
+    }
     const words = q.split(/\s+/)
     const name = (repo: GitHubRepo) => repo.fullName.toLowerCase()
-    const matches = mine
+    const matches = owned
       .filter((repo) => words.every((word) => name(repo).includes(word) || repo.description.toLowerCase().includes(word)))
       .sort((a, b) => {
         const score = (repo: GitHubRepo) => {
@@ -112,15 +126,16 @@ export class GitHubRepos {
         }
         return score(a) - score(b) || Number(a.archived) - Number(b.archived) || Date.parse(b.pushedAt ?? "0") - Date.parse(a.pushedAt ?? "0")
       })
-      .slice(0, 20)
+      .slice(0, 30)
     // Public repos anywhere (and, with a connection, private ones it can see) by name.
-    if (q.length >= 2 && matches.length < 20) {
-      const found = await this.get<{ items?: RawRepo[] }>(`/search/repositories?q=${encodeURIComponent(`${q} in:name`)}&per_page=10`, auth?.token ?? null).catch(() => ({ items: [] }))
+    if (q.length >= 2 && matches.length < 30) {
+      const scope = only ? ` user:${only}` : ""
+      const found = await this.get<{ items?: RawRepo[] }>(`/search/repositories?q=${encodeURIComponent(`${q} in:name${scope}`)}&per_page=15`, auth?.token ?? null).catch(() => ({ items: [] }))
       for (const raw of found.items ?? []) {
         if (!matches.some((repo) => repo.fullName === raw.full_name)) matches.push(toRepo(raw, mine.some((repo) => repo.fullName === raw.full_name)))
       }
     }
-    return matches.slice(0, 25)
+    return matches.slice(0, 40)
   }
 
   /** A repo's branches, its default first. */

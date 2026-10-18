@@ -337,11 +337,14 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     description:
       "Find GitHub repos for a project: the ones the user's GitHub connection can reach (theirs, collaborations, and org repos the org allowed Dex; private included) matching the words, then public repos by name. Empty query: their most recently pushed. Also says which orgs Dex can see.",
     risk: "read",
-    parameters: Type.Object({ query: Type.String({ maxLength: 100, description: "Words in the repo's name or description; empty for recent." }) }),
+    parameters: Type.Object({
+      query: Type.String({ maxLength: 100, description: "Words in the repo's name or description; empty for recent." }),
+      owner: Type.Optional(Type.String({ maxLength: 100, description: "Only this user's or org's repos." }))
+    }),
     covers: ["searchGitHubRepos", "githubRepoAccess"],
     summarize: (args) => (args.query ? `Search GitHub repos for ${quote(args.query)}` : "List recent GitHub repos"),
     run: async (host, args) => {
-      const [repos, access] = await Promise.all([host.searchGitHubRepos(args.query), host.githubRepoAccess()])
+      const [repos, access] = await Promise.all([host.searchGitHubRepos(args.query, args.owner), host.githubRepoAccess()])
       return { repos, access: { connected: access.connected, login: access.login, orgs: access.orgs.map((org) => org.login) } }
     }
   }),

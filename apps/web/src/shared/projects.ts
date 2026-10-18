@@ -75,6 +75,8 @@ export interface GitHubRepo {
   readonly owner: string
   readonly ownerAvatar: string
   readonly accessible: boolean
+  readonly language: string | null
+  readonly stars: number
 }
 
 /** Who's connected to GitHub, the orgs Dex can see, and where to grant it more. */

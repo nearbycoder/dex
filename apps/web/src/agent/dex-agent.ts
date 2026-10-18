@@ -2278,8 +2278,8 @@ export class DexAgent extends Agent<Env, DexState> {
 
   /** Repos matching `query` the user's GitHub connection can reach (private and org ones included), then public ones. */
   @callable()
-  async searchGitHubRepos(query: string): Promise<GitHubRepo[]> {
-    return this.githubRepos.search(query)
+  async searchGitHubRepos(query: string, owner?: string): Promise<GitHubRepo[]> {
+    return this.githubRepos.search(query, owner)
   }
 
   @callable()

@@ -663,7 +663,8 @@ export function EditorSkeleton({ kind }: { kind: EditorKind }) {
             {kind === "project" && (
               <>
                 <TwoFields height={46} />
-                <FieldBones height={162} label="30%" />
+                {/* Repositories: a repo card and the Add repository button. */}
+                <FieldBones height={116} label="30%" />
                 <FieldBones height={151} label="28%" />
                 <FieldBones height={130} label="26%" />
                 <TwoFields height={42} />

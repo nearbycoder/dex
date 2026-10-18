@@ -2,12 +2,12 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { ArrowLeft, Check, LoaderCircle, MessageSquarePlus, Plus, Trash2, X } from "lucide-react"
 import { type ReactNode, useEffect, useState } from "react"
 import { AGENT_ICON_COMPONENTS, AgentAvatar } from "~/client/components/agent-avatar"
-import { BranchPicker, GitHubAccessNote, RepoPicker } from "~/client/components/repo-picker"
+import { RepoCard, RepoSheet } from "~/client/components/repo-picker"
 import { EditorSkeleton } from "~/client/components/skeleton"
 import { InfoTip } from "~/client/components/info-tip"
 import { useDex } from "~/client/lib/dex"
 import { AGENT_COLORS, AGENT_ICONS, type AgentColor } from "~/shared/agents"
-import { type ProjectDraft, repoDirName } from "~/shared/projects"
+import { type ProjectDraft, type ProjectRepo, repoLabel } from "~/shared/projects"
 import { VM_SIZES, type VmSize } from "~/shared/protocol"
 
 export const Route = createFileRoute("/_app/projects/$projectId")({ component: ProjectEditorPage })
@@ -17,7 +17,7 @@ const blank: ProjectDraft = {
   description: "",
   icon: "briefcase",
   color: "sky",
-  repos: [{ url: "", branch: "", dir: "" }],
+  repos: [],
   setupScript: "",
   instructions: "",
   starter: "",
@@ -41,6 +41,41 @@ function Field({ label, hint, children }: { label: string; hint?: ReactNode; chi
   )
 }
 
+/** Under the repo list: why private repos might be missing, and the fix. */
+function GitHubNote() {
+  const { state } = useDex()
+  const github = state?.github
+  if (!github) return null
+  if (github.connected && github.expired) {
+    return (
+      <p className="text-xs text-amber-300/90">
+        GitHub stopped accepting your connection, so private repos won't clone.{" "}
+        {github.via === "oauth" ? (
+          <a href="/auth/github/connect" className="font-medium underline">
+            Reconnect
+          </a>
+        ) : (
+          <Link to="/settings" className="font-medium underline">
+            Replace the token
+          </Link>
+        )}
+      </p>
+    )
+  }
+  if (!github.connected) {
+    return (
+      <p className="text-xs text-zinc-500">
+        Public repos only until you{" "}
+        <Link to="/settings" className="text-zinc-300 underline">
+          connect GitHub
+        </Link>
+        .
+      </p>
+    )
+  }
+  return null
+}
+
 /** Keyed by id: moving from one item (or “new”) to another starts a fresh draft instead of keeping the last one. */
 function ProjectEditorPage() {
   const { projectId } = Route.useParams()
@@ -56,12 +91,14 @@ function ProjectEditor() {
   const [draft, setDraft] = useState<ProjectDraft | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  // The repo sheet: adding one (index null) or editing the repo at index.
+  const [sheet, setSheet] = useState<{ index: number | null } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (draft || !state) return
     if (isNew) setDraft(blank)
-    else if (existing) setDraft({ ...existing, repos: existing.repos.length ? existing.repos : blank.repos })
+    else if (existing) setDraft({ ...existing })
   }, [state, existing, isNew, draft])
 
   if (!state) return <EditorSkeleton kind="project" />
@@ -89,7 +126,7 @@ function ProjectEditor() {
     setError(null)
     try {
       const result = await stub.saveProject(draft)
-      setDraft({ ...result, repos: result.repos.length ? result.repos : blank.repos })
+      setDraft({ ...result })
       setSaved(true)
       if (isNew) await navigate({ to: "/projects/$projectId", params: { projectId: result.id }, replace: true })
     } catch (cause) {
@@ -138,40 +175,37 @@ function ProjectEditor() {
             </label>
           </div>
 
-          <Field label="Repositories" hint="Cloned into ~/work/<folder> on each chat's VM. Search your GitHub repos (private and org ones included), or type owner/repo or any https:// git URL.">
+          <Field label="Repositories" hint="Cloned into ~/work/<folder> on each chat's VM. Add your GitHub repos (private and org ones included), any public repo, or a git URL.">
             <div className="space-y-2">
-              {draft.repos.map((repo, index) => (
-                <div key={index} className="flex flex-wrap gap-2 rounded-lg border border-zinc-800/80 p-2 sm:flex-nowrap sm:border-0 sm:p-0">
-                  <RepoPicker value={repo.url} onChange={(url) => setRepo(index, { url })} className={fieldBase} />
-                  <BranchPicker repo={repo.url} value={repo.branch} onChange={(branch) => setRepo(index, { branch })} className={fieldBase} />
-                  <input
-                    value={repo.dir}
-                    onChange={(event) => setRepo(index, { dir: event.target.value })}
-                    placeholder={repo.url ? repoDirName(repo.url) : "folder"}
-                    autoCapitalize="off"
-                    spellCheck={false}
-                    className={`${fieldBase} min-w-0 flex-1 font-mono`}
-                  />
-                  <button
-                    type="button"
-                    title="Remove repository"
-                    onClick={() => update({ repos: draft.repos.filter((_, i) => i !== index) })}
-                    className="shrink-0 rounded-lg px-2 text-zinc-500 hover:text-red-400"
-                  >
-                    <X className="size-4" />
-                  </button>
-                </div>
+              {draft.repos.filter((repo) => repo.url.trim()).map((repo, index) => (
+                <RepoCard
+                  key={`${repo.url}:${index}`}
+                  repo={repo}
+                  onEdit={() => setSheet({ index })}
+                  onRemove={() => update({ repos: draft.repos.filter((_, i) => i !== index) })}
+                />
               ))}
               <button
                 type="button"
-                onClick={() => update({ repos: [...draft.repos, { url: "", branch: "", dir: "" }] })}
-                className="flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-100"
+                onClick={() => setSheet({ index: null })}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-zinc-700 py-3 text-sm text-zinc-300 hover:border-zinc-500 hover:bg-zinc-900/50 hover:text-zinc-100"
               >
                 <Plus className="size-4" /> Add repository
               </button>
-              <GitHubAccessNote />
+              <GitHubNote />
             </div>
           </Field>
+          {sheet && (
+            <RepoSheet
+              editing={sheet.index === null ? null : (draft.repos[sheet.index] ?? null)}
+              existing={new Set(draft.repos.map((repo) => repoLabel(repo.url).toLowerCase()))}
+              onClose={() => setSheet(null)}
+              onSave={(repo: ProjectRepo) => {
+                update({ repos: sheet.index === null ? [...draft.repos, repo] : draft.repos.map((each, i) => (i === sheet.index ? repo : each)) })
+                setSheet(null)
+              }}
+            />
+          )}
 
           <Field
             label="Setup script"
