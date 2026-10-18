@@ -68,8 +68,24 @@ const withSecurityHeaders = (response: Response, request: Request) => {
   return secured
 }
 
+/**
+ * With a custom domain (CUSTOM_DOMAIN in .deploy.vars), pages opened at any other address of this Worker (its
+ * workers.dev one, or another of the custom domains such as www) move to the main one, so old links and bookmarks land where sign-in works. Only page loads: API clients, MCP
+ * connections, and agent sockets on the old address keep working.
+ */
+const toCustomDomain = (request: Request, env: Env) => {
+  // A comma-separated list (e.g. "example.com,www.example.com"); the first is the main one.
+  const domain = env.CUSTOM_DOMAIN.split(",")[0]?.trim()
+  if (!domain || request.method !== "GET" || request.headers.get("sec-fetch-mode") !== "navigate") return undefined
+  const url = new URL(request.url)
+  if (url.hostname === domain || url.hostname === "localhost" || url.hostname === "127.0.0.1") return undefined
+  return Response.redirect(`https://${domain}${url.pathname}${url.search}`, 301)
+}
+
 export default {
   async fetch(request, env) {
+    const moved = toCustomDomain(request, env)
+    if (moved) return moved
     // Agent sockets live at /agents/<class>/<instance>. Other /agents/* paths (the Agents pages, e.g.
     // /agents/pr-reviewer) don't match the SDK's two-segment route and fall through to the app.
     if (new URL(request.url).pathname.startsWith("/agents/")) {

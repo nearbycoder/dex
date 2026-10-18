@@ -18,5 +18,9 @@ if (!vars.ALLOWED_GITHUB_USERS) {
 const flags = Object.entries(vars)
   .filter(([, value]) => value !== "")
   .flatMap(([key, value]) => ["--var", `${key}:${value}`])
-const result = spawnSync("npx", ["wrangler", "deploy", ...flags, ...process.argv.slice(2)], { stdio: "inherit" })
+// Custom domains (comma-separated, the first is the main one) are routed to the Worker on every deploy. Each needs a
+// proxied DNS record in its Cloudflare zone; Cloudflare's certificate covers it.
+const hosts = (vars.CUSTOM_DOMAIN ?? "").split(",").map((host) => host.trim()).filter(Boolean)
+const domain = hosts.flatMap((host) => ["--route", `${host}/*`])
+const result = spawnSync("npx", ["wrangler", "deploy", ...flags, ...domain, ...process.argv.slice(2)], { stdio: "inherit" })
 process.exit(result.status ?? 1)

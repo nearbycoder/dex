@@ -5,6 +5,9 @@
   "compatibility_date": "2026-10-17",
   "compatibility_flags": ["nodejs_compat"],
   "upload_source_maps": true,
+  // Keep the workers.dev address with a custom domain too (Wrangler turns it off otherwise): API clients and MCP
+  // connections keep working there, and its pages redirect to the custom domain.
+  "workers_dev": true,
   "observability": { "enabled": true },
   // The build's static files, for the few the Worker serves itself (the landing page's tour, with byte ranges).
   "assets": { "binding": "ASSETS" },
@@ -27,7 +30,11 @@
     // Optional: the account whose analytics the Usage page reads (with the CLOUDFLARE_API_TOKEN secret).
     "CLOUDFLARE_ACCOUNT_ID": "",
     // Optional: Web Push, the public half of the VAPID key pair (the private half is the VAPID_PRIVATE_KEY secret).
-    "VAPID_PUBLIC_KEY": ""
+    "VAPID_PUBLIC_KEY": "",
+    // Optional: custom domains on your Cloudflare account, comma-separated, the main one first (e.g.
+    // "example.com,www.example.com"). `npm run deploy` routes them to the Worker, and pages opened at any other
+    // address (workers.dev, www) move to the main one.
+    "CUSTOM_DOMAIN": ""
   }
   // Secrets (wrangler secret put): AUTH_SECRET, GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, optional CLINE_API_KEY,
   // OWNER_PASSWORD, BOAT_API_KEY (the owner's VMs only: the first ALLOWED_GITHUB_USERS login), CLOUDFLARE_API_TOKEN (Account Analytics: Read), VAPID_PRIVATE_KEY (Web Push).

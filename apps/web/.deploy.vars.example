@@ -8,3 +8,8 @@ CLOUDFLARE_ACCOUNT_ID=
 # Optional: Web Push public key (its private half is the VAPID_PRIVATE_KEY secret). Generate a pair with:
 #   npx @pushforge/builder vapid
 VAPID_PUBLIC_KEY=
+# Optional: custom domains, comma-separated, the main one first (e.g. example.com,www.example.com). Each needs a
+# proxied DNS record in its zone on your Cloudflare account (any target; an AAAA record to 100:: is the usual
+# placeholder). `npm run deploy` routes them to the Worker, and pages opened at any other address redirect to the main
+# one. Point your GitHub OAuth app's callback at https://<main domain>/auth/github.
+CUSTOM_DOMAIN=

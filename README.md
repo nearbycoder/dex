@@ -237,8 +237,8 @@ Workers AI (web search and fetch) runs remotely even in dev, so run `npx wrangle
 
 The web app deploys to Cloudflare Workers from `apps/web`. `apps/web/wrangler.jsonc` is the same for everyone; your deployment's settings live in the gitignored `apps/web/.deploy.vars`, which `npm run deploy` passes to Wrangler.
 
-1. Create a GitHub OAuth app (github.com/settings/applications/new) with homepage `https://<your-worker>` and callback `https://<your-worker>/auth/github` (sign-in and "Connect with GitHub" use paths under it).
-2. Copy `apps/web/.deploy.vars.example` to `apps/web/.deploy.vars` and set `ALLOWED_GITHUB_USERS` (the first login is the owner), plus `CLOUDFLARE_ACCOUNT_ID` and `VAPID_PUBLIC_KEY` if you use the Usage page and push notifications. The deploy refuses to run without an allowlist.
+1. Create a GitHub OAuth app (github.com/settings/applications/new) with homepage `https://<your-domain>` and callback `https://<your-domain>/auth/github` (sign-in and "Connect with GitHub" use paths under it), where `<your-domain>` is your custom domain or the Worker's workers.dev address.
+2. Copy `apps/web/.deploy.vars.example` to `apps/web/.deploy.vars` and set `ALLOWED_GITHUB_USERS` (the first login is the owner), plus `CLOUDFLARE_ACCOUNT_ID` and `VAPID_PUBLIC_KEY` if you use the Usage page and push notifications. For a custom domain, add its zone to your Cloudflare account with a proxied DNS record for the hostname (an `AAAA` record to `100::` works), and set `CUSTOM_DOMAIN` (comma-separated, main one first, e.g. `example.com,www.example.com`): every deploy routes it to the Worker, and pages opened at the workers.dev address (or www) redirect to the main one. The deploy refuses to run without an allowlist.
 3. Add the secrets (from `apps/web`), then deploy from the root:
 
 ```sh
