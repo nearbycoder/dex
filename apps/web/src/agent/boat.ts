@@ -114,6 +114,8 @@ export class BoatClient extends Context.Service<BoatClient, {
   namedSnapshot(name: string): Effect.Effect<string | null, BoatError>
   /** Saves a sandbox's disk under a name (replacing an older save); it's `saving` until it settles at `ready`. */
   saveNamedSnapshot(sandboxId: string, name: string): Effect.Effect<void, BoatError>
+  /** Removes a named snapshot (no error if there's none by that name). */
+  deleteNamedSnapshot(name: string): Effect.Effect<void, BoatError>
   /**
    * A desktop URL: `stream` (low-latency WebCodecs player, Chromium only) or `vnc` (noVNC, works everywhere).
    * noVNC is requested with public access: no cookie, gated by the VNC password in the URL, so it also works
@@ -251,6 +253,12 @@ export class BoatClient extends Context.Service<BoatClient, {
 
         saveNamedSnapshot: (sandboxId, name) =>
           send(HttpClientRequest.post(url("/named-snapshots")).pipe(body({ sandboxId, name }))).pipe(Effect.asVoid),
+
+        deleteNamedSnapshot: (name) =>
+          send(HttpClientRequest.make("DELETE")(url(`/named-snapshots/${encodeURIComponent(name)}`))).pipe(
+            Effect.asVoid,
+            Effect.catchIf((error) => error.status === 404, () => Effect.void)
+          ),
 
         desktop: (id, mode) =>
           json(DesktopResponse)(

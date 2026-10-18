@@ -3,9 +3,10 @@ import { BoatClient, BoatError } from "./boat"
 import { SELKIES_BAKE, SELKIES_TEMPLATE_CLEANUP, SELKIES_VERSION } from "./selkies"
 
 /** Bump when what's baked in changes, so VMs come from a fresh template instead of the old one. */
-const TEMPLATE_REVISION = 1
+const TEMPLATE_REVISION = 2
 /** A boat named snapshot in the user's own boat account (each person uses their own key). */
-export const TEMPLATE_NAME = `dex-desktop-r${TEMPLATE_REVISION}-selkies-${SELKIES_VERSION.replaceAll(".", "-")}`
+const templateName = (revision: number) => `dex-desktop-r${revision}-selkies-${SELKIES_VERSION.replaceAll(".", "-")}`
+export const TEMPLATE_NAME = templateName(TEMPLATE_REVISION)
 
 /** Rebuild after this long, so new VMs keep up with boat's base image (its desktop, agents, security updates). */
 const MAX_AGE_MS = 30 * 24 * 60 * 60_000
@@ -109,6 +110,10 @@ export class VmTemplate {
       }
       this.setMeta("vm_template_built", Date.now())
       this.known = { ready: true, at: Date.now() }
+      // Earlier revisions' templates are replaced: don't leave them taking up the account's named snapshots.
+      for (let revision = 1; revision < TEMPLATE_REVISION; revision++) {
+        await boat((client) => client.deleteNamedSnapshot(templateName(revision))).catch(() => undefined)
+      }
     } finally {
       await boat((client) => client.remove(created.id)).catch(() => undefined)
       this.setMeta("vm_template_builder", null)
