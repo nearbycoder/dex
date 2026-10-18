@@ -1,7 +1,7 @@
 # Per-deployment settings `npm run deploy` passes to Wrangler as variables (not secrets). Copy to .deploy.vars.
 
 # Comma-separated GitHub logins allowed to sign in. The first is the owner (password sign-in and the
-# deployment's BOAT_API_KEY are theirs). Required.
+# deployment's BOAT_API_KEY and OPENCODE_API_KEY are theirs). Required.
 ALLOWED_GITHUB_USERS=your-github-login
 # Optional: your Cloudflare account ID, for the Usage page (with the CLOUDFLARE_API_TOKEN secret).
 CLOUDFLARE_ACCOUNT_ID=
