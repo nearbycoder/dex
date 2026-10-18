@@ -114,6 +114,8 @@ interface SessionRow {
   mcp_servers: string | null
   project_id: string | null
   muted: number | null
+  settled_at: number | null
+  snoozed_until: number | null
   parent_id: string | null
   [key: string]: SqlStorageValue
 }
@@ -317,6 +319,9 @@ export class DexAgent extends Agent<Env, DexState> {
     if (!sessionColumns.includes("muted")) ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN muted INTEGER`)
     // The chat that started this one through app_create_session, if any.
     if (!sessionColumns.includes("parent_id")) ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN parent_id TEXT`)
+    // Inbox triage: settled (done for now) and snoozed (hidden until a time).
+    if (!sessionColumns.includes("settled_at")) ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN settled_at INTEGER`)
+    if (!sessionColumns.includes("snoozed_until")) ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN snoozed_until INTEGER`)
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_projects (
       id TEXT PRIMARY KEY, data TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
     migrateVmTables(ctx.storage.sql)
@@ -450,7 +455,9 @@ export class DexAgent extends Agent<Env, DexState> {
         agentId: row.agent_id ?? null,
         mcpServers: parseIds(row.mcp_servers),
         projectId: row.project_id ?? null,
-        muted: row.muted === 1
+        muted: row.muted === 1,
+        settledAt: row.settled_at ?? null,
+        snoozedUntil: row.snoozed_until ?? null
       }))
     this.publish({ sessions })
   }
@@ -556,7 +563,9 @@ export class DexAgent extends Agent<Env, DexState> {
       agentId: agent?.id ?? null,
       mcpServers,
       projectId: project?.id ?? null,
-      muted: false
+      muted: false,
+      settledAt: null,
+      snoozedUntil: null
     }
   }
 
@@ -574,6 +583,8 @@ export class DexAgent extends Agent<Env, DexState> {
     const receipt = await session.submit(content)
     const title = row.title === "New chat" ? content.replace(/\s+/g, " ").slice(0, 60) : row.title
     this.ctx.storage.sql.exec(`UPDATE dex_sessions SET title = ?, updated_at = ? WHERE id = ?`, title, Date.now(), sessionId)
+    // Something new in it: back to the inbox, whether it was settled or snoozed.
+    await this.returnToInbox(sessionId)
     await this.refreshSessions()
     // Clears the busy flag even when nobody is watching this chat, and tells your devices.
     const finished = async () => {
@@ -1616,6 +1627,65 @@ export class DexAgent extends Agent<Env, DexState> {
     return depth
   }
 
+  // ── Inbox triage: settle and snooze ───────────────────────────────────────
+
+  /**
+   * Settle a chat (done for now: it moves under Settled) or snooze it until a time (it moves under Snoozed and comes
+   * back then, with a notification). Either way, a new message in the chat brings it back to the inbox.
+   */
+  @callable()
+  async triageSession(sessionId: string, change: { settled?: boolean; snoozedUntil?: number | null }) {
+    if (!this.hasSession(sessionId)) throw new Error("Chat not found")
+    if (change.settled !== undefined) {
+      this.ctx.storage.sql.exec(`UPDATE dex_sessions SET settled_at = ? WHERE id = ?`, change.settled ? Date.now() : null, sessionId)
+      if (change.settled) await this.setSnooze(sessionId, null)
+    }
+    if (change.snoozedUntil !== undefined) {
+      const until = change.snoozedUntil
+      if (until !== null && (!Number.isFinite(until) || until <= Date.now() || until > Date.now() + 366 * 86_400_000)) {
+        throw new Error("Pick a time in the next year.")
+      }
+      await this.setSnooze(sessionId, until)
+      if (until !== null) this.ctx.storage.sql.exec(`UPDATE dex_sessions SET settled_at = NULL WHERE id = ?`, sessionId)
+    }
+    await this.refreshSessions()
+  }
+
+  /** Sets (or clears) a chat's snooze and its wake-up. */
+  private async setSnooze(sessionId: string, until: number | null) {
+    for (const schedule of this.getSchedules<{ sessionId: string }>()) {
+      if (schedule.callback === "wakeSnoozed" && schedule.payload?.sessionId === sessionId) await this.cancelSchedule(schedule.id)
+    }
+    this.ctx.storage.sql.exec(`UPDATE dex_sessions SET snoozed_until = ? WHERE id = ?`, until, sessionId)
+    if (until !== null) await this.schedule(new Date(until), "wakeSnoozed", { sessionId, until })
+  }
+
+  private async returnToInbox(sessionId: string) {
+    const row = this.ctx.storage.sql.exec<SessionRow>(`SELECT settled_at, snoozed_until FROM dex_sessions WHERE id = ?`, sessionId).toArray()[0]
+    if (!row || (row.settled_at === null && row.snoozed_until === null)) return
+    this.ctx.storage.sql.exec(`UPDATE dex_sessions SET settled_at = NULL WHERE id = ?`, sessionId)
+    if (row.snoozed_until !== null) await this.setSnooze(sessionId, null)
+  }
+
+  /** A snoozed chat's time has come: back to the top of the inbox, and a notification. */
+  async wakeSnoozed(payload: { sessionId: string; until: number }) {
+    const row = this.ctx.storage.sql.exec<SessionRow>(`SELECT * FROM dex_sessions WHERE id = ?`, payload.sessionId).toArray()[0]
+    // Re-snoozed or already back: an older wake-up does nothing.
+    if (!row || row.snoozed_until !== payload.until) return
+    this.ctx.storage.sql.exec(`UPDATE dex_sessions SET snoozed_until = NULL, updated_at = ? WHERE id = ?`, Date.now(), payload.sessionId)
+    await this.refreshSessions()
+    if (row.muted === 1) return
+    await this.push.notify("snooze", {
+      title: row.title.slice(0, 80),
+      body: "Back from snooze.",
+      url: `/chat/${payload.sessionId}`,
+      tag: `chat-${payload.sessionId}`,
+      kind: "snooze",
+      sessionId: payload.sessionId,
+      actions: [{ action: "open", title: "Open chat" }]
+    })
+  }
+
   // ── Media ─────────────────────────────────────────────────────────────────
 
   /**
@@ -1709,6 +1779,7 @@ export class DexAgent extends Agent<Env, DexState> {
         : (await this.createSession({ title: `⏰ ${payload.prompt.slice(0, 50)}` })).id
     const session = this.harness.session(sessionId)
     const receipt = await session.submit(`[Scheduled task] ${payload.prompt}`)
+    await this.returnToInbox(sessionId)
     this.ctx.storage.sql.exec(`UPDATE dex_sessions SET updated_at = ? WHERE id = ?`, Date.now(), sessionId)
     await this.refreshSessions()
     const finished = async () => {

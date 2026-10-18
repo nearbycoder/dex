@@ -26,6 +26,10 @@ export interface SessionMeta {
   readonly projectId: string | null
   /** No push notifications for this chat. */
   readonly muted: boolean
+  /** When you settled it (done for now): it sits under Settled until something new happens in it. */
+  readonly settledAt: number | null
+  /** Hidden under Snoozed until then; it comes back (with a notification) at that time. */
+  readonly snoozedUntil: number | null
 }
 
 export interface GitHubStatus {
@@ -130,7 +134,9 @@ export const withStateDefaults = (state: DexState): DexState => ({
     agentId: session.agentId ?? null,
     mcpServers: session.mcpServers ?? [],
     projectId: session.projectId ?? null,
-    muted: session.muted ?? false
+    muted: session.muted ?? false,
+    settledAt: session.settledAt ?? null,
+    snoozedUntil: session.snoozedUntil ?? null
   })),
   settings: { ...state.settings, vmSize: state.settings.vmSize ?? "small", vmMinutes: state.settings.vmMinutes ?? 5 }
 })

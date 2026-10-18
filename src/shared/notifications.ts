@@ -4,12 +4,13 @@ export const NOTIFY_KINDS = [
   { id: "error", label: "Problems", description: "When a reply fails." },
   { id: "scheduled", label: "Scheduled tasks", description: "When a scheduled prompt has run." },
   { id: "machine", label: "Machines", description: "When a project chat's VM is ready, or its setup fails." },
-  { id: "mcp", label: "MCP sign-in", description: "When an MCP server needs you to sign in again." }
+  { id: "mcp", label: "MCP sign-in", description: "When an MCP server needs you to sign in again." },
+  { id: "snooze", label: "Snoozed chats", description: "When a chat you snoozed comes back." }
 ] as const
 
 export type NotifyKind = (typeof NOTIFY_KINDS)[number]["id"]
 
-export const DEFAULT_KINDS: ReadonlyArray<NotifyKind> = ["reply", "error", "scheduled", "machine", "mcp"]
+export const DEFAULT_KINDS: ReadonlyArray<NotifyKind> = ["reply", "error", "scheduled", "machine", "mcp", "snooze"]
 
 /** A browser or installed app that receives push notifications. Endpoints and keys stay in the agent. */
 export interface PushDevice {

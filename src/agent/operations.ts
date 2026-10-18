@@ -36,6 +36,7 @@ export type OperationHost = Pick<
   | "renameSession"
   | "deleteSession"
   | "setSessionMuted"
+  | "triageSession"
   | "listFiles"
   | "readFile"
   | "writeFile"
@@ -150,6 +151,10 @@ const projectFields = {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
+/** Where a chat sits in the sidebar: the inbox, snoozed until a time, or settled. */
+const inboxState = (session: DexState["sessions"][number]) =>
+  session.snoozedUntil && session.snoozedUntil > Date.now() ? "snoozed" : session.settledAt ? "settled" : "inbox"
+
 const chatTitle = (state: DexState, sessionId: string) => state.sessions.find((session) => session.id === sessionId)?.title ?? `chat ${sessionId}`
 const quote = (text: string, max = 60) => `“${text.length > max ? `${text.slice(0, max)}…` : text}”`
 
@@ -164,6 +169,8 @@ const sessionSummary = (state: DexState) => (session: DexState["sessions"][numbe
   project: session.projectId ? (state.projects.find((project) => project.id === session.projectId)?.name ?? session.projectId) : null,
   mcpServers: session.mcpServers,
   vm: state.vms.find((vm) => vm.key === session.id)?.status ?? "none",
+  inbox: inboxState(session),
+  snoozedUntil: session.snoozedUntil ? new Date(session.snoozedUntil).toISOString() : null,
   createdAt: new Date(session.createdAt).toISOString(),
   updatedAt: new Date(session.updatedAt).toISOString()
 })
@@ -236,6 +243,9 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
       agent_id: Type.Optional(id("Only chats with this agent.")),
       project_id: Type.Optional(id("Only chats on this project.")),
       busy: Type.Optional(Type.Boolean({ description: "Only chats with (true) or without (false) a run going." })),
+      inbox: Type.Optional(
+        Type.Union([Type.Literal("inbox"), Type.Literal("snoozed"), Type.Literal("settled")], { description: "Only chats in the inbox, snoozed, or settled." })
+      ),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200, description: "Default 50." }))
     }),
     covers: [],
@@ -248,6 +258,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
         .filter((session) => !args.agent_id || session.agentId === args.agent_id)
         .filter((session) => !args.project_id || session.projectId === args.project_id)
         .filter((session) => args.busy === undefined || session.busy === args.busy)
+        .filter((session) => !args.inbox || inboxState(session) === args.inbox)
         .slice(0, args.limit ?? 50)
         .map(sessionSummary(state))
     }
@@ -445,7 +456,9 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
   }),
   define({
     name: "app_update_session",
-    description: "Rename a chat, change its model, thinking level, or MCP servers, or mute its notifications.",
+    description:
+      "Rename a chat, change its model, thinking level, or MCP servers, mute its notifications, settle it (done for now; " +
+      "it leaves the inbox until something new happens), or snooze it until a time (it comes back then).",
     risk: "write",
     parameters: Type.Object({
       session_id: id("The chat's id."),
@@ -453,9 +466,11 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
       model: Type.Optional(modelId),
       thinking: Type.Optional(thinking),
       mcp_servers: Type.Optional(Type.Array(id("MCP server id"), { maxItems: 20 })),
-      muted: Type.Optional(Type.Boolean())
+      muted: Type.Optional(Type.Boolean()),
+      settled: Type.Optional(Type.Boolean({ description: "Settle (true) or bring back to the inbox (false)." })),
+      snoozed_until: Type.Optional(Type.Union([Type.String({ maxLength: 40, description: "ISO 8601 time to come back." }), Type.Null()]))
     }),
-    covers: ["renameSession", "configureSession", "setSessionMuted"],
+    covers: ["renameSession", "configureSession", "setSessionMuted", "triageSession"],
     summarize: (args, state) => `Update ${quote(chatTitle(state, args.session_id))}`,
     run: async (host, args) => {
       if (!host.appState().sessions.some((session) => session.id === args.session_id)) throw new Error(`No chat ${args.session_id}.`)
@@ -464,6 +479,12 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
         await host.configureSession(args.session_id, { model: args.model, thinking: args.thinking as ThinkingLevel | undefined, mcpServers: args.mcp_servers })
       }
       if (args.muted !== undefined) await host.setSessionMuted(args.session_id, args.muted)
+      if (args.settled !== undefined) await host.triageSession(args.session_id, { settled: args.settled })
+      if (args.snoozed_until !== undefined) {
+        const until = args.snoozed_until === null ? null : Date.parse(args.snoozed_until)
+        if (until !== null && Number.isNaN(until)) throw new Error(`Not a valid time: ${args.snoozed_until}`)
+        await host.triageSession(args.session_id, { snoozedUntil: until })
+      }
       return sessionSummary(host.appState())(host.appState().sessions.find((session) => session.id === args.session_id)!)
     }
   }),

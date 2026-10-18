@@ -1,8 +1,10 @@
 import { Link, useLocation, useNavigate, useParams } from "@tanstack/react-router"
 import {
+  AlarmClock,
   BarChart3,
   Bell,
   Bot,
+  CheckCheck,
   ChevronLeft,
   ChevronRight,
   FolderGit2,
@@ -15,7 +17,6 @@ import {
   Plug,
   Settings,
   SlidersHorizontal,
-  Trash2,
   X
 } from "lucide-react"
 import { type ReactNode, useEffect, useRef, useState } from "react"
@@ -23,10 +24,13 @@ import { forgetSavedState, useDex } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
 import { useNav } from "~/client/lib/mobile-nav"
 import { findModel } from "~/shared/models"
+import type { SessionMeta } from "~/shared/protocol"
 import { AgentAvatar } from "./agent-avatar"
 import { mcpNeedsAttention } from "./mcp-picker"
 import { ModelLogo } from "./model-logo"
+import { inboxState, SessionMenu, snoozedLabel } from "./session-menu"
 import { ChatListSkeleton } from "./skeleton"
+import { useNow } from "./vm-status"
 
 /** Configuration pages: on these the sidebar shows the settings links instead of the chats. */
 const SETTINGS_AREA = ["/settings", "/notifications", "/machine", "/projects", "/agents", "/mcp", "/files", "/usage", "/access"]
@@ -48,7 +52,7 @@ function Hint({ count, dot, title }: { count?: number; dot?: string; title?: str
 
 export function Sidebar() {
   const { drawerOpen: open, closeDrawer: onClose, collapsed, toggleCollapsed, holdOpen } = useNav()
-  const { state, viewer, stub, connected } = useDex()
+  const { state, viewer, connected } = useDex()
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const params = useParams({ strict: false })
@@ -83,7 +87,12 @@ export function Sidebar() {
   const waiting = state?.access.pending.filter((action) => action.status === "pending" && Date.now() - action.createdAt < 3_600_000).length ?? 0
 
   const settingsLinks: Array<{ to: string; label: string; icon: ReactNode; hint?: ReactNode; show?: boolean }> = [
-    { to: "/settings", label: "General", icon: <SlidersHorizontal className="size-4" />, hint: clineMissing && <Hint dot="bg-amber-500" title="Connect ClinePass" /> },
+    {
+      to: "/settings",
+      label: "General",
+      icon: <SlidersHorizontal className="size-4" />,
+      hint: clineMissing && <Hint dot="bg-amber-500" title="Connect ClinePass" />
+    },
     { to: "/notifications", label: "Notifications", icon: <Bell className="size-4" /> },
     {
       to: "/machine",
@@ -100,7 +109,12 @@ export function Sidebar() {
     },
     { to: "/projects", label: "Projects", icon: <FolderGit2 className="size-4" /> },
     { to: "/agents", label: "Agents", icon: <Bot className="size-4" /> },
-    { to: "/mcp", label: "MCP servers", icon: <Plug className="size-4" />, hint: mcpAttention && <Hint dot="bg-amber-500" title="A server needs attention" /> },
+    {
+      to: "/mcp",
+      label: "MCP servers",
+      icon: <Plug className="size-4" />,
+      hint: mcpAttention && <Hint dot="bg-amber-500" title="A server needs attention" />
+    },
     { to: "/files", label: "Workspace", icon: <FolderOpen className="size-4" /> },
     { to: "/usage", label: "Usage", icon: <BarChart3 className="size-4" /> },
     {
@@ -124,156 +138,259 @@ export function Sidebar() {
           open ? "translate-x-0" : "-translate-x-full"
         } ${collapsed ? "md:hidden" : ""}`}
       >
-      <div className="flex items-center gap-2 px-4 py-4">
-        <img src="/favicon.svg" alt="" className="size-7" />
-        <span className="font-semibold tracking-tight">Dex</span>
-        <span
-          className={`ml-auto size-2 rounded-full ${connected ? "bg-emerald-500" : "animate-pulse bg-amber-500"}`}
-          title={connected ? "Connected to your agent" : "Connecting…"}
-        />
-        <button type="button" onClick={onClose} title="Close menu" className="-mr-1 rounded-md p-1 text-zinc-500 hover:text-zinc-200 md:hidden">
-          <X className="size-5" />
-        </button>
-        <button
-          type="button"
-          onClick={toggleCollapsed}
-          title="Hide sidebar (⌘B)"
-          className="dex-collapse -mr-1 hidden rounded-md p-1 text-zinc-500 hover:text-zinc-200 md:block"
-        >
-          <PanelLeftClose className="size-4" />
-        </button>
-      </div>
-
-      {settingsMode ? (
-        // Settings: links to every configuration page, and a way back to the chats.
-        <div key="settings" className="flex min-h-0 flex-1 animate-fade flex-col">
-          <div className="px-3">
-            <button
-              type="button"
-              onClick={backToChats}
-              className="flex w-full items-center gap-2 rounded-lg border border-zinc-800 px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-900"
-            >
-              <ChevronLeft className="size-4" /> Chats
-            </button>
-          </div>
-          <nav className="scrollbar-thin mt-4 flex-1 space-y-0.5 overflow-y-auto px-3">
-            <div className="px-2 pb-1 text-[11px] font-medium tracking-wide text-zinc-600 uppercase">Settings</div>
-            {settingsLinks
-              .filter((link) => link.show !== false)
-              .map((link) => (
-                <Link key={link.to} to={link.to} activeOptions={{ exact: link.to === "/settings" }} onClick={onClose} className={linkClass}>
-                  {link.icon} {link.label}
-                  {link.hint}
-                </Link>
-              ))}
-          </nav>
+        <div className="flex items-center gap-2 px-4 py-4">
+          <img src="/favicon.svg" alt="" className="size-7" />
+          <span className="font-semibold tracking-tight">Dex</span>
+          <span
+            className={`ml-auto size-2 rounded-full ${connected ? "bg-emerald-500" : "animate-pulse bg-amber-500"}`}
+            title={connected ? "Connected to your agent" : "Connecting…"}
+          />
+          <button type="button" onClick={onClose} title="Close menu" className="-mr-1 rounded-md p-1 text-zinc-500 hover:text-zinc-200 md:hidden">
+            <X className="size-5" />
+          </button>
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            title="Hide sidebar (⌘B)"
+            className="dex-collapse -mr-1 hidden rounded-md p-1 text-zinc-500 hover:text-zinc-200 md:block"
+          >
+            <PanelLeftClose className="size-4" />
+          </button>
         </div>
-      ) : (
-        <div key="chats" className="flex min-h-0 flex-1 animate-fade flex-col">
-          <div className="px-3">
-            <Link
-              to="/chat"
-              onClick={onClose}
-              className="flex items-center gap-2 rounded-lg border border-zinc-800 px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-900"
-            >
-              <MessageSquarePlus className="size-4" /> New chat
-            </Link>
-          </div>
-          <nav className="scrollbar-thin mt-4 flex-1 space-y-0.5 overflow-y-auto px-3">
-            <div className="px-2 pb-1 text-[11px] font-medium tracking-wide text-zinc-600 uppercase">Chats</div>
-          {!state && <ChatListSkeleton />}
-          {state?.sessions.length === 0 && <div className="px-2 py-1 text-xs text-zinc-600">No chats yet</div>}
-          {state?.sessions.map((session) => (
-            <div key={session.id} className="group relative animate-fade">
-              <Link
-                to="/chat/$sessionId"
-                params={{ sessionId: session.id }}
-                onClick={onClose}
-                className={`block rounded-lg py-2 pr-8 pl-2.5 ${
-                  session.id === activeId ? "bg-zinc-900 text-zinc-100" : "text-zinc-300 hover:bg-zinc-900/60 hover:text-zinc-100"
-                }`}
-              >
-                <div className="truncate text-sm">{session.title}</div>
-                <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-zinc-500">
-                  {(() => {
-                    const agent = session.agentId ? state.agents.find((candidate) => candidate.id === session.agentId) : undefined
-                    const project = session.projectId ? state.projects.find((candidate) => candidate.id === session.projectId) : undefined
-                    return project ? (
-                      <>
-                        <AgentAvatar icon={project.icon} color={project.color} size={14} />
-                        <span className="max-w-24 shrink-0 truncate text-zinc-400">{project.name}</span>
-                        {agent && <span className="truncate text-zinc-500">· {agent.name}</span>}
-                      </>
-                    ) : agent ? (
-                      <>
-                        <AgentAvatar icon={agent.icon} color={agent.color} size={14} />
-                        <span className="shrink-0 text-zinc-400">{agent.name}</span>
-                        <span className="text-zinc-700">·</span>
-                        <span className="truncate">{findModel(session.model)?.name ?? session.model}</span>
-                      </>
-                    ) : (
-                      <>
-                        <ModelLogo modelId={session.model} className="size-3.5" />
-                        <span className="truncate">{findModel(session.model)?.name ?? session.model}</span>
-                      </>
-                    )
-                  })()}
-                  <span className="text-zinc-700">·</span>
-                  {session.busy ? (
-                    <span className="flex shrink-0 items-center gap-1 text-emerald-400">
-                      <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" /> working
-                    </span>
-                  ) : (
-                    <span className="shrink-0" title={new Date(session.updatedAt).toLocaleString()}>
-                      {timeAgo(session.updatedAt)}
-                    </span>
-                  )}
-                </div>
-              </Link>
+
+        {settingsMode ? (
+          // Settings: links to every configuration page, and a way back to the chats.
+          <div key="settings" className="flex min-h-0 flex-1 animate-fade flex-col">
+            <div className="px-3">
               <button
                 type="button"
-                title="Delete chat"
-                onClick={async () => {
-                  if (!confirm(`Delete “${session.title}”?`)) return
-                  await stub.deleteSession(session.id)
-                  if (session.id === activeId) void navigate({ to: "/chat" })
-                }}
-                className="absolute top-1/2 right-1.5 -translate-y-1/2 rounded p-1 text-zinc-500 hover:text-red-400 md:hidden md:group-hover:block"
+                onClick={backToChats}
+                className="flex w-full items-center gap-2 rounded-lg border border-zinc-800 px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-900"
               >
-                <Trash2 className="size-3.5" />
+                <ChevronLeft className="size-4" /> Chats
               </button>
             </div>
-          ))}
-          </nav>
-        </div>
-      )}
-      <div className="space-y-0.5 border-t border-zinc-900 p-3">
-        {!settingsMode && (
-          <button type="button" onClick={openSettings} className={`${linkClass} w-full`}>
-            <Settings className="size-4" /> Settings
-            {running > 0 ? (
-              <Hint count={running} dot="bg-emerald-500" title={`${running} VM${running === 1 ? "" : "s"} running`} />
-            ) : (
-              (clineMissing || mcpAttention) && <Hint dot="bg-amber-500" title={clineMissing ? "Connect ClinePass" : "A server needs attention"} />
-            )}
-            <ChevronRight className={`size-4 text-zinc-600 ${running > 0 || clineMissing || mcpAttention ? "" : "ml-auto"}`} />
-          </button>
+            <nav className="scrollbar-thin mt-4 flex-1 space-y-0.5 overflow-y-auto px-3">
+              <div className="px-2 pb-1 text-[11px] font-medium tracking-wide text-zinc-600 uppercase">Settings</div>
+              {settingsLinks
+                .filter((link) => link.show !== false)
+                .map((link) => (
+                  <Link key={link.to} to={link.to} activeOptions={{ exact: link.to === "/settings" }} onClick={onClose} className={linkClass}>
+                    {link.icon} {link.label}
+                    {link.hint}
+                  </Link>
+                ))}
+            </nav>
+          </div>
+        ) : (
+          <div key="chats" className="flex min-h-0 flex-1 animate-fade flex-col">
+            <div className="px-3">
+              <Link
+                to="/chat"
+                onClick={onClose}
+                className="flex items-center gap-2 rounded-lg border border-zinc-800 px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-900"
+              >
+                <MessageSquarePlus className="size-4" /> New chat
+              </Link>
+            </div>
+            <nav className="scrollbar-thin mt-4 flex-1 space-y-0.5 overflow-y-auto px-3">
+              <div className="px-2 pb-1 text-[11px] font-medium tracking-wide text-zinc-600 uppercase">Chats</div>
+              {!state && <ChatListSkeleton />}
+              {state && (
+                <ChatGroups
+                  sessions={state.sessions}
+                  activeId={activeId}
+                  onPick={onClose}
+                  renderRow={(session, group) => (
+                    <ChatRow key={session.id} session={session} group={group} active={session.id === activeId} onPick={onClose} />
+                  )}
+                />
+              )}
+            </nav>
+          </div>
         )}
-        <div className="flex items-center gap-2 px-2 pt-2">
-          {viewer.avatarUrl ? (
-            <img src={viewer.avatarUrl} alt="" className="size-6 rounded-full" />
-          ) : (
-            <div className="flex size-6 items-center justify-center rounded-full bg-zinc-800 text-xs">{viewer.name[0]}</div>
-          )}
-          <span className="truncate text-sm text-zinc-400">{viewer.login}</span>
-          <form method="post" action="/auth/logout" onSubmit={forgetSavedState} className="ml-auto">
-            <button type="submit" title="Sign out" className="rounded p-1 text-zinc-500 hover:text-zinc-200">
-              <LogOut className="size-4" />
+        <div className="space-y-0.5 border-t border-zinc-900 p-3">
+          {!settingsMode && (
+            <button type="button" onClick={openSettings} className={`${linkClass} w-full`}>
+              <Settings className="size-4" /> Settings
+              {running > 0 ? (
+                <Hint count={running} dot="bg-emerald-500" title={`${running} VM${running === 1 ? "" : "s"} running`} />
+              ) : (
+                (clineMissing || mcpAttention) && <Hint dot="bg-amber-500" title={clineMissing ? "Connect ClinePass" : "A server needs attention"} />
+              )}
+              <ChevronRight className={`size-4 text-zinc-600 ${running > 0 || clineMissing || mcpAttention ? "" : "ml-auto"}`} />
             </button>
-          </form>
+          )}
+          <div className="flex items-center gap-2 px-2 pt-2">
+            {viewer.avatarUrl ? (
+              <img src={viewer.avatarUrl} alt="" className="size-6 rounded-full" />
+            ) : (
+              <div className="flex size-6 items-center justify-center rounded-full bg-zinc-800 text-xs">{viewer.name[0]}</div>
+            )}
+            <span className="truncate text-sm text-zinc-400">{viewer.login}</span>
+            <form method="post" action="/auth/logout" onSubmit={forgetSavedState} className="ml-auto">
+              <button type="submit" title="Sign out" className="rounded p-1 text-zinc-500 hover:text-zinc-200">
+                <LogOut className="size-4" />
+              </button>
+            </form>
+          </div>
         </div>
-      </div>
       </aside>
+    </>
+  )
+}
+
+/** One chat in the sidebar: title, its agent / project / model, and when it last did something (or when it wakes). */
+function ChatRow({ session, group, active, onPick }: { session: SessionMeta; group: ChatGroup; active: boolean; onPick: () => void }) {
+  const { state } = useDex()
+  if (!state) return null
+  return (
+    <div className="group relative animate-fade">
+      <Link
+        to="/chat/$sessionId"
+        params={{ sessionId: session.id }}
+        onClick={onPick}
+        className={`block rounded-lg py-2 pr-8 pl-2.5 ${
+          active
+            ? "bg-zinc-900 text-zinc-100"
+            : group === "settled"
+              ? "text-zinc-500 hover:bg-zinc-900/60 hover:text-zinc-200"
+              : "text-zinc-300 hover:bg-zinc-900/60 hover:text-zinc-100"
+        }`}
+      >
+        <div className="truncate text-sm">{session.title}</div>
+        <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-zinc-500">
+          {(() => {
+            const agent = session.agentId ? state.agents.find((candidate) => candidate.id === session.agentId) : undefined
+            const project = session.projectId ? state.projects.find((candidate) => candidate.id === session.projectId) : undefined
+            return project ? (
+              <>
+                <AgentAvatar icon={project.icon} color={project.color} size={14} />
+                <span className="max-w-24 shrink-0 truncate text-zinc-400">{project.name}</span>
+                {agent && <span className="truncate text-zinc-500">· {agent.name}</span>}
+              </>
+            ) : agent ? (
+              <>
+                <AgentAvatar icon={agent.icon} color={agent.color} size={14} />
+                <span className="shrink-0 text-zinc-400">{agent.name}</span>
+                <span className="text-zinc-700">·</span>
+                <span className="truncate">{findModel(session.model)?.name ?? session.model}</span>
+              </>
+            ) : (
+              <>
+                <ModelLogo modelId={session.model} className="size-3.5" />
+                <span className="truncate">{findModel(session.model)?.name ?? session.model}</span>
+              </>
+            )
+          })()}
+          <span className="text-zinc-700">·</span>
+          {session.busy ? (
+            <span className="flex shrink-0 items-center gap-1 text-emerald-400">
+              <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" /> working
+            </span>
+          ) : group === "snoozed" && session.snoozedUntil ? (
+            <span className="flex shrink-0 items-center gap-1 text-sky-300/80" title={new Date(session.snoozedUntil).toLocaleString()}>
+              <AlarmClock className="size-3" /> {snoozedLabel(session.snoozedUntil)}
+            </span>
+          ) : (
+            <span className="shrink-0" title={new Date(session.updatedAt).toLocaleString()}>
+              {timeAgo(session.updatedAt)}
+            </span>
+          )}
+        </div>
+      </Link>
+      <SessionMenu
+        session={session}
+        className="absolute top-1/2 right-1.5 -translate-y-1/2 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100 md:aria-expanded:opacity-100"
+      />
+    </div>
+  )
+}
+
+type ChatGroup = "inbox" | "snoozed" | "settled"
+
+/** Remembers whether a group is open, per device. */
+function useGroupOpen(name: string) {
+  const key = `dex.sidebar.${name}`
+  const [open, setOpen] = useState(() => typeof localStorage !== "undefined" && localStorage.getItem(key) === "1")
+  return [open, (value: boolean) => (setOpen(value), localStorage.setItem(key, value ? "1" : "0"))] as const
+}
+
+function GroupHeader({ label, count, open, onToggle, icon }: { label: string; count: number; open: boolean; onToggle: () => void; icon: ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      className="mt-3 flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-medium tracking-wide text-zinc-600 uppercase hover:text-zinc-300"
+    >
+      <ChevronRight className={`size-3 transition-transform ${open ? "rotate-90" : ""}`} />
+      {icon}
+      {label}
+      <span className="ml-auto font-normal tracking-normal text-zinc-600 normal-case">{count}</span>
+    </button>
+  )
+}
+
+/**
+ * The chat list as an inbox: chats needing you first, then Snoozed (until each one's time) and Settled (done for
+ * now), both collapsible. A chat leaves those groups by itself when something new happens in it or its snooze ends.
+ */
+function ChatGroups({
+  sessions,
+  activeId,
+  renderRow
+}: {
+  sessions: ReadonlyArray<SessionMeta>
+  activeId: string | undefined
+  onPick: () => void
+  renderRow: (session: SessionMeta, group: ChatGroup) => ReactNode
+}) {
+  const now = useNow(30_000)
+  const [snoozedOpen, setSnoozedOpen] = useGroupOpen("snoozed")
+  const [settledOpen, setSettledOpen] = useGroupOpen("settled")
+  const inbox = sessions.filter((session) => inboxState(session, now) === "inbox")
+  const snoozed = sessions.filter((session) => inboxState(session, now) === "snoozed").sort((a, b) => (a.snoozedUntil ?? 0) - (b.snoozedUntil ?? 0))
+  const settled = sessions.filter((session) => inboxState(session, now) === "settled").sort((a, b) => (b.settledAt ?? 0) - (a.settledAt ?? 0))
+  // The open chat stays visible even if its group is collapsed.
+  const showSnoozed = snoozedOpen || snoozed.some((session) => session.id === activeId)
+  const showSettled = settledOpen || settled.some((session) => session.id === activeId)
+
+  return (
+    <>
+      {sessions.length === 0 ? (
+        <div className="px-2 py-1 text-xs text-zinc-600">No chats yet</div>
+      ) : inbox.length === 0 ? (
+        <div className="flex items-center gap-1.5 px-2 py-1 text-xs text-zinc-600">
+          <CheckCheck className="size-3.5" /> All caught up
+        </div>
+      ) : (
+        inbox.map((session) => renderRow(session, "inbox"))
+      )}
+      {snoozed.length > 0 && (
+        <>
+          <GroupHeader
+            label="Snoozed"
+            count={snoozed.length}
+            open={showSnoozed}
+            onToggle={() => setSnoozedOpen(!showSnoozed)}
+            icon={<AlarmClock className="size-3" />}
+          />
+          {showSnoozed && snoozed.map((session) => renderRow(session, "snoozed"))}
+        </>
+      )}
+      {settled.length > 0 && (
+        <>
+          <GroupHeader
+            label="Settled"
+            count={settled.length}
+            open={showSettled}
+            onToggle={() => setSettledOpen(!showSettled)}
+            icon={<CheckCheck className="size-3" />}
+          />
+          {showSettled && settled.map((session) => renderRow(session, "settled"))}
+        </>
+      )}
     </>
   )
 }

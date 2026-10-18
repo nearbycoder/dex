@@ -1,11 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { Bell, BellOff, Check, KeyRound, Monitor, Pencil } from "lucide-react"
+import { Bell, BellOff, Check, CheckCheck, KeyRound, Monitor, Pencil } from "lucide-react"
 import { useCallback, useState } from "react"
 import { Composer } from "~/client/components/composer"
 import { MessageList } from "~/client/components/message-list"
 import { McpPicker } from "~/client/components/mcp-picker"
 import { ModelPicker } from "~/client/components/model-picker"
 import { AgentAvatar } from "~/client/components/agent-avatar"
+import { SessionMenu } from "~/client/components/session-menu"
 import { Bone, ChatSkeleton } from "~/client/components/skeleton"
 import { useDex, useTranscript } from "~/client/lib/dex"
 import { MenuButton } from "~/client/lib/mobile-nav"
@@ -69,38 +70,59 @@ function Chat() {
           </form>
         )}
         {transcript.queued > 0 && <span className="text-xs text-zinc-500">{transcript.queued} queued</span>}
-        {(() => {
-          const vm = state?.vms.find((candidate) => candidate.key === sessionId)
-          if (!state?.vmConfigured || !vm) return null
-          return (
-            <Link
-              to="/machine/$vmKey"
-              params={{ vmKey: sessionId }}
-              title="Watch or take over this chat's VM"
-              className="ml-auto flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
+        <div className="ml-auto flex shrink-0 items-center gap-0.5">
+          {(() => {
+            const vm = state?.vms.find((candidate) => candidate.key === sessionId)
+            if (!state?.vmConfigured || !vm) return null
+            return (
+              <Link
+                to="/machine/$vmKey"
+                params={{ vmKey: sessionId }}
+                title="Watch or take over this chat's VM"
+                className="flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
+              >
+                <span
+                  className={`size-1.5 rounded-full ${
+                    vm.setup.status === "running" || vm.status === "starting"
+                      ? "animate-pulse bg-amber-500"
+                      : vm.status === "running"
+                        ? "bg-emerald-500"
+                        : "bg-zinc-600"
+                  }`}
+                />
+                <Monitor className="size-3.5" />
+                <span className="hidden sm:inline">{vm.setup.status === "running" ? "Setting up" : "Machine"}</span>
+              </Link>
+            )
+          })()}
+          {/* Only once some device has notifications on: mute this chat's. */}
+          {session && (state?.push.devices.length ?? 0) > 0 && (
+            <button
+              type="button"
+              onClick={() => void stub.setSessionMuted(sessionId, !session.muted)}
+              title={session.muted ? "Notifications muted for this chat. Tap to unmute." : "Mute notifications for this chat"}
+              aria-pressed={session.muted}
+              className={`shrink-0 rounded-md p-1.5 hover:bg-zinc-900 ${session.muted ? "text-amber-400" : "text-zinc-500 hover:text-zinc-200"}`}
             >
-              <span
-                className={`size-1.5 rounded-full ${
-                  vm.setup.status === "running" || vm.status === "starting" ? "animate-pulse bg-amber-500" : vm.status === "running" ? "bg-emerald-500" : "bg-zinc-600"
-                }`}
-              />
-              <Monitor className="size-3.5" />
-              <span className="hidden sm:inline">{vm.setup.status === "running" ? "Setting up" : "Machine"}</span>
-            </Link>
-          )
-        })()}
-        {/* Only once some device has notifications on: mute this chat's. */}
-        {session && (state?.push.devices.length ?? 0) > 0 && (
-          <button
-            type="button"
-            onClick={() => void stub.setSessionMuted(sessionId, !session.muted)}
-            title={session.muted ? "Notifications muted for this chat. Tap to unmute." : "Mute notifications for this chat"}
-            aria-pressed={session.muted}
-            className={`${state?.vms.some((vm) => vm.key === sessionId) ? "" : "ml-auto"} shrink-0 rounded-md p-1.5 hover:bg-zinc-900 ${session.muted ? "text-amber-400" : "text-zinc-500 hover:text-zinc-200"}`}
-          >
-            {session.muted ? <BellOff className="size-4" /> : <Bell className="size-4" />}
-          </button>
-        )}
+              {session.muted ? <BellOff className="size-4" /> : <Bell className="size-4" />}
+            </button>
+          )}
+          {session && (
+            <>
+              {/* Settle: done with this chat for now; it moves under Settled until something new happens in it. */}
+              <button
+                type="button"
+                onClick={() => void stub.triageSession(sessionId, { settled: !session.settledAt })}
+                title={session.settledAt ? "Settled. Tap to move it back to the inbox." : "Settle: done for now"}
+                aria-pressed={Boolean(session.settledAt)}
+                className={`shrink-0 rounded-md p-1.5 hover:bg-zinc-900 ${session.settledAt ? "text-emerald-400" : "text-zinc-500 hover:text-zinc-200"}`}
+              >
+                <CheckCheck className="size-4" />
+              </button>
+              <SessionMenu session={session} className="p-1.5" />
+            </>
+          )}
+        </div>
       </header>
 
       {transcript.loaded ? <MessageList transcript={transcript} onSend={send} /> : <ChatSkeleton />}
@@ -121,11 +143,7 @@ function Chat() {
           toolbar={
             session && (
               <div className="flex min-w-0 items-center gap-1">
-                <ModelPicker
-                  model={session.model}
-                  thinking={session.thinking}
-                  onChange={(value) => void stub.configureSession(sessionId, value)}
-                />
+                <ModelPicker model={session.model} thinking={session.thinking} onChange={(value) => void stub.configureSession(sessionId, value)} />
                 {/* Takes effect from the next model request, also mid-run. */}
                 <McpPicker
                   servers={state?.mcp ?? []}
