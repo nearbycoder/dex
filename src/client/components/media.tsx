@@ -1,88 +1,135 @@
-import { AlertTriangle, ExternalLink, Film, Play, Save } from "lucide-react"
+import { AlertTriangle, ExternalLink, Film, Loader2, Play, Save } from "lucide-react"
 import { createContext, useContext, useState } from "react"
-import { MEDIA_PREFIX, mediaTypeOf } from "~/shared/media"
+import { type ChatArtifact, MEDIA_PREFIX, type MediaKind, mediaTypeOf, vmMediaSource } from "~/shared/media"
 
 /**
- * Inline playback for media in chats. Media Dex stores (shared from a VM) plays straight away; anything from
+ * Inline playback for media in chats. Media Dex stores (shared or saved from a VM) plays straight away; anything from
  * another site loads only when you tap play, so a model-written URL never fetches anything (or leaks anything in
- * its query string) on its own.
+ * its query string) on its own. Links to a chat VM's port are never played from the VM: Dex saves the file into
+ * the chat and plays that copy.
  */
 
 export type VideoSource =
-  | { readonly kind: "own"; readonly url: string; readonly media: "video" | "audio" | "image" }
+  | { readonly kind: "own"; readonly url: string; readonly media: MediaKind }
+  | { readonly kind: "vm"; readonly url: string; readonly media: MediaKind }
   | { readonly kind: "file"; readonly url: string }
   | { readonly kind: "youtube"; readonly id: string; readonly url: string }
   | { readonly kind: "vimeo"; readonly id: string; readonly url: string }
 
 const DIRECT_VIDEO = /\.(mp4|m4v|webm|mov|ogv)$/i
 
-/** Sends a message to the current chat (set by the message list), so a player can ask the agent for something. */
-export const ChatSendContext = createContext<((text: string) => void) | null>(null)
-
-/** A file served from a chat VM's port: it only exists while the VM runs, and simple servers can't stream it. */
-const onVmPort = (url: string) => {
-  try {
-    return new URL(url).hostname.endsWith(".on.boat.dev")
-  } catch {
-    return false
-  }
+/** The current chat's stored files by the VM link they were saved from, and a way to save one (set by the chat page). */
+export interface ChatArtifacts {
+  readonly bySource: ReadonlyMap<string, ChatArtifact>
+  readonly saving: ReadonlySet<string>
+  readonly save: (url: string) => Promise<unknown>
 }
+
+export const ChatArtifactsContext = createContext<ChatArtifacts | null>(null)
 
 const fileName = (url: string) => {
   try {
-    return decodeURIComponent(new URL(url).pathname.split("/").pop() ?? "") || "the video"
+    return decodeURIComponent(new URL(url, "https://dex.invalid").pathname.split("/").pop() ?? "") || "the file"
   } catch {
-    return "the video"
+    return "the file"
   }
 }
 
-/** For a video on the VM: ask the chat to store it in Dex (share_media), where it always plays. */
-function SaveToChat({ url }: { url: string }) {
-  const send = useContext(ChatSendContext)
-  const [sent, setSent] = useState(false)
-  if (!send) return null
-  return (
-    <button
-      type="button"
-      disabled={sent}
-      onClick={() => {
-        send(`Please share ${fileName(url)} from your VM with share_media so it plays inline here.`)
-        setSent(true)
-      }}
-      className="inline-flex items-center gap-1.5 rounded-md bg-zinc-800 px-2.5 py-1 text-xs text-zinc-100 not-prose hover:bg-zinc-700 disabled:opacity-60"
-    >
-      <Save className="size-3.5" /> {sent ? "Asked the chat to save it" : "Save to chat"}
-    </button>
-  )
+const frame = "my-2 block w-full max-w-xl overflow-hidden rounded-xl border border-zinc-800 bg-black"
+const card = "my-2 block w-full max-w-xl rounded-xl border border-zinc-800 bg-zinc-900/60 p-3 not-prose"
+
+/** Media Dex stores: plays (or shows) right away. */
+function StoredMedia({ url, media, title }: { url: string; media: MediaKind; title?: string }) {
+  if (media === "image") return <img src={url} alt={title ?? ""} className="my-2 max-h-[70vh] rounded-xl" />
+  if (media === "audio") return <audio controls preload="metadata" src={url} className="my-2 block w-full max-w-xl" />
+  return <video controls playsInline preload="metadata" src={url} className={`${frame} max-h-[70vh]`} aria-label={title?.trim() || "Video"} />
 }
 
-/** A video that wouldn't load: why, and what to do about it. */
-function PlaybackFailed({ url }: { url: string }) {
-  const vm = onVmPort(url)
+/**
+ * A file linked from the chat's VM. Once saved into the chat (automatically when the reply ends, or with "Save to
+ * chat") it plays from Dex; until then, this card.
+ */
+function VmMedia({ url, media, title }: { url: string; media: MediaKind; title?: string }) {
+  const artifacts = useContext(ChatArtifactsContext)
+  const source = vmMediaSource(url)?.source
+  const saved = source ? artifacts?.bySource.get(source) : undefined
+  const [requested, setRequested] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  if (saved) return <StoredMedia url={saved.url} media={saved.kind} title={title ?? saved.name} />
+
+  const saving = requested || (source !== undefined && (artifacts?.saving.has(source) ?? false))
+  const name = fileName(url)
   return (
-    <span className="my-2 block w-full max-w-xl rounded-xl border border-zinc-800 bg-zinc-900/60 p-3 not-prose">
+    <span className={card}>
       <span className="flex items-start gap-2 text-sm text-zinc-200">
-        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-400" />
-        <span>
-          Couldn't play {fileName(url)}.
+        {saving ? (
+          <Loader2 className="mt-0.5 size-4 shrink-0 animate-spin text-zinc-400" />
+        ) : error ? (
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-400" />
+        ) : (
+          <Film className="mt-0.5 size-4 shrink-0 text-zinc-500" />
+        )}
+        <span className="min-w-0">
+          <span className="block truncate">{title?.trim() || name}</span>
           <span className="mt-0.5 block text-xs text-zinc-500">
-            {vm
-              ? "It's served from the chat's VM, which may be asleep, and a simple file server can't stream video to iPhones. Save it to the chat to keep it playable."
-              : "The site may not allow streaming it here."}
+            {saving
+              ? "Saving to the chat…"
+              : error
+                ? error
+                : `On the chat's VM. Save it to the chat to ${media === "image" ? "see" : "play"} it here.`}
           </span>
         </span>
       </span>
-      <span className="mt-2 flex flex-wrap gap-2 pl-6">
-        {vm && <SaveToChat url={url} />}
-        <a
-          href={url}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs text-zinc-400 no-underline hover:bg-zinc-800 hover:text-zinc-100"
-        >
-          <ExternalLink className="size-3.5" /> Open
-        </a>
+      {!saving && (
+        <span className="mt-2 flex flex-wrap gap-2 pl-6">
+          {artifacts && (
+            <button
+              type="button"
+              onClick={() => {
+                setRequested(true)
+                setError(null)
+                artifacts
+                  .save(url)
+                  .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)))
+                  .finally(() => setRequested(false))
+              }}
+              className="inline-flex items-center gap-1.5 rounded-md bg-zinc-800 px-2.5 py-1 text-xs text-zinc-100 hover:bg-zinc-700"
+            >
+              <Save className="size-3.5" /> {error ? "Try again" : "Save to chat"}
+            </button>
+          )}
+          <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs text-zinc-400 no-underline hover:bg-zinc-800 hover:text-zinc-100"
+          >
+            <ExternalLink className="size-3.5" /> Open
+          </a>
+        </span>
+      )}
+    </span>
+  )
+}
+
+/** A video from another site that wouldn't load. */
+function PlaybackFailed({ url }: { url: string }) {
+  return (
+    <span className={card}>
+      <span className="flex items-start gap-2 text-sm text-zinc-200">
+        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-400" />
+        <span>
+          Couldn't play {fileName(url)}.<span className="mt-0.5 block text-xs text-zinc-500">The site may not allow streaming it here.</span>
+        </span>
       </span>
+      <a
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        className="mt-2 ml-6 inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs text-zinc-400 no-underline hover:bg-zinc-800 hover:text-zinc-100"
+      >
+        <ExternalLink className="size-3.5" /> Open
+      </a>
     </span>
   )
 }
@@ -92,6 +139,10 @@ export function videoSource(raw: string): VideoSource | null {
   if (raw.startsWith(MEDIA_PREFIX)) {
     const media = mediaTypeOf(raw)
     return media ? { kind: "own", url: raw, media: media.kind } : null
+  }
+  if (vmMediaSource(raw)) {
+    const media = mediaTypeOf(new URL(raw).pathname)
+    return media ? { kind: "vm", url: raw, media: media.kind } : null
   }
   let url: URL
   try {
@@ -117,8 +168,6 @@ export function videoSource(raw: string): VideoSource | null {
   return DIRECT_VIDEO.test(url.pathname) ? { kind: "file", url: raw } : null
 }
 
-const frame = "my-2 block w-full max-w-xl overflow-hidden rounded-xl border border-zinc-800 bg-black"
-
 function PlayCard({ title, detail, thumbnail, onPlay }: { title: string; detail: string; thumbnail?: string; onPlay: () => void }) {
   return (
     <button type="button" onClick={onPlay} className={`${frame} group relative aspect-video text-left not-prose`} aria-label={`Play ${title}`}>
@@ -142,38 +191,25 @@ function PlayCard({ title, detail, thumbnail, onPlay }: { title: string; detail:
   )
 }
 
-/** A video, audio file, or image Dex stores, or a player card for a video elsewhere. */
+/** A video, audio file, or image Dex stores (or a chat VM link to one), or a player card for a video elsewhere. */
 export function MediaPlayer({ source, title }: { source: VideoSource; title?: string }) {
   const [playing, setPlaying] = useState(false)
   const [failed, setFailed] = useState(false)
   const label = title?.trim() || "Video"
 
-  if (source.kind === "own") {
-    if (source.media === "image") return <img src={source.url} alt={title ?? ""} className="my-2 max-h-[70vh] rounded-xl" />
-    if (source.media === "audio") return <audio controls preload="metadata" src={source.url} className="my-2 block w-full max-w-xl" />
-    return <video controls playsInline preload="metadata" src={source.url} className={`${frame} max-h-[70vh]`} aria-label={label} />
-  }
-
-  const vm = source.kind === "file" && onVmPort(source.url)
+  if (source.kind === "own") return <StoredMedia url={source.url} media={source.media} title={title} />
+  if (source.kind === "vm") return <VmMedia url={source.url} media={source.media} title={title} />
   if (failed && source.kind === "file") return <PlaybackFailed url={source.url} />
 
   if (!playing) {
-    const host =
-      source.kind === "youtube" ? "YouTube" : source.kind === "vimeo" ? "Vimeo" : vm ? "On this chat's VM" : (() => new URL(source.url).hostname)()
+    const host = source.kind === "youtube" ? "YouTube" : source.kind === "vimeo" ? "Vimeo" : (() => new URL(source.url).hostname)()
     return (
-      <span className="block">
-        <PlayCard
-          title={label === "Video" && source.kind === "file" ? fileName(source.url) : label}
-          detail={vm ? `${host} · plays only while it's running` : `${host} · loads when you tap play`}
-          thumbnail={source.kind === "youtube" ? `https://i.ytimg.com/vi/${source.id}/hqdefault.jpg` : undefined}
-          onPlay={() => setPlaying(true)}
-        />
-        {vm && (
-          <span className="-mt-1 mb-2 block">
-            <SaveToChat url={source.url} />
-          </span>
-        )}
-      </span>
+      <PlayCard
+        title={label === "Video" && source.kind === "file" ? fileName(source.url) : label}
+        detail={`${host} · loads when you tap play`}
+        thumbnail={source.kind === "youtube" ? `https://i.ytimg.com/vi/${source.id}/hqdefault.jpg` : undefined}
+        onPlay={() => setPlaying(true)}
+      />
     )
   }
 

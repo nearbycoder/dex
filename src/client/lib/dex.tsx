@@ -136,11 +136,13 @@ const reduce = (state: TranscriptState, action: Action): TranscriptState => {
   const { message } = action
   switch (message.type) {
     case "dex.snapshot":
-      return fromSnapshot(message.snapshot)
+      return fromSnapshot(message.snapshot, state)
     case "dex.events":
       return message.events.reduce(applyEvent, state)
     case "dex.error":
       return { ...state, error: message.message, loaded: true }
+    case "dex.artifacts":
+      return { ...state, artifacts: message.artifacts, savingArtifacts: message.saving }
     default:
       return state
   }

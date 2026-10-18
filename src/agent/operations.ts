@@ -68,6 +68,8 @@ export type OperationHost = Pick<
   | "cancelScheduledPrompt"
   | "schedulePrompt"
   | "readTranscript"
+  | "listArtifacts"
+  | "saveArtifact"
   | "appState"
   | "noteSessionParent"
   | "sessionDepth"
@@ -279,6 +281,31 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
       if (!session) throw new Error(`No chat ${args.session_id}.`)
       return { ...sessionSummary(state)(session), messages: await host.readTranscript(args.session_id, args.last_messages ?? 10) }
     }
+  }),
+  define({
+    name: "app_list_chat_files",
+    description:
+      "The videos, audio, and images stored in a chat (shared with share_media, or saved from links to its VM). URLs are /api/media/… on Dex, viewable only by its owner.",
+    risk: "read",
+    parameters: Type.Object({ session_id: id("The chat's id.") }),
+    covers: ["listArtifacts"],
+    summarize: (args, state) => `List files in ${quote(chatTitle(state, args.session_id))}`,
+    run: async (host, args) =>
+      host.listArtifacts(args.session_id).map(({ name, kind, size, url, createdAt }) => ({ name, kind, size, url, created_at: new Date(createdAt).toISOString() }))
+  }),
+  define({
+    name: "app_save_chat_file",
+    description:
+      "Save a video, audio file, or image a chat linked from its VM (an https://…on.boat.dev/… URL) into the chat, so it keeps playing after the VM sleeps. Starts the VM if needed.",
+    risk: "write",
+    parameters: Type.Object({
+      session_id: id("The chat's id."),
+      url: Type.String({ maxLength: 2_000, description: "The VM link from the chat." })
+    }),
+    covers: ["saveArtifact"],
+    inChats: false,
+    summarize: (args, state) => `Save a file into ${quote(chatTitle(state, args.session_id))}`,
+    run: async (host, args) => host.saveArtifact(args.session_id, args.url)
   }),
   define({
     name: "app_list_agents",

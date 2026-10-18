@@ -40,3 +40,42 @@ export const ownMediaKey = (url: string, origin?: string): string | null => {
   const path = origin && url.startsWith(origin) ? url.slice(origin.length) : url
   return path.startsWith(MEDIA_PREFIX) ? path.slice(MEDIA_PREFIX.length).split(/[?#]/)[0] ?? null : null
 }
+
+/** A file a chat put in front of you, stored in Dex (`source` is the VM link it was saved from, if any). */
+export interface ChatArtifact {
+  readonly key: string
+  readonly url: string
+  readonly name: string
+  readonly kind: MediaKind
+  readonly size: number
+  readonly source: string | null
+  readonly createdAt: number
+}
+
+const VM_PORT_HOST = /^[a-z0-9-]+-(\d{2,5})\.on\.boat\.dev$/
+
+/**
+ * A media file served from a chat VM's port (`https://<box>-<port>.on.boat.dev/<path>`), as the key Dex saves it
+ * under: host and path, without the query (which carries the port's access token). Null for anything else.
+ */
+export const vmMediaSource = (raw: string): { readonly source: string; readonly port: number; readonly path: string } | null => {
+  let url: URL
+  try {
+    url = new URL(raw)
+  } catch {
+    return null
+  }
+  const port = VM_PORT_HOST.exec(url.hostname.toLowerCase())?.[1]
+  if (url.protocol !== "https:" || !port || !mediaTypeOf(url.pathname)) return null
+  return { source: `${url.hostname.toLowerCase()}${url.pathname}`, port: Number(port), path: url.pathname }
+}
+
+/** Every VM-served media link in some Markdown, deduplicated by source. */
+export const vmMediaLinks = (text: string): string[] => {
+  const found = new Map<string, string>()
+  for (const match of text.matchAll(/https:\/\/[a-z0-9-]+\.on\.boat\.dev\/[^\s)<>"'\]]+/gi)) {
+    const source = vmMediaSource(match[0])
+    if (source && !found.has(source.source)) found.set(source.source, match[0])
+  }
+  return [...found.values()]
+}

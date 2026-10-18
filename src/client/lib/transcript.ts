@@ -1,6 +1,7 @@
 import type { AssistantMessage, ToolCall, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai"
 import type { AgentEvent, EntryRecord, SnapshotEvent } from "@earendil-works/pi-durable"
 import { Predicate } from "effect"
+import type { ChatArtifact } from "~/shared/media"
 
 export interface LiveTool {
   readonly callId: string
@@ -23,6 +24,9 @@ export interface TranscriptState {
   readonly error: string | null
   /** The agent has sent this chat's snapshot (or it was shown from the recent-chats cache). */
   readonly loaded: boolean
+  /** Files stored in the chat, and the VM links (as sources) being saved into it. */
+  readonly artifacts: ReadonlyArray<ChatArtifact>
+  readonly savingArtifacts: ReadonlyArray<string>
 }
 
 export const emptyTranscript: TranscriptState = {
@@ -33,10 +37,12 @@ export const emptyTranscript: TranscriptState = {
   queued: 0,
   retry: null,
   error: null,
-  loaded: false
+  loaded: false,
+  artifacts: [],
+  savingArtifacts: []
 }
 
-export const fromSnapshot = (snapshot: SnapshotEvent): TranscriptState => ({
+export const fromSnapshot = (snapshot: SnapshotEvent, previous: TranscriptState = emptyTranscript): TranscriptState => ({
   entries: snapshot.entries,
   streaming: snapshot.generation?.message ? structuredClone(snapshot.generation.message) : null,
   tools: Object.fromEntries(
@@ -49,7 +55,10 @@ export const fromSnapshot = (snapshot: SnapshotEvent): TranscriptState => ({
   queued: snapshot.inbox.length,
   retry: snapshot.generation?.retry ?? null,
   error: null,
-  loaded: true
+  loaded: true,
+  // Sent right after the snapshot; keep what's known until then.
+  artifacts: previous.artifacts,
+  savingArtifacts: previous.savingArtifacts
 })
 
 const appendEntry = (entries: ReadonlyArray<EntryRecord>, entry: EntryRecord) =>

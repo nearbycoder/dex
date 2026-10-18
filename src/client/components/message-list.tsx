@@ -6,7 +6,7 @@ import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from "reac
 import { displayItems, type LiveTool, toolResults, type TranscriptState } from "~/client/lib/transcript"
 import { Collapse } from "./collapse"
 import { ConfirmCard } from "./confirm-card"
-import { ChatSendContext, MediaPlayer, videoSource } from "./media"
+import { MediaPlayer, videoSource } from "./media"
 import { Markdown } from "./markdown"
 import { summarize, ToolCard, toolActivity } from "./tool-card"
 import { useNow } from "./vm-status"
@@ -300,67 +300,65 @@ export const MessageList = memo(function MessageList({ transcript, onSend }: { t
   }, [wantsUi])
 
   return (
-    <ChatSendContext.Provider value={onSend}>
-      <div
-        ref={scroller}
-        className="scrollbar-thin flex-1 overflow-x-hidden overflow-y-auto overscroll-x-none"
-        onScroll={(event) => {
-          const element = event.currentTarget
-          pinned.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80
-        }}
-      >
-        <div className="mx-auto max-w-3xl space-y-5 px-4 py-6">
-          {items.map((item, index) => {
-            switch (item.kind) {
-              case "user":
-                return (
-                  <div key={item.id} className="flex animate-rise justify-end">
-                    <div className="max-w-[85%] rounded-2xl rounded-br-md bg-zinc-800 px-4 py-2.5 text-sm whitespace-pre-wrap text-zinc-100 [overflow-wrap:anywhere]">
-                      {item.text}
-                      {item.images > 0 && <div className="mt-1 text-xs text-zinc-400">+{item.images} image(s)</div>}
-                    </div>
+    <div
+      ref={scroller}
+      className="scrollbar-thin flex-1 overflow-x-hidden overflow-y-auto overscroll-x-none"
+      onScroll={(event) => {
+        const element = event.currentTarget
+        pinned.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80
+      }}
+    >
+      <div className="mx-auto max-w-3xl space-y-5 px-4 py-6">
+        {items.map((item, index) => {
+          switch (item.kind) {
+            case "user":
+              return (
+                <div key={item.id} className="flex animate-rise justify-end">
+                  <div className="max-w-[85%] rounded-2xl rounded-br-md bg-zinc-800 px-4 py-2.5 text-sm whitespace-pre-wrap text-zinc-100 [overflow-wrap:anywhere]">
+                    {item.text}
+                    {item.images > 0 && <div className="mt-1 text-xs text-zinc-400">+{item.images} image(s)</div>}
                   </div>
-                )
-              case "assistant":
-                return (
-                  <div key={item.id} className="flex animate-rise gap-3">
-                    <img src="/favicon.svg" alt="Dex" className="mt-0.5 size-6 shrink-0" />
-                    <AssistantTurn
-                      messages={item.messages}
-                      streaming={item.streaming}
-                      active={transcript.running && index === items.length - 1}
-                      endedAt={item.endedAt}
-                      results={results}
-                      tools={transcript.tools}
-                      onSend={onSend}
-                    />
-                  </div>
-                )
-              case "divider":
-                return (
-                  <div key={item.id} className="flex items-center gap-3 text-xs text-zinc-600">
-                    <div className="h-px flex-1 bg-zinc-800" />
-                    {item.label}
-                    <div className="h-px flex-1 bg-zinc-800" />
-                  </div>
-                )
-            }
-          })}
-          {transcript.running && items.at(-1)?.kind !== "assistant" && (
-            <div className="flex animate-fade items-center gap-2 pl-9 text-xs text-zinc-500">
-              <LoaderCircle className="size-3.5 animate-spin" /> Working…
-            </div>
-          )}
-          {transcript.retry && <div className="pl-9 text-xs text-amber-400/80">Retrying after an error: {transcript.retry.error}</div>}
-          {transcript.error && (
-            <div className="flex items-start gap-2 rounded-lg border border-red-900/60 bg-red-950/40 px-3 py-2 text-xs text-red-300">
-              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-              <span className="break-words">{transcript.error}</span>
-            </div>
-          )}
-          <div ref={bottom} />
-        </div>
+                </div>
+              )
+            case "assistant":
+              return (
+                <div key={item.id} className="flex animate-rise gap-3">
+                  <img src="/favicon.svg" alt="Dex" className="mt-0.5 size-6 shrink-0" />
+                  <AssistantTurn
+                    messages={item.messages}
+                    streaming={item.streaming}
+                    active={transcript.running && index === items.length - 1}
+                    endedAt={item.endedAt}
+                    results={results}
+                    tools={transcript.tools}
+                    onSend={onSend}
+                  />
+                </div>
+              )
+            case "divider":
+              return (
+                <div key={item.id} className="flex items-center gap-3 text-xs text-zinc-600">
+                  <div className="h-px flex-1 bg-zinc-800" />
+                  {item.label}
+                  <div className="h-px flex-1 bg-zinc-800" />
+                </div>
+              )
+          }
+        })}
+        {transcript.running && items.at(-1)?.kind !== "assistant" && (
+          <div className="flex animate-fade items-center gap-2 pl-9 text-xs text-zinc-500">
+            <LoaderCircle className="size-3.5 animate-spin" /> Working…
+          </div>
+        )}
+        {transcript.retry && <div className="pl-9 text-xs text-amber-400/80">Retrying after an error: {transcript.retry.error}</div>}
+        {transcript.error && (
+          <div className="flex items-start gap-2 rounded-lg border border-red-900/60 bg-red-950/40 px-3 py-2 text-xs text-red-300">
+            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+            <span className="break-words">{transcript.error}</span>
+          </div>
+        )}
+        <div ref={bottom} />
       </div>
-    </ChatSendContext.Provider>
+    </div>
   )
 })

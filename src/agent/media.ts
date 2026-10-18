@@ -1,4 +1,4 @@
-import { MAX_MEDIA_BYTES, mediaTypeOf } from "~/shared/media"
+import { type ChatArtifact, MAX_MEDIA_BYTES, mediaTypeOf } from "~/shared/media"
 
 const UPLOAD_TTL_MS = 15 * 60_000
 const TOKEN_PREFIX = "dexu"
@@ -61,6 +61,9 @@ export class MediaCenter {
     host.sql.exec(`CREATE TABLE IF NOT EXISTS dex_media_uploads (
       token_hash TEXT PRIMARY KEY, session_id TEXT NOT NULL, key TEXT NOT NULL, name TEXT NOT NULL, content_type TEXT NOT NULL,
       expires_at INTEGER NOT NULL, used INTEGER NOT NULL DEFAULT 0)`)
+    // Where a file was saved from: the VM link a chat served it at (see vmMediaSource), so that link plays this copy.
+    const columns = host.sql.exec<{ name: string }>(`PRAGMA table_info(dex_media)`).toArray()
+    if (!columns.some((column) => column.name === "source")) host.sql.exec(`ALTER TABLE dex_media ADD COLUMN source TEXT`)
   }
 
   get configured() {
@@ -100,6 +103,34 @@ export class MediaCenter {
       `INSERT OR REPLACE INTO dex_media (key, session_id, name, content_type, size, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
       key, sessionId, name, contentType, size, Date.now()
     )
+  }
+
+  setSource(key: string, source: string) {
+    this.host.sql.exec(`UPDATE dex_media SET source = ? WHERE key = ?`, source, key)
+  }
+
+  /** The copy of a VM link a chat already saved, if any. */
+  bySource(sessionId: string, source: string): SharedMedia | null {
+    const key = this.host.sql
+      .exec<{ key: string }>(`SELECT key FROM dex_media WHERE session_id = ? AND source = ? ORDER BY created_at DESC LIMIT 1`, sessionId, source)
+      .toArray()[0]?.key
+    return key ? this.get(key) : null
+  }
+
+  /** A chat's files, oldest first. */
+  list(sessionId: string): ChatArtifact[] {
+    return this.host.sql
+      .exec<{ key: string; name: string; size: number; source: string | null; created_at: number }>(
+        `SELECT key, name, size, source, created_at FROM dex_media WHERE session_id = ? ORDER BY created_at`,
+        sessionId
+      )
+      .toArray()
+      .flatMap((row) => {
+        const media = mediaTypeOf(row.key)
+        return media
+          ? [{ key: row.key, url: `/api/media/${row.key}`, name: row.name, kind: media.kind, size: row.size, source: row.source, createdAt: row.created_at }]
+          : []
+      })
   }
 
   get(key: string): SharedMedia | null {

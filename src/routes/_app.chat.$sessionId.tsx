@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { Bell, BellOff, Check, CheckCheck, KeyRound, Monitor, Pencil } from "lucide-react"
-import { useCallback, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import { Composer } from "~/client/components/composer"
+import { ChatArtifactsContext, type ChatArtifacts } from "~/client/components/media"
 import { MessageList } from "~/client/components/message-list"
 import { McpPicker } from "~/client/components/mcp-picker"
 import { ModelPicker } from "~/client/components/model-picker"
@@ -24,6 +25,15 @@ function Chat() {
 
   // Stable, so finished replies (memoized in MessageList) don't re-render when the page does.
   const send = useCallback((text: string) => void stub.sendMessage(sessionId, text), [stub, sessionId])
+  // Files saved into this chat replace the VM links they came from.
+  const artifacts = useMemo<ChatArtifacts>(
+    () => ({
+      bySource: new Map(transcript.artifacts.flatMap((artifact) => (artifact.source ? [[artifact.source, artifact] as const] : []))),
+      saving: new Set(transcript.savingArtifacts),
+      save: (url) => stub.saveArtifact(sessionId, url)
+    }),
+    [transcript.artifacts, transcript.savingArtifacts, stub, sessionId]
+  )
 
   if (state && !session) {
     return <div className="flex flex-1 items-center justify-center text-sm text-zinc-500">This chat no longer exists.</div>
@@ -125,7 +135,9 @@ function Chat() {
         </div>
       </header>
 
-      {transcript.loaded ? <MessageList transcript={transcript} onSend={send} /> : <ChatSkeleton />}
+      <ChatArtifactsContext.Provider value={artifacts}>
+        {transcript.loaded ? <MessageList transcript={transcript} onSend={send} /> : <ChatSkeleton />}
+      </ChatArtifactsContext.Provider>
 
       <div className="mx-auto w-full max-w-3xl px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:px-4 md:pb-[max(1rem,env(safe-area-inset-bottom))]">
         {state && !state.cline.connected && (

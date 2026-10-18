@@ -3,6 +3,7 @@ import { Predicate } from "effect"
 import { type AccessState, NO_ACCESS } from "./access"
 import type { AgentProfile } from "./agents"
 import type { McpServerInfo } from "./mcp"
+import type { ChatArtifact } from "./media"
 import type { PushStatus } from "./notifications"
 import type { ProjectProfile } from "./projects"
 import type { ThinkingLevel } from "./models"
@@ -194,6 +195,8 @@ export type ServerMessage =
   | { readonly type: "dex.snapshot"; readonly sessionId: string; readonly snapshot: SnapshotEvent }
   | { readonly type: "dex.events"; readonly sessionId: string; readonly events: ReadonlyArray<AgentEvent> }
   | { readonly type: "dex.error"; readonly sessionId: string | null; readonly message: string }
+  /** The chat's stored files, and the VM links being saved into it right now. */
+  | { readonly type: "dex.artifacts"; readonly sessionId: string; readonly artifacts: ReadonlyArray<ChatArtifact>; readonly saving: ReadonlyArray<string> }
   | { readonly type: "dex.vm.activity"; readonly sessionId: null; readonly vmKey: string; readonly activity: VmActivity }
   | { readonly type: "dex.vm.output"; readonly sessionId: null; readonly vmKey: string; readonly id: number; readonly data: string }
 

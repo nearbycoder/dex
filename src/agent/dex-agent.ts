@@ -36,7 +36,7 @@ import { normalizeRepoUrl, type ProjectDraft, type ProjectProfile, type ProjectR
 import { CLOUDFLARE_RATES, type CloudflareLine, type UsageRange, type UsageReport } from "~/shared/usage"
 import { AGENT_COLORS, AGENT_ICONS, type AgentDraft, type AgentProfile, STARTER_AGENTS } from "~/shared/agents"
 import { type AccessRisk, type CreatedAccessToken, NO_ACCESS } from "~/shared/access"
-import { MAX_MEDIA_BYTES } from "~/shared/media"
+import { extensionOf, MAX_MEDIA_BYTES, vmMediaLinks, vmMediaSource } from "~/shared/media"
 import type { McpAuth, McpConnectResult, McpServerDraft, McpServerInfo, McpStatus, McpTransport } from "~/shared/mcp"
 import { BoatClient } from "./boat"
 import { CloudflareAnalytics, type CloudflareDay, dayCost, emptyDay } from "./cloudflare-analytics"
@@ -213,6 +213,10 @@ export class DexAgent extends Agent<Env, DexState> {
   private readonly presence = new Map<string, { visible: boolean; sessionId: string | null }>()
   /** Each chat's latest model response, for the notification when its run ends. */
   private readonly lastResponses = new Map<string, { text: string; stopReason: string; error: string | null }>()
+  /** Media links to its VM each chat wrote during its current run, saved into the chat when the run ends. */
+  private readonly runVmLinks = new Map<string, Set<string>>()
+  /** VM links being copied into their chat (`<chat>\n<source>`), so a link is copied once however often it's asked. */
+  private readonly savingArtifacts = new Map<string, Promise<SharedMedia>>()
 
   readonly push = new PushCenter({
     sql: this.ctx.storage.sql,
@@ -394,6 +398,12 @@ export class DexAgent extends Agent<Env, DexState> {
             // Remembered for the notification when the run ends.
             const text = message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("\n")
             this.lastResponses.set(String(api.conversationId), { text, stopReason: message.stopReason, error: message.errorMessage ?? null })
+            const links = vmMediaLinks(text)
+            if (links.length) {
+              const seen = this.runVmLinks.get(String(api.conversationId)) ?? new Set<string>()
+              for (const link of links) seen.add(link)
+              this.runVmLinks.set(String(api.conversationId), seen)
+            }
           }
         })
       ],
@@ -701,6 +711,7 @@ export class DexAgent extends Agent<Env, DexState> {
       const stream = await this.harness.session(sessionId).events()
       this.subscriptions.set(connection.id, { sessionId, stream })
       this.send(connection, { type: "dex.snapshot", sessionId, snapshot: stream.snapshot })
+      this.send(connection, this.artifactsMessage(sessionId))
       stream.start(async (events) => {
         if (!this.send(connection, { type: "dex.events", sessionId, events })) {
           await this.unsubscribe(connection.id)
@@ -1513,6 +1524,10 @@ export class DexAgent extends Agent<Env, DexState> {
 
   /** Tells your devices how a chat's run ended: its reply, or what went wrong. Stopped runs stay quiet. */
   private async notifyRunEnd(sessionId: string, kind: "reply" | "scheduled", prompt?: string) {
+    // Files the reply linked on the VM go into the chat now, while the VM is still up to serve them.
+    const links = this.runVmLinks.get(sessionId)
+    this.runVmLinks.delete(sessionId)
+    if (links?.size) this.ctx.waitUntil(this.saveVmLinks(sessionId, [...links]))
     const row = this.ctx.storage.sql.exec<SessionRow>(`SELECT * FROM dex_sessions WHERE id = ?`, sessionId).toArray()[0]
     const last = this.lastResponses.get(sessionId)
     this.lastResponses.delete(sessionId)
@@ -1718,7 +1733,12 @@ export class DexAgent extends Agent<Env, DexState> {
    * Uploads a file from a chat's VM into R2 and returns its private URL. The VM sends it straight to Dex with a
    * single-use token, so large videos never pass through this object as base64.
    */
-  async shareMediaFromVm(sessionId: string, path: string, title?: string): Promise<SharedMedia> {
+  async shareMediaFromVm(
+    sessionId: string,
+    path: string,
+    title?: string,
+    { actor = "agent", removeAfter = false }: { actor?: "agent" | "system"; removeAfter?: boolean } = {}
+  ): Promise<SharedMedia> {
     if (!this.media.configured) throw new Error("Media sharing isn't set up on this deployment (no MEDIA bucket).")
     const origin = this.appOrigin()
     if (!origin || !origin.startsWith("https://")) throw new Error("Dex needs a public https address to receive uploads; open it once from its deployed URL.")
@@ -1730,13 +1750,103 @@ export class DexAgent extends Agent<Env, DexState> {
       `size=$(stat -c %s "$f")`,
       `[ "$size" -le ${MAX_MEDIA_BYTES} ] || { echo "Too big: $size bytes (max ${MAX_MEDIA_BYTES}). Compress it first, e.g. ffmpeg -i in.mp4 -c:v libx264 -crf 28 -preset fast -movflags +faststart out.mp4" >&2; exit 3; }`,
       // The token is single-use and spent by this request.
-      `curl -sS --fail-with-body --max-time 560 -X PUT -H 'Content-Type: application/octet-stream' --data-binary @"$f" '${origin}/api/media/upload/${upload.token}'`
+      `curl -sS --fail-with-body --max-time 560 -X PUT -H 'Content-Type: application/octet-stream' --data-binary @"$f" '${origin}/api/media/upload/${upload.token}'`,
+      ...(removeAfter ? [`status=$?; rm -f "$f"; exit $status`] : [])
     ].join("\n")
-    const result = await this.vmFor(sessionId).exec(command, { actor: "agent", timeoutSeconds: 600 })
+    const result = await this.vmFor(sessionId).exec(command, { actor, timeoutSeconds: 600 })
     if (result.exitCode !== 0) throw new Error(result.output.trim().slice(-600) || "The upload failed.")
     const shared = this.media.get(upload.key)
     if (!shared) throw new Error("The upload didn't arrive.")
     return shared
+  }
+
+  /**
+   * Copies a media file a chat linked from its VM's port into the chat, so the link plays from Dex: it keeps working
+   * after the VM sleeps, and Dex streams it the way iPhones need. The file is fetched on the VM itself (from the port,
+   * or found on disk if its server has stopped), then uploaded like share_media.
+   */
+  async saveVmArtifact(sessionId: string, link: string): Promise<SharedMedia> {
+    if (!this.hasSession(sessionId)) throw new Error("Chat not found")
+    if (!this.media.configured || !this.vmHost.configured) throw new Error("Saving files from VMs isn't set up on this deployment.")
+    const parsed = vmMediaSource(link)
+    if (!parsed) throw new Error("That isn't a video, audio file, or image served from a chat's VM.")
+    const existing = this.media.bySource(sessionId, parsed.source)
+    if (existing) return existing
+    // Only from a VM the chat already has: a stray link must not create one.
+    if (!this.state.vms.some((vm) => vm.key === sessionId && vm.id)) throw new Error("This chat has no VM to save it from.")
+    const id = `${sessionId}\n${parsed.source}`
+    const running = this.savingArtifacts.get(id)
+    if (running) return running
+    const work = this.copyVmArtifact(sessionId, parsed).finally(() => {
+      this.savingArtifacts.delete(id)
+      this.publishArtifacts(sessionId)
+    })
+    this.savingArtifacts.set(id, work)
+    this.publishArtifacts(sessionId)
+    return work
+  }
+
+  private async copyVmArtifact(sessionId: string, { source, port, path }: { source: string; port: number; path: string }) {
+    const extension = extensionOf(path) ?? "bin"
+    const last = path.split("/").pop() ?? ""
+    let name = last
+    try {
+      name = decodeURIComponent(last)
+    } catch {}
+    name = name.slice(0, 120) || `file.${extension}`
+    const temp = `/tmp/dex-artifacts/${crypto.randomUUID()}.${extension}`
+    const quote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`
+    const command = [
+      `mkdir -p /tmp/dex-artifacts`,
+      `curl -fsS --max-time 300 -o ${quote(temp)} ${quote(`http://127.0.0.1:${port}${path}`)} && exit 0`,
+      // Its server is gone (the VM slept since): find the newest file with that name instead.
+      /^[\w .,()+-]+$/.test(name)
+        ? `f=$(find /home /root /tmp /srv /opt /workspace -xdev -maxdepth 7 -type f -name ${quote(name)} -not -path '/tmp/dex-artifacts/*' -printf '%T@ %p\\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)`
+        : `f=`,
+      `[ -n "$f" ] || { echo ${quote(`Couldn't find ${name} on the VM any more.`)} >&2; exit 4; }`,
+      `cp "$f" ${quote(temp)}`
+    ].join("\n")
+    const fetched = await this.vmFor(sessionId).exec(command, { actor: "system", timeoutSeconds: 360 })
+    if (fetched.exitCode !== 0) throw new Error(fetched.output.trim().slice(-400) || `Couldn't copy ${name} from the VM.`)
+    const shared = await this.shareMediaFromVm(sessionId, temp, name, { actor: "system", removeAfter: true })
+    this.media.setSource(shared.key, source)
+    return shared
+  }
+
+  /** Saves a finished reply's VM links into its chat, one at a time; failures leave the link as it was. */
+  private async saveVmLinks(sessionId: string, links: ReadonlyArray<string>) {
+    for (const link of links) {
+      await this.saveVmArtifact(sessionId, link).catch((error: unknown) => console.warn(`Could not save ${link.split("?")[0]} into chat ${sessionId}: ${errorText(error)}`))
+    }
+  }
+
+  private artifactsMessage(sessionId: string): ServerMessage {
+    const prefix = `${sessionId}\n`
+    const saving = [...this.savingArtifacts.keys()].filter((key) => key.startsWith(prefix)).map((key) => key.slice(prefix.length))
+    return { type: "dex.artifacts", sessionId, artifacts: this.media.list(sessionId), saving }
+  }
+
+  /** Tells everyone watching a chat about its files. */
+  private publishArtifacts(sessionId: string) {
+    const message = this.artifactsMessage(sessionId)
+    for (const [connectionId, subscription] of this.subscriptions) {
+      if (subscription.sessionId !== sessionId) continue
+      const connection = this.getConnection(connectionId)
+      if (connection) this.send(connection, message)
+    }
+  }
+
+  /** The files stored in a chat. */
+  @callable()
+  listArtifacts(sessionId: string) {
+    return this.media.list(sessionId)
+  }
+
+  /** Saves a VM link from a chat into the chat (the player's "Save to chat"). */
+  @callable()
+  async saveArtifact(sessionId: string, url: string) {
+    const media = await this.saveVmArtifact(sessionId, url)
+    return { url: media.url, name: media.name, kind: media.kind, size: media.size }
   }
 
   /** Claims a media upload token for `size` bytes (the Worker calls this before storing the body). */
