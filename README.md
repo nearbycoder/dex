@@ -45,6 +45,7 @@
 - **Generative UI** with `render_ui` (OpenUI): cards, stat tiles, tables, charts, and forms. Markdown tables wrap at word boundaries and scroll sideways in their own frame on a phone.
 - **Tools:** `bash` over a persistent `/workspace` (a simulated shell with grep, sed, jq, sqlite3, curl), file tools, `web_search` / `web_fetch` (Workers AI), `schedule_prompt` (one-off or cron), and `use_skill`.
 - **Memory:** `/workspace/MEMORY.md` joins every chat's system prompt; edits to it are always shown in the chat.
+- **Workspace page:** browse and edit the agent's files, with Markdown rendered and HTML previewed in a sandboxed frame (scripts run with no access to Dex), plus an Edit tab for the source.
 - **Titles:** a chat starts with its first message as its title; tap the title to rename it, or **Regenerate title** in the chat's menu to have a fast model name it from its first and latest messages.
 - **Pinned to the latest message:** chats open at the bottom and follow new content, and a round arrow jumps back down when you've scrolled up.
 

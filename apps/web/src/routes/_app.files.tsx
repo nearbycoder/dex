@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router"
-import { ArrowLeft, File, FilePlus, RefreshCw, Save, SquareTerminal, Trash2 } from "lucide-react"
+import { ArrowLeft, Eye, File, FilePlus, PencilLine, RefreshCw, Save, SquareTerminal, Trash2 } from "lucide-react"
 import { useCallback, useState } from "react"
 import { InfoTip } from "~/client/components/info-tip"
+import { Markdown } from "~/client/components/markdown"
 import { Bone } from "~/client/components/skeleton"
 import { useCachedFetch } from "~/client/lib/cache"
 import { useDex } from "~/client/lib/dex"
@@ -9,6 +10,9 @@ import { formatBytes, timeAgo } from "~/client/lib/format"
 import type { WorkspaceFile } from "~/shared/protocol"
 
 export const Route = createFileRoute("/_app/files")({ component: FilesPage })
+
+/** Files shown rendered (with an Edit tab for the source): Markdown, and HTML in a sandboxed frame. */
+const previewKind = (path: string) => (/\.(md|markdown)$/i.test(path) ? "markdown" : /\.html?$/i.test(path) ? "html" : null)
 
 interface OpenFile {
   readonly path: string
@@ -20,6 +24,7 @@ interface OpenFile {
 function FilesPage() {
   const { stub, connected } = useDex()
   const [open, setOpen] = useState<OpenFile | null>(null)
+  const [editing, setEditing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [command, setCommand] = useState("")
   const [terminal, setTerminal] = useState<{ command: string; output: string; exitCode: number }[]>([])
@@ -49,6 +54,7 @@ function FilesPage() {
     try {
       const file = await stub.readFile(path)
       setOpen({ ...file, draft: file.content ?? "" })
+      setEditing(false)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     }
@@ -121,6 +127,25 @@ function FilesPage() {
                   {timeAgo(files?.find((file) => file.path === open.path)?.mtime ?? Date.now())}
                 </span>
                 <div className="ml-auto flex items-center gap-1">
+                  {open.content !== null && previewKind(open.path) && (
+                    <div className="mr-1 flex rounded-md border border-zinc-800 p-0.5 text-xs" role="tablist" aria-label="View">
+                      {[
+                        { edit: false, label: "Preview", Icon: Eye },
+                        { edit: true, label: "Edit", Icon: PencilLine }
+                      ].map(({ edit, label, Icon }) => (
+                        <button
+                          key={label}
+                          type="button"
+                          role="tab"
+                          aria-selected={editing === edit}
+                          onClick={() => setEditing(edit)}
+                          className={`flex items-center gap-1 rounded px-2 py-0.5 ${editing === edit ? "bg-zinc-800 text-zinc-100" : "text-zinc-500 hover:text-zinc-300"}`}
+                        >
+                          <Icon className="size-3.5" /> {label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   {open.content !== null && (
                     <button
                       type="button"
@@ -152,6 +177,16 @@ function FilesPage() {
               </div>
               {open.content === null ? (
                 <p className="p-4 text-sm text-zinc-500">Binary file ({formatBytes(open.size)}).</p>
+              ) : !editing && previewKind(open.path) === "markdown" ? (
+                <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
+                  <div className="mx-auto max-w-3xl px-5 py-6">
+                    <Markdown>{open.draft}</Markdown>
+                  </div>
+                </div>
+              ) : !editing && previewKind(open.path) === "html" ? (
+                // The agent writes these files, so they're untrusted: scripts run, but in an opaque origin with no
+                // access to Dex (no cookies, storage, or same-origin requests) and no popups or top navigation.
+                <iframe title={open.path} srcDoc={open.draft} sandbox="allow-scripts" className="min-h-0 w-full flex-1 bg-white" />
               ) : (
                 <textarea
                   value={open.draft}
