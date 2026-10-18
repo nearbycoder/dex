@@ -31,6 +31,8 @@ import { Route as AppMcpIndexRouteImport } from './routes/_app.mcp.index'
 import { Route as AppMcpServerIdRouteImport } from './routes/_app.mcp.$serverId'
 import { Route as AppProjectsIndexRouteImport } from './routes/_app.projects.index'
 import { Route as AppProjectsProjectIdRouteImport } from './routes/_app.projects.$projectId'
+import { Route as AppSkillsIndexRouteImport } from './routes/_app.skills.index'
+import { Route as AppSkillsSkillIdRouteImport } from './routes/_app.skills.$skillId'
 import { Route as ApiMediaSplatRouteImport } from './routes/api.media.$'
 import { Route as ApiPushActionRouteImport } from './routes/api.push.action'
 import { Route as AuthGithubCallbackRouteImport } from './routes/auth.github.callback'
@@ -147,6 +149,16 @@ const AppProjectsProjectIdRoute = AppProjectsProjectIdRouteImport.update({
   path: '/projects/$projectId',
   getParentRoute: () => AppRoute,
 } as any)
+const AppSkillsIndexRoute = AppSkillsIndexRouteImport.update({
+  id: '/skills/',
+  path: '/skills/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSkillsSkillIdRoute = AppSkillsSkillIdRouteImport.update({
+  id: '/skills/$skillId',
+  path: '/skills/$skillId',
+  getParentRoute: () => AppRoute,
+} as any)
 const ApiMediaSplatRoute = ApiMediaSplatRouteImport.update({
   id: '/api/media/$',
   path: '/api/media/$',
@@ -196,6 +208,7 @@ export interface FileRoutesByFullPath {
   '/machine/$vmKey': typeof AppMachineVmKeyRoute
   '/mcp/$serverId': typeof AppMcpServerIdRoute
   '/projects/$projectId': typeof AppProjectsProjectIdRoute
+  '/skills/$skillId': typeof AppSkillsSkillIdRoute
   '/api/media/$': typeof ApiMediaSplatRoute
   '/api/push/action': typeof ApiPushActionRoute
   '/auth/github/callback': typeof AuthGithubCallbackRoute
@@ -206,6 +219,7 @@ export interface FileRoutesByFullPath {
   '/machine/': typeof AppMachineIndexRoute
   '/mcp/': typeof AppMcpIndexRoute
   '/projects/': typeof AppProjectsIndexRoute
+  '/skills/': typeof AppSkillsIndexRoute
   '/auth/github/connect/callback': typeof AuthGithubConnectCallbackRoute
 }
 export interface FileRoutesByTo {
@@ -225,6 +239,7 @@ export interface FileRoutesByTo {
   '/machine/$vmKey': typeof AppMachineVmKeyRoute
   '/mcp/$serverId': typeof AppMcpServerIdRoute
   '/projects/$projectId': typeof AppProjectsProjectIdRoute
+  '/skills/$skillId': typeof AppSkillsSkillIdRoute
   '/api/media/$': typeof ApiMediaSplatRoute
   '/api/push/action': typeof ApiPushActionRoute
   '/auth/github/callback': typeof AuthGithubCallbackRoute
@@ -235,6 +250,7 @@ export interface FileRoutesByTo {
   '/machine': typeof AppMachineIndexRoute
   '/mcp': typeof AppMcpIndexRoute
   '/projects': typeof AppProjectsIndexRoute
+  '/skills': typeof AppSkillsIndexRoute
   '/auth/github/connect/callback': typeof AuthGithubConnectCallbackRoute
 }
 export interface FileRoutesById {
@@ -256,6 +272,7 @@ export interface FileRoutesById {
   '/_app/machine/$vmKey': typeof AppMachineVmKeyRoute
   '/_app/mcp/$serverId': typeof AppMcpServerIdRoute
   '/_app/projects/$projectId': typeof AppProjectsProjectIdRoute
+  '/_app/skills/$skillId': typeof AppSkillsSkillIdRoute
   '/api/media/$': typeof ApiMediaSplatRoute
   '/api/push/action': typeof ApiPushActionRoute
   '/auth/github/callback': typeof AuthGithubCallbackRoute
@@ -266,6 +283,7 @@ export interface FileRoutesById {
   '/_app/machine/': typeof AppMachineIndexRoute
   '/_app/mcp/': typeof AppMcpIndexRoute
   '/_app/projects/': typeof AppProjectsIndexRoute
+  '/_app/skills/': typeof AppSkillsIndexRoute
   '/auth/github/connect/callback': typeof AuthGithubConnectCallbackRoute
 }
 export interface FileRouteTypes {
@@ -287,6 +305,7 @@ export interface FileRouteTypes {
     | '/machine/$vmKey'
     | '/mcp/$serverId'
     | '/projects/$projectId'
+    | '/skills/$skillId'
     | '/api/media/$'
     | '/api/push/action'
     | '/auth/github/callback'
@@ -297,6 +316,7 @@ export interface FileRouteTypes {
     | '/machine/'
     | '/mcp/'
     | '/projects/'
+    | '/skills/'
     | '/auth/github/connect/callback'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -316,6 +336,7 @@ export interface FileRouteTypes {
     | '/machine/$vmKey'
     | '/mcp/$serverId'
     | '/projects/$projectId'
+    | '/skills/$skillId'
     | '/api/media/$'
     | '/api/push/action'
     | '/auth/github/callback'
@@ -326,6 +347,7 @@ export interface FileRouteTypes {
     | '/machine'
     | '/mcp'
     | '/projects'
+    | '/skills'
     | '/auth/github/connect/callback'
   id:
     | '__root__'
@@ -346,6 +368,7 @@ export interface FileRouteTypes {
     | '/_app/machine/$vmKey'
     | '/_app/mcp/$serverId'
     | '/_app/projects/$projectId'
+    | '/_app/skills/$skillId'
     | '/api/media/$'
     | '/api/push/action'
     | '/auth/github/callback'
@@ -356,6 +379,7 @@ export interface FileRouteTypes {
     | '/_app/machine/'
     | '/_app/mcp/'
     | '/_app/projects/'
+    | '/_app/skills/'
     | '/auth/github/connect/callback'
   fileRoutesById: FileRoutesById
 }
@@ -530,6 +554,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProjectsProjectIdRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/skills/': {
+      id: '/_app/skills/'
+      path: '/skills'
+      fullPath: '/skills/'
+      preLoaderRoute: typeof AppSkillsIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/skills/$skillId': {
+      id: '/_app/skills/$skillId'
+      path: '/skills/$skillId'
+      fullPath: '/skills/$skillId'
+      preLoaderRoute: typeof AppSkillsSkillIdRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/api/media/$': {
       id: '/api/media/$'
       path: '/api/media/$'
@@ -586,11 +624,13 @@ interface AppRouteChildren {
   AppMachineVmKeyRoute: typeof AppMachineVmKeyRoute
   AppMcpServerIdRoute: typeof AppMcpServerIdRoute
   AppProjectsProjectIdRoute: typeof AppProjectsProjectIdRoute
+  AppSkillsSkillIdRoute: typeof AppSkillsSkillIdRoute
   AppAgentsIndexRoute: typeof AppAgentsIndexRoute
   AppChatIndexRoute: typeof AppChatIndexRoute
   AppMachineIndexRoute: typeof AppMachineIndexRoute
   AppMcpIndexRoute: typeof AppMcpIndexRoute
   AppProjectsIndexRoute: typeof AppProjectsIndexRoute
+  AppSkillsIndexRoute: typeof AppSkillsIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -604,11 +644,13 @@ const AppRouteChildren: AppRouteChildren = {
   AppMachineVmKeyRoute: AppMachineVmKeyRoute,
   AppMcpServerIdRoute: AppMcpServerIdRoute,
   AppProjectsProjectIdRoute: AppProjectsProjectIdRoute,
+  AppSkillsSkillIdRoute: AppSkillsSkillIdRoute,
   AppAgentsIndexRoute: AppAgentsIndexRoute,
   AppChatIndexRoute: AppChatIndexRoute,
   AppMachineIndexRoute: AppMachineIndexRoute,
   AppMcpIndexRoute: AppMcpIndexRoute,
   AppProjectsIndexRoute: AppProjectsIndexRoute,
+  AppSkillsIndexRoute: AppSkillsIndexRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

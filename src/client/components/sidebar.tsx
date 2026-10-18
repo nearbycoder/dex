@@ -16,6 +16,7 @@ import {
   PanelLeftClose,
   Plug,
   Settings,
+  Sparkles,
   SlidersHorizontal,
   X
 } from "lucide-react"
@@ -33,7 +34,7 @@ import { ChatListSkeleton } from "./skeleton"
 import { useNow } from "./vm-status"
 
 /** Configuration pages: on these the sidebar shows the settings links instead of the chats. */
-const SETTINGS_AREA = ["/settings", "/notifications", "/machine", "/projects", "/agents", "/mcp", "/files", "/usage", "/access"]
+const SETTINGS_AREA = ["/settings", "/notifications", "/machine", "/projects", "/agents", "/skills", "/mcp", "/files", "/usage", "/access"]
 const inSettingsArea = (pathname: string) => SETTINGS_AREA.some((path) => pathname === path || pathname.startsWith(`${path}/`))
 
 const linkClass =
@@ -109,6 +110,7 @@ export function Sidebar() {
     },
     { to: "/projects", label: "Projects", icon: <FolderGit2 className="size-4" /> },
     { to: "/agents", label: "Agents", icon: <Bot className="size-4" /> },
+    { to: "/skills", label: "Skills", icon: <Sparkles className="size-4" /> },
     {
       to: "/mcp",
       label: "MCP servers",

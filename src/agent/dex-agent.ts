@@ -37,6 +37,7 @@ import { CLOUDFLARE_RATES, type CloudflareLine, type UsageRange, type UsageRepor
 import { AGENT_COLORS, AGENT_ICONS, type AgentDraft, type AgentProfile, STARTER_AGENTS } from "~/shared/agents"
 import { type AccessRisk, type CreatedAccessToken, NO_ACCESS } from "~/shared/access"
 import { extensionOf, MAX_MEDIA_BYTES, vmMediaLinks, vmMediaSource } from "~/shared/media"
+import { invokedSkill, type SkillDetail, type SkillPreview } from "~/shared/skills"
 import type { McpAuth, McpConnectResult, McpServerDraft, McpServerInfo, McpStatus, McpTransport } from "~/shared/mcp"
 import { BoatClient } from "./boat"
 import { CloudflareAnalytics, type CloudflareDay, dayCost, emptyDay } from "./cloudflare-analytics"
@@ -46,6 +47,8 @@ import { isMcpExtension, type McpCallResult, mcpExtension, mcpExtensionName, typ
 import { AccessCenter, parseAccessToken } from "./access"
 import { MediaCenter, type SharedMedia } from "./media"
 import { mediaTools } from "./tools/media-tools"
+import { SkillCenter } from "./skills"
+import { skillTools } from "./tools/skill-tools"
 import { handleMcpBody } from "./mcp-server"
 import { webTools } from "./tools/agents-tools"
 import { appTools } from "./tools/app-tools"
@@ -194,7 +197,8 @@ export class DexAgent extends Agent<Env, DexState> {
     projects: [],
     github: { connected: false, login: null },
     push: { configured: false, publicKey: null, devices: [] },
-    access: NO_ACCESS
+    access: NO_ACCESS,
+    skills: []
   }
 
   readonly runtime = ManagedRuntime.make(AgentLayer(this.env))
@@ -244,6 +248,13 @@ export class DexAgent extends Agent<Env, DexState> {
     bucket: (this.env as unknown as { MEDIA?: R2Bucket }).MEDIA,
     userId: () => this.name,
     sign: (payload) => this.runtime.runPromise(Keys.use((keys) => keys.sign(payload)))
+  })
+
+  /** Skills chats can use: installed from skills.sh or written here. */
+  readonly skills: SkillCenter = new SkillCenter({
+    sql: this.ctx.storage.sql,
+    publish: (skills) => this.publish({ skills }),
+    githubToken: async () => (await this.githubCredentials())?.token ?? null
   })
 
   /** One VM per chat (plus `shared`, from before VMs were per chat), created when a chat first needs one. */
@@ -358,6 +369,7 @@ export class DexAgent extends Agent<Env, DexState> {
     void this.backfillUsage()
     this.seedAgents()
     this.refreshAgents()
+    this.skills.refresh()
     this.startMcp()
     await this.refreshClineStatus()
     await this.refreshSessions()
@@ -388,7 +400,10 @@ export class DexAgent extends Agent<Env, DexState> {
           return agent ? `You are Dex acting as the "${agent.name}" agent.\n\n${agent.instructions}`.trim() : undefined
         }),
         // The chat's project, with where its repos are and how far the VM's setup got.
-        section("project", (input) => this.projectContext(String(input.conversationId)))
+        section("project", (input) => this.projectContext(String(input.conversationId))),
+        // Skills chats may load on their own, and the full text of the ones you invoked in this chat with /<name>.
+        section("skills", () => this.skills.autoSection()),
+        section("invoked_skills", (input) => this.skills.activeSection(String(input.conversationId)))
       ],
       // Every model response's tokens and list-price cost, for the Usage page.
       hooks: [
@@ -414,6 +429,7 @@ export class DexAgent extends Agent<Env, DexState> {
         renderUiTool,
         ...scheduleTools(this),
         ...appTools(this.access),
+        ...skillTools((name, file) => this.skills.use(name, file)),
         ...(this.vmHost.configured ? vmTools((chatId) => this.vmFor(chatId)) : []),
         ...(this.vmHost.configured && this.media.configured ? mediaTools((chatId, path, title) => this.shareMediaFromVm(chatId, path, title)) : [])
       ]
@@ -588,6 +604,9 @@ export class DexAgent extends Agent<Env, DexState> {
 
     const { connection } = getCurrentAgent()
     if (connection) await this.subscribe(connection, sessionId)
+    // `/<name> …` invokes a skill: its instructions join this chat's prompt from this message on.
+    const skill = invokedSkill(content)
+    if (skill) this.skills.activate(sessionId, skill)
 
     const session = this.harness.session(sessionId)
     const receipt = await session.submit(content)
@@ -637,6 +656,7 @@ export class DexAgent extends Agent<Env, DexState> {
   async deleteSession(sessionId: string) {
     await this.harness.session(sessionId).abort().catch(() => false)
     this.ctx.storage.sql.exec(`DELETE FROM dex_sessions WHERE id = ?`, sessionId)
+    this.skills.forgetSession(sessionId)
     await this.refreshSessions()
     // Its VM goes with it, disk and all (stopped first if it was running; deleting does both), and its media.
     if (this.vms.has(sessionId)) this.ctx.waitUntil(this.reapOrphanVms())
@@ -1725,6 +1745,53 @@ export class DexAgent extends Agent<Env, DexState> {
       sessionId: payload.sessionId,
       actions: [{ action: "open", title: "Open chat" }]
     })
+  }
+
+  // ── Skills ────────────────────────────────────────────────────────────────
+
+  /** Searches skills.sh. */
+  @callable()
+  async searchSkills(query: string) {
+    return this.skills.search(query)
+  }
+
+  /** What installing a skill from GitHub would add (its SKILL.md and files), without installing it. */
+  @callable()
+  async previewSkill(source: string, skillId: string): Promise<SkillPreview> {
+    return this.skills.preview(source, skillId)
+  }
+
+  @callable()
+  async installSkill(source: string, skillId: string, auto = true): Promise<SkillDetail> {
+    return this.skills.install(source, skillId, auto)
+  }
+
+  @callable()
+  getSkill(id: string): SkillDetail | null {
+    return this.skills.get(id)
+  }
+
+  /** Creates (no `id`) or edits a skill. */
+  @callable()
+  saveSkill(input: { id?: string; name: string; description: string; instructions: string; auto?: boolean }): SkillDetail {
+    return this.skills.save(input)
+  }
+
+  /** Whether chats may load a skill on their own (otherwise only `/<name>` uses it). */
+  @callable()
+  setSkillAuto(id: string, auto: boolean) {
+    this.skills.setAuto(id, auto)
+  }
+
+  /** Re-reads an installed skill from its repo. */
+  @callable()
+  async updateSkill(id: string): Promise<SkillDetail> {
+    return this.skills.update(id)
+  }
+
+  @callable()
+  removeSkill(id: string) {
+    return this.skills.remove(id)
   }
 
   // ── Media ─────────────────────────────────────────────────────────────────

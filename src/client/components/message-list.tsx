@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router"
 import { AlertTriangle, ArrowDown, Brain, ChevronRight, ListChecks, LoaderCircle } from "lucide-react"
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { displayItems, type LiveTool, toolResults, type TranscriptState } from "~/client/lib/transcript"
+import { invokedSkill } from "~/shared/skills"
 import { Collapse } from "./collapse"
 import { ConfirmCard } from "./confirm-card"
 import { MediaPlayer, videoSource } from "./media"
@@ -262,6 +263,20 @@ function AssistantTurnView(props: {
   )
 }
 
+/** A message's text, with a leading `/skill` set off: that message invoked the skill. */
+function UserText({ text }: { text: string }) {
+  const skill = invokedSkill(text)
+  if (!skill) return text
+  const at = text.indexOf(`/${skill}`)
+  return (
+    <>
+      {text.slice(0, at)}
+      <span className="font-mono font-medium text-emerald-300">/{skill}</span>
+      {text.slice(at + skill.length + 1)}
+    </>
+  )
+}
+
 /** Memoized: the chat page re-renders on every synced-state change, but the transcript only on its own. */
 export const MessageList = memo(function MessageList({ transcript, onSend }: { transcript: TranscriptState; onSend: (text: string) => void }) {
   const items = useMemo(() => displayItems(transcript), [transcript])
@@ -350,7 +365,7 @@ export const MessageList = memo(function MessageList({ transcript, onSend }: { t
                 return (
                   <div key={item.id} className="flex animate-rise justify-end">
                     <div className="max-w-[85%] rounded-2xl rounded-br-md bg-zinc-800 px-4 py-2.5 text-sm whitespace-pre-wrap text-zinc-100 [overflow-wrap:anywhere]">
-                      {item.text}
+                      <UserText text={item.text} />
                       {item.images > 0 && <div className="mt-1 text-xs text-zinc-400">+{item.images} image(s)</div>}
                     </div>
                   </div>

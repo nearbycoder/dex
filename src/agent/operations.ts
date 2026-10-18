@@ -69,6 +69,14 @@ export type OperationHost = Pick<
   | "schedulePrompt"
   | "readTranscript"
   | "listArtifacts"
+  | "searchSkills"
+  | "previewSkill"
+  | "installSkill"
+  | "getSkill"
+  | "saveSkill"
+  | "setSkillAuto"
+  | "updateSkill"
+  | "removeSkill"
   | "saveArtifact"
   | "appState"
   | "noteSessionParent"
@@ -306,6 +314,102 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     inChats: false,
     summarize: (args, state) => `Save a file into ${quote(chatTitle(state, args.session_id))}`,
     run: async (host, args) => host.saveArtifact(args.session_id, args.url)
+  }),
+  define({
+    name: "app_list_skills",
+    description:
+      "List installed skills: name (what follows / in a message), description, where it came from, and whether chats load it on their own (auto).",
+    risk: "read",
+    parameters: Type.Object({}),
+    covers: [],
+    summarize: () => "List skills",
+    run: async (host) => host.appState().skills
+  }),
+  define({
+    name: "app_get_skill",
+    description: "One installed skill's full instructions and its list of files.",
+    risk: "read",
+    parameters: Type.Object({ name: Type.String({ maxLength: 64, description: "The skill's name." }) }),
+    covers: ["getSkill"],
+    summarize: (args) => `Read skill ${args.name}`,
+    run: async (host, args) => host.getSkill(args.name) ?? { error: `No skill ${args.name}.` }
+  }),
+  define({
+    name: "app_search_skills",
+    description: "Search the skills.sh directory for skills to install. Results have a GitHub source (owner/repo), a skill id, and install counts.",
+    risk: "read",
+    parameters: Type.Object({ query: Type.String({ minLength: 2, maxLength: 100 }) }),
+    covers: ["searchSkills"],
+    summarize: (args) => `Search skills.sh for ${quote(args.query)}`,
+    run: async (host, args) => host.searchSkills(args.query)
+  }),
+  define({
+    name: "app_preview_skill",
+    description: "Read a skill from its GitHub repo before installing it: its name, description, instructions, and files.",
+    risk: "read",
+    parameters: Type.Object({
+      source: Type.String({ maxLength: 200, description: "GitHub owner/repo, from app_search_skills." }),
+      skill_id: Type.String({ maxLength: 100, description: "The skill id, from app_search_skills." })
+    }),
+    covers: ["previewSkill"],
+    summarize: (args) => `Preview skill ${args.skill_id} from ${args.source}`,
+    run: async (host, args) => host.previewSkill(args.source, args.skill_id)
+  }),
+  define({
+    name: "app_install_skill",
+    description:
+      "Install (or update) a skill from GitHub, usually found with app_search_skills. Its instructions then go to every chat that uses it, so check it with app_preview_skill first.",
+    risk: "admin",
+    parameters: Type.Object({
+      source: Type.String({ maxLength: 200, description: "GitHub owner/repo." }),
+      skill_id: Type.String({ maxLength: 100 }),
+      auto: Type.Optional(Type.Boolean({ description: "Let chats load it on their own when a request matches (default true)." }))
+    }),
+    covers: ["installSkill", "updateSkill"],
+    summarize: (args) => `Install skill ${args.skill_id} from ${args.source}`,
+    run: async (host, args) => {
+      const skill = await host.installSkill(args.source, args.skill_id, args.auto ?? true)
+      return { name: skill.id, description: skill.description, files: skill.files, auto: skill.auto }
+    }
+  }),
+  define({
+    name: "app_save_skill",
+    description: "Create a skill, or edit one (give `id`): a name, a description saying when to use it, and instructions in Markdown.",
+    risk: "admin",
+    parameters: Type.Object({
+      id: Type.Optional(Type.String({ maxLength: 64, description: "The skill to edit; omit to create one." })),
+      name: Type.String({ maxLength: 64, description: "Lowercase letters, digits, and dashes." }),
+      description: Type.String({ maxLength: 1_000 }),
+      instructions: Type.String({ maxLength: 200_000 }),
+      auto: Type.Optional(Type.Boolean())
+    }),
+    covers: ["saveSkill"],
+    summarize: (args) => (args.id ? `Edit skill ${args.id}` : `Create skill ${args.name}`),
+    run: async (host, args) => {
+      const skill = host.saveSkill(args)
+      return { name: skill.id, description: skill.description, auto: skill.auto }
+    }
+  }),
+  define({
+    name: "app_set_skill_auto",
+    description: "Choose whether chats load a skill on their own when a request matches (auto), or only when a message starts with /<name>.",
+    risk: "admin",
+    parameters: Type.Object({ name: Type.String({ maxLength: 64 }), auto: Type.Boolean() }),
+    covers: ["setSkillAuto"],
+    summarize: (args) => `${args.auto ? "Let chats use" : "Only use on request"} skill ${args.name}`,
+    run: async (host, args) => {
+      host.setSkillAuto(args.name, args.auto)
+      return { ok: true }
+    }
+  }),
+  define({
+    name: "app_remove_skill",
+    description: "Uninstall a skill.",
+    risk: "admin",
+    parameters: Type.Object({ name: Type.String({ maxLength: 64 }) }),
+    covers: ["removeSkill"],
+    summarize: (args) => `Remove skill ${args.name}`,
+    run: async (host, args) => ({ removed: host.removeSkill(args.name) })
   }),
   define({
     name: "app_list_agents",

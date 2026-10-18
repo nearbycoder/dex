@@ -377,6 +377,120 @@ function ListPageSkeleton({ kind }: { kind: CardKind }) {
   )
 }
 
+/** A skill card: /name and source chip with icon actions, two description lines, then size and the Auto switch. */
+function SkillCard({ index }: { index: number }) {
+  return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex h-5 items-center gap-2">
+            <Bone className="h-3.5" style={{ width: widthAt(index, [24, 32, 20]) }} />
+            <Bone className="h-4 w-20 rounded" />
+          </div>
+          <div className="mt-1">
+            <LineBone size="xs" width="92%" />
+            <LineBone size="xs" width={widthAt(index, [55, 70, 40])} />
+          </div>
+        </div>
+        <div className="-mt-1 -mr-1.5 flex">
+          {[0, 1, 2].map((icon) => (
+            <span key={icon} className="p-1.5">
+              <Bone className="size-4" />
+            </span>
+          ))}
+        </div>
+      </div>
+      <div className="mt-3 flex items-center gap-2">
+        <Bone className="h-3 w-20" />
+        <Bone className="ml-auto h-3 w-12" />
+        <Bone className="h-6 w-10 rounded-full" />
+      </div>
+    </div>
+  )
+}
+
+/** Installed skills on the Skills page. */
+export function SkillCardsSkeleton({ count = 2 }: { count?: number }) {
+  return (
+    <Status>
+      <div className="grid gap-3">
+        {Array.from({ length: count }, (_, index) => (
+          <SkillCard key={index} index={index} />
+        ))}
+      </div>
+    </Status>
+  )
+}
+
+/** The Skills page: title and New button, the skills.sh search with its suggestion chips, then installed skills. */
+function SkillsPageSkeleton() {
+  return (
+    <div className="min-h-0 flex-1 overflow-hidden">
+      <div className="mx-auto max-w-3xl px-4 pt-6 md:pt-10">
+        <div className="mb-6 flex items-center gap-3">
+          <Bone className="h-7 w-20" />
+          <Bone className="ml-auto h-9 w-28 rounded-lg" />
+        </div>
+        <Bone className="h-[42px] w-full rounded-xl" />
+        <div className="mt-2.5 flex flex-wrap gap-1.5">
+          {[36, 92, 80, 54, 40, 36].map((width, index) => (
+            <Bone key={index} className="h-[26px] rounded-full" style={{ width }} />
+          ))}
+        </div>
+        <div className="mt-8 mb-2 flex h-4 items-center px-1">
+          <Bone className="h-3 w-16" />
+        </div>
+        <SkillCardsSkeleton count={2} />
+      </div>
+    </div>
+  )
+}
+
+/** A skill's editor: back link, /name and source, name, description, instructions, Auto, and the save bar. */
+export function SkillEditorSkeleton() {
+  const label = (width: string) => <LineBone size="sm" width={width} />
+  return (
+    <Status>
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <div className="mx-auto max-w-2xl px-4 pt-6 md:pt-10">
+          <div className="mb-4 flex h-5 items-center">
+            <Bone className="h-3.5 w-14" />
+          </div>
+          <div className="mb-6">
+            <div className="flex h-8 items-center">
+              <Bone className="h-6 w-48" />
+            </div>
+            <div className="mt-0.5">
+              <LineBone size="sm" width="35%" />
+            </div>
+          </div>
+          <div className="space-y-6">
+            <div>
+              {label("12%")}
+              <Bone className="mt-2 h-[38px] w-full rounded-lg" />
+            </div>
+            <div>
+              {label("24%")}
+              <Bone className="mt-2 h-[78px] w-full rounded-lg" />
+            </div>
+            <div>
+              {label("20%")}
+              <Bone className="mt-2 h-[330px] w-full rounded-lg" />
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="min-w-0 flex-1">
+                {label("10%")}
+                <LineBone size="xs" width="50%" />
+              </div>
+              <Bone className="h-6 w-10 rounded-full" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </Status>
+  )
+}
+
 function MachinesPageSkeleton() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -795,6 +909,8 @@ export function RouteSkeleton({ pathname }: { pathname: string }) {
   if (/^\/agents\/[^/]+/.test(pathname)) return <EditorSkeleton kind="agent" />
   if (/^\/projects\/[^/]+/.test(pathname)) return <EditorSkeleton kind="project" />
   if (/^\/mcp\/[^/]+/.test(pathname)) return <EditorSkeleton kind="mcp" />
+  if (/^\/skills\/[^/]+/.test(pathname)) return <SkillEditorSkeleton />
+  if (pathname === "/skills") return <SkillsPageSkeleton />
   if (pathname === "/agents") return <ListPageSkeleton kind="agent" />
   if (pathname === "/projects") return <ListPageSkeleton kind="project" />
   if (pathname === "/mcp") return <ListPageSkeleton kind="mcp" />

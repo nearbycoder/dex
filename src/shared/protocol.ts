@@ -4,6 +4,7 @@ import { type AccessState, NO_ACCESS } from "./access"
 import type { AgentProfile } from "./agents"
 import type { McpServerInfo } from "./mcp"
 import type { ChatArtifact } from "./media"
+import type { SkillInfo } from "./skills"
 import type { PushStatus } from "./notifications"
 import type { ProjectProfile } from "./projects"
 import type { ThinkingLevel } from "./models"
@@ -134,6 +135,7 @@ export const withStateDefaults = (state: DexState): DexState => ({
   agents: (state.agents ?? []).map((agent) => ({ ...agent, mcpServers: agent.mcpServers ?? [] })),
   mcp: state.mcp ?? [],
   access: state.access ?? NO_ACCESS,
+  skills: state.skills ?? [],
   sessions: state.sessions.map((session) => ({
     ...session,
     agentId: session.agentId ?? null,
@@ -162,6 +164,8 @@ export interface DexState {
   readonly mcp: ReadonlyArray<McpServerInfo>
   /** MCP access tokens, the audit log of app operations, and admin operations waiting for confirmation. */
   readonly access: AccessState
+  /** Installed skills (without their instructions). */
+  readonly skills: ReadonlyArray<SkillInfo>
   /** The build the agent is running (ISO time it was built): tells a deploy apart from a stale instance. */
   readonly build?: string
 }

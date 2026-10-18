@@ -151,7 +151,7 @@ function Chat() {
           running={transcript.running}
           onSend={send}
           onStop={() => void stub.abort(sessionId)}
-          placeholder={transcript.running ? "Queue a follow-up…" : "Message Dex…"}
+          placeholder={transcript.running ? "Queue a follow-up…" : "Message Dex, or / for skills…"}
           toolbar={
             session && (
               <div className="flex min-w-0 items-center gap-1">

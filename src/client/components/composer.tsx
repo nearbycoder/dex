@@ -1,5 +1,6 @@
 import { ArrowUp, Square } from "lucide-react"
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { SkillMenu, type SkillMenuHandle } from "./skill-menu"
 
 export function Composer(props: {
   onSend: (text: string) => void | Promise<void>
@@ -18,6 +19,14 @@ export function Composer(props: {
   const ref = useRef<HTMLTextAreaElement>(null)
   /** When the message box last lost focus: a tap on Send can take it (iOS haptics), and typing should go on. */
   const blurredAt = useRef(0)
+  // `/` at the start opens the skill lookup, until a space ends the name or Escape closes it.
+  const slash = /^\/([a-z0-9-]*)$/i.exec(text)?.[1]
+  const [menuClosed, setMenuClosed] = useState(false)
+  const menu = useRef<SkillMenuHandle>(null)
+  const menuOpen = slash !== undefined && !menuClosed && !props.disabled
+  useEffect(() => {
+    if (slash === undefined) setMenuClosed(false)
+  }, [slash])
 
   useEffect(() => {
     if (!props.draft) return
@@ -46,7 +55,18 @@ export function Composer(props: {
   }
 
   return (
-    <div className="rounded-2xl border border-zinc-800 bg-zinc-900/80 shadow-lg shadow-black/20 transition-colors duration-200 focus-within:border-zinc-700">
+    <div className="relative rounded-2xl border border-zinc-800 bg-zinc-900/80 shadow-lg shadow-black/20 transition-colors duration-200 focus-within:border-zinc-700">
+      {menuOpen && (
+        <SkillMenu
+          ref={menu}
+          query={slash}
+          onClose={() => setMenuClosed(true)}
+          onPick={(name) => {
+            setText(`/${name} `)
+            ref.current?.focus()
+          }}
+        />
+      )}
       {props.header}
       <textarea
         ref={ref}
@@ -60,6 +80,10 @@ export function Composer(props: {
           blurredAt.current = Date.now()
         }}
         onKeyDown={(event) => {
+          if (menuOpen && !event.nativeEvent.isComposing && menu.current?.handleKey(event)) {
+            event.preventDefault()
+            return
+          }
           if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
             event.preventDefault()
             submit()
