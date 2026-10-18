@@ -44,7 +44,15 @@ const isUi = (block: Block) => block.type === "toolCall" && block.name === "rend
 const isWork = (block: Block) => (block.type === "thinking" && block.thinking.trim() !== "") || (block.type === "toolCall" && !isUi(block))
 
 /** While the model is thinking or between steps, the status line cycles through these. */
-const PHRASES = ["Thinking", "Working through it", "Looking closer", "Connecting the dots", "Checking the details", "Putting it together"]
+/** The latest line of some thinking or notes, as plain text, for the activity row. */
+const latestLine = (text: string) =>
+  (
+    text
+      .split("\n")
+      .map((line) => line.replace(/[*_`#>]+/g, "").replace(/\s+/g, " ").trim())
+      .filter(Boolean)
+      .at(-1) ?? ""
+  ).slice(-200)
 
 const duration = (ms: number) => {
   const seconds = Math.max(0, Math.round(ms / 1000))
@@ -70,7 +78,6 @@ function Activity(props: {
 }) {
   const { steps, active, results, tools } = props
   const [open, setOpen] = useState(false)
-  const [phrase, setPhrase] = useState(0)
   // Only a reply that's still going has a clock to tick; finished ones show their fixed duration.
   const now = useNow(props.running || props.endedAt === null ? 1_000 : 0)
 
@@ -78,27 +85,22 @@ function Activity(props: {
   const thoughts = steps.filter((step) => step.block.type === "thinking").length
   const failed = calls.filter((call) => results.get(call.id)?.isError).length
   const current = [...calls].reverse().find((call) => !results.has(call.id))
-  const last = steps.at(-1)
-  const thinking = last?.live && last.block.type === "thinking"
 
-  // A running tool says what it's doing; otherwise the line rotates so a long think still feels alive.
-  const rotating = active && !current
-  // Each new step starts the cycle over at "Thinking".
-  useEffect(() => setPhrase(0), [calls.length])
-  useEffect(() => {
-    if (!rotating) return
-    const timer = setInterval(() => setPhrase((index) => index + 1), 2_400)
-    return () => clearInterval(timer)
-  }, [rotating])
-
-  const status = !active
-    ? `Worked for ${duration((props.endedAt ?? now) - props.startedAt)}`
+  // What's really happening: the running tool and its arguments; else the latest line of the model's thinking or
+  // notes; else the tool it just ran.
+  const latest = [...steps].reverse().find((step) => (step.block.type === "thinking" ? step.block.thinking.trim() : step.block.type !== "text" || step.block.text.trim()))
+  const status = !active ? `Worked for ${duration((props.endedAt ?? now) - props.startedAt)}` : current ? toolActivity(current.name) : "Thinking"
+  const detail = !active
+    ? ""
     : current
-      ? toolActivity(current.name)
-      : thinking && phrase === 0
-        ? "Thinking"
-        : PHRASES[phrase % PHRASES.length]!
-  const detail = active && current ? summarize(current.arguments) : ""
+      ? summarize(current.arguments)
+      : latest?.block.type === "thinking"
+        ? latestLine(latest.block.thinking)
+        : latest?.block.type === "text"
+          ? latestLine(latest.block.text)
+          : latest?.block.type === "toolCall"
+            ? `${latest.block.name} ${summarize(latest.block.arguments)}`
+            : ""
   const counts = [
     calls.length > 0 && plural(calls.length, "tool"),
     thoughts > 0 && plural(thoughts, "thought"),
@@ -126,7 +128,7 @@ function Activity(props: {
             {status}
             {active && "…"}
           </span>
-          {detail && <span className="truncate font-mono text-zinc-500">{detail}</span>}
+          {detail && <span className={`truncate text-zinc-500 ${current || latest?.block.type === "toolCall" ? "font-mono" : "italic"}`}>{detail}</span>}
         </span>
         <span className="min-w-0 truncate text-zinc-500 tabular-nums">{counts.join(" · ")}</span>
       </button>
