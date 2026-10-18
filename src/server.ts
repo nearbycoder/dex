@@ -1,8 +1,6 @@
 import handler from "@tanstack/react-start/server-entry"
 import { routeAgentRequest } from "agents"
-import { Option } from "effect"
-import { viewerFromRequest } from "./server/auth"
-import { serverRuntime } from "./server/runtime"
+import { activeViewer } from "./server/active-session"
 
 export { DexAgent } from "./agent/dex-agent"
 
@@ -15,24 +13,35 @@ const sameOrigin = (origin: string, request: Request) => {
   }
 }
 
-/** Agent requests need a session cookie for the same user the instance belongs to. */
+/** Agent requests need a current (not revoked) session cookie for the same user the instance belongs to. */
 const authorizeAgent = (env: Env) => async (request: Request, route: { name: string }) => {
   const origin = request.headers.get("origin")
   if (origin && !sameOrigin(origin, request)) {
     return new Response("Cross-origin agent requests are not allowed", { status: 403 })
   }
-  const viewer = await serverRuntime(env).runPromise(viewerFromRequest(request))
-  if (Option.isNone(viewer)) return new Response("Unauthorized", { status: 401 })
-  if (viewer.value.id !== route.name) return new Response("Forbidden", { status: 403 })
+  const viewer = await activeViewer(request, env)
+  if (!viewer) return new Response("Unauthorized", { status: 401 })
+  if (viewer.id !== route.name) return new Response("Forbidden", { status: 403 })
 }
 
 /**
- * Images may only come from Dex itself (and GitHub avatars): a prompt-injected model could otherwise
- * leak chat content by rendering an image whose URL carries it. Dex is never framed by other sites.
- * Scripts and styles aren't restricted: TanStack Start inlines its hydration scripts.
+ * Defense in depth for a page that renders model-written content:
+ * - connect-src 'self': even injected script couldn't send chat content anywhere but Dex.
+ * - img-src: images only from Dex (and GitHub avatars), so a prompt-injected "image" URL can't leak data.
+ * - script-src 'self' 'unsafe-inline': no third-party scripts (TanStack Start inlines its hydration scripts).
+ * - frame-src: only boat.dev, for the VM desktop. Dex itself is never framed.
  */
 const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https://avatars.githubusercontent.com",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  "media-src 'self' blob:",
+  "frame-src https://boat.dev https://*.boat.dev",
+  "worker-src 'self'",
+  "manifest-src 'self'",
   "frame-ancestors 'none'",
   "object-src 'none'",
   "base-uri 'self'",
@@ -47,6 +56,8 @@ const withSecurityHeaders = (response: Response, request: Request) => {
   secured.headers.set("X-Content-Type-Options", "nosniff")
   secured.headers.set("Referrer-Policy", "strict-origin-when-cross-origin")
   secured.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+  // Pages opened from Dex (links in chats) get no handle back to it, and Dex none to them.
+  secured.headers.set("Cross-Origin-Opener-Policy", "same-origin")
   if (new URL(request.url).protocol === "https:") secured.headers.set("Strict-Transport-Security", "max-age=31536000")
   return secured
 }

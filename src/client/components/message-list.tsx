@@ -1,6 +1,7 @@
 import type { AssistantMessage, ToolResultMessage } from "@earendil-works/pi-ai"
 import { Predicate } from "effect"
-import { AlertTriangle, ChevronRight, ListChecks, LoaderCircle } from "lucide-react"
+import { Link } from "@tanstack/react-router"
+import { AlertTriangle, Brain, ChevronRight, ListChecks, LoaderCircle } from "lucide-react"
 import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from "react"
 import { displayItems, type LiveTool, toolResults, type TranscriptState } from "~/client/lib/transcript"
 import { Collapse } from "./collapse"
@@ -181,6 +182,14 @@ function AssistantTurnView(props: {
   const shown = [...blocks.slice(0, lastWork + 1).filter((step) => isUi(step.block)), ...blocks.slice(lastWork + 1)]
   const final = messages.at(-1)
   const errors = messages.filter((message) => message.stopReason === "error")
+  // Memory feeds every future chat, so a change to it is never tucked away in the activity row.
+  const touchedMemory = blocks.some(({ block }) => {
+    if (block.type !== "toolCall") return false
+    const args = block.arguments as Record<string, unknown>
+    if (block.name === "write_file" || block.name === "edit_file") return /(^|\/)MEMORY\.md$/i.test(String(args.path ?? ""))
+    if (block.name === "bash") return /MEMORY\.md/i.test(String(args.command ?? "")) && /(>|\btee\b|sed\s+-i)/.test(String(args.command ?? ""))
+    return false
+  })
   // Admin operations the chat asked for stay in view until you answer them.
   const confirmations = blocks.flatMap((step) => {
     if (step.block.type !== "toolCall" || step.block.name !== "app_call") return []
@@ -200,6 +209,15 @@ function AssistantTurnView(props: {
           results={props.results}
           tools={props.tools}
         />
+      )}
+      {touchedMemory && (
+        <Link
+          to="/files"
+          className="my-1.5 inline-flex items-center gap-1.5 rounded-lg border border-sky-900/60 bg-sky-950/30 px-2.5 py-1 text-xs text-sky-200 hover:bg-sky-950/60"
+          title="Memory is added to every chat. Review what changed."
+        >
+          <Brain className="size-3.5" /> Memory updated
+        </Link>
       )}
       {confirmations.map((confirmation) => (
         <ConfirmCard key={confirmation.id} id={confirmation.id} summary={confirmation.summary} />

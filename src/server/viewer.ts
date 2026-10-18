@@ -1,8 +1,8 @@
 import { createServerFn } from "@tanstack/react-start"
 import { getRequest } from "@tanstack/react-start/server"
 import { env } from "cloudflare:workers"
-import { Effect, Option } from "effect"
-import { authOptions, viewerFromRequest } from "./auth"
+import { activeViewer } from "./active-session"
+import { authOptions } from "./auth"
 import { serverRuntime } from "./runtime"
 
 export interface Viewer {
@@ -17,19 +17,9 @@ export interface ViewerResult {
   readonly options: { readonly github: boolean; readonly devLogin: boolean; readonly password: boolean }
 }
 
-/** The signed-in user (if any) and which sign-in methods this deployment offers. */
-export const getViewer = createServerFn().handler(async (): Promise<ViewerResult> =>
-  serverRuntime(env).runPromise(
-    Effect.gen(function*() {
-      const viewer = yield* viewerFromRequest(getRequest())
-      const options = yield* authOptions
-      return {
-        viewer: Option.match(viewer, {
-          onNone: () => null,
-          onSome: ({ id, login, name, avatarUrl }) => ({ id, login, name, avatarUrl })
-        }),
-        options
-      }
-    })
-  )
-)
+/** The signed-in user (if any, with a session that hasn't been revoked) and which sign-in methods this deployment offers. */
+export const getViewer = createServerFn().handler(async (): Promise<ViewerResult> => {
+  const viewer = await activeViewer(getRequest(), env)
+  const options = await serverRuntime(env).runPromise(authOptions)
+  return { viewer: viewer && { id: viewer.id, login: viewer.login, name: viewer.name, avatarUrl: viewer.avatarUrl }, options }
+})

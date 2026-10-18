@@ -38,6 +38,7 @@ const readSavedState = (userId: string): DexState | undefined => {
 
 /** Forgets what this device kept for a quick start (signing out). */
 export function forgetSavedState() {
+  if (typeof localStorage === "undefined") return
   for (const key of Object.keys(localStorage)) if (key.startsWith("dex-state:")) localStorage.removeItem(key)
   transcripts.clear()
   clearPageCache()
@@ -49,6 +50,12 @@ export function DexProvider({ viewer, children }: { viewer: Viewer; children: Re
   const agent = useAgent<DexAgent, DexState>({
     agent: AGENT_CLASS,
     name: viewer.id,
+    // Signed out everywhere (from another device): this session no longer works, so go sign in again.
+    onClose: (event) => {
+      if (event.code !== 4001) return
+      forgetSavedState()
+      window.location.assign("/login")
+    },
     onMessage: (event) => {
       if (typeof event.data !== "string" || !event.data.startsWith('{"type":"dex.')) return
       const message: unknown = JSON.parse(event.data)

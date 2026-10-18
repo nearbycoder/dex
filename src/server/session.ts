@@ -15,7 +15,9 @@ export class SessionUser extends Schema.Class<SessionUser>("SessionUser")({
 
 const Claims = Schema.Struct({
   user: SessionUser,
-  exp: Schema.Number
+  exp: Schema.Number,
+  /** Issued at (seconds), so "sign out everywhere" can reject older sessions. Tokens from before it lack it. */
+  iat: Schema.optional(Schema.Number)
 })
 const ClaimsJson = Schema.fromJsonString(Claims)
 const decodeClaims = Schema.decodeUnknownOption(ClaimsJson)
@@ -34,7 +36,8 @@ export class Sessions extends Context.Service<Sessions, {
 
       const issue = Effect.fn("Sessions.issue")(function*(user: SessionUser) {
         const now = yield* Clock.currentTimeMillis
-        const payload = Base64Url.encode(encodeClaims({ user, exp: Math.floor(now / 1000) + SESSION_TTL_SECONDS }))
+        const iat = Math.floor(now / 1000)
+        const payload = Base64Url.encode(encodeClaims({ user, exp: iat + SESSION_TTL_SECONDS, iat }))
         const signature = yield* keys.sign(payload)
         return `${payload}.${signature}`
       })
@@ -55,4 +58,11 @@ export class Sessions extends Context.Service<Sessions, {
       return Sessions.of({ issue, verify })
     })
   )
+}
+
+/** When a token (already verified) was issued, in seconds. Older tokens without `iat` are dated from their expiry. */
+export const tokenIssuedAt = (token: string): number => {
+  const json = Base64Url.decodeString(token.split(".")[0] ?? "")
+  if (Result.isFailure(json)) return 0
+  return Option.match(decodeClaims(json.success), { onNone: () => 0, onSome: (claims) => claims.iat ?? claims.exp - SESSION_TTL_SECONDS })
 }

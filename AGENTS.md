@@ -17,6 +17,13 @@ When you add or change functionality:
 
 `npm run check:ops` fails if a callable is neither covered nor excluded, and `npm run deploy` runs it first.
 
+## Security
+
+- Every sign-in check goes through `activeViewer` (src/server/active-session.ts): cookie signature plus the agent's revocation time ("Sign out everywhere"). Use it for any new authenticated route; don't read the cookie directly.
+- Anything lasting or destructive that a chat can trigger must be an `admin` operation (it then needs the user's confirmation). Persistence counts: recurring schedules, settings, agent and project edits, MCP servers.
+- Keep the Content Security Policy in src/server.ts strict; add an origin only when a feature truly needs it.
+- Worker → agent RPC: a Durable Object keeps running its old code until it restarts, so a method added in the same deploy may not exist yet on a live instance (calls throw). Callers must tolerate that (feature-detect, or ship the agent method a deploy before its caller); `activeViewer` fails closed, so don't rename `isSessionCurrent`.
+
 ## Workflow
 
 - `npm run typecheck`, then `npm run deploy` (checks operations, builds, deploys), then commit and push to main.

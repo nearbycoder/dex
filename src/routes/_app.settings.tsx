@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router"
-import { Check, Clock, LogOut, Smartphone, Trash2, UserRound, Vibrate } from "lucide-react"
-import { useCallback, useEffect, useState } from "react"
+import { Check, Clock, LogOut, ShieldOff, Smartphone, Trash2, UserRound, Vibrate } from "lucide-react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { ClineConnect } from "~/client/components/cline-connect"
 import { GitHubConnect } from "~/client/components/github-connect"
 import { InstallApp } from "~/client/components/install-app"
@@ -35,6 +35,7 @@ function SettingsPage() {
     if (state) setInstructions(state.settings.instructions)
   }, [state?.settings.instructions])
 
+  const signOutAll = useRef<HTMLFormElement>(null)
   const listSchedules = useCallback(() => stub.listScheduledPrompts() as Promise<ScheduledPrompt[]>, [stub])
   const { data: schedules, refresh: loadSchedules } = useCachedFetch("schedules", listSchedules, connected)
 
@@ -141,6 +142,28 @@ function SettingsPage() {
           <form method="post" action="/auth/logout" onSubmit={forgetSavedState}>
             <button type="submit" className="flex items-center gap-1.5 rounded-lg border border-zinc-700 px-3 py-1.5 text-sm hover:bg-zinc-800">
               <LogOut className="size-4" /> Sign out
+            </button>
+          </form>
+        </Row>
+        <Row
+          icon={<ShieldOff className="size-4" />}
+          label="Sign out everywhere"
+          info="Ends every session on every device, including this one. Use it if a device is lost or your password may have leaked."
+        >
+          <form
+            ref={signOutAll}
+            method="post"
+            action="/auth/logout"
+            onSubmit={async (event) => {
+              event.preventDefault()
+              if (!confirm("Sign out of Dex on every device, including this one?")) return
+              await stub.signOutEverywhere().catch(() => undefined)
+              forgetSavedState()
+              signOutAll.current?.submit()
+            }}
+          >
+            <button type="submit" className="rounded-lg px-3 py-1.5 text-sm text-zinc-400 hover:bg-zinc-800 hover:text-red-400">
+              Sign out all
             </button>
           </form>
         </Row>

@@ -3,7 +3,7 @@ import { MessageSquarePlus } from "lucide-react"
 import { useEffect } from "react"
 import { Sidebar } from "~/client/components/sidebar"
 import { ShellSkeleton } from "~/client/components/skeleton"
-import { DexProvider } from "~/client/lib/dex"
+import { DexProvider, forgetSavedState } from "~/client/lib/dex"
 import { MenuButton, NavContext, useNavState, useVisualViewportHeight } from "~/client/lib/mobile-nav"
 import { useHaptics } from "~/client/lib/haptics"
 import { getViewer, type ViewerResult } from "~/server/viewer"
@@ -25,6 +25,8 @@ export const Route = createFileRoute("/_app")({
     })
     if (!viewer) {
       signedIn = undefined
+      // Signed out, expired, or revoked: don't leave this account's chats on the device.
+      forgetSavedState()
       throw redirect({ to: "/login" })
     }
     return { viewer }

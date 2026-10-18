@@ -100,7 +100,8 @@ export const EXCLUDED: Readonly<Record<string, string>> = {
   vmDesktopUrl: "A desktop URL lets whoever holds it control the VM; only the signed-in app opens one.",
   createAccessToken: "Access is granted only by the signed-in user, so no token can mint more access.",
   revokeAccessToken: "Access is managed only by the signed-in user.",
-  resolvePendingAction: "Confirming an admin operation must come from the user, not from an agent."
+  resolvePendingAction: "Confirming an admin operation must come from the user, not from an agent.",
+  signOutEverywhere: "Sessions are managed only by the signed-in user."
 }
 
 const define = <P extends TSchema>(operation: Operation<P>): Operation => operation as unknown as Operation
@@ -703,12 +704,14 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     run: async (host, args) => host.vmDestroy(args.vm_key)
   }),
 
-  // Scheduling (chats have native schedule tools)
+  // Scheduling (chats schedule one-off prompts with their native tool; recurring ones come here)
   define({
     name: "app_schedule_prompt",
-    description: "Schedule a prompt: once at a time (ISO 8601), after a delay, or on a cron schedule (UTC). Runs in the given chat, or a new chat each time.",
-    risk: "write",
-    inChats: false,
+    description:
+      "Schedule a prompt: once at a time (ISO 8601), after a delay, or on a cron schedule (UTC). Runs in the given chat, or a new chat each time. " +
+      "Recurring (cron) schedules need the user's confirmation: they keep running on their own.",
+    // A recurring schedule outlives the chat that made it, so it's confirmed like other lasting changes.
+    risk: (args) => (args.cron ? "admin" : "write"),
     parameters: Type.Object({
       prompt: Type.String({ minLength: 1, maxLength: 20_000 }),
       at: Type.Optional(Type.String({ maxLength: 40 })),
@@ -717,7 +720,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
       session_id: Type.Optional(id("Run in this chat; omit for a new chat each time."))
     }),
     covers: [],
-    summarize: (args) => `Schedule ${quote(args.prompt)}`,
+    summarize: (args) => (args.cron ? `Run ${quote(args.prompt)} on schedule ${args.cron} (UTC), until cancelled` : `Schedule ${quote(args.prompt)}`),
     run: async (host, args) => {
       const choices = [args.at, args.delay_seconds, args.cron].filter((value) => value !== undefined)
       if (choices.length !== 1) throw new Error("Give exactly one of at, delay_seconds, or cron.")
