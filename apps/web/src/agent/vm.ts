@@ -11,6 +11,39 @@ const BOOT_TIMEOUT_MS = 4 * 60_000
 /** boat's own auto-stop deadline sits this far past the idle timeout: a fallback in case the agent is down. */
 const SAFETY_SECONDS = 15 * 60
 
+/**
+ * The end of every screenshot command: prints the screen size, then the desktop as a JPEG scaled to fit 1280px, in
+ * base64, so a screenshot is one request. ffmpeg grabs and scales in one step (~150 ms); scrot and ImageMagick are the
+ * fallback. Expects DISPLAY, W, H, and L (the longer side) to be set.
+ */
+const CAPTURE = `if [ "$L" -gt 1280 ]; then SW=$(( W * 1280 / L / 2 * 2 )); else SW=$W; fi
+echo "$W $H"
+if command -v ffmpeg > /dev/null; then
+  ffmpeg -loglevel error -f x11grab -video_size "\${W}x\${H}" -i "$DISPLAY" -frames:v 1 -vf "scale=\${SW}:-2" -q:v 5 -f image2 -c:v mjpeg - | base64 -w0
+else
+  scrot -o /tmp/dex-shot.png && convert /tmp/dex-shot.png -resize "\${SW}x" -quality 70 jpg:- | base64 -w0
+fi`
+
+/** The start of a desktop command: the screen size, for capturing and for mapping screenshot coordinates. */
+export const DESKTOP_PRELUDE = `export DISPLAY=:0
+G=$(xdotool getdisplaygeometry); W=\${G% *}; H=\${G#* }; L=$(( W > H ? W : H ))`
+
+export interface Screenshot {
+  readonly data: string
+  readonly width: number
+  readonly height: number
+  /** The image is the screen scaled by this (1 when the screen fits 1280px). */
+  readonly scale: number
+}
+
+const parseShot = (stdout: string): Screenshot => {
+  const newline = stdout.indexOf("\n")
+  const [width = 1920, height = 1080] = stdout.slice(0, newline).trim().split(/\s+/).map(Number)
+  const data = stdout.slice(newline + 1).trim()
+  if (!data) throw new Error("The screenshot came back empty")
+  return { data, width, height, scale: Math.min(1, 1280 / Math.max(width, height)) }
+}
+
 /** Where Dex's Worker reaches a VM's Selkies: boat's private port URL, with the cookie and login it needs. */
 export interface DesktopUpstream {
   readonly origin: string
@@ -738,24 +771,31 @@ export class VmManager {
 
   /** A JPEG of the VM's desktop scaled to fit 1280px, with the real screen size for mapping clicks. */
   private async screenshotUntracked(actor: VmActivity["actor"], signal?: AbortSignal) {
+    return this.desktopUntracked("", "screenshot", actor, signal)
+  }
+
+  /**
+   * Runs `actions` on the desktop (xdotool, with W/H/L and DISPLAY set; see DESKTOP_PRELUDE), then returns a
+   * screenshot, all in one request: what each computer-use step costs is one round trip, not three.
+   */
+  private async desktopUntracked(actions: string, title: string, actor: VmActivity["actor"], signal?: AbortSignal, env?: string | null) {
     const sandbox = await this.ensureRunning(undefined, signal)
-    return this.logged(actor, "screenshot", "screenshot", async () => {
-      const shot = await this.host.run(
-        BoatClient.use((client) =>
-          client.exec(
-            sandbox.id,
-            "export DISPLAY=:0 && xdotool getdisplaygeometry && scrot -o /tmp/dex-shot.png && convert /tmp/dex-shot.png -resize '1280x1280>' -quality 70 /tmp/dex-shot.jpg",
-            { timeoutSeconds: 30 }
-          )
-        ),
-        signal
-      )
-      if (shot.exitCode !== 0) throw new Error(`Screenshot failed: ${shot.stderr ?? ""}`)
-      const [width = 1920, height = 1080] = (shot.stdout ?? "").trim().split(/\s+/).map(Number)
-      const file = await this.host.run(BoatClient.use((client) => client.readFile(sandbox.id, "/tmp/dex-shot.jpg", "base64")), signal)
-      const scale = Math.min(1, 1280 / Math.max(width, height))
-      return { data: file.content, width, height, scale }
+    return this.logged(actor, "screenshot", title, async () => {
+      let script = `${DESKTOP_PRELUDE}\n${actions}\n${CAPTURE}`
+      // Secrets typed on the desktop arrive as environment variables from a file the command sources and deletes.
+      if (env) {
+        const file = `/tmp/.dex-env-${crypto.randomUUID()}`
+        await this.host.run(BoatClient.use((client) => client.writeFile(sandbox.id, file, env)), signal)
+        script = `. ${file}; rm -f ${file}\n${script}`
+      }
+      const shot = await this.host.run(BoatClient.use((client) => client.exec(sandbox.id, script, { timeoutSeconds: 60 })), signal)
+      if (shot.exitCode !== 0) throw new Error(`Desktop command failed: ${this.host.mask(this.key, (shot.stderr || shot.stdout || "").slice(-500))}`)
+      return parseShot(shot.stdout ?? "")
     }, (shot) => `${shot.width}×${shot.height}`)
+  }
+
+  desktop(...args: Parameters<VmManager["desktopUntracked"]>) {
+    return this.track(() => this.desktopUntracked(...args))
   }
 
   exec(...args: Parameters<VmManager["execUntracked"]>) {

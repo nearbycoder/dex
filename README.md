@@ -58,7 +58,7 @@
 </table>
 
 - A chat gets its own Ubuntu VM ([boat.dev](https://boat.dev): root, Docker, Node, Bun, Python, Chrome, and a desktop) the first time the model needs one. Plain questions never start one.
-- **Tools:** `vm_exec` (output streams live), `vm_screenshot` (the agent sees the desktop and clicks and types with `xdotool`), `vm_read_file` / `vm_write_file`, `vm_expose_port` (token-protected URLs), `share_media`, `vm_stop`.
+- **Tools:** `vm_exec` (output streams live), `vm_computer` (click, type, press keys, scroll, or drag on the desktop and get a fresh screenshot back in the same call, with coordinates in the screenshot's own pixels), `vm_screenshot` (one request, captured with ffmpeg), `vm_read_file` / `vm_write_file`, `vm_expose_port` (token-protected URLs), `share_media`, `vm_stop`.
 - **The Machine page** shows the live desktop and every command as it happens. Take control of the desktop, run your own commands, open ports, re-run setup, or stop the agent mid-run to take over.
 - **Watch while you chat:** while a chat's VM runs, a small floating button opens a picture-in-picture window of its live desktop. Drag the button or the window anywhere, resize the window from a corner (it stays 16:9), and both stay where you leave them. It's for watching, and closing it stops the stream; the Machine page is where you take control.
 - **The desktop streams three ways:** boat's Stream player (Chrome), [Selkies](https://github.com/selkies-project/selkies) (H.264 over a WebSocket, decoded by WebCodecs, so it plays on iPhone and iPad too, and the default wherever Stream can't play), or noVNC. Selkies' client ships with Dex and the stream is relayed by the Worker, which adds the VM's port cookie and password, so neither reaches the browser.
