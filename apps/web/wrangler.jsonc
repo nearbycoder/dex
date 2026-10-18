@@ -6,6 +6,8 @@
   "compatibility_flags": ["nodejs_compat"],
   "upload_source_maps": true,
   "observability": { "enabled": true },
+  // The build's static files, for the few the Worker serves itself (the landing page's tour, with byte ranges).
+  "assets": { "binding": "ASSETS" },
   // Workers AI: powers the web_fetch and web_search tools.
   "ai": { "binding": "AI" },
   // One DexAgent per user. Pi Durable keeps every chat in the object's SQLite.

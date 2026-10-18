@@ -5,8 +5,11 @@
 // clearing the page cache first. API calls, sign-in, the agent socket, and the VM desktop are never cached.
 const CACHE = "dex-static-v2"
 const PAGES = "dex-pages-v1"
-/** Never served from the page cache: sign-in flows, APIs, the VM desktop page, and the offline screen. */
-const UNCACHED_PAGES = /^\/(auth|api|vm-desktop|login|offline)(\/|$)/
+/**
+ * Never served from the page cache: the landing page (it sends signed-in visitors on to their chats), sign-in flows,
+ * APIs, the VM desktop page, and the offline screen.
+ */
+const UNCACHED_PAGES = /^\/($|(auth|api|vm-desktop|login|offline)(\/|$))/
 const SHELL = ["/offline", "/favicon.svg", "/icon-192.png"]
 
 /** Each deploy adds new fingerprinted files; keep the most recent ones so the cache doesn't grow forever. */

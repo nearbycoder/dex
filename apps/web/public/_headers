@@ -5,6 +5,8 @@
 # Icons and model logos change rarely; a day is plenty.
 /models/*
   Cache-Control: public, max-age=86400
+/landing/*
+  Cache-Control: public, max-age=86400
 /icon-*
   Cache-Control: public, max-age=86400
 /badge-96.png

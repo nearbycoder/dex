@@ -178,6 +178,7 @@
   - What you send shows at once, before the agent has recorded it.
   - The agent batches and dedupes the updates it sends.
 - **Always current:** after a deploy, the first page load restarts a long-running agent onto the new code.
+- **A landing page** at `/` for signed-out visitors shows what Dex does with the app's own screenshots and the tour; signed in, `/` goes straight to your chats.
 - **Sign in** with GitHub (allowlisted logins), an owner password, or a local dev login. **Sign out everywhere** revokes every session on every device.
 
 ## Repository

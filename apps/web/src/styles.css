@@ -251,3 +251,21 @@ button:not(.w-full, [data-no-press]):active:not(:disabled) {
   padding: 0;
   font-size: inherit;
 }
+
+/* The landing page's sections rise in as they scroll into view, where the browser can drive that from the scroll
+   itself; elsewhere (and with reduced motion) they're simply there. */
+@keyframes dex-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+}
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .dex-reveal {
+      animation: dex-reveal linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 35%;
+    }
+  }
+}
