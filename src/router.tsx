@@ -1,5 +1,5 @@
 import { createRouter } from "@tanstack/react-router"
-import { PageSkeleton } from "./client/components/skeleton"
+import { CurrentRouteSkeleton } from "./client/components/skeleton"
 import { routeTree } from "./routeTree.gen"
 
 export function getRouter() {
@@ -9,7 +9,7 @@ export function getRouter() {
     defaultPreload: "intent",
     // Pages render from the agent's synced state, so nothing waits on loaders. A page whose code is still on its way
     // after 100ms shows its skeleton (for at least 200ms, so it doesn't flash); usually the code is preloaded.
-    defaultPendingComponent: () => <PageSkeleton />,
+    defaultPendingComponent: CurrentRouteSkeleton,
     defaultPendingMs: 100,
     defaultPendingMinMs: 200,
     // Cross-fades pages where the browser supports View Transitions (styled in styles.css).

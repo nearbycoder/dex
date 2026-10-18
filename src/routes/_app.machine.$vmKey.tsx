@@ -20,7 +20,7 @@ import {
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
 import { AgentAvatar } from "~/client/components/agent-avatar"
 import { Collapse } from "~/client/components/collapse"
-import { Lines, PageSkeleton } from "~/client/components/skeleton"
+import { ActivityRowsSkeleton, MachineSkeleton } from "~/client/components/skeleton"
 import { idleText, useNow, useVmLabel, VM_STATUS } from "~/client/components/vm-status"
 import { useCachedFetch } from "~/client/lib/cache"
 import { useDex } from "~/client/lib/dex"
@@ -285,7 +285,7 @@ function MachinePage() {
     feedEnd.current?.scrollIntoView({ block: "end" })
   }, [activity?.length])
 
-  if (!state) return <PageSkeleton variant="sections" />
+  if (!state) return <MachineSkeleton />
   const { settings } = state
   const running = vm?.status === "running"
 
@@ -443,11 +443,7 @@ function MachinePage() {
             }
           >
             <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
-              {!activity && (
-                <div className="space-y-3 p-4">
-                  <Lines count={4} />
-                </div>
-              )}
+              {!activity && <ActivityRowsSkeleton />}
               {activity?.length === 0 && <p className="p-4 text-xs text-zinc-600">No activity yet.</p>}
               {activity?.map((item, index) => (
                 <ActivityItem key={item.id} item={item} defaultOpen={index === activity!.length - 1} />

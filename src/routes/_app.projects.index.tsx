@@ -43,7 +43,7 @@ function ProjectsPage() {
           </Link>
         )}
         {!state ? (
-          <CardGridSkeleton />
+          <CardGridSkeleton kind="project" />
         ) : projects.length === 0 ? (
           <p className="rounded-xl border border-dashed border-zinc-800 px-4 py-6 text-center text-sm text-zinc-500">
             No projects yet. Add your repos and a setup script, then start chats that are ready to work.

@@ -24,6 +24,10 @@ When you add or change functionality:
 - Keep the Content Security Policy in src/server.ts strict; add an origin only when a feature truly needs it.
 - Worker → agent RPC: a Durable Object keeps running its old code until it restarts, so a method added in the same deploy may not exist yet on a live instance (calls throw). Callers must tolerate that (feature-detect, or ship the agent method a deploy before its caller); `activeViewer` fails closed, so don't rename `isSessionCurrent`.
 
+## Skeletons
+
+Each page has a skeleton in src/client/components/skeleton.tsx built from that page's real spacing and line heights (bones sit in line boxes: `LineBone`), shown while state or page data loads, during slow page loads (`CurrentRouteSkeleton`), and on a cold launch (`ShellSkeleton`, by route). When you change a page's layout, update its skeleton. To compare them in development, run `sessionStorage.setItem("dex-skeleton", "1")` in the browser and reload: the app then behaves as if nothing has loaded.
+
 ## Deploys and stale agents
 
 A busy agent (running VMs schedule an idle check every minute; open sockets and test scripts keep it warm) can keep serving the previous build for a long time after `npm run deploy`. Check `state.build` (the agent's build time, from `__DEX_BUILD__`) in the synced state before testing a change on production; if it's old, let the agent go idle (stop VMs, close sockets) and check again.

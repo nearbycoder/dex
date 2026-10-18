@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
+import { skeletonPreview } from "./skeleton-preview"
 
 /**
  * Data a page fetches from the agent (usage, files, schedules, VM activity), remembered for this page load: going
@@ -55,5 +56,5 @@ export function useCachedFetch<T>(key: string | null, load: () => Promise<T>, en
     if (enabled) void refresh()
   }, [enabled, refresh])
 
-  return { data, loading, error, refresh, setData }
+  return { data: skeletonPreview() ? undefined : data, loading, error, refresh, setData }
 }

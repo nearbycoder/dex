@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { Bot, Check, Copy, KeyRound, LoaderCircle, Plug, ShieldAlert, Trash2, X } from "lucide-react"
 import { useEffect, useState } from "react"
-import { PageSkeleton } from "~/client/components/skeleton"
+import { AccessSkeleton } from "~/client/components/skeleton"
 import { Page, Section } from "~/client/components/ui"
 import { useDex } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
@@ -55,7 +55,7 @@ function AccessPage() {
 
   useEffect(() => setOrigin(window.location.origin), [])
 
-  if (!state) return <PageSkeleton variant="sections" />
+  if (!state) return <AccessSkeleton />
   const { access } = state
   const endpoint = `${origin}/api/mcp`
   const pending = access.pending.filter((action) => action.status === "pending" && Date.now() - action.createdAt < 3_600_000)

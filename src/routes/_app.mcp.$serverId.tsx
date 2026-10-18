@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { ArrowLeft, LoaderCircle, Plus, Trash2, X } from "lucide-react"
 import { type ReactNode, useEffect, useState } from "react"
 import { McpStatusDot } from "~/client/components/mcp-picker"
-import { PageSkeleton } from "~/client/components/skeleton"
+import { EditorSkeleton } from "~/client/components/skeleton"
 import { InfoTip } from "~/client/components/info-tip"
 import { useDex } from "~/client/lib/dex"
 import { AUTH_ICON, AUTH_LABEL, followConnect } from "~/client/lib/mcp"
@@ -83,7 +83,7 @@ function McpEditor() {
     }
   }, [state, existing, isNew, draft, templateId])
 
-  if (!state) return <PageSkeleton variant="form" />
+  if (!state) return <EditorSkeleton kind="mcp" />
   if (!isNew && !existing) {
     return (
       <div className="p-8 text-sm text-zinc-500">

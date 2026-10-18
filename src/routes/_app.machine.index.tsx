@@ -171,7 +171,7 @@ function MachinesPage() {
       <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto max-w-4xl px-4 pt-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] md:pt-8">
           {!state ? (
-            <CardGridSkeleton columns="md:grid-cols-2" />
+            <CardGridSkeleton kind="machine" count={2} columns="md:grid-cols-2" />
           ) : !state.vmConfigured ? (
             <p className="mx-auto max-w-lg p-8 text-sm text-zinc-400">
               No VM provider is configured. Set the <code className="text-zinc-200">BOAT_API_KEY</code> secret to give Dex boat.dev cloud VMs.

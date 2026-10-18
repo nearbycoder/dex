@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { FolderGit2, KeyRound, Plus, Settings2, X } from "lucide-react"
 import { useEffect, useState } from "react"
 import { AgentAvatar } from "~/client/components/agent-avatar"
+import { PickersSkeleton } from "~/client/components/skeleton"
 import { Composer } from "~/client/components/composer"
 import { McpPicker } from "~/client/components/mcp-picker"
 import { ModelLogo } from "~/client/components/model-logo"
@@ -95,7 +96,11 @@ function NewChat() {
       <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-4">
         <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col justify-end pt-6 pb-4 md:pt-10">
           <h1 className="mb-5 animate-fade text-center text-2xl font-semibold tracking-tight md:text-3xl [@media(max-height:500px)]:mb-3 [@media(max-height:500px)]:text-xl">
-            {agent ? `What should ${agent.name} do${project ? ` in ${project.name}` : ""}?` : project ? `What should Dex do in ${project.name}?` : "What should Dex do?"}
+            {agent
+              ? `What should ${agent.name} do${project ? ` in ${project.name}` : ""}?`
+              : project
+                ? `What should Dex do in ${project.name}?`
+                : "What should Dex do?"}
           </h1>
           {state && !state.cline.connected && (
             <Link
@@ -107,7 +112,8 @@ function NewChat() {
             </Link>
           )}
 
-          {projects.length > 0 && (
+          {!state && <PickersSkeleton />}
+          {state && projects.length > 0 && (
             <>
               <div className="mt-5 mb-2 flex items-center gap-2 px-1">
                 <h2 className="text-xs font-medium tracking-wide text-zinc-500 uppercase">Projects</h2>
@@ -127,7 +133,9 @@ function NewChat() {
                       aria-pressed={selected}
                       title={candidate.description || candidate.name}
                       className={`flex max-w-full animate-rise items-center gap-2 rounded-lg border py-1.5 pr-3 pl-1.5 text-sm ${
-                        selected ? "border-emerald-600/70 bg-emerald-950/30 text-zinc-100" : "border-zinc-800/80 text-zinc-300 hover:border-zinc-700 hover:bg-zinc-900/60"
+                        selected
+                          ? "border-emerald-600/70 bg-emerald-950/30 text-zinc-100"
+                          : "border-zinc-800/80 text-zinc-300 hover:border-zinc-700 hover:bg-zinc-900/60"
                       }`}
                     >
                       <AgentAvatar icon={candidate.icon} color={candidate.color} size={24} />
@@ -149,50 +157,56 @@ function NewChat() {
             </>
           )}
 
-          <div className="mt-5 mb-2 flex items-center gap-2 px-1">
-            <h2 className="text-xs font-medium tracking-wide text-zinc-500 uppercase">Agents</h2>
-            <Link to="/agents" className="ml-auto flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-200">
-              <Settings2 className="size-3.5" /> Manage
-            </Link>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            {agents.map((candidate, index) => {
-              const selected = candidate.id === agentId
-              return (
-                <button
-                  key={candidate.id}
-                  style={{ animationDelay: `${Math.min(index, 12) * 35}ms` }}
-                  type="button"
-                  onClick={() => pick(candidate)}
-                  aria-pressed={selected}
-                  className={`flex min-w-0 animate-rise items-start gap-2.5 rounded-xl border p-2.5 text-left sm:gap-3 sm:px-3.5 sm:py-3 ${
-                    selected ? "border-emerald-600/70 bg-emerald-950/30" : "border-zinc-800/80 hover:border-zinc-700 hover:bg-zinc-900/60"
-                  }`}
+          {state && (
+            <>
+              <div className="mt-5 mb-2 flex items-center gap-2 px-1">
+                <h2 className="text-xs font-medium tracking-wide text-zinc-500 uppercase">Agents</h2>
+                <Link to="/agents" className="ml-auto flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-200">
+                  <Settings2 className="size-3.5" /> Manage
+                </Link>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {agents.map((candidate, index) => {
+                  const selected = candidate.id === agentId
+                  return (
+                    <button
+                      key={candidate.id}
+                      style={{ animationDelay: `${Math.min(index, 12) * 35}ms` }}
+                      type="button"
+                      onClick={() => pick(candidate)}
+                      aria-pressed={selected}
+                      className={`flex min-w-0 animate-rise items-start gap-2.5 rounded-xl border p-2.5 text-left sm:gap-3 sm:px-3.5 sm:py-3 ${
+                        selected ? "border-emerald-600/70 bg-emerald-950/30" : "border-zinc-800/80 hover:border-zinc-700 hover:bg-zinc-900/60"
+                      }`}
+                    >
+                      <AgentAvatar icon={candidate.icon} color={candidate.color} size={32} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-zinc-100">{candidate.name}</span>
+                        <span className="mt-0.5 line-clamp-2 hidden text-xs leading-relaxed text-zinc-500 sm:block">
+                          {candidate.description || "Custom agent"}
+                        </span>
+                        <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[11px] text-zinc-500 sm:mt-1.5">
+                          <ModelLogo modelId={candidate.model} className="size-3" />
+                          <span className="truncate">{findModel(candidate.model)?.name ?? candidate.model}</span>
+                        </span>
+                      </span>
+                    </button>
+                  )
+                })}
+                <Link
+                  to="/agents/$agentId"
+                  params={{ agentId: "new" }}
+                  style={{ animationDelay: `${Math.min(agents.length, 12) * 35}ms` }}
+                  className="flex animate-rise items-center gap-2.5 rounded-xl border border-dashed border-zinc-800 p-2.5 text-sm text-zinc-500 hover:border-zinc-700 hover:text-zinc-200 sm:gap-3 sm:px-3.5 sm:py-3"
                 >
-                  <AgentAvatar icon={candidate.icon} color={candidate.color} size={32} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-zinc-100">{candidate.name}</span>
-                    <span className="mt-0.5 line-clamp-2 hidden text-xs leading-relaxed text-zinc-500 sm:block">{candidate.description || "Custom agent"}</span>
-                    <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[11px] text-zinc-500 sm:mt-1.5">
-                      <ModelLogo modelId={candidate.model} className="size-3" />
-                      <span className="truncate">{findModel(candidate.model)?.name ?? candidate.model}</span>
-                    </span>
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-[10px] border border-zinc-800">
+                    <Plus className="size-4" />
                   </span>
-                </button>
-              )
-            })}
-            <Link
-              to="/agents/$agentId"
-              params={{ agentId: "new" }}
-              style={{ animationDelay: `${Math.min(agents.length, 12) * 35}ms` }}
-              className="flex animate-rise items-center gap-2.5 rounded-xl border border-dashed border-zinc-800 p-2.5 text-sm text-zinc-500 hover:border-zinc-700 hover:text-zinc-200 sm:gap-3 sm:px-3.5 sm:py-3"
-            >
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-[10px] border border-zinc-800">
-                <Plus className="size-4" />
-              </span>
-              New agent
-            </Link>
-          </div>
+                  New agent
+                </Link>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -208,19 +222,36 @@ function NewChat() {
             (agent || project) && (
               <div className="flex flex-wrap items-center gap-2 px-3 pt-3">
                 {project && (
-                  <span key={project.id} className="flex min-w-0 animate-pop items-center gap-2 rounded-full border border-zinc-700/80 bg-zinc-800/60 py-1 pr-1 pl-1 text-xs text-zinc-200" title="This chat's VM starts now, with the project's repos cloned">
+                  <span
+                    key={project.id}
+                    className="flex min-w-0 animate-pop items-center gap-2 rounded-full border border-zinc-700/80 bg-zinc-800/60 py-1 pr-1 pl-1 text-xs text-zinc-200"
+                    title="This chat's VM starts now, with the project's repos cloned"
+                  >
                     <AgentAvatar icon={project.icon} color={project.color} size={20} />
                     <span className="truncate">{project.name}</span>
-                    <button type="button" onClick={() => pickProject(null)} title="No project" className="rounded-full p-0.5 text-zinc-500 hover:text-zinc-200">
+                    <button
+                      type="button"
+                      onClick={() => pickProject(null)}
+                      title="No project"
+                      className="rounded-full p-0.5 text-zinc-500 hover:text-zinc-200"
+                    >
                       <X className="size-3.5" />
                     </button>
                   </span>
                 )}
                 {agent && (
-                  <span key={agent.id} className="flex min-w-0 animate-pop items-center gap-2 rounded-full border border-zinc-700/80 bg-zinc-800/60 py-1 pr-1 pl-1 text-xs text-zinc-200">
+                  <span
+                    key={agent.id}
+                    className="flex min-w-0 animate-pop items-center gap-2 rounded-full border border-zinc-700/80 bg-zinc-800/60 py-1 pr-1 pl-1 text-xs text-zinc-200"
+                  >
                     <AgentAvatar icon={agent.icon} color={agent.color} size={20} />
                     <span className="truncate">{agent.name}</span>
-                    <button type="button" onClick={() => pick(null)} title="Use no agent" className="rounded-full p-0.5 text-zinc-500 hover:text-zinc-200">
+                    <button
+                      type="button"
+                      onClick={() => pick(null)}
+                      title="Use no agent"
+                      className="rounded-full p-0.5 text-zinc-500 hover:text-zinc-200"
+                    >
                       <X className="size-3.5" />
                     </button>
                   </span>

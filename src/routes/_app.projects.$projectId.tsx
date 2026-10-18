@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { ArrowLeft, Check, LoaderCircle, MessageSquarePlus, Plus, Trash2, X } from "lucide-react"
 import { type ReactNode, useEffect, useState } from "react"
 import { AGENT_ICON_COMPONENTS, AgentAvatar } from "~/client/components/agent-avatar"
-import { PageSkeleton } from "~/client/components/skeleton"
+import { EditorSkeleton } from "~/client/components/skeleton"
 import { InfoTip } from "~/client/components/info-tip"
 import { useDex } from "~/client/lib/dex"
 import { AGENT_COLORS, AGENT_ICONS, type AgentColor } from "~/shared/agents"
@@ -63,7 +63,7 @@ function ProjectEditor() {
     else if (existing) setDraft({ ...existing, repos: existing.repos.length ? existing.repos : blank.repos })
   }, [state, existing, isNew, draft])
 
-  if (!state) return <PageSkeleton variant="form" />
+  if (!state) return <EditorSkeleton kind="project" />
   if (!isNew && !existing) {
     return (
       <div className="p-8 text-sm text-zinc-500">

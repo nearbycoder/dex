@@ -163,7 +163,7 @@ function McpPage() {
         )}
 
         {!state ? (
-          <CardGridSkeleton count={3} columns="" />
+          <CardGridSkeleton kind="mcp" count={3} columns="" />
         ) : servers.length === 0 ? (
           <p className="rounded-xl border border-dashed border-zinc-800 px-4 py-6 text-center text-sm text-zinc-500">
             No MCP servers yet. Add one below or by URL.

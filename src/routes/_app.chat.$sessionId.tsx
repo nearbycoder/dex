@@ -6,7 +6,7 @@ import { MessageList } from "~/client/components/message-list"
 import { McpPicker } from "~/client/components/mcp-picker"
 import { ModelPicker } from "~/client/components/model-picker"
 import { AgentAvatar } from "~/client/components/agent-avatar"
-import { ChatSkeleton } from "~/client/components/skeleton"
+import { Bone, ChatSkeleton } from "~/client/components/skeleton"
 import { useDex, useTranscript } from "~/client/lib/dex"
 import { MenuButton } from "~/client/lib/mobile-nav"
 
@@ -44,7 +44,7 @@ function Chat() {
         )}
         {editing === null ? (
           <button type="button" onClick={() => setEditing(session?.title ?? "")} className="group flex min-w-0 items-center gap-2">
-            <span className="truncate text-sm font-medium">{session?.title ?? "…"}</span>
+            {session ? <span className="truncate text-sm font-medium">{session.title}</span> : <Bone className="h-4 w-44" />}
             <Pencil className="size-3 shrink-0 text-zinc-600 opacity-0 group-hover:opacity-100" />
           </button>
         ) : (

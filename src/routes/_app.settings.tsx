@@ -5,7 +5,7 @@ import { ClineConnect } from "~/client/components/cline-connect"
 import { GitHubConnect } from "~/client/components/github-connect"
 import { InstallApp } from "~/client/components/install-app"
 import { ModelPicker } from "~/client/components/model-picker"
-import { PageSkeleton, RowsSkeleton } from "~/client/components/skeleton"
+import { RowsSkeleton, SettingsSkeleton } from "~/client/components/skeleton"
 import { useCachedFetch } from "~/client/lib/cache"
 import { Field, inputClass, Page, Row, Section, Switch } from "~/client/components/ui"
 import { forgetSavedState, useDex } from "~/client/lib/dex"
@@ -39,7 +39,7 @@ function SettingsPage() {
   const listSchedules = useCallback(() => stub.listScheduledPrompts() as Promise<ScheduledPrompt[]>, [stub])
   const { data: schedules, refresh: loadSchedules } = useCachedFetch("schedules", listSchedules, connected)
 
-  if (!state) return <PageSkeleton variant="sections" />
+  if (!state) return <SettingsSkeleton />
 
   return (
     <Page title="Settings">

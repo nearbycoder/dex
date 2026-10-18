@@ -5,6 +5,7 @@ import type { DexAgent } from "~/agent/dex-agent"
 import type { Viewer } from "~/server/viewer"
 import { AGENT_CLASS, type ClientMessage, type DexState, isServerMessage, type ServerMessage, withStateDefaults } from "~/shared/protocol"
 import { clearPageCache } from "./cache"
+import { skeletonPreview } from "./skeleton-preview"
 import { clearNotifications } from "./push"
 import { applyEvent, emptyTranscript, fromSnapshot, type TranscriptState } from "./transcript"
 
@@ -71,7 +72,7 @@ export function DexProvider({ viewer, children }: { viewer: Viewer; children: Re
 
   const [saved] = useState(() => readSavedState(viewer.id))
   const live = useMemo(() => agent.state && withStateDefaults(agent.state), [agent.state])
-  const state = live ?? saved
+  const state = skeletonPreview() ? undefined : (live ?? saved)
 
   // Saved a moment after it settles, not on every streamed change.
   useEffect(() => {
@@ -102,7 +103,7 @@ export function DexProvider({ viewer, children }: { viewer: Viewer; children: Re
     return () => document.removeEventListener("visibilitychange", report)
   }, [agent.identified, send, sessionId])
   const value = useMemo<DexContextValue>(
-    () => ({ viewer, state, connected: agent.identified, stub: agent.stub, send, listen }),
+    () => ({ viewer, state, connected: agent.identified && !skeletonPreview(), stub: agent.stub, send, listen }),
     [viewer, state, agent.identified, agent.stub, send, listen]
   )
   return <DexContext.Provider value={value}>{children}</DexContext.Provider>
@@ -160,7 +161,7 @@ export function useTranscript(sessionId: string) {
     sessionId,
     (id) => ({ id, transcript: cachedOr(id) })
   )
-  const state = tagged.id === sessionId ? tagged.transcript : cachedOr(sessionId)
+  const state = skeletonPreview() ? emptyTranscript : tagged.id === sessionId ? tagged.transcript : cachedOr(sessionId)
 
   useEffect(() => {
     dispatch({ type: "reset", to: cachedOr(sessionId), id: sessionId })

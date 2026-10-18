@@ -34,7 +34,7 @@ function AgentsPage() {
           </Link>
         </div>
         {!state ? (
-          <CardGridSkeleton />
+          <CardGridSkeleton kind="agent" />
         ) : agents.length === 0 ? (
           <p className="text-sm text-zinc-500">No agents yet.</p>
         ) : (

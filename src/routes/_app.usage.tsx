@@ -3,7 +3,7 @@ import { BarChart3, Cloud, Cpu, RefreshCw, Sparkles, Table2 } from "lucide-react
 import { type ReactNode, useCallback, useLayoutEffect, useRef, useState } from "react"
 import { ModelLogo } from "~/client/components/model-logo"
 import { InfoTip } from "~/client/components/info-tip"
-import { Bone, Lines } from "~/client/components/skeleton"
+import { UsageSkeleton } from "~/client/components/skeleton"
 import { useCachedFetch } from "~/client/lib/cache"
 import { useDex } from "~/client/lib/dex"
 import { MenuButton } from "~/client/lib/mobile-nav"
@@ -188,35 +188,6 @@ function DailyTable({ daily }: { daily: ReadonlyArray<DailySpend> }) {
           ))}
         </tbody>
       </table>
-    </div>
-  )
-}
-
-/** The report's layout while it loads: four tiles, the chart, and a table. */
-function UsageSkeleton() {
-  return (
-    <div role="status" className="space-y-4">
-      <span className="sr-only">Loading usage…</span>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {Array.from({ length: 4 }, (_, index) => (
-          <div key={index} className="space-y-3 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-            <Bone className="h-3 w-24" />
-            <Bone className="h-7 w-20" />
-            <Bone className="h-3 w-full" />
-          </div>
-        ))}
-      </div>
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-        <Bone className="mb-4 h-4 w-32" />
-        <div className="flex h-[200px] items-end gap-[2%] pl-11">
-          {[38, 62, 25, 80, 47, 70, 33, 55, 90, 42, 66, 28].map((height, index) => (
-            <Bone key={index} className="flex-1 rounded-b-none" style={{ height: `${height}%` }} />
-          ))}
-        </div>
-      </div>
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-        <Lines count={5} />
-      </div>
     </div>
   )
 }
