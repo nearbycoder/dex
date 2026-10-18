@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { ArrowLeft, Eye, File, FilePlus, PencilLine, RefreshCw, Save, SquareTerminal, Trash2 } from "lucide-react"
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useId, useRef, useState } from "react"
 import { InfoTip } from "~/client/components/info-tip"
 import { Markdown } from "~/client/components/markdown"
 import { Bone } from "~/client/components/skeleton"
@@ -184,9 +184,7 @@ function FilesPage() {
                   </div>
                 </div>
               ) : !editing && previewKind(open.path) === "html" ? (
-                // The agent writes these files, so they're untrusted: scripts run, but in an opaque origin with no
-                // access to Dex (no cookies, storage, or same-origin requests) and no popups or top navigation.
-                <iframe title={open.path} srcDoc={open.draft} sandbox="allow-scripts" className="min-h-0 w-full flex-1 bg-white" />
+                <HtmlPreview html={open.draft} title={open.path} />
               ) : (
                 <textarea
                   value={open.draft}
@@ -230,5 +228,24 @@ function FilesPage() {
         </form>
       </div>
     </div>
+  )
+}
+
+/**
+ * An HTML file, rendered. The agent writes these files, so they're untrusted: the HTML is posted to the Worker
+ * (src/server/workspace-preview.ts), which sends it back as its own sandboxed document. Its scripts run and it may
+ * load libraries, fonts, and images from anywhere, but in an opaque origin with no access to Dex.
+ */
+function HtmlPreview({ html, title }: { html: string; title: string }) {
+  const form = useRef<HTMLFormElement>(null)
+  const target = `preview-${useId().replace(/[^a-zA-Z0-9]/g, "")}`
+  useEffect(() => form.current?.submit(), [html])
+  return (
+    <>
+      <form ref={form} method="post" action="/workspace-preview" target={target} className="hidden">
+        <input type="hidden" name="html" value={html} />
+      </form>
+      <iframe name={target} title={title} sandbox="allow-scripts allow-forms allow-popups allow-modals" className="min-h-0 w-full flex-1 bg-white" />
+    </>
   )
 }

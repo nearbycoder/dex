@@ -2,6 +2,7 @@ import handler from "@tanstack/react-start/server-entry"
 import { routeAgentRequest } from "agents"
 import { activeViewer } from "./server/active-session"
 import { serveTour, TOUR_PATH } from "./server/tour"
+import { handleWorkspacePreview, WORKSPACE_PREVIEW_PATH } from "./server/workspace-preview"
 import { handleVmDesktop, VM_DESKTOP_PREFIX } from "./server/vm-desktop"
 
 export { DexAgent } from "./agent/dex-agent"
@@ -96,6 +97,7 @@ export default {
     const { pathname } = new URL(request.url)
     if (pathname.startsWith(VM_DESKTOP_PREFIX)) return withSecurityHeaders(await handleVmDesktop(request, env), request)
     if (pathname === TOUR_PATH) return withSecurityHeaders(await serveTour(request, env), request)
+    if (pathname === WORKSPACE_PREVIEW_PATH) return withSecurityHeaders(await handleWorkspacePreview(request, env), request)
     return withSecurityHeaders(await handler.fetch(request), request)
   }
 } satisfies ExportedHandler<Env>

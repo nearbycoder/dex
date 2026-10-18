@@ -45,7 +45,7 @@
 - **Generative UI** with `render_ui` (OpenUI): cards, stat tiles, tables, charts, and forms. Markdown tables wrap at word boundaries and scroll sideways in their own frame on a phone.
 - **Tools:** `bash` over a persistent `/workspace` (a simulated shell with grep, sed, jq, sqlite3, curl), file tools, `web_search` / `web_fetch` (Workers AI), `schedule_prompt` (one-off or cron), and `use_skill`.
 - **Memory:** `/workspace/MEMORY.md` joins every chat's system prompt; edits to it are always shown in the chat.
-- **Workspace page:** browse and edit the agent's files, with Markdown rendered and HTML previewed in a sandboxed frame (scripts run with no access to Dex), plus an Edit tab for the source.
+- **Workspace page:** browse and edit the agent's files, with Markdown rendered and HTML previewed live (scripts run, and libraries, fonts, and images load from anywhere, so CDN charts work), plus an Edit tab for the source.
 - **Titles:** a chat starts with its first message as its title; tap the title to rename it, or **Regenerate title** in the chat's menu to have a fast model name it from its first and latest messages.
 - **Pinned to the latest message:** chats open at the bottom and follow new content, and a round arrow jumps back down when you've scrolled up.
 
@@ -277,6 +277,7 @@ cd ../.. && npm run deploy                    # checks operations, builds, and d
 
   Also COOP same-origin, HSTS, `nosniff`, a strict referrer policy, and a minimal Permissions-Policy. Model output is rendered without raw HTML.
 - **VM desktop relay:** `/vm-desktop/<vm>/` serves Dex's own copy of the Selkies page and relays only the stream's WebSocket and Selkies' few API paths to the VM, adding the port cookie and password itself. Anything the VM answers is made inert on Dex's origin (a sandboxing CSP, no redirects, cookies, or CORS headers; files download as attachments), so a VM taken over by a prompt-injected agent can't run script as you. The stream's port is closed to the internet by boat's firewall.
+- **Workspace HTML previews:** the page posts the file to `/workspace-preview`, which answers only signed-in, same-origin posts, with the HTML as its own document under a CSP `sandbox` (an opaque origin: no cookies, storage, or requests as you, no top navigation) that only Dex may frame.
 - **Media:** served only to its owner, for an allowlist of video, audio, and image types (never HTML, SVG, or PDF), sandboxed. VM uploads use single-use, HMAC-checked tokens.
 - **MCP access tokens:**
   - 256-bit secrets bound to their user by an HMAC, checked before any agent wakes.
