@@ -45,6 +45,25 @@ const pagePolicy = (host: string) =>
     "base-uri 'self'"
   ].join("; ")
 
+/**
+ * What may reach the VM: the stream (a WebSocket) and the Selkies sidebar's few endpoints. Anything else is refused,
+ * so a VM can't serve pages of its own under Dex's origin.
+ */
+const RELAYED = /^api\/(websockets|status|switch|upload|files(\/.*)?|print(\/.*)?)$/
+
+/**
+ * Whatever the VM answers (outside the stream) is inert on Dex's origin: the VM runs whatever the agent runs, and a
+ * prompt-injected agent could replace Selkies with its own server. No scripts, no framing, no sniffing; files are
+ * downloads. The Selkies client only reads these with fetch, which these headers don't affect.
+ */
+const INERT = {
+  "content-security-policy": "sandbox; default-src 'none'; frame-ancestors 'none'",
+  "x-content-type-options": "nosniff",
+  "cross-origin-resource-policy": "same-origin",
+  "cache-control": "no-store"
+}
+const UPSTREAM_DROPPED = ["set-cookie", "location", "refresh", "link", "access-control-allow-origin", "access-control-allow-credentials", "access-control-allow-headers", "access-control-allow-methods", "access-control-expose-headers", "content-security-policy", "content-security-policy-report-only", "x-frame-options"]
+
 /** Headers the browser sent that must not go to the VM: Dex's own cookie and anything naming Dex's host. */
 const DROPPED = ["cookie", "authorization", "host", "origin", "referer", "cf-connecting-ip", "x-forwarded-for", "x-real-ip"]
 
@@ -76,6 +95,9 @@ export async function handleVmDesktop(request: Request, env: Env): Promise<Respo
     })
   }
 
+  const upgrade = request.headers.get("upgrade")?.toLowerCase() === "websocket"
+  if (!RELAYED.test(path) || (path === "api/websockets") !== upgrade) return new Response("Not found", { status: 404 })
+
   const agent = await agentFor(env, viewer.id)
   const relay = async (upstream: DesktopUpstream) => {
     const target = new URL(`/${path}${url.search}`, upstream.origin)
@@ -96,11 +118,13 @@ export async function handleVmDesktop(request: Request, env: Env): Promise<Respo
       if (!upstream) return new Response("The VM isn't running", { status: 503 })
       response = await relay(upstream)
     }
-    if (response.status === 101 || response.webSocket) return response
-    // Nothing from the VM sets cookies on Dex's origin.
+    if (response.status === 101 || response.webSocket) return upgrade ? response : new Response("Not found", { status: 404 })
+    // No redirects from the VM: they'd make Dex's origin bounce you anywhere.
+    if (response.status >= 300 && response.status < 400) return new Response("The desktop stream sent a redirect", { status: 502 })
     const relayed = new Response(response.body, response)
-    relayed.headers.delete("set-cookie")
-    relayed.headers.set("content-security-policy", pagePolicy(url.host))
+    for (const name of UPSTREAM_DROPPED) relayed.headers.delete(name)
+    for (const [name, value] of Object.entries(INERT)) relayed.headers.set(name, value)
+    if (path.startsWith("api/files") || path.startsWith("api/print")) relayed.headers.set("content-disposition", "attachment")
     return relayed
   } catch (error) {
     // e.g. the agent is still on the build from before this deploy, which has no vmDesktopUpstream yet.

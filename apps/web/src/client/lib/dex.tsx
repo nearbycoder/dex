@@ -8,6 +8,7 @@ import { clearPageCache } from "./cache"
 import { skeletonPreview } from "./skeleton-preview"
 import { clearNotifications } from "./push"
 import { applyEvent, emptyTranscript, fromSnapshot, type TranscriptState } from "./transcript"
+import { clearTranscripts, loadTranscript, saveTranscript, setTranscriptStoreUser } from "./transcript-store"
 
 type Listener = (message: ServerMessage) => void
 
@@ -42,11 +43,13 @@ export function forgetSavedState() {
   if (typeof localStorage === "undefined") return
   for (const key of Object.keys(localStorage)) if (key.startsWith("dex-state:")) localStorage.removeItem(key)
   transcripts.clear()
+  clearTranscripts()
   clearPageCache()
 }
 
 /** One WebSocket to this user's DexAgent: synced state, RPC, and chat event streams. */
 export function DexProvider({ viewer, children }: { viewer: Viewer; children: ReactNode }) {
+  setTranscriptStoreUser(viewer.id)
   const listeners = useRef(new Set<Listener>())
   const agent = useAgent<DexAgent, DexState>({
     agent: AGENT_CLASS,
@@ -125,6 +128,7 @@ const remember = (sessionId: string, transcript: TranscriptState) => {
   if (!transcript.loaded) return
   transcripts.delete(sessionId)
   transcripts.set(sessionId, transcript)
+  saveTranscript(sessionId, transcript)
   for (const oldest of transcripts.keys()) {
     if (transcripts.size <= MAX_CACHED_TRANSCRIPTS) break
     transcripts.delete(oldest)
@@ -167,8 +171,18 @@ export function useTranscript(sessionId: string) {
   )
   const state = skeletonPreview() ? emptyTranscript : tagged.id === sessionId ? tagged.transcript : cachedOr(sessionId)
 
+  // Whether the shown copy is live (or from memory), so the device's kept copy never replaces a fresher one.
+  const shownLoaded = useRef(false)
+  shownLoaded.current = state.loaded
+
   useEffect(() => {
     dispatch({ type: "reset", to: cachedOr(sessionId), id: sessionId })
+    // Not in memory (a fresh launch): show the copy kept on this device until the agent's snapshot arrives.
+    if (!transcripts.has(sessionId)) {
+      void loadTranscript(sessionId).then((kept) => {
+        if (kept && !shownLoaded.current && !transcripts.has(sessionId)) dispatch({ type: "reset", to: kept, id: sessionId })
+      })
+    }
     return listen((message) => {
       if (message.sessionId === sessionId) dispatch({ type: "message", message, id: sessionId })
     })

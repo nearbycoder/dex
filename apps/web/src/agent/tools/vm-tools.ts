@@ -128,9 +128,11 @@ export const vmTools = (vmFor: (chatId: string) => VmManager, secrets: VmSecrets
     execute: async (args, api, context) => {
       const chatId = String(api.conversationId)
       const vm = vmFor(chatId)
+      // Everything numeric goes into the shell command, so it's coerced and clamped here too, whatever validated it.
+      const int = (value: number | undefined, max: number) => Math.min(max, Math.max(0, Math.round(Number(value) || 0)))
       const point = (x: number | undefined, y: number | undefined, what: string) => {
         if (x === undefined || y === undefined) throw new Error(`${args.action} needs ${what}.`)
-        return `X=$(map ${x}); Y=$(map ${y})`
+        return `X=$(map ${int(x, 10_000)}); Y=$(map ${int(y, 10_000)})`
       }
       // Screenshot pixels to screen pixels (see DESKTOP_PRELUDE: L is the screen's longer side).
       const lines = [`map() { awk -v v="$1" -v l="$L" 'BEGIN { s = (l > 1280) ? l / 1280 : 1; printf "%d", v * s + 0.5 }'; }`]
@@ -157,7 +159,7 @@ export const vmTools = (vmFor: (chatId: string) => VmManager, secrets: VmSecrets
         case "drag":
           lines.push(
             point(args.x, args.y, "x and y"),
-            `TX=$(map ${args.to_x ?? -1}); TY=$(map ${args.to_y ?? -1})`,
+            `TX=$(map ${int(args.to_x, 10_000)}); TY=$(map ${int(args.to_y, 10_000)})`,
             `xdotool mousemove --sync "$X" "$Y" mousedown 1 sleep 0.1 mousemove --sync "$TX" "$TY" sleep 0.1 mouseup 1`
           )
           if (args.to_x === undefined || args.to_y === undefined) throw new Error("drag needs to_x and to_y.")
@@ -180,18 +182,18 @@ export const vmTools = (vmFor: (chatId: string) => VmManager, secrets: VmSecrets
           title = `key ${args.keys.trim()}`
           break
         case "scroll": {
-          const button = { up: 4, down: 5, left: 6, right: 7 }[args.direction ?? "down"]
+          const button = { up: 4, down: 5, left: 6, right: 7 }[args.direction ?? "down"] ?? 5
           if (args.x !== undefined && args.y !== undefined) lines.push(point(args.x, args.y, "x and y"), `xdotool mousemove --sync "$X" "$Y"`)
-          lines.push(`xdotool click --repeat ${args.amount ?? 5} --delay 30 ${button}`)
+          lines.push(`xdotool click --repeat ${int(args.amount ?? 5, 30) || 1} --delay 30 ${button}`)
           title = `scroll ${args.direction ?? "down"} ${args.amount ?? 5}`
           break
         }
         case "wait":
-          lines.push(`sleep ${args.seconds ?? 1}`)
+          lines.push(`sleep ${(Math.min(30, Math.max(0.1, Number(args.seconds) || 1))).toFixed(2)}`)
           title = `wait ${args.seconds ?? 1}s`
           break
       }
-      if (args.action !== "screenshot" && args.action !== "wait") lines.push(`sleep ${((args.settle_ms ?? 600) / 1000).toFixed(2)}`)
+      if (args.action !== "screenshot" && args.action !== "wait") lines.push(`sleep ${(int(args.settle_ms ?? 600, 5_000) / 1000).toFixed(2)}`)
       const shot = await vm.desktop(lines.join("\n"), title, "agent", context.abortSignal, env)
       const imageWidth = Math.round(shot.width * shot.scale)
       const imageHeight = Math.round(shot.height * shot.scale)

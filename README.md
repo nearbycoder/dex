@@ -172,7 +172,7 @@
 
 - **Usage:** what Dex costs across ClinePass (tokens per model and chat, at list prices), OpenCode Go (tokens at Go's rates, plus your 5-hour, weekly, and monthly allowance read live from OpenCode), boat.dev (VM time), and Cloudflare (from the Analytics API), with a daily chart.
 - **Snappy navigation:** pages render from the agent's synced state, so switching pages never waits on the network.
-  - Every page's code is fetched while idle, and the last state is kept on the device for instant launches.
+  - Every page's code is fetched while idle, and the last state, the last sign-in, and the last 8 chats you opened are kept on the device (signing out clears them), so a launch shows them at once while a cold agent wakes; the session is confirmed in the background.
   - Anything still loading shows a skeleton shaped like the page.
   - The agent batches and dedupes the updates it sends.
 - **Always current:** after a deploy, the first page load restarts a long-running agent onto the new code.
@@ -272,6 +272,7 @@ cd ../.. && npm run deploy                    # checks operations, builds, and d
   - Frames only from Dex's own VM desktop page, boat.dev, and the YouTube/Vimeo players. Only that desktop page may be framed, and only by Dex.
 
   Also COOP same-origin, HSTS, `nosniff`, a strict referrer policy, and a minimal Permissions-Policy. Model output is rendered without raw HTML.
+- **VM desktop relay:** `/vm-desktop/<vm>/` serves Dex's own copy of the Selkies page and relays only the stream's WebSocket and Selkies' few API paths to the VM, adding the port cookie and password itself. Anything the VM answers is made inert on Dex's origin (a sandboxing CSP, no redirects, cookies, or CORS headers; files download as attachments), so a VM taken over by a prompt-injected agent can't run script as you. The stream's port is closed to the internet by boat's firewall.
 - **Media:** served only to its owner, for an allowlist of video, audio, and image types (never HTML, SVG, or PDF), sandboxed. VM uploads use single-use, HMAC-checked tokens.
 - **MCP access tokens:**
   - 256-bit secrets bound to their user by an HMAC, checked before any agent wakes.

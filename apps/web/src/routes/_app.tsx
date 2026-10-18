@@ -7,7 +7,7 @@ import { DexProvider, forgetSavedState } from "~/client/lib/dex"
 import { MenuButton, NavContext, useNavState, useVisualViewportHeight } from "~/client/lib/mobile-nav"
 import { useHaptics } from "~/client/lib/haptics"
 import { useUpdateChecker } from "~/client/lib/updates"
-import { getViewer, type ViewerResult } from "~/server/viewer"
+import { getViewer, type Viewer, type ViewerResult } from "~/server/viewer"
 
 /**
  * Who is signed in, asked once per page load rather than on every navigation (`beforeLoad` runs on each one).
@@ -15,11 +15,50 @@ import { getViewer, type ViewerResult } from "~/server/viewer"
  */
 let signedIn: Promise<ViewerResult> | undefined
 
+/**
+ * The last confirmed sign-in, kept on this device (with the synced state it belongs to; "dex-state:" keys go when you
+ * sign out). Asking the server wakes the agent to check the session isn't revoked, which takes seconds when it's cold,
+ * so a launch with one starts at once and confirms in the background: revoked or signed out, the device's copies are
+ * forgotten and you're sent to sign in. Nothing new is shown early: live data comes over the socket, which checks the
+ * session itself.
+ */
+const VIEWER_KEY = "dex-state:viewer"
+const keptViewer = (): Viewer | null => {
+  try {
+    const kept = JSON.parse(localStorage.getItem(VIEWER_KEY) ?? "null") as Viewer | null
+    return kept && typeof kept.id === "string" ? kept : null
+  } catch {
+    return null
+  }
+}
+const keepViewer = (viewer: Viewer) => localStorage.setItem(VIEWER_KEY, JSON.stringify(viewer))
+let confirmed = false
+
 /** Signed-in shell. Client-rendered: it holds the WebSocket to the user's agent. */
 export const Route = createFileRoute("/_app")({
   ssr: false,
   beforeLoad: async () => {
-    signedIn ??= getViewer()
+    const kept = keptViewer()
+    if (!signedIn) {
+      signedIn = getViewer()
+      if (kept) {
+        signedIn.then(
+          ({ viewer }) => {
+            if (viewer && viewer.id === kept.id) {
+              confirmed = true
+              keepViewer(viewer)
+              return
+            }
+            forgetSavedState()
+            window.location.assign("/login")
+          },
+          // Offline or unreachable: carry on with what's kept; the socket reconnects (and checks) when it can.
+          () => undefined
+        )
+      }
+    }
+    // Until the check answers, navigate on the kept sign-in rather than waiting for it.
+    if (kept && !confirmed) return { viewer: kept }
     const { viewer } = await signedIn.catch((error: unknown) => {
       signedIn = undefined
       throw error
@@ -30,6 +69,7 @@ export const Route = createFileRoute("/_app")({
       forgetSavedState()
       throw redirect({ to: "/login" })
     }
+    keepViewer(viewer)
     return { viewer }
   },
   // Also what the server sends for this client-only route, so a cold launch paints the app's outline at once.
