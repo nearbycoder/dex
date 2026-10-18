@@ -5,7 +5,7 @@
 <p align="center">
   <a href="docs/media/dex-promo.mp4"><img src="docs/media/dex-preview.gif" alt="Dex answering a request with a live chart card" width="100%"></a>
   <br>
-  <sub><b><a href="docs/media/dex-promo.mp4">▶ Watch the 75-second tour</a></b> · generative UI, a cloud VM per chat, skills, MCP, and the phone app</sub>
+  <sub><b><a href="docs/media/dex-promo.mp4">▶ Watch the 2-minute tour</a></b> · generative UI, ClinePass and OpenCode Go, a cloud VM per chat you can watch while you chat, GitHub repos, skills, MCP, usage, and the phone app</sub>
 </p>
 
 **Dex** is a personal agent harness. Each user gets an agent in a Cloudflare Durable Object running [Pi Durable](https://developers.cloudflare.com/agents/harnesses/pi/), thinking with models through [ClinePass](https://docs.cline.bot/getting-started/clinepass) or [OpenCode Go](https://opencode.ai/docs/go/), answering with generative UI from [OpenUI](https://www.openui.com/), and doing real work on its own cloud VM from [boat.dev](https://boat.dev). Built with TanStack Start, Effect, and the Cloudflare Agents SDK, and installable on your phone.
@@ -23,15 +23,24 @@
     <td width="50%"><img src="docs/screenshots/skill-menu.png" alt="The slash menu listing installed skills and skills.sh results"><br><b>Skills on a keystroke.</b> Type <code>/</code> to use one, or install it from skills.sh in place.</td>
     <td width="50%"><img src="docs/screenshots/mcp-search.png" alt="MCP search with Dex's checks on a server"><br><b>Any MCP server, checked first.</b> Search, see its tools and sign-in, add it in a tap.</td>
   </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/models.png" alt="The model menu on its OpenCode Go tab"><br><b>Two model subscriptions.</b> ClinePass and OpenCode Go, 40 models in one searchable menu.</td>
+    <td width="50%"><img src="docs/screenshots/vm-preview.png" alt="A chat with a floating, live preview of its VM's desktop"><br><b>Watch the VM while you chat.</b> A live picture-in-picture you can drag and resize.</td>
+  </tr>
 </table>
 
 ## Features
 
 ### Chat that answers with UI
 
-<img src="docs/screenshots/chat-vm.png" alt="A chat that used the VM, with its folded activity row and a table answer" width="100%">
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/chat-vm.png" alt="A chat that used the VM, with its folded activity row and a table answer"></td>
+    <td width="50%"><img src="docs/screenshots/models.png" alt="The model menu with All, ClinePass, and OpenCode Go tabs"></td>
+  </tr>
+</table>
 
-- **Two model subscriptions, connect either or both:** ClinePass and OpenCode Go (GLM, Kimi, DeepSeek, Qwen, MiniMax, MiMo, Claude Haiku, GPT Luna, Grok, Gemini, and more, each on the API style Go serves it with). Pick a model and thinking level per chat from one searchable menu grouped by subscription; free models and ones whose provider trains on your prompts are marked. An agent or default on a subscription you haven't connected runs the same model on one you have. Replies stream live, and runs survive restarts, evictions, and deploys.
+- **Two model subscriptions, connect either or both:** ClinePass and OpenCode Go (GLM, Kimi, DeepSeek, Qwen, MiniMax, MiMo, Claude Haiku, GPT Luna, Grok, Gemini, and more, each on the API style Go serves it with). Pick a model and thinking level per chat from one searchable menu with All / ClinePass / OpenCode Go tabs; free models and ones whose provider trains on your prompts are marked, and the model button says which subscription it's on. An agent or default on a subscription you haven't connected runs the same model on one you have. Replies stream live, and runs survive restarts, evictions, and deploys.
 - **One activity row per reply** folds its thinking, tool calls, and in-between notes. While it works it shows what's really happening: the running tool and its arguments ("Running on the VM… npm test"), or the latest line of the model's thinking. Then it reads "Worked for 36s · 8 tools · 6 thoughts"; tap it to see every step. Screenshots in those steps load when you open them, so long VM chats stay light.
 - **Generative UI** with `render_ui` (OpenUI): cards, stat tiles, tables, charts, and forms. Markdown tables wrap at word boundaries and scroll sideways in their own frame on a phone.
 - **Tools:** `bash` over a persistent `/workspace` (a simulated shell with grep, sed, jq, sqlite3, curl), file tools, `web_search` / `web_fetch` (Workers AI), `schedule_prompt` (one-off or cron), and `use_skill`.
@@ -40,12 +49,17 @@
 
 ### A cloud VM for every chat
 
-<img src="docs/screenshots/machine.png" alt="The Machine page" width="100%">
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/machine.png" alt="The Machine page"></td>
+    <td width="50%"><img src="docs/screenshots/vm-preview.png" alt="The floating VM preview over a chat"></td>
+  </tr>
+</table>
 
 - A chat gets its own Ubuntu VM ([boat.dev](https://boat.dev): root, Docker, Node, Bun, Python, Chrome, and a desktop) the first time the model needs one. Plain questions never start one.
 - **Tools:** `vm_exec` (output streams live), `vm_screenshot` (the agent sees the desktop and clicks and types with `xdotool`), `vm_read_file` / `vm_write_file`, `vm_expose_port` (token-protected URLs), `share_media`, `vm_stop`.
 - **The Machine page** shows the live desktop and every command as it happens. Take control of the desktop, run your own commands, open ports, re-run setup, or stop the agent mid-run to take over.
-- **Watch while you chat:** while a chat's VM runs, a small floating button opens a movable picture-in-picture window of its live desktop (two sizes, stays where you leave it). It's for watching; the Machine page is where you take control.
+- **Watch while you chat:** while a chat's VM runs, a small floating button opens a picture-in-picture window of its live desktop. Drag the button or the window anywhere, resize the window from a corner (it stays 16:9), and both stay where you leave them. It's for watching, and closing it stops the stream; the Machine page is where you take control.
 - **The desktop streams three ways:** boat's Stream player (Chrome), [Selkies](https://github.com/selkies-project/selkies) (H.264 over a WebSocket, decoded by WebCodecs, so it plays on iPhone and iPad too, and the default wherever Stream can't play), or noVNC. Selkies' client ships with Dex and the stream is relayed by the Worker, which adds the VM's port cookie and password, so neither reaches the browser.
 - **VM template:** Dex saves a prepared disk in your boat account (a named snapshot with the desktop stream installed, built on a throwaway VM without your credentials, rebuilt monthly), and new VMs start from it, ready in seconds. Until it exists, a VM installs the stream the first time you open its desktop.
 - **Lifecycle:** a VM stops after 5 idle minutes (configurable) and keeps its disk. It's deleted with its chat, and Dex retries every 5 minutes if boat.dev can't be reached then. Requests retry when Cloudflare can't connect, and when boat refuses another running VM, Dex stops the least recently used idle one.
@@ -109,10 +123,15 @@
 
 ### Projects, GitHub, and agents
 
-<img src="docs/screenshots/home.png" alt="The home screen with projects and agents" width="100%">
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/home.png" alt="The home screen with projects and agents"></td>
+    <td width="50%"><img src="docs/screenshots/repo-picker.png" alt="Adding a repository: searching GitHub for hono"></td>
+  </tr>
+</table>
 
 - **Projects:** one or more repos (with branch and folder), a setup script, notes for the model, a starter prompt, and a VM size.
-  - The repo field searches every repo your GitHub connection can reach, private and org ones included, then public repos. The branch field suggests the repo's branches.
+  - **Add repository** opens a sheet that searches every repo your GitHub connection can reach, private and org ones included, then public repos, with owner filters, avatars, language, stars, and last push. Pick one, then its branch (filterable) and folder, or paste any git URL. If GitHub revokes the connection, Dex says so, offers Reconnect, and falls back to public repos.
   - Starting a project chat boots its VM, signs in to GitHub, clones the repos into `~/work`, and runs the setup script before the model's VM tools go ahead.
 - **GitHub:** Connect with GitHub (OAuth) or paste a fine-grained token. Every new VM signs the GitHub CLI and git in with it, so agents can push and open pull requests. Disconnecting an OAuth connection revokes the token at GitHub.
 - **Custom agents:** presets with a name, icon, color, instructions, starter prompt, model, thinking level, and MCP servers. Dex starts with PR Author, PR Reviewer, Researcher, Data Analyst, and Changelog Writer, and agents combine with projects.
@@ -132,9 +151,9 @@
   </tr>
 </table>
 
-- **Install it** on a phone or tablet Home Screen. It runs full screen and edge to edge, keeps the composer above the keyboard, and opens the sidebar with a swipe from the left edge (never "back"). It adapts from folded phones to tablets. When a new version is deployed, an open app offers a one-tap **Refresh**, and reloads by itself when you come back to an idle chat.
+- **Install it** on a phone or tablet Home Screen. It runs full screen and edge to edge, keeps the composer above the keyboard, and opens the sidebar with a swipe from the left edge (never "back"). It adapts from folded phones to tablets. When a new version is deployed, **Update ready** appears at the bottom of the sidebar (with a dot on the menu button) for a one-tap refresh, and the app reloads by itself when you come back to an idle chat after a while.
 - **Push notifications** (opt in, per device) for replies, errors, scheduled prompts, machine setup, MCP sign-ins, and snoozed chats coming back. A chat that's open on any device stays quiet, and each chat has a mute bell. Android and desktop notifications carry quick actions; iOS 16.4+ delivers them to the installed app.
-- **Haptics** on every control you tap (buttons, links, menus, switches, tabs) and on swiping the sidebar. iPhone has no Vibration API, so Dex plays the system tap through a hidden `<input type="checkbox" switch>`; Android uses `navigator.vibrate`. Fields never zoom the page on focus.
+- **Haptics** on every control you tap (buttons, links, menus, switches, tabs) and on swiping the sidebar. iPhone has no Vibration API, so Dex plays the system tap by clicking a hidden `<input type="checkbox" switch>` during the tap (not by laying switches over buttons, which stops lists from scrolling); Android uses `navigator.vibrate`. Fields never zoom the page on focus.
 
 ### Chats and external agents can run Dex
 
@@ -248,7 +267,7 @@ cd ../.. && npm run deploy                    # checks operations, builds, and d
 - **Browser:** a strict Content Security Policy:
   - Scripts and connections only to Dex itself (`connect-src 'self'`).
   - Images only from Dex, GitHub avatars, and YouTube thumbnails.
-  - Frames only from boat.dev and the YouTube/Vimeo players, and nothing may frame Dex.
+  - Frames only from Dex's own VM desktop page, boat.dev, and the YouTube/Vimeo players. Only that desktop page may be framed, and only by Dex.
 
   Also COOP same-origin, HSTS, `nosniff`, a strict referrer policy, and a minimal Permissions-Policy. Model output is rendered without raw HTML.
 - **Media:** served only to its owner, for an allowlist of video, audio, and image types (never HTML, SVG, or PDF), sandboxed. VM uploads use single-use, HMAC-checked tokens.
