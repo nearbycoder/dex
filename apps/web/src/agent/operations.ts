@@ -2,7 +2,7 @@ import { Type } from "@earendil-works/pi-ai"
 import type { Static, TSchema } from "typebox"
 import type { AccessRisk } from "~/shared/access"
 import { AGENT_COLORS, AGENT_ICONS, type AgentProfile } from "~/shared/agents"
-import { CLINEPASS_MODELS, THINKING_LEVELS, type ThinkingLevel } from "~/shared/models"
+import { MODEL_PROVIDERS, MODELS, supportedThinkingLevels, THINKING_LEVELS, type ThinkingLevel } from "~/shared/models"
 import type { McpAuth, McpTransport } from "~/shared/mcp"
 import { NOTIFY_KINDS, type NotifyKind } from "~/shared/notifications"
 import type { ProjectProfile, ProjectRepo } from "~/shared/projects"
@@ -116,6 +116,8 @@ export interface Operation<P extends TSchema = TSchema> {
 export const EXCLUDED: Readonly<Record<string, string>> = {
   connectCline: "Credentials are entered only in Settings, never through a chat or an external agent.",
   disconnectCline: "Credentials are managed only in Settings.",
+  connectOpenCode: "Credentials are entered only in Settings, never through a chat or an external agent.",
+  disconnectOpenCode: "Credentials are managed only in Settings.",
   connectBoat: "Credentials are entered only in Settings, never through a chat or an external agent.",
   saveSecret: "Secrets are entered only in Settings, never through a chat or an external agent.",
   removeSecret: "Secrets are managed only in Settings.",
@@ -141,7 +143,7 @@ const id = (description: string) => Type.String({ minLength: 1, maxLength: 120, 
 const thinking = Type.Union(THINKING_LEVELS.map((level) => Type.Literal(level)), {
   description: "Thinking level; clamped to what the model supports."
 })
-const modelId = Type.String({ maxLength: 120, description: "A model id from app_list_models, e.g. cline-pass/glm-5.3." })
+const modelId = Type.String({ maxLength: 120, description: "A model id from app_list_models, e.g. cline-pass/glm-5.3 or opencode-go/kimi-k3." })
 const icon = Type.Optional(Type.Union(AGENT_ICONS.map((value) => Type.Literal(value)), { description: "Icon name." }))
 const color = Type.Optional(Type.Union(Object.keys(AGENT_COLORS).map((value) => Type.Literal(value)), { description: "Accent color." }))
 const vmKey = Type.String({ minLength: 1, maxLength: 64, description: "The VM's key: its chat's id (from app_list_vms)." })
@@ -255,7 +257,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
         projects: state.projects.length,
         mcpServers: state.mcp.map((server) => ({ id: server.id, name: server.name, status: server.status })),
         vms: { configured: state.vmConfigured, running: state.vms.filter((vm) => vm.status === "running").length, total: state.vms.length },
-        connected: { clinePass: state.cline.connected, github: state.github.connected ? state.github.login : null },
+        connected: { clinePass: state.cline.connected, openCodeGo: state.opencode.connected, github: state.github.connected ? state.github.login : null },
         pushDevices: state.push.devices.length,
         settings: state.settings
       }
@@ -556,12 +558,27 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
   }),
   define({
     name: "app_list_models",
-    description: "Models chats and agents can use, with the thinking levels each supports.",
+    description:
+      "Models chats and agents can use: each runs on a subscription (ClinePass or OpenCode Go), usable only while that one is connected. With image input, context window, thinking levels, and cost per million tokens.",
     risk: "read",
     parameters: Type.Object({}),
     covers: [],
     summarize: () => "List models",
-    run: async () => CLINEPASS_MODELS
+    run: async (host) => {
+      const state = host.appState()
+      const connected = { clinepass: state.cline.connected, "opencode-go": state.opencode.connected }
+      return MODELS.map((model) => ({
+        id: model.id,
+        name: model.name,
+        provider: MODEL_PROVIDERS[model.provider].name,
+        available: connected[model.provider],
+        input: model.input,
+        contextWindow: model.contextWindow,
+        thinkingLevels: supportedThinkingLevels(model),
+        cost: { input: model.cost.input, output: model.cost.output, cacheRead: model.cost.cacheRead },
+        ...(model.trainsOnData && { trainsOnData: true })
+      }))
+    }
   }),
   define({
     name: "app_list_vms",
@@ -588,7 +605,8 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
   }),
   define({
     name: "app_usage_report",
-    description: "What Dex costs: ClinePass tokens per model and chat, boat.dev VM time, and Cloudflare usage, with daily totals.",
+    description:
+      "What Dex costs: ClinePass and OpenCode Go tokens per model and chat (with OpenCode Go's 5-hour, weekly, and monthly allowance used), boat.dev VM time, and Cloudflare usage, with daily totals.",
     risk: "read",
     parameters: Type.Object({ range: Type.Optional(Type.Union(USAGE_RANGES.map((range) => Type.Literal(range.id)))) }),
     covers: ["usageReport"],

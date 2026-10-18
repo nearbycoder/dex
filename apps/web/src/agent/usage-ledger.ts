@@ -1,4 +1,5 @@
 import type { AssistantMessage, Usage } from "@earendil-works/pi-ai"
+import type { ModelProvider } from "~/shared/models"
 import { BOAT_HOURLY, type BoatUsage, type ClineUsage } from "~/shared/usage"
 
 const HOUR_MS = 3_600_000
@@ -46,6 +47,9 @@ export class UsageLedger {
       input INTEGER NOT NULL, output INTEGER NOT NULL, cache_read INTEGER NOT NULL, cache_write INTEGER NOT NULL,
       total_tokens INTEGER NOT NULL, cost REAL NOT NULL, dedupe TEXT UNIQUE)`)
     sql.exec(`CREATE INDEX IF NOT EXISTS dex_usage_llm_at ON dex_usage_llm (at)`)
+    // Which subscription served each response (added with OpenCode Go; older rows are ClinePass's).
+    const columns = sql.exec<{ name: string }>(`PRAGMA table_info(dex_usage_llm)`).toArray().map((column) => column.name)
+    if (!columns.includes("provider")) sql.exec(`ALTER TABLE dex_usage_llm ADD COLUMN provider TEXT`)
     sql.exec(`CREATE TABLE IF NOT EXISTS dex_vm_runs (
       id INTEGER PRIMARY KEY AUTOINCREMENT, sandbox_id TEXT NOT NULL, size TEXT NOT NULL,
       started_at INTEGER NOT NULL, ended_at INTEGER)`)
@@ -53,12 +57,14 @@ export class UsageLedger {
 
   // ── Model responses ───────────────────────────────────────────────────────
 
-  private insertUsage(at: number, sessionId: string, model: string, usage: Usage, dedupe: string) {
+  /** `model` is Dex's id for it (see shared/models.ts): OpenCode's bare ids get the `opencode-go/` prefix. */
+  private insertUsage(at: number, sessionId: string, provider: ModelProvider, model: string, usage: Usage, dedupe: string) {
     if (!usage.totalTokens) return
+    const id = provider === "opencode-go" && !model.startsWith("opencode-go/") ? `opencode-go/${model}` : model
     this.sql.exec(
-      `INSERT OR IGNORE INTO dex_usage_llm (at, session_id, model, input, output, cache_read, cache_write, total_tokens, cost, dedupe)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      at, sessionId, model, usage.input, usage.output, usage.cacheRead, usage.cacheWrite, usage.totalTokens, usage.cost.total, dedupe
+      `INSERT OR IGNORE INTO dex_usage_llm (at, session_id, model, provider, input, output, cache_read, cache_write, total_tokens, cost, dedupe)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      at, sessionId, id, provider, usage.input, usage.output, usage.cacheRead, usage.cacheWrite, usage.totalTokens, usage.cost.total, dedupe
     )
   }
 
@@ -67,6 +73,7 @@ export class UsageLedger {
     this.insertUsage(
       message.timestamp || Date.now(),
       sessionId,
+      message.provider === "opencode-go" ? "opencode-go" : "clinepass",
       message.model,
       message.usage,
       `${sessionId}:${message.timestamp}:${message.responseId ?? ""}`
@@ -77,14 +84,20 @@ export class UsageLedger {
   backfill(sessionId: string, at: number, models: Readonly<Record<string, Usage>>) {
     for (const [key, usage] of Object.entries(models)) {
       // Keys are `provider/modelId`; model ids contain a slash themselves.
+      const provider = key.slice(0, key.indexOf("/")) === "opencode-go" ? "opencode-go" : "clinepass"
       const model = key.slice(key.indexOf("/") + 1)
-      this.insertUsage(at, sessionId, model, usage, `backfill:${sessionId}:${key}`)
+      this.insertUsage(at, sessionId, provider, model, usage, `backfill:${sessionId}:${key}`)
     }
   }
 
-  clineUsage(since: number, until: number, titles: ReadonlyMap<string, string>): ClineUsage {
+  /** One subscription's tokens and their cost over a period. */
+  modelUsage(provider: ModelProvider, since: number, until: number, titles: ReadonlyMap<string, string>): ClineUsage {
     const rows = this.sql
-      .exec<LlmRow>(`SELECT at, session_id, model, input, output, cache_read, total_tokens, cost FROM dex_usage_llm WHERE at >= ? AND at <= ?`, since, until)
+      .exec<LlmRow>(
+        `SELECT at, session_id, model, input, output, cache_read, total_tokens, cost FROM dex_usage_llm
+         WHERE at >= ? AND at <= ? AND coalesce(provider, 'clinepass') = ?`,
+        since, until, provider
+      )
       .toArray()
     const byModel = new Map<string, { model: string; responses: number; totalTokens: number; listCost: number }>()
     const byChat = new Map<string, { sessionId: string; title: string; totalTokens: number; listCost: number }>()
@@ -122,9 +135,13 @@ export class UsageLedger {
     }
   }
 
-  clineDaily(since: number, until: number): Map<string, number> {
+  modelDaily(provider: ModelProvider, since: number, until: number): Map<string, number> {
     const daily = new Map<string, number>()
-    for (const row of this.sql.exec<{ at: number; cost: number }>(`SELECT at, cost FROM dex_usage_llm WHERE at >= ? AND at <= ?`, since, until)) {
+    const rows = this.sql.exec<{ at: number; cost: number }>(
+      `SELECT at, cost FROM dex_usage_llm WHERE at >= ? AND at <= ? AND coalesce(provider, 'clinepass') = ?`,
+      since, until, provider
+    )
+    for (const row of rows) {
       daily.set(utcDate(row.at), (daily.get(utcDate(row.at)) ?? 0) + row.cost)
     }
     return daily

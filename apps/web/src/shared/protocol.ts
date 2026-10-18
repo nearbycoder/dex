@@ -54,7 +54,7 @@ export interface BoatStatus {
 
 export interface ClineStatus {
   readonly connected: boolean
-  /** `user`: a key this user connected. `server`: the deployment's shared CLINE_API_KEY. */
+  /** `user`: a key this user connected. `server`: the deployment's key (CLINE_API_KEY, shared; OPENCODE_API_KEY, its owner's). */
   readonly source: "user" | "server" | null
   readonly keyHint: string | null
   readonly verifiedAt: number | null
@@ -136,12 +136,19 @@ export const noVm = (key: string): VmInfo => ({
   setup: NO_SETUP
 })
 
+/** Which model subscriptions this user can run on (see usableModel in shared/models.ts). */
+export const connectedProviders = (state: Pick<DexState, "cline" | "opencode">) => ({
+  clinepass: state.cline.connected,
+  "opencode-go": state.opencode.connected
+})
+
 /** Fills fields an agent saved before they existed, so older state never breaks the UI. */
 export const withStateDefaults = (state: DexState): DexState => ({
   ...state,
   vms: (state.vms ?? []).map((vm) => ({ ...noVm(vm.key), ...vm })),
   vmConfigured: state.vmConfigured ?? false,
   boat: state.boat ?? { connected: false, source: null, keyHint: null },
+  opencode: state.opencode ?? { connected: false, source: null, keyHint: null, verifiedAt: null },
   projects: state.projects ?? [],
   github: state.github ?? { connected: false, login: null },
   push: state.push ?? { configured: false, publicKey: null, devices: [] },
@@ -165,6 +172,8 @@ export const withStateDefaults = (state: DexState): DexState => ({
 /** Synced to every connected client through the Agents SDK state channel. Never put secrets here. */
 export interface DexState {
   readonly cline: ClineStatus
+  /** The OpenCode Go key models with the opencode-go provider run on (same shape as ClinePass's). */
+  readonly opencode: ClineStatus
   /** Whose boat.dev account this user's VMs run on. */
   readonly boat: BoatStatus
   readonly settings: DexSettings

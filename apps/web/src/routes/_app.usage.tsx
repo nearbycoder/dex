@@ -8,16 +8,18 @@ import { useCachedFetch } from "~/client/lib/cache"
 import { useDex } from "~/client/lib/dex"
 import { MenuButton } from "~/client/lib/mobile-nav"
 import { findModel } from "~/shared/models"
-import { type DailySpend, PLAN_FEES, USAGE_RANGES, type UsageRange, type UsageReport } from "~/shared/usage"
+import { type ClineUsage, type DailySpend, type OpenCodeUsage, type OpenCodeWindow, PLAN_FEES, USAGE_RANGES, type UsageRange, type UsageReport } from "~/shared/usage"
 
 export const Route = createFileRoute("/_app/usage")({ component: UsagePage })
 
-/** Validated categorical slots 1–3 (dark mode) from the data-viz reference palette, in fixed order. */
+/** Validated categorical slots 1–4 (dark mode) from the data-viz reference palette, in fixed order. */
 const SERIES = [
   { key: "cline", label: "ClinePass", note: "at API list prices", color: "#3987e5" },
   { key: "boat", label: "boat.dev", note: "VM time", color: "#d95926" },
-  { key: "cloudflare", label: "Cloudflare", note: "metered", color: "#199e70" }
+  { key: "cloudflare", label: "Cloudflare", note: "metered", color: "#199e70" },
+  { key: "opencode", label: "OpenCode Go", note: "at Go rates", color: "#c98500" }
 ] as const
+type Series = (typeof SERIES)[number]
 
 const usd = (value: number) =>
   value === 0 ? "$0.00" : value < 0.01 ? "<$0.01" : value < 100 ? `$${value.toFixed(2)}` : `$${Math.round(value).toLocaleString()}`
@@ -59,7 +61,7 @@ function Section({ title, icon, info, children, aside }: { title: string; icon: 
 }
 
 /** Daily usage as stacked bars: thin marks, 2px gaps between segments, rounded tops, hover tooltip. */
-function DailyChart({ daily }: { daily: ReadonlyArray<DailySpend> }) {
+function DailyChart({ daily, series }: { daily: ReadonlyArray<DailySpend>; series: ReadonlyArray<Series> }) {
   const box = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(640)
   const [hover, setHover] = useState<number | null>(null)
@@ -75,7 +77,7 @@ function DailyChart({ daily }: { daily: ReadonlyArray<DailySpend> }) {
   const pad = { top: 8, right: 4, bottom: 22, left: 44 }
   const plotW = Math.max(1, width - pad.left - pad.right)
   const plotH = height - pad.top - pad.bottom
-  const totals = daily.map((day) => day.cline + day.boat + day.cloudflare)
+  const totals = daily.map((day) => series.reduce((sum, item) => sum + day[item.key], 0))
   const max = Math.max(...totals, 0.0001)
   const niceMax = (() => {
     const step = 10 ** Math.floor(Math.log10(max))
@@ -101,9 +103,9 @@ function DailyChart({ daily }: { daily: ReadonlyArray<DailySpend> }) {
         {daily.map((day, index) => {
           const x = pad.left + index * slot + (slot - barW) / 2
           let base = 0
-          const segments = SERIES.map((series) => {
-            const value = day[series.key]
-            const segment = { series, value, from: base }
+          const segments = series.map((item) => {
+            const value = day[item.key]
+            const segment = { series: item, value, from: base }
             base += value
             return segment
           }).filter((segment) => segment.value > 0)
@@ -145,11 +147,11 @@ function DailyChart({ daily }: { daily: ReadonlyArray<DailySpend> }) {
           style={{ left: Math.min(Math.max(0, pad.left + hover * slot - 70), width - 180) }}
         >
           <div className="mb-1.5 font-medium text-zinc-200">{shortDate(daily[hover].date)}</div>
-          {SERIES.map((series) => (
-            <div key={series.key} className="flex items-center gap-2 py-0.5 text-zinc-400">
-              <span className="size-2 rounded-sm" style={{ background: series.color }} />
-              {series.label}
-              <span className="ml-auto text-zinc-200 tabular-nums">{usd(daily[hover]![series.key])}</span>
+          {series.map((item) => (
+            <div key={item.key} className="flex items-center gap-2 py-0.5 text-zinc-400">
+              <span className="size-2 rounded-sm" style={{ background: item.color }} />
+              {item.label}
+              <span className="ml-auto text-zinc-200 tabular-nums">{usd(daily[hover]![item.key])}</span>
             </div>
           ))}
           <div className="mt-1 flex border-t border-zinc-800 pt-1 text-zinc-300">
@@ -161,16 +163,16 @@ function DailyChart({ daily }: { daily: ReadonlyArray<DailySpend> }) {
   )
 }
 
-function DailyTable({ daily }: { daily: ReadonlyArray<DailySpend> }) {
+function DailyTable({ daily, series }: { daily: ReadonlyArray<DailySpend>; series: ReadonlyArray<Series> }) {
   return (
     <div className="scrollbar-thin max-h-72 overflow-auto">
       <table className="w-full text-xs tabular-nums">
         <thead className="sticky top-0 bg-zinc-950 text-zinc-500">
           <tr>
             <th className="py-1.5 text-left font-normal">Date</th>
-            {SERIES.map((series) => (
-              <th key={series.key} className="py-1.5 pl-3 text-right font-normal whitespace-nowrap">
-                {series.label}
+            {series.map((item) => (
+              <th key={item.key} className="py-1.5 pl-3 text-right font-normal whitespace-nowrap">
+                {item.label}
               </th>
             ))}
             <th className="py-1.5 pl-3 text-right font-normal whitespace-nowrap">Total</th>
@@ -180,10 +182,12 @@ function DailyTable({ daily }: { daily: ReadonlyArray<DailySpend> }) {
           {[...daily].reverse().map((day) => (
             <tr key={day.date} className="border-t border-zinc-900">
               <td className="py-1.5">{shortDate(day.date)}</td>
-              <td className="py-1.5 pl-3 text-right whitespace-nowrap">{usd(day.cline)}</td>
-              <td className="py-1.5 pl-3 text-right whitespace-nowrap">{usd(day.boat)}</td>
-              <td className="py-1.5 pl-3 text-right whitespace-nowrap">{usd(day.cloudflare)}</td>
-              <td className="py-1.5 pl-3 text-right whitespace-nowrap text-zinc-100">{usd(day.cline + day.boat + day.cloudflare)}</td>
+              {series.map((item) => (
+                <td key={item.key} className="py-1.5 pl-3 text-right whitespace-nowrap">
+                  {usd(day[item.key])}
+                </td>
+              ))}
+              <td className="py-1.5 pl-3 text-right whitespace-nowrap text-zinc-100">{usd(series.reduce((sum, item) => sum + day[item.key], 0))}</td>
             </tr>
           ))}
         </tbody>
@@ -192,15 +196,137 @@ function DailyTable({ daily }: { daily: ReadonlyArray<DailySpend> }) {
   )
 }
 
+/** One subscription's tokens by model and its top chats. */
+function ModelUsage({ title, series, usage, costLabel }: { title: string; series: Series; usage: ClineUsage; costLabel: string }) {
+  return (
+    <Section title={title} icon={<span className="size-2.5 rounded-sm" style={{ background: series.color }} />} aside={`${compact(usage.totalTokens)} tokens`}>
+      {usage.byModel.length === 0 ? (
+        <p className="text-sm text-zinc-500">No model usage in this period.</p>
+      ) : (
+        <div className="scrollbar-thin -mx-1 overflow-x-auto px-1">
+          <table className="w-full text-sm tabular-nums">
+            <thead className="text-xs text-zinc-500">
+              <tr>
+                <th className="pb-2 text-left font-normal">Model</th>
+                <th className="pb-2 pl-4 text-right font-normal whitespace-nowrap">Responses</th>
+                <th className="pb-2 pl-4 text-right font-normal whitespace-nowrap">Tokens</th>
+                <th className="pb-2 pl-4 text-right font-normal whitespace-nowrap">{costLabel}</th>
+              </tr>
+            </thead>
+            <tbody className="text-zinc-300">
+              {usage.byModel.map((row) => (
+                <tr key={row.model} className="border-t border-zinc-800/70">
+                  <td className="py-2">
+                    <span className="flex items-center gap-2">
+                      <ModelLogo modelId={row.model} className="size-4" />
+                      {findModel(row.model)?.name ?? row.model}
+                    </span>
+                  </td>
+                  <td className="py-2 pl-4 text-right whitespace-nowrap text-zinc-400">{row.responses}</td>
+                  <td className="py-2 pl-4 text-right whitespace-nowrap">{compact(row.totalTokens)}</td>
+                  <td className="py-2 pl-4 text-right whitespace-nowrap">{usd(row.listCost)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {usage.byChat.length > 0 && (
+        <>
+          <h3 className="mt-5 mb-2 text-xs font-medium text-zinc-400">Top chats</h3>
+          <ul className="space-y-1 text-sm">
+            {usage.byChat.map((chat) => (
+              <li key={chat.sessionId} className="flex items-center gap-3">
+                {chat.title === "Deleted chat" ? (
+                  <span className="min-w-0 truncate text-zinc-500">{chat.title}</span>
+                ) : (
+                  <Link to="/chat/$sessionId" params={{ sessionId: chat.sessionId }} className="min-w-0 truncate text-zinc-300 hover:text-zinc-100 hover:underline">
+                    {chat.title}
+                  </Link>
+                )}
+                <span className="ml-auto shrink-0 text-xs text-zinc-500 tabular-nums">
+                  {compact(chat.totalTokens)} · {usd(chat.listCost)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </Section>
+  )
+}
+
+const resetsIn = (iso: string) => {
+  const ms = Date.parse(iso) - Date.now()
+  if (!Number.isFinite(ms) || ms <= 0) return "resetting now"
+  const hours = ms / 3_600_000
+  if (hours < 1) return `resets in ${Math.max(1, Math.round(ms / 60_000))} min`
+  if (hours < 48) return `resets in ${Math.round(hours)} h`
+  return `resets ${new Date(iso).toLocaleDateString("en", { month: "short", day: "numeric" })}`
+}
+
+/** One allowance window as a bar: share used, and when it resets. */
+function AllowanceBar({ label, window: value }: { label: string; window: OpenCodeWindow }) {
+  const percent = Math.min(100, Math.max(0, value.percent))
+  // Status colors, with the words alongside: amber nearing the limit, red at it.
+  const tone = value.limited || percent >= 100 ? "bg-red-500" : percent >= 80 ? "bg-amber-500" : "bg-[#c98500]"
+  return (
+    <div>
+      <div className="mb-1 flex items-baseline justify-between gap-3 text-xs">
+        <span className="text-zinc-300">{label}</span>
+        <span className="text-zinc-500 tabular-nums">
+          <span className={value.limited ? "font-medium text-red-400" : "text-zinc-200"}>{value.limited ? "Limit reached" : `${Math.round(percent)}% used`}</span>
+          {" · "}
+          {resetsIn(value.resetsAt)}
+        </span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-zinc-800" role="meter" aria-label={`${label}: ${Math.round(percent)}% used`} aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
+        <div className={`h-full rounded-full ${tone}`} style={{ width: `${Math.max(percent, percent > 0 ? 2 : 0)}%` }} />
+      </div>
+    </div>
+  )
+}
+
+/** OpenCode Go's allowance, read live from OpenCode. */
+function OpenCodeAllowance({ usage }: { usage: OpenCodeUsage }) {
+  return (
+    <Section
+      title="OpenCode Go allowance"
+      info="Go's included usage is a dollar amount per month, counted at each model's rates. Any 5 hours may use up to 20% of it and any week 50%. Read live from OpenCode."
+      icon={<span className="size-2.5 rounded-sm" style={{ background: "#c98500" }} />}
+      aside={
+        <a href="https://opencode.ai/auth" target="_blank" rel="noreferrer" className="text-zinc-400 hover:text-zinc-200 hover:underline">
+          Console
+        </a>
+      }
+    >
+      {usage.limits ? (
+        <div className="space-y-3">
+          <AllowanceBar label="5-hour window" window={usage.limits.rolling} />
+          <AllowanceBar label="This week" window={usage.limits.weekly} />
+          <AllowanceBar label="This month" window={usage.limits.monthly} />
+        </div>
+      ) : (
+        <p className="text-sm text-zinc-500">{usage.limitsError ? `Couldn't read it from OpenCode: ${usage.limitsError}` : "Connect OpenCode Go in Settings to see it."}</p>
+      )}
+    </Section>
+  )
+}
+
 function UsagePage() {
-  const { stub, connected } = useDex()
+  const { stub, connected, state } = useDex()
   const [range, setRange] = useState<UsageRange>("month")
   const [view, setView] = useState<"chart" | "table">("chart")
   const fetchReport = useCallback(() => stub.usageReport(range) as Promise<UsageReport>, [range, stub])
   const { data: report, loading, error, refresh: load } = useCachedFetch(`usage:${range}`, fetchReport, connected)
 
   const isMonth = range === "month"
-  const plans = PLAN_FEES.clinePass + PLAN_FEES.workersPaid
+  // A subscription appears once it's connected or was used in the period.
+  const clineConnected = state?.cline.connected ?? true
+  const showCline = clineConnected || (report?.cline.totalTokens ?? 0) > 0
+  const showOpenCode = Boolean(report && (report.opencode.connected || report.opencode.totalTokens > 0))
+  const series = SERIES.filter((item) => (item.key === "cline" ? showCline : item.key === "opencode" ? showOpenCode : true))
+  const plans = PLAN_FEES.workersPaid + (clineConnected ? PLAN_FEES.clinePass : 0) + (report?.opencode.connected ? PLAN_FEES.openCodeGo : 0)
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -233,7 +359,7 @@ function UsagePage() {
             <UsageSkeleton />
           ) : (
             <>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className={`grid gap-3 sm:grid-cols-2 ${showCline && showOpenCode ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>
                 <Tile
                   icon={<BarChart3 className="size-3.5" />}
                   label={isMonth ? "Estimated bill this month" : "Variable spend"}
@@ -244,13 +370,29 @@ function UsagePage() {
                       : `boat.dev VM time. Plans add ${usd(plans)}/month.`
                   }
                 />
-                <Tile
-                  swatch={SERIES[0].color}
-                  icon={<Sparkles className="size-3.5" />}
-                  label="ClinePass"
-                  value={`${usd(PLAN_FEES.clinePass)}/mo`}
-                  detail={`${compact(report.cline.totalTokens)} tokens · ${usd(report.cline.listCost)} at list prices`}
-                />
+                {showCline && (
+                  <Tile
+                    swatch={SERIES[0].color}
+                    icon={<Sparkles className="size-3.5" />}
+                    label="ClinePass"
+                    value={`${usd(PLAN_FEES.clinePass)}/mo`}
+                    detail={`${compact(report.cline.totalTokens)} tokens · ${usd(report.cline.listCost)} at list prices`}
+                  />
+                )}
+                {showOpenCode && (
+                  <Tile
+                    swatch={SERIES[3].color}
+                    icon={<Sparkles className="size-3.5" />}
+                    label="OpenCode Go"
+                    value={`${usd(PLAN_FEES.openCodeGo)}/mo`}
+                    detail={
+                      <>
+                        {compact(report.opencode.totalTokens)} tokens · {usd(report.opencode.listCost)} at Go rates
+                        {report.opencode.limits && <span className="block">{Math.round(report.opencode.limits.monthly.percent)}% of this month's allowance</span>}
+                      </>
+                    }
+                  />
+                )}
                 <Tile
                   swatch={SERIES[1].color}
                   icon={<Cpu className="size-3.5" />}
@@ -280,15 +422,15 @@ function UsagePage() {
 
               <Section
                 title="Daily usage"
-                info="ClinePass is shown at what its tokens would cost at API list prices; you pay the flat plan. Cloudflare is metered usage at list rates, before the plan's included allowance."
+                info="ClinePass is shown at what its tokens would cost at API list prices and OpenCode Go at Go's rates; you pay their flat plans. Cloudflare is metered usage at list rates, before the plan's included allowance."
                 icon={<BarChart3 className="size-4 text-zinc-500" />}
                 aside={
                   <div className="flex items-center gap-3">
                     {/* Legend: identity is never color alone. */}
-                    {SERIES.map((series) => (
-                      <span key={series.key} className="hidden items-center gap-1.5 text-zinc-400 sm:flex">
-                        <span className="size-2.5 rounded-sm" style={{ background: series.color }} />
-                        {series.label}
+                    {series.map((item) => (
+                      <span key={item.key} className="hidden items-center gap-1.5 text-zinc-400 sm:flex">
+                        <span className="size-2.5 rounded-sm" style={{ background: item.color }} />
+                        {item.label}
                       </span>
                     ))}
                     <button
@@ -303,71 +445,20 @@ function UsagePage() {
                 }
               >
                 <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500 sm:hidden">
-                  {SERIES.map((series) => (
-                    <span key={series.key} className="flex items-center gap-1.5">
-                      <span className="size-2.5 rounded-sm" style={{ background: series.color }} />
-                      {series.label}
+                  {series.map((item) => (
+                    <span key={item.key} className="flex items-center gap-1.5">
+                      <span className="size-2.5 rounded-sm" style={{ background: item.color }} />
+                      {item.label}
                     </span>
                   ))}
                 </div>
-                {view === "chart" ? <DailyChart daily={report.daily} /> : <DailyTable daily={report.daily} />}
+                {view === "chart" ? <DailyChart daily={report.daily} series={series} /> : <DailyTable daily={report.daily} series={series} />}
               </Section>
 
               <div className="grid gap-4 lg:grid-cols-2">
-                <Section title="ClinePass by model" icon={<span className="size-2.5 rounded-sm" style={{ background: SERIES[0].color }} />} aside={`${compact(report.cline.totalTokens)} tokens`}>
-                  {report.cline.byModel.length === 0 ? (
-                    <p className="text-sm text-zinc-500">No model usage in this period.</p>
-                  ) : (
-                    <div className="scrollbar-thin -mx-1 overflow-x-auto px-1">
-                      <table className="w-full text-sm tabular-nums">
-                        <thead className="text-xs text-zinc-500">
-                          <tr>
-                            <th className="pb-2 text-left font-normal">Model</th>
-                            <th className="pb-2 pl-4 text-right font-normal whitespace-nowrap">Responses</th>
-                            <th className="pb-2 pl-4 text-right font-normal whitespace-nowrap">Tokens</th>
-                            <th className="pb-2 pl-4 text-right font-normal whitespace-nowrap">List price</th>
-                          </tr>
-                        </thead>
-                        <tbody className="text-zinc-300">
-                          {report.cline.byModel.map((row) => (
-                            <tr key={row.model} className="border-t border-zinc-800/70">
-                              <td className="py-2">
-                                <span className="flex items-center gap-2">
-                                  <ModelLogo modelId={row.model} className="size-4" />
-                                  {findModel(row.model)?.name ?? row.model}
-                                </span>
-                              </td>
-                              <td className="py-2 pl-4 text-right whitespace-nowrap text-zinc-400">{row.responses}</td>
-                              <td className="py-2 pl-4 text-right whitespace-nowrap">{compact(row.totalTokens)}</td>
-                              <td className="py-2 pl-4 text-right whitespace-nowrap">{usd(row.listCost)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                  {report.cline.byChat.length > 0 && (
-                    <>
-                      <h3 className="mt-5 mb-2 text-xs font-medium text-zinc-400">Top chats</h3>
-                      <ul className="space-y-1 text-sm">
-                        {report.cline.byChat.map((chat) => (
-                          <li key={chat.sessionId} className="flex items-center gap-3">
-                            {chat.title === "Deleted chat" ? (
-                              <span className="min-w-0 truncate text-zinc-500">{chat.title}</span>
-                            ) : (
-                              <Link to="/chat/$sessionId" params={{ sessionId: chat.sessionId }} className="min-w-0 truncate text-zinc-300 hover:text-zinc-100 hover:underline">
-                                {chat.title}
-                              </Link>
-                            )}
-                            <span className="ml-auto shrink-0 text-xs text-zinc-500 tabular-nums">
-                              {compact(chat.totalTokens)} · {usd(chat.listCost)}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    </>
-                  )}
-                </Section>
+                {showOpenCode && <OpenCodeAllowance usage={report.opencode} />}
+                {showOpenCode && <ModelUsage title="OpenCode Go by model" series={SERIES[3]} usage={report.opencode} costLabel="At Go rates" />}
+                {showCline && <ModelUsage title="ClinePass by model" series={SERIES[0]} usage={report.cline} costLabel="List price" />}
 
                 <Section title="boat.dev VM time" icon={<span className="size-2.5 rounded-sm" style={{ background: SERIES[1].color }} />} aside="billed per second">
                   {report.boat.runs.length === 0 ? (
@@ -476,7 +567,7 @@ function UsagePage() {
 
               <p className="text-[11px] leading-relaxed text-zinc-600">
                 Estimates from Dex's own records (model responses, VM run times) and Cloudflare's analytics, priced at public list rates
-                (ClinePass {usd(PLAN_FEES.clinePass)}/mo, Workers Paid {usd(PLAN_FEES.workersPaid)}/mo, boat.dev small $0.018/h). Your invoices are
+                (ClinePass {usd(PLAN_FEES.clinePass)}/mo, OpenCode Go {usd(PLAN_FEES.openCodeGo)}/mo, Workers Paid {usd(PLAN_FEES.workersPaid)}/mo, boat.dev small $0.018/h). Your invoices are
                 the source of truth. VM time before usage tracking started is not included.
               </p>
             </>

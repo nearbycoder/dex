@@ -8,7 +8,7 @@
   <sub><b><a href="docs/media/dex-promo.mp4">▶ Watch the 75-second tour</a></b> · generative UI, a cloud VM per chat, skills, MCP, and the phone app</sub>
 </p>
 
-**Dex** is a personal agent harness. Each user gets an agent in a Cloudflare Durable Object running [Pi Durable](https://developers.cloudflare.com/agents/harnesses/pi/), thinking with open-weight models through [ClinePass](https://docs.cline.bot/getting-started/clinepass), answering with generative UI from [OpenUI](https://www.openui.com/), and doing real work on its own cloud VM from [boat.dev](https://boat.dev). Built with TanStack Start, Effect, and the Cloudflare Agents SDK, and installable on your phone.
+**Dex** is a personal agent harness. Each user gets an agent in a Cloudflare Durable Object running [Pi Durable](https://developers.cloudflare.com/agents/harnesses/pi/), thinking with models through [ClinePass](https://docs.cline.bot/getting-started/clinepass) or [OpenCode Go](https://opencode.ai/docs/go/), answering with generative UI from [OpenUI](https://www.openui.com/), and doing real work on its own cloud VM from [boat.dev](https://boat.dev). Built with TanStack Start, Effect, and the Cloudflare Agents SDK, and installable on your phone.
 
 [Highlights](#highlights) · [Features](#features) · [Repository](#repository) · [Architecture](#architecture) · [Develop](#develop) · [Deploy](#deploy) · [Security](#security) · [Limits](#limits) · [License](#license)
 
@@ -31,7 +31,7 @@
 
 <img src="docs/screenshots/chat-vm.png" alt="A chat that used the VM, with its folded activity row and a table answer" width="100%">
 
-- **Any ClinePass model**, with a per-chat model and thinking level. Replies stream live, and runs survive restarts, evictions, and deploys.
+- **Two model subscriptions, connect either or both:** ClinePass and OpenCode Go (GLM, Kimi, DeepSeek, Qwen, MiniMax, MiMo, Claude Haiku, GPT Luna, Grok, Gemini, and more, each on the API style Go serves it with). Pick a model and thinking level per chat from one searchable menu grouped by subscription; free models and ones whose provider trains on your prompts are marked. An agent or default on a subscription you haven't connected runs the same model on one you have. Replies stream live, and runs survive restarts, evictions, and deploys.
 - **One activity row per reply** folds its thinking, tool calls, and in-between notes. While it works it shows what's really happening: the running tool and its arguments ("Running on the VM… npm test"), or the latest line of the model's thinking. Then it reads "Worked for 36s · 8 tools · 6 thoughts"; tap it to see every step. Screenshots in those steps load when you open them, so long VM chats stay light.
 - **Generative UI** with `render_ui` (OpenUI): cards, stat tiles, tables, charts, and forms. Markdown tables wrap at word boundaries and scroll sideways in their own frame on a phone.
 - **Tools:** `bash` over a persistent `/workspace` (a simulated shell with grep, sed, jq, sqlite3, curl), file tools, `web_search` / `web_fetch` (Workers AI), `schedule_prompt` (one-off or cron), and `use_skill`.
@@ -149,7 +149,7 @@
 
 <img src="docs/screenshots/usage.png" alt="The Usage page" width="100%">
 
-- **Usage:** what Dex costs across ClinePass (tokens per model and chat, at list prices), boat.dev (VM time), and Cloudflare (from the Analytics API), with a daily chart.
+- **Usage:** what Dex costs across ClinePass (tokens per model and chat, at list prices), OpenCode Go (tokens at Go's rates, plus your 5-hour, weekly, and monthly allowance read live from OpenCode), boat.dev (VM time), and Cloudflare (from the Analytics API), with a daily chart.
 - **Snappy navigation:** pages render from the agent's synced state, so switching pages never waits on the network.
   - Every page's code is fetched while idle, and the last state is kept on the device for instant launches.
   - Anything still loading shows a skeleton shaped like the page.
@@ -183,6 +183,7 @@ Browser (TanStack Start, React)
 Worker (src/server.ts) ── auth check ──► DexAgent Durable Object, one per user (src/agent/dex-agent.ts)
   └─ TanStack Start handler                  ├─ PiHarness → Pi Durable (chats in the object's SQLite)
                                              ├─ ClinePass provider (openai-completions → api.cline.bot)
+                                             ├─ OpenCode Go provider (completions, responses, messages, google → opencode.ai)
                                              ├─ tools + Workspace (SQLite-backed files, just-bash)
                                              ├─ VmManager → boat.dev VMs (one per chat, plus the MCP VM)
                                              ├─ MCP client (remote servers; local ones via supergateway)
@@ -193,7 +194,7 @@ Worker (src/server.ts) ── auth check ──► DexAgent Durable Object, one 
 In `apps/web/src/`:
 
 - `server/`: Effect services for config, keys (HMAC session signing, AES-GCM), sessions, and GitHub OAuth.
-- `agent/`: the Durable Object and its parts (operations, VMs, MCP and registry search, skills, secrets, queue, media, push, the ClinePass provider) and the tools.
+- `agent/`: the Durable Object and its parts (operations, VMs, MCP and registry search, skills, secrets, queue, media, push, the ClinePass and OpenCode Go providers) and the tools.
 - `shared/`: model catalog, wire protocol, and shared types.
 - `client/`: the agent connection (`useAgent`), the Pi event reducer, and UI components.
 - `routes/`: pages and auth endpoints.
@@ -222,6 +223,7 @@ npx wrangler secret put AUTH_SECRET
 npx wrangler secret put GITHUB_CLIENT_ID
 npx wrangler secret put GITHUB_CLIENT_SECRET
 npx wrangler secret put CLINE_API_KEY         # optional shared key
+npx wrangler secret put OPENCODE_API_KEY      # optional: OpenCode Go key for the owner's chats; everyone else connects their own
 npx wrangler secret put OWNER_PASSWORD        # optional: password sign-in as the owner
 npx wrangler secret put BOAT_API_KEY          # optional: boat.dev key for the owner's VMs; everyone else connects their own
 npx wrangler secret put CLOUDFLARE_API_TOKEN  # optional: Account Analytics: Read, for the Usage page
@@ -264,7 +266,7 @@ cd ../.. && npm run deploy                    # checks operations, builds, and d
 
 ## Limits
 
-- Cline has no third-party OAuth, so users connect with an API key.
+- Cline and OpenCode have no third-party OAuth, so users connect with an API key. OpenCode Go's allowance comes from an endpoint its docs don't list (what its console reads); if it changes, the Usage page says so and tokens are still counted.
 - The `/workspace` shell is simulated (just-bash) and can't install or run programs; real work happens on a VM.
 - boat.dev's free trial allows 2 running VMs at once; stopped VM disks are kept 14 days.
 - boat's Stream player needs Chrome; other browsers (every iPhone and iPad browser) use Selkies. The Selkies desktop keeps the VM's screen size (the agent's screenshots and clicks depend on it) and scales the picture to fit.

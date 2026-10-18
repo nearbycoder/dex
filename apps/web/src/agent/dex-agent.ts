@@ -16,7 +16,7 @@ import { PiHarness } from "agents/harness/pi"
 import { Effect, Layer, ManagedRuntime, Option, Redacted, Schema } from "effect"
 import { AppConfig, envConfigProvider } from "~/server/config"
 import { Keys } from "~/server/crypto"
-import { clampThinking, DEFAULT_MODEL_ID, DEFAULT_THINKING, findModel, type ThinkingLevel } from "~/shared/models"
+import { clampThinking, DEFAULT_MODEL_ID, DEFAULT_THINKING, findModel, type ThinkingLevel, usableModel } from "~/shared/models"
 import type {
   ClientMessage,
   ConnectClineResult,
@@ -33,7 +33,7 @@ import type {
 } from "~/shared/protocol"
 import { MCP_VM, SHARED_VM } from "~/shared/protocol"
 import { normalizeRepoUrl, type ProjectDraft, type ProjectProfile, type ProjectRepo, PROJECT_ROOT, repoDirName, repoLabel } from "~/shared/projects"
-import { CLOUDFLARE_RATES, type CloudflareLine, type UsageRange, type UsageReport } from "~/shared/usage"
+import { CLOUDFLARE_RATES, type CloudflareLine, type OpenCodeLimits, type UsageRange, type UsageReport } from "~/shared/usage"
 import { AGENT_COLORS, AGENT_ICONS, type AgentDraft, type AgentProfile, STARTER_AGENTS } from "~/shared/agents"
 import { type AccessRisk, type CreatedAccessToken, NO_ACCESS } from "~/shared/access"
 import { extensionOf, MAX_MEDIA_BYTES, vmMediaLinks, vmMediaSource } from "~/shared/media"
@@ -45,6 +45,7 @@ import { BoatClient, BoatKey, checkBoatKey } from "./boat"
 import { CloudflareAnalytics, type CloudflareDay, dayCost, emptyDay } from "./cloudflare-analytics"
 import { datesBetween, UsageLedger, utcDate } from "./usage-ledger"
 import { CLINEPASS_PROVIDER_ID, ClinePassClient, clinePassProvider } from "./clinepass"
+import { OpenCodeGoClient, openCodeGoProvider } from "./opencode-go"
 import { isMcpExtension, type McpCallResult, mcpExtension, mcpExtensionName, type McpToolSpec, toToolResult } from "./mcp-tools"
 import { AccessCenter, parseAccessToken } from "./access"
 import { MediaCenter, type SharedMedia } from "./media"
@@ -72,7 +73,7 @@ import { adoptSharedVm, type DesktopUpstream, errorText, migrateVmTables, stored
 import { Workspace, WORKSPACE_ROOT } from "./workspace"
 
 const AgentLayer = (env: object, boatKey: BoatKey["Service"]) =>
-  Layer.mergeAll(Keys.layer, ClinePassClient.layer, BoatClient.layer.pipe(Layer.provide(Layer.succeed(BoatKey, boatKey))), CloudflareAnalytics.layer).pipe(
+  Layer.mergeAll(Keys.layer, ClinePassClient.layer, OpenCodeGoClient.layer, BoatClient.layer.pipe(Layer.provide(Layer.succeed(BoatKey, boatKey))), CloudflareAnalytics.layer).pipe(
     Layer.provideMerge(AppConfig.layer),
     Layer.provide(envConfigProvider(env))
   )
@@ -196,12 +197,13 @@ const keyHint = (key: string) => (key.length > 8 ? `${key.slice(0, 4)}…${key.s
 
 /**
  * One per user. Hosts Pi Durable through PiHarness: each chat is a Pi
- * session in this object's SQLite, model calls go to ClinePass, and runs
+ * session in this object's SQLite, model calls go to ClinePass or OpenCode Go, and runs
  * resume on their own after an eviction or deploy.
  */
 export class DexAgent extends Agent<Env, DexState> {
   initialState: DexState = {
     cline: { connected: false, source: null, keyHint: null, verifiedAt: null },
+    opencode: { connected: false, source: null, keyHint: null, verifiedAt: null },
     boat: { connected: false, source: null, keyHint: null },
     settings: DEFAULT_SETTINGS,
     sessions: [],
@@ -358,6 +360,7 @@ export class DexAgent extends Agent<Env, DexState> {
       const registry = this.registry
       const models = createModels()
       models.setProvider(clinePassProvider(() => this.resolveClineKey()))
+      models.setProvider(openCodeGoProvider(() => this.resolveOpenCodeKey()))
       return Harness.open(
         storage,
         {
@@ -438,6 +441,7 @@ export class DexAgent extends Agent<Env, DexState> {
     this.accountSecrets.refresh()
     this.startMcp()
     await this.refreshClineStatus()
+    this.refreshOpenCodeStatus()
     await this.refreshSessions()
     for (const vm of this.vms.values()) void vm.refresh()
     this.ctx.waitUntil(this.reapOrphanVms())
@@ -542,6 +546,27 @@ export class DexAgent extends Agent<Env, DexState> {
     return Option.isSome(shared) ? { key: Redacted.value(shared.value), source: "CLINE_API_KEY" } : undefined
   }
 
+  /** The user's own OpenCode Go key, else the deployment's OPENCODE_API_KEY for its owner only (like BOAT_API_KEY). */
+  private async resolveOpenCodeKey(): Promise<{ key: string; source: string } | undefined> {
+    const stored = this.secret("opencode_api_key")
+    if (stored) {
+      const key = await this.runtime.runPromise(Keys.use((keys) => keys.decrypt(stored)).pipe(Effect.option))
+      if (Option.isSome(key)) return { key: key.value, source: "OpenCode Go (connected)" }
+    }
+    const shared = this.isOwner() ? (this.env as unknown as Record<string, string | undefined>).OPENCODE_API_KEY : undefined
+    return shared ? { key: shared, source: "OPENCODE_API_KEY" } : undefined
+  }
+
+  private refreshOpenCodeStatus() {
+    if (this.secret("opencode_api_key")) {
+      const verifiedAt = Number(this.secret("opencode_verified_at") ?? 0) || null
+      this.publish({ opencode: { connected: true, source: "user", keyHint: this.secret("opencode_key_hint") ?? null, verifiedAt } })
+      return
+    }
+    const shared = this.isOwner() && Boolean((this.env as unknown as Record<string, string | undefined>).OPENCODE_API_KEY)
+    this.publish({ opencode: { connected: shared, source: shared ? "server" : null, keyHint: null, verifiedAt: null } })
+  }
+
   private secret(name: string): string | undefined {
     return this.ctx.storage.sql.exec<{ value: string }>(`SELECT value FROM dex_secrets WHERE name = ?`, name).toArray()[0]?.value
   }
@@ -596,7 +621,8 @@ export class DexAgent extends Agent<Env, DexState> {
     const conversation = await this.harness.conversation(sessionId)
     await conversation.configure(
       {
-        model: { provider: CLINEPASS_PROVIDER_ID, modelId: model },
+        // Each model runs on its own subscription, under the id that provider's API uses.
+        model: { provider: findModel(model)?.provider ?? CLINEPASS_PROVIDER_ID, modelId: findModel(model)?.apiId ?? model },
         thinkingLevel: thinking,
         ...(mcpServers && { extensions: { add: mcpServers.map((id) => ({ name: mcpExtensionName(id) })) } })
       },
@@ -740,6 +766,46 @@ export class DexAgent extends Agent<Env, DexState> {
     await this.refreshClineStatus()
   }
 
+  // ── OpenCode Go connection ────────────────────────────────────────────────
+
+  @callable()
+  async connectOpenCode(apiKey: string): Promise<ConnectClineResult> {
+    const key = apiKey.trim()
+    if (!key) return { ok: false, error: "Paste your OpenCode API key." }
+    const result = await this.runtime.runPromise(
+      Effect.gen(function*() {
+        const { note } = yield* (yield* OpenCodeGoClient).verifyKey(key)
+        const sealed = yield* (yield* Keys).encrypt(key)
+        return { ok: true as const, sealed, note }
+      }).pipe(Effect.catchTag("OpenCodeGoError", (error) => Effect.succeed({ ok: false as const, error: error.message })))
+    )
+    if (!result.ok) return result
+    const upsert = `INSERT INTO dex_secrets (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value`
+    this.ctx.storage.sql.exec(upsert, "opencode_api_key", result.sealed)
+    this.ctx.storage.sql.exec(upsert, "opencode_key_hint", keyHint(key))
+    this.ctx.storage.sql.exec(upsert, "opencode_verified_at", String(Date.now()))
+    this.refreshOpenCodeStatus()
+    return result.note ? { ok: true, note: result.note } : { ok: true }
+  }
+
+  @callable()
+  async disconnectOpenCode() {
+    this.ctx.storage.sql.exec(`DELETE FROM dex_secrets WHERE name IN ('opencode_api_key', 'opencode_key_hint', 'opencode_verified_at')`)
+    this.refreshOpenCodeStatus()
+  }
+
+  /** OpenCode Go's allowance windows, read live; null with a reason when there's no key or it can't be read. */
+  private async openCodeLimits(): Promise<{ limits: OpenCodeLimits | null; error: string | null }> {
+    const resolved = await this.resolveOpenCodeKey()
+    if (!resolved) return { limits: null, error: null }
+    return this.runtime.runPromise(
+      OpenCodeGoClient.use((client) => client.usage(resolved.key)).pipe(
+        Effect.map((limits) => ({ limits, error: null })),
+        Effect.catchTag("OpenCodeGoError", (error) => Effect.succeed({ limits: null, error: error.message }))
+      )
+    )
+  }
+
   @callable()
   async updateSettings(patch: Partial<DexSettings>) {
     const settings = { ...this.state.settings, ...patch }
@@ -766,7 +832,9 @@ export class DexAgent extends Agent<Env, DexState> {
     const agent = options.agentId ? this.agentById(options.agentId) : undefined
     const project = options.projectId ? this.projectById(options.projectId) : undefined
     const fallbackModel = agent?.model ?? this.state.settings.defaultModel
-    const model = options.model && findModel(options.model) ? options.model : findModel(fallbackModel) ? fallbackModel : DEFAULT_MODEL_ID
+    const picked = options.model && findModel(options.model) ? options.model : findModel(fallbackModel) ? fallbackModel : DEFAULT_MODEL_ID
+    // An agent or default on a subscription this user hasn't connected runs the same model on one they have.
+    const model = usableModel(picked, { clinepass: this.state.cline.connected, "opencode-go": this.state.opencode.connected })
     const thinking = clampThinking(findModel(model), options.thinking ?? agent?.thinking ?? this.state.settings.defaultThinking)
     // Picked in the composer, else the agent's, else the servers marked for new chats.
     const mcpServers = this.knownMcpIds(options.mcpServers ?? agent?.mcpServers ?? this.mcpRows().filter((row) => row.defaultOn).map((row) => row.id))
@@ -1687,7 +1755,7 @@ export class DexAgent extends Agent<Env, DexState> {
     return entry
   }
 
-  /** Spending across ClinePass, boat.dev, and Cloudflare for a period. */
+  /** Spending across ClinePass, OpenCode Go, boat.dev, and Cloudflare for a period. */
   @callable()
   async usageReport(range: UsageRange): Promise<UsageReport> {
     const DAY = 86_400_000
@@ -1701,8 +1769,11 @@ export class DexAgent extends Agent<Env, DexState> {
           : Math.min(this.ledger.earliest() ?? until, until - DAY)
 
     const titles = new Map(this.state.sessions.map((session) => [session.id, session.title]))
-    const cline = this.ledger.clineUsage(since, until, titles)
-    const clineDaily = this.ledger.clineDaily(since, until)
+    const cline = this.ledger.modelUsage("clinepass", since, until, titles)
+    const clineDaily = this.ledger.modelDaily("clinepass", since, until)
+    const opencodeTokens = this.ledger.modelUsage("opencode-go", since, until, titles)
+    const opencodeDaily = this.ledger.modelDaily("opencode-go", since, until)
+    const opencodeLimits = await this.openCodeLimits()
     const { usage: boat, daily: boatDaily } = this.ledger.boatUsage(since, until)
 
     // Cloudflare keeps these analytics for about a month.
@@ -1730,6 +1801,7 @@ export class DexAgent extends Agent<Env, DexState> {
       since,
       until,
       cline,
+      opencode: { ...opencodeTokens, connected: this.state.opencode.connected, limits: opencodeLimits.limits, limitsError: opencodeLimits.error },
       boat,
       cloudflare: {
         configured,
@@ -1740,7 +1812,13 @@ export class DexAgent extends Agent<Env, DexState> {
       },
       daily: datesBetween(since, until).map((date) => {
         const day = cloudflare?.days?.get(date)
-        return { date, cline: clineDaily.get(date) ?? 0, boat: boatDaily.get(date) ?? 0, cloudflare: day ? dayCost(day) : 0 }
+        return {
+          date,
+          cline: clineDaily.get(date) ?? 0,
+          opencode: opencodeDaily.get(date) ?? 0,
+          boat: boatDaily.get(date) ?? 0,
+          cloudflare: day ? dayCost(day) : 0
+        }
       })
     }
   }

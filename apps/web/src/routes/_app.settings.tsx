@@ -3,6 +3,7 @@ import { Check, Clock, LogOut, ShieldOff, Smartphone, Trash2, UserRound, Vibrate
 import { useCallback, useEffect, useRef, useState } from "react"
 import { BoatConnect } from "~/client/components/boat-connect"
 import { ClineConnect } from "~/client/components/cline-connect"
+import { OpenCodeConnect } from "~/client/components/opencode-connect"
 import { GitHubConnect } from "~/client/components/github-connect"
 import { InstallApp } from "~/client/components/install-app"
 import { ModelPicker } from "~/client/components/model-picker"
@@ -53,8 +54,12 @@ function SettingsPage() {
         </div>
       </Section>
 
-      <Section title="ClinePass" info="Dex's models run on your ClinePass subscription.">
+      <Section title="ClinePass" info="Models marked Cline in the model menu run on your ClinePass subscription.">
         <ClineConnect />
+      </Section>
+
+      <Section title="OpenCode Go" info="Models marked OpenCode in the model menu run on your OpenCode Go subscription. Connect either or both.">
+        <OpenCodeConnect />
       </Section>
 
       <Section title="Cloud VMs" info="Chats run code, browsers, and servers on VMs in your boat.dev account.">

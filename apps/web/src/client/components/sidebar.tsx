@@ -74,7 +74,8 @@ export function Sidebar() {
   const running = state?.vms.filter((vm) => vm.status === "running").length ?? 0
   const vmChanging = state?.vms.some((vm) => vm.status === "starting" || vm.status === "stopping") ?? false
   const mcpAttention = state?.mcp.some(mcpNeedsAttention) ?? false
-  const clineMissing = state ? !state.cline.connected : false
+  // No model subscription at all: nothing can answer.
+  const clineMissing = state ? !state.cline.connected && !state.opencode.connected : false
 
   // Switching sidebars keeps the phone drawer open, so you can go on from there.
   const openSettings = () => {
@@ -94,7 +95,7 @@ export function Sidebar() {
       to: "/settings",
       label: "General",
       icon: <SlidersHorizontal className="size-4" />,
-      hint: clineMissing && <Hint dot="bg-amber-500" title="Connect ClinePass" />
+      hint: clineMissing && <Hint dot="bg-amber-500" title="Connect ClinePass or OpenCode Go" />
     },
     { to: "/notifications", label: "Notifications", icon: <Bell className="size-4" /> },
     {
@@ -221,7 +222,7 @@ export function Sidebar() {
               {running > 0 ? (
                 <Hint count={running} dot="bg-emerald-500" title={`${running} VM${running === 1 ? "" : "s"} running`} />
               ) : (
-                (clineMissing || mcpAttention) && <Hint dot="bg-amber-500" title={clineMissing ? "Connect ClinePass" : "A server needs attention"} />
+                (clineMissing || mcpAttention) && <Hint dot="bg-amber-500" title={clineMissing ? "Connect ClinePass or OpenCode Go" : "A server needs attention"} />
               )}
               <ChevronRight className={`size-4 text-zinc-600 ${running > 0 || clineMissing || mcpAttention ? "" : "ml-auto"}`} />
             </button>

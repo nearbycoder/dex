@@ -10,7 +10,8 @@ import { ModelPicker } from "~/client/components/model-picker"
 import { useDex } from "~/client/lib/dex"
 import type { AgentProfile } from "~/shared/agents"
 import type { ProjectProfile } from "~/shared/projects"
-import { clampThinking, DEFAULT_MODEL_ID, DEFAULT_THINKING, findModel, type ThinkingLevel } from "~/shared/models"
+import { clampThinking, DEFAULT_MODEL_ID, DEFAULT_THINKING, findModel, type ThinkingLevel, usableModel } from "~/shared/models"
+import { connectedProviders } from "~/shared/protocol"
 
 export const Route = createFileRoute("/_app/chat/")({
   // `?agent=<id>` / `?project=<id>` preselect an agent or project, e.g. from their pages.
@@ -41,19 +42,20 @@ function NewChat() {
 
   // With no agent picked, follow the defaults from Settings.
   useEffect(() => {
-    if (state && !agentId) setChoice({ model: state.settings.defaultModel, thinking: state.settings.defaultThinking })
-  }, [state?.settings.defaultModel, state?.settings.defaultThinking, agentId])
+    if (state && !agentId) setChoice({ model: usableModel(state.settings.defaultModel, connectedProviders(state)), thinking: state.settings.defaultThinking })
+  }, [state?.settings.defaultModel, state?.settings.defaultThinking, state?.cline.connected, state?.opencode.connected, agentId])
 
   const pick = (next: AgentProfile | null) => {
     if (!next || next.id === agentId) {
       setAgentId(null)
       setMcpChoice(null)
-      if (state) setChoice({ model: state.settings.defaultModel, thinking: state.settings.defaultThinking })
+      if (state) setChoice({ model: usableModel(state.settings.defaultModel, connectedProviders(state)), thinking: state.settings.defaultThinking })
       return
     }
     setAgentId(next.id)
     setMcpChoice([...next.mcpServers])
-    setChoice({ model: next.model, thinking: clampThinking(findModel(next.model), next.thinking) })
+    const model = state ? usableModel(next.model, connectedProviders(state)) : next.model
+    setChoice({ model, thinking: clampThinking(findModel(model), next.thinking) })
     setDraft({ text: next.starter, key: Date.now() })
   }
 
@@ -102,13 +104,13 @@ function NewChat() {
                 ? `What should Dex do in ${project.name}?`
                 : "What should Dex do?"}
           </h1>
-          {state && !state.cline.connected && (
+          {state && !state.cline.connected && !state.opencode.connected && (
             <Link
               to="/settings"
               className="mb-4 flex items-center gap-3 rounded-xl border border-amber-900/60 bg-amber-950/30 px-4 py-3 text-sm text-amber-200 hover:bg-amber-950/50"
             >
               <KeyRound className="size-4 shrink-0" />
-              Connect your ClinePass key in Settings so Dex can think.
+              Connect ClinePass or OpenCode Go in Settings so Dex can think.
             </Link>
           )}
 

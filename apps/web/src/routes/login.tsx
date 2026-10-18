@@ -23,7 +23,7 @@ function Login() {
         <div className="mb-8 flex flex-col items-center text-center">
           <img src="/favicon.svg" alt="" className="mb-4 size-16 drop-shadow-[0_8px_24px_rgba(16,185,129,0.35)]" />
           <h1 className="text-2xl font-semibold tracking-tight">Sign in to Dex</h1>
-          <p className="mt-2 text-sm text-zinc-400">Your durable agent, powered by Pi and ClinePass.</p>
+          <p className="mt-2 text-sm text-zinc-400">Your durable agent, powered by Pi, ClinePass, and OpenCode Go.</p>
         </div>
         <div className="space-y-3 rounded-2xl border border-zinc-800 bg-zinc-900/50 p-6">
           {error && <p className="rounded-lg bg-red-950/50 px-3 py-2 text-sm text-red-300">{error}</p>}

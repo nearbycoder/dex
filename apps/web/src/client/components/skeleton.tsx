@@ -688,7 +688,7 @@ export function EditorSkeleton({ kind }: { kind: EditorKind }) {
   )
 }
 
-/** Settings: device rows, ClinePass, GitHub, new-chat defaults, scheduled prompts, account. */
+/** Settings: device rows, ClinePass, OpenCode Go, cloud VMs, GitHub, new-chat defaults, scheduled prompts, account. */
 export function SettingsSkeleton() {
   return (
     <Status>
@@ -700,6 +700,14 @@ export function SettingsSkeleton() {
           </div>
         </SectionBones>
         <SectionBones title={70}>
+          <div className="flex h-6 items-center gap-2">
+            <Bone className="size-4 rounded-full" />
+            <Bone className="h-3.5 w-24" />
+            <Bone className="ml-auto h-3.5 w-28" />
+          </div>
+        </SectionBones>
+        {/* OpenCode Go: connected, like ClinePass. */}
+        <SectionBones title={88}>
           <div className="flex h-6 items-center gap-2">
             <Bone className="size-4 rounded-full" />
             <Bone className="h-3.5 w-24" />
