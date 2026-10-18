@@ -40,6 +40,7 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
   const [open, setOpen] = useState(false)
   const [upward, setUpward] = useState(true)
   const [query, setQuery] = useState("")
+  const [only, setOnly] = useState<ModelProvider | "all">("all")
   const root = useRef<HTMLDivElement>(null)
   const current = findModel(props.model)
   const { state } = useDex()
@@ -48,7 +49,7 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
   const providers = (Object.keys(MODEL_PROVIDERS) as ModelProvider[]).sort((a, b) => Number(connected[b]) - Number(connected[a]))
   const needle = query.trim().toLowerCase()
   const matches = (model: DexModel) =>
-    !needle || `${model.name} ${MODEL_MAKERS[model.maker].name} ${MODEL_PROVIDERS[model.provider].name}`.toLowerCase().includes(needle)
+    (only === "all" || model.provider === only) && (!needle || `${model.name} ${MODEL_MAKERS[model.maker].name} ${MODEL_PROVIDERS[model.provider].name}`.toLowerCase().includes(needle))
 
   useEffect(() => {
     if (!open) return
@@ -71,6 +72,7 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
     const rect = root.current?.getBoundingClientRect()
     if (rect) setUpward(rect.top > window.innerHeight - rect.bottom)
     setQuery("")
+    setOnly("all")
     setOpen((value) => !value)
   }
 
@@ -109,6 +111,26 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
               aria-label="Search models"
               className="min-w-0 flex-1 bg-transparent text-base text-zinc-100 placeholder:text-zinc-600 focus:outline-none md:text-sm"
             />
+          </div>
+          {/* One subscription at a time, or all of them. */}
+          <div className="scrollbar-none flex gap-1 overflow-x-auto border-b border-zinc-900 px-2 py-1.5">
+            {(["all", ...providers] as const).map((choice) => (
+              <button
+                key={choice}
+                type="button"
+                onClick={() => setOnly(choice)}
+                aria-pressed={only === choice}
+                className={`flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs ${
+                  only === choice ? "bg-zinc-100 text-zinc-900" : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
+                }`}
+              >
+                {choice === "all" ? "All" : MODEL_PROVIDERS[choice].name}
+                {choice !== "all" && !connected[choice] && <span className={`size-1.5 rounded-full ${only === choice ? "bg-zinc-500" : "bg-zinc-600"}`} title="Not connected" />}
+                <span className={only === choice ? "text-zinc-500" : "text-zinc-600"}>
+                  {choice === "all" ? MODELS.length : MODELS.filter((model) => model.provider === choice).length}
+                </span>
+              </button>
+            ))}
           </div>
           <div className="scrollbar-thin max-h-80 overflow-y-auto overscroll-contain pb-1">
             {providers.map((provider) => {
@@ -178,7 +200,9 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
                 </section>
               )
             })}
-            {MODELS.every((model) => !matches(model)) && <p className="px-3 py-4 text-center text-xs text-zinc-500">No model matches “{query}”.</p>}
+            {MODELS.every((model) => !matches(model)) && (
+              <p className="px-3 py-4 text-center text-xs text-zinc-500">{needle ? `No model matches “${query}”.` : "No models."}</p>
+            )}
           </div>
           <p className="border-t border-zinc-900 px-3 py-2 text-[11px] leading-relaxed text-zinc-500">
             Text-only models can't see images or VM screenshots. Pick a <span className="text-emerald-400">Vision</span> model for

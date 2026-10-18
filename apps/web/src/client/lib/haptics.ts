@@ -1,4 +1,3 @@
-import { hapticTrigger } from "ios-haptics"
 import { useEffect } from "react"
 
 /**
@@ -6,9 +5,9 @@ import { useEffect } from "react"
  * switches and checkboxes, disclosures, selects.
  *
  * - iPhone and iPad: Safari has no Vibration API, but toggling an `<input type="checkbox" switch>` plays the
- *   system tap. Plain buttons get an invisible switch laid over them (ios-haptics), the most reliable way. Links,
- *   submit buttons, and the rest can't (the switch would take the tap, and the navigation or submit would never
- *   happen), so for those a hidden switch is clicked from code during the tap, which plays the same haptic.
+ *   system tap, so a hidden switch is clicked from code during each tap. (Laying an invisible switch over each
+ *   button, as ios-haptics does, broke scrolling: a drag that starts on a switch moves the switch, not the list,
+ *   and Dex's pages and menus are mostly buttons inside scrolling lists.)
  * - Android: a short `navigator.vibrate` on the same taps.
  * - Desktop: nothing.
  *
@@ -17,7 +16,6 @@ import { useEffect } from "react"
 
 const STORAGE_KEY = "dex-haptics"
 const CHANGE_EVENT = "dex-haptics-change"
-const IOS_TARGETS = 'button[type="button"]:not([data-no-haptic])'
 const TAP_TARGETS = [
   "a[href]",
   "button",
@@ -87,49 +85,20 @@ export function haptic() {
   else if ("vibrate" in navigator) navigator.vibrate(TAP_MS)
 }
 
-/** Taps on controls without their own overlay switch: everything but plain buttons on iOS, everything on Android. */
+/** A tap on any control. */
 const onTap = (event: MouseEvent) => {
   const element = event.target instanceof Element ? event.target : null
   if (!element || element.closest("[data-dex-haptic], [data-no-haptic]")) return
   const target = element.closest(TAP_TARGETS)
   if (!target || target.matches(":disabled, [aria-disabled='true']")) return
-  // On iOS a plain button already plays it through its overlay switch.
-  if (isIOS() && (target.matches(IOS_TARGETS) || element.matches("[data-haptic-trigger]"))) return
   haptic()
 }
 
 /** Turns haptics on for the whole document; returns a function that turns them off again. */
 export function installHaptics(): () => void {
-  if (isIOS()) {
-    document.addEventListener("click", onTap, { capture: true, passive: true })
-    const attach = (node: Node) => {
-      if (!(node instanceof Element)) return
-      if (node.matches(IOS_TARGETS)) hapticTrigger(node as HTMLElement)
-      for (const element of node.querySelectorAll<HTMLElement>(IOS_TARGETS)) hapticTrigger(element)
-    }
-    attach(document.body)
-    // New buttons, and buttons whose children React replaced (dropping the switch), get one too.
-    const observer = new MutationObserver((records) => {
-      for (const record of records) {
-        record.addedNodes.forEach(attach)
-        const button = record.target instanceof Element ? record.target.closest(IOS_TARGETS) : null
-        if (button) hapticTrigger(button as HTMLElement)
-      }
-    })
-    observer.observe(document.body, { childList: true, subtree: true })
-    return () => {
-      observer.disconnect()
-      document.removeEventListener("click", onTap, { capture: true })
-      for (const input of document.querySelectorAll("[data-haptic-trigger]")) input.remove()
-    }
-  }
-
-  if ("vibrate" in navigator) {
-    document.addEventListener("click", onTap, { capture: true, passive: true })
-    return () => document.removeEventListener("click", onTap, { capture: true })
-  }
-
-  return () => undefined
+  if (!isIOS() && !("vibrate" in navigator)) return () => undefined
+  document.addEventListener("click", onTap, { capture: true, passive: true })
+  return () => document.removeEventListener("click", onTap, { capture: true })
 }
 
 /** Keeps haptics installed while enabled; mounted once in the app layout. */

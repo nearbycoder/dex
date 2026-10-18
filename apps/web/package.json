@@ -27,7 +27,6 @@
     "agents": "^0.28.1",
     "clsx": "^2.1.1",
     "effect": "^4.0.5",
-    "ios-haptics": "^3.2.0",
     "just-bash": "^3.6.0",
     "lucide-react": "^1.59.0",
     "react": "^19.3.1",

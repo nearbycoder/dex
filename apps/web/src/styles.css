@@ -181,11 +181,6 @@ button:not(.w-full, [data-no-press]):active:not(:disabled) {
   transform: scale(0.97);
 }
 
-/* A disabled button's haptic switch (see client/lib/haptics.ts) lets taps through, so they do nothing. */
-button:disabled > [data-haptic-trigger] {
-  pointer-events: none;
-}
-
 /* Skeleton bones (client/components/skeleton.tsx): a soft sweep of light while content loads. */
 .dex-bone {
   background: linear-gradient(90deg, rgb(39 39 42 / 0.75) 30%, rgb(63 63 70 / 0.75) 50%, rgb(39 39 42 / 0.75) 70%);
