@@ -205,10 +205,19 @@ export type ClientMessage =
   /** Whether Dex is visible on this connection, and which chat it shows; notifications skip what you're looking at. */
   | { readonly type: "dex.presence"; readonly visible: boolean; readonly sessionId: string | null }
 
+/** A message waiting for its chat to finish the current run. */
+export interface QueuedMessage {
+  readonly id: string
+  readonly text: string
+  readonly createdAt: number
+}
+
 export type ServerMessage =
   | { readonly type: "dex.snapshot"; readonly sessionId: string; readonly snapshot: SnapshotEvent }
   | { readonly type: "dex.events"; readonly sessionId: string; readonly events: ReadonlyArray<AgentEvent> }
   | { readonly type: "dex.error"; readonly sessionId: string | null; readonly message: string }
+  /** Messages waiting their turn in the chat; `held` after you stopped it (nothing goes until you send or pick one). */
+  | { readonly type: "dex.queue"; readonly sessionId: string; readonly items: ReadonlyArray<QueuedMessage>; readonly held: boolean }
   /** The chat's stored files, and the VM links being saved into it right now. */
   | { readonly type: "dex.artifacts"; readonly sessionId: string; readonly artifacts: ReadonlyArray<ChatArtifact>; readonly saving: ReadonlyArray<string> }
   | { readonly type: "dex.vm.activity"; readonly sessionId: null; readonly vmKey: string; readonly activity: VmActivity }

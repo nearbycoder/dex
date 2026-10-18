@@ -47,6 +47,7 @@ import { isMcpExtension, type McpCallResult, mcpExtension, mcpExtensionName, typ
 import { AccessCenter, parseAccessToken } from "./access"
 import { MediaCenter, type SharedMedia } from "./media"
 import { mediaTools } from "./tools/media-tools"
+import { MessageQueue } from "./queue"
 import { SkillCenter } from "./skills"
 import { skillTools } from "./tools/skill-tools"
 import { handleMcpBody } from "./mcp-server"
@@ -258,6 +259,11 @@ export class DexAgent extends Agent<Env, DexState> {
     githubToken: async () => (await this.githubCredentials())?.token ?? null
   })
 
+  /** Messages sent while their chat was busy, sent one per finished run. */
+  readonly messageQueue = new MessageQueue(this.ctx.storage.sql)
+  /** Chats whose next queued message is being sent, so two finishing runs don't send two. */
+  private readonly draining = new Set<string>()
+
   /** One VM per chat (plus `shared`, from before VMs were per chat), created when a chat first needs one. */
   private readonly vms = new Map<string, VmManager>()
   private readonly vmHost: VmHost = {
@@ -377,6 +383,7 @@ export class DexAgent extends Agent<Env, DexState> {
     await this.refreshSessions()
     for (const vm of this.vms.values()) void vm.refresh()
     this.ctx.waitUntil(this.reapOrphanVms())
+    this.ctx.waitUntil(this.drainQueues().catch(() => undefined))
     this.ctx.waitUntil(this.media.reap((id) => this.hasSession(id)).catch(() => undefined))
   }
 
@@ -689,30 +696,148 @@ export class DexAgent extends Agent<Env, DexState> {
 
     const { connection } = getCurrentAgent()
     if (connection) await this.subscribe(connection, sessionId)
+
+    // Sending something picks a stopped chat back up: this message goes now, and the queue after it.
+    const held = this.messageQueue.held(sessionId)
+    this.messageQueue.release(sessionId)
+    // A busy chat (or one with messages already waiting) queues it, where it can still be edited or reordered.
+    if (!held && ((await this.isBusy(sessionId)) || this.messageQueue.list(sessionId).length > 0)) {
+      this.messageQueue.add(sessionId, content)
+      this.publishQueue(sessionId)
+      await this.ensureQueueCheck()
+      await this.drainQueue(sessionId)
+      return
+    }
+    await this.deliver(sessionId, content)
+    if (held) this.publishQueue(sessionId)
+  }
+
+  private async isBusy(sessionId: string) {
+    return (await this.harness.sessions.list()).some((info) => info.id === sessionId && info.busy)
+  }
+
+  /** Hands a message to the chat: a new run, or with `steer`, into the run that's going (after its current tool). */
+  private async deliver(sessionId: string, content: string, { steer = false } = {}) {
+    const row = this.ctx.storage.sql.exec<SessionRow>(`SELECT * FROM dex_sessions WHERE id = ?`, sessionId).toArray()[0]
+    if (!row) return
     // `/<name> …` invokes a skill: its instructions join this chat's prompt from this message on.
     const skill = invokedSkill(content)
     if (skill) this.skills.activate(sessionId, skill)
 
     const session = this.harness.session(sessionId)
-    const receipt = await session.submit(content)
+    const receipt = await session.submit(content, steer ? { whenBusy: "steer" } : undefined)
     const title = row.title === "New chat" ? content.replace(/\s+/g, " ").slice(0, 60) : row.title
     this.ctx.storage.sql.exec(`UPDATE dex_sessions SET title = ?, updated_at = ? WHERE id = ?`, title, Date.now(), sessionId)
     // Something new in it: back to the inbox, whether it was settled or snoozed.
     await this.returnToInbox(sessionId)
     await this.refreshSessions()
-    // Clears the busy flag even when nobody is watching this chat, and tells your devices.
+    // Clears the busy flag even when nobody is watching this chat, tells your devices, and sends what's queued next.
     const finished = async () => {
       this.ctx.storage.sql.exec(`UPDATE dex_sessions SET updated_at = ? WHERE id = ?`, Date.now(), sessionId)
       await this.refreshSessions()
       await this.notifyRunEnd(sessionId, "reply")
+      await this.drainQueue(sessionId)
     }
     this.ctx.waitUntil(session.wait(receipt.operationId).then(finished, finished))
   }
 
+  /**
+   * Sends a chat's next queued message once it's idle (and not stopped). Right after a run ends the chat can still
+   * read busy for a moment, so it looks again shortly a few times before leaving it to the minute check.
+   */
+  private async drainQueue(sessionId: string, attempt = 0) {
+    if (this.draining.has(sessionId) || this.messageQueue.held(sessionId) || !this.hasSession(sessionId)) return
+    this.draining.add(sessionId)
+    try {
+      if (await this.isBusy(sessionId)) {
+        const delay = [250, 1_000, 3_000][attempt]
+        if (delay !== undefined && this.messageQueue.list(sessionId).length) {
+          this.ctx.waitUntil(new Promise((resolve) => setTimeout(resolve, delay)).then(() => this.drainQueue(sessionId, attempt + 1)))
+        }
+        return
+      }
+      const next = this.messageQueue.next(sessionId)
+      if (next === null) return
+      this.publishQueue(sessionId)
+      await this.deliver(sessionId, next)
+    } finally {
+      this.draining.delete(sessionId)
+    }
+  }
+
+  /**
+   * The fallback that keeps queues moving if a run's end was missed (the object restarted mid-run): every minute
+   * while anything waits, send what's due.
+   */
+  async drainQueues() {
+    for (const sessionId of this.messageQueue.sessions()) {
+      if (!this.hasSession(sessionId)) this.messageQueue.clear(sessionId)
+      else await this.drainQueue(sessionId)
+    }
+    if (this.messageQueue.sessions().some((id) => !this.messageQueue.held(id))) await this.ensureQueueCheck()
+  }
+
+  private async ensureQueueCheck() {
+    if (!this.getSchedules().some((schedule) => schedule.callback === "drainQueues")) await this.schedule(60, "drainQueues")
+  }
+
+  private queueMessage(sessionId: string): ServerMessage {
+    return { type: "dex.queue", sessionId, items: this.messageQueue.list(sessionId), held: this.messageQueue.held(sessionId) }
+  }
+
+  private publishQueue(sessionId: string) {
+    const message = this.queueMessage(sessionId)
+    for (const [connectionId, subscription] of this.subscriptions) {
+      if (subscription.sessionId !== sessionId) continue
+      const connection = this.getConnection(connectionId)
+      if (connection) this.send(connection, message)
+    }
+  }
+
+  /** A chat's queued messages, next first. */
+  @callable()
+  listQueue(sessionId: string) {
+    return { items: this.messageQueue.list(sessionId), held: this.messageQueue.held(sessionId) }
+  }
+
+  @callable()
+  editQueued(sessionId: string, id: string, text: string) {
+    const content = text.trim()
+    if (!content) throw new Error("A message can't be empty: delete it instead.")
+    this.messageQueue.edit(sessionId, id, content)
+    this.publishQueue(sessionId)
+  }
+
+  @callable()
+  removeQueued(sessionId: string, id: string) {
+    this.messageQueue.take(sessionId, id)
+    if (!this.messageQueue.list(sessionId).length) this.messageQueue.release(sessionId)
+    this.publishQueue(sessionId)
+  }
+
+  /** Moves a queued message to `index` (0: next). */
+  @callable()
+  moveQueued(sessionId: string, id: string, index: number) {
+    this.messageQueue.move(sessionId, id, index)
+    this.publishQueue(sessionId)
+  }
+
+  /** Sends a queued message now: into the run that's going as a steer (after its current tool), or as the next run. */
+  @callable()
+  async steerQueued(sessionId: string, id: string) {
+    const text = this.messageQueue.take(sessionId, id)
+    this.messageQueue.release(sessionId)
+    this.publishQueue(sessionId)
+    await this.deliver(sessionId, text, { steer: await this.isBusy(sessionId) })
+  }
+
   @callable()
   async abort(sessionId: string) {
+    // Stopping holds what's queued: nothing more goes until you send something or pick a message to send.
+    if (this.messageQueue.list(sessionId).length) this.messageQueue.hold(sessionId)
     await this.harness.session(sessionId).abort()
     await this.refreshSessions()
+    this.publishQueue(sessionId)
   }
 
   @callable()
@@ -742,6 +867,7 @@ export class DexAgent extends Agent<Env, DexState> {
     await this.harness.session(sessionId).abort().catch(() => false)
     this.ctx.storage.sql.exec(`DELETE FROM dex_sessions WHERE id = ?`, sessionId)
     this.skills.forgetSession(sessionId)
+    this.messageQueue.clear(sessionId)
     await this.refreshSessions()
     // Its VM goes with it, disk and all (stopped first if it was running; deleting does both), and its media.
     if (this.vms.has(sessionId)) this.ctx.waitUntil(this.reapOrphanVms())
@@ -817,6 +943,7 @@ export class DexAgent extends Agent<Env, DexState> {
       this.subscriptions.set(connection.id, { sessionId, stream })
       this.send(connection, { type: "dex.snapshot", sessionId, snapshot: stream.snapshot })
       this.send(connection, this.artifactsMessage(sessionId))
+      this.send(connection, this.queueMessage(sessionId))
       stream.start(async (events) => {
         if (!this.send(connection, { type: "dex.events", sessionId, events })) {
           await this.unsubscribe(connection.id)
@@ -1637,6 +1764,8 @@ export class DexAgent extends Agent<Env, DexState> {
     const last = this.lastResponses.get(sessionId)
     this.lastResponses.delete(sessionId)
     if (!row || row.muted === 1 || !last || last.stopReason === "aborted") return
+    // More is queued: tell your devices when the last of it is done.
+    if (!this.messageQueue.held(sessionId) && this.messageQueue.list(sessionId).length > 0 && last.stopReason !== "error") return
     const url = `/chat/${sessionId}`
     const title = (kind === "scheduled" ? `⏰ ${prompt ?? row.title}` : row.title).slice(0, 80)
     const failed = last.stopReason === "error"
@@ -2074,6 +2203,7 @@ export class DexAgent extends Agent<Env, DexState> {
       this.ctx.storage.sql.exec(`UPDATE dex_sessions SET updated_at = ? WHERE id = ?`, Date.now(), sessionId)
       await this.refreshSessions()
       await this.notifyRunEnd(sessionId, "scheduled", payload.prompt)
+      await this.drainQueue(sessionId)
     }
     // In the background, so a long run doesn't hold up the scheduler.
     this.ctx.waitUntil(session.wait(receipt.operationId).then(finished, finished))

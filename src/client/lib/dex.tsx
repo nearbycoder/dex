@@ -141,6 +141,8 @@ const reduce = (state: TranscriptState, action: Action): TranscriptState => {
       return message.events.reduce(applyEvent, state)
     case "dex.error":
       return { ...state, error: message.message, loaded: true }
+    case "dex.queue":
+      return { ...state, queue: message.items, queueHeld: message.held }
     case "dex.artifacts":
       return { ...state, artifacts: message.artifacts, savingArtifacts: message.saving }
     default:

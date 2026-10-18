@@ -69,6 +69,11 @@ export type OperationHost = Pick<
   | "schedulePrompt"
   | "readTranscript"
   | "listArtifacts"
+  | "listQueue"
+  | "editQueued"
+  | "removeQueued"
+  | "moveQueued"
+  | "steerQueued"
   | "searchSkills"
   | "previewSkill"
   | "installSkill"
@@ -412,6 +417,39 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     covers: ["removeSkill"],
     summarize: (args) => `Remove skill ${args.name}`,
     run: async (host, args) => ({ removed: host.removeSkill(args.name) })
+  }),
+  define({
+    name: "app_list_queue",
+    description: "A chat's queued messages (sent while it was busy), next first, and whether the queue is held because the chat was stopped.",
+    risk: "read",
+    parameters: Type.Object({ session_id: id("The chat's id.") }),
+    covers: ["listQueue"],
+    summarize: (args, state) => `List queued messages in ${quote(chatTitle(state, args.session_id))}`,
+    run: async (host, args) => host.listQueue(args.session_id)
+  }),
+  define({
+    name: "app_manage_queue",
+    description:
+      "Change a chat's queued messages before they're sent: edit one's text, remove it, move it to a position (0 is next), or steer (send it now, into the run that's going).",
+    risk: "write",
+    parameters: Type.Object({
+      session_id: id("The chat's id."),
+      message_id: Type.String({ maxLength: 64, description: "From app_list_queue." }),
+      action: Type.Union([Type.Literal("edit"), Type.Literal("remove"), Type.Literal("move"), Type.Literal("steer")]),
+      text: Type.Optional(Type.String({ minLength: 1, maxLength: 100_000, description: "New text, for edit." })),
+      position: Type.Optional(Type.Integer({ minimum: 0, maximum: 1_000, description: "New position, for move." }))
+    }),
+    covers: ["editQueued", "removeQueued", "moveQueued", "steerQueued"],
+    summarize: (args, state) => `${args.action[0]!.toUpperCase()}${args.action.slice(1)} a queued message in ${quote(chatTitle(state, args.session_id))}`,
+    run: async (host, args) => {
+      if (args.action === "edit") {
+        if (!args.text) throw new Error("edit needs text.")
+        host.editQueued(args.session_id, args.message_id, args.text)
+      } else if (args.action === "remove") host.removeQueued(args.session_id, args.message_id)
+      else if (args.action === "move") host.moveQueued(args.session_id, args.message_id, args.position ?? 0)
+      else await host.steerQueued(args.session_id, args.message_id)
+      return host.listQueue(args.session_id)
+    }
   }),
   define({
     name: "app_list_agents",

@@ -2,6 +2,7 @@ import type { AssistantMessage, ToolCall, ToolResultMessage, UserMessage } from 
 import type { AgentEvent, EntryRecord, SnapshotEvent } from "@earendil-works/pi-durable"
 import { Predicate } from "effect"
 import type { ChatArtifact } from "~/shared/media"
+import type { QueuedMessage } from "~/shared/protocol"
 
 export interface LiveTool {
   readonly callId: string
@@ -27,6 +28,9 @@ export interface TranscriptState {
   /** Files stored in the chat, and the VM links (as sources) being saved into it. */
   readonly artifacts: ReadonlyArray<ChatArtifact>
   readonly savingArtifacts: ReadonlyArray<string>
+  /** Messages waiting for the chat to finish its run (Dex's queue), next first; held after you stopped the chat. */
+  readonly queue: ReadonlyArray<QueuedMessage>
+  readonly queueHeld: boolean
 }
 
 export const emptyTranscript: TranscriptState = {
@@ -39,7 +43,9 @@ export const emptyTranscript: TranscriptState = {
   error: null,
   loaded: false,
   artifacts: [],
-  savingArtifacts: []
+  savingArtifacts: [],
+  queue: [],
+  queueHeld: false
 }
 
 export const fromSnapshot = (snapshot: SnapshotEvent, previous: TranscriptState = emptyTranscript): TranscriptState => ({
@@ -58,7 +64,9 @@ export const fromSnapshot = (snapshot: SnapshotEvent, previous: TranscriptState 
   loaded: true,
   // Sent right after the snapshot; keep what's known until then.
   artifacts: previous.artifacts,
-  savingArtifacts: previous.savingArtifacts
+  savingArtifacts: previous.savingArtifacts,
+  queue: previous.queue,
+  queueHeld: previous.queueHeld
 })
 
 const appendEntry = (entries: ReadonlyArray<EntryRecord>, entry: EntryRecord) =>

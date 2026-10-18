@@ -5,6 +5,7 @@ import { Composer } from "~/client/components/composer"
 import { ChatArtifactsContext, type ChatArtifacts } from "~/client/components/media"
 import { MessageList } from "~/client/components/message-list"
 import { McpPicker } from "~/client/components/mcp-picker"
+import { QueuePanel } from "~/client/components/queue-panel"
 import { ModelPicker } from "~/client/components/model-picker"
 import { AgentAvatar } from "~/client/components/agent-avatar"
 import { SessionMenu } from "~/client/components/session-menu"
@@ -79,7 +80,6 @@ function Chat() {
             </button>
           </form>
         )}
-        {transcript.queued > 0 && <span className="text-xs text-zinc-500">{transcript.queued} queued</span>}
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
           {(() => {
             const vm = state?.vms.find((candidate) => candidate.key === sessionId)
@@ -145,6 +145,7 @@ function Chat() {
             <KeyRound className="size-3.5" /> Connect ClinePass to get answers
           </Link>
         )}
+        <QueuePanel sessionId={sessionId} items={transcript.queue} held={transcript.queueHeld} running={transcript.running} />
         <Composer
           autoFocus
           disabled={!connected}
