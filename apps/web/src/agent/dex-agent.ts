@@ -1,4 +1,5 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context"
+import type { Message as PiMessage } from "@earendil-works/pi-ai"
 import { createModels } from "@earendil-works/pi-ai/models"
 import {
   type AgentEventStream,
@@ -192,6 +193,28 @@ const summarize = (markdown: string) =>
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 180)
+
+/** How many tool-result images (VM screenshots) each model request carries: the newest ones. */
+const RECENT_SCREENSHOTS = 3
+const OMITTED_SCREENSHOT = { type: "text" as const, text: "[Earlier screenshot omitted to keep the context small. Take a new one if you need to see the screen.]" }
+
+/** The request's messages with images only in the newest RECENT_SCREENSHOTS tool results that have any. */
+export function withRecentScreenshots(messages: readonly PiMessage[]): readonly PiMessage[] {
+  let kept = 0
+  let changed = false
+  const out = [...messages]
+  for (let index = out.length - 1; index >= 0; index--) {
+    const message = out[index]!
+    if (message.role !== "toolResult" || !message.content.some((block) => block.type === "image")) continue
+    if (kept < RECENT_SCREENSHOTS) {
+      kept++
+      continue
+    }
+    out[index] = { ...message, content: message.content.map((block) => (block.type === "image" ? OMITTED_SCREENSHOT : block)) }
+    changed = true
+  }
+  return changed ? out : messages
+}
 
 const keyHint = (key: string) => (key.length > 8 ? `${key.slice(0, 4)}…${key.slice(-4)}` : "••••")
 
@@ -499,6 +522,9 @@ export class DexAgent extends Agent<Env, DexState> {
       // Every model response's tokens and list-price cost, for the Usage page.
       hooks: [
         hook(GenerationTask, {
+          // Computer use takes a screenshot per step; sending every one with every request makes each step slower and
+          // dearer than the last. The model sees the newest few; older ones become a note (the transcript keeps them).
+          beforeRequest: (request) => ({ messages: withRecentScreenshots(request.messages) }),
           afterResponse: (message, api) => {
             this.ledger.recordResponse(String(api.conversationId), message)
             // Remembered for the notification when the run ends.

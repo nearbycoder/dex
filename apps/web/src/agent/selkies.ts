@@ -11,7 +11,9 @@ export const SELKIES_PORT = 8082
  * On first start each VM picks its own random password, kept on the VM; the stream needs it as well as boat's port
  * cookie, and only Dex's Worker holds both. The desktop keeps its size (the agent's screenshots and clicks depend on
  * it); the viewer scales the picture. The DPI is pinned at 96: Selkies otherwise sets the VM's display DPI from the
- * viewer's screen (192 for a 2x phone), which doubles the whole desktop, the agent's screenshots included. Run on a
+ * viewer's screen (192 for a 2x phone), which doubles the whole desktop, the agent's screenshots included. Frames are
+ * capped at 30 a second (24 to start, from Selkies' 60): plenty to watch an agent, and the encoder's share of a small
+ * VM's 2 CPUs goes back to the apps and the agent's commands. Run on a
  * template builder, and on every VM the first time its desktop opens (it restarts the stream if the script changed).
  */
 export const SELKIES_BAKE = `set -e
@@ -32,7 +34,7 @@ export SELKIES_BASIC_AUTH_PASSWORD="$(cat "$dir/selkies.pw")"
 # Wait for the desktop session: X answers once the user is signed in.
 for i in $(seq 60); do xdpyinfo > /dev/null 2>&1 && break; sleep 1; done
 exec selkies --public --port=${SELKIES_PORT} --enable-https=false --basic-auth-user=dex --enable-resize=false \\
-  --scaling-dpi=96 --audio-enabled=false --microphone-enabled=false --gamepad-enabled=false --ui-show-logo=false
+  --scaling-dpi=96 --framerate=24,8-30 --audio-enabled=false --microphone-enabled=false --gamepad-enabled=false --ui-show-logo=false
 EOS
 if ! cmp -s /tmp/dex-selkies.new /usr/local/bin/dex-selkies; then
   sudo install -m 755 /tmp/dex-selkies.new /usr/local/bin/dex-selkies
