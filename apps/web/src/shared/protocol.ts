@@ -41,6 +41,8 @@ export interface GitHubStatus {
   readonly via?: "oauth" | "token" | null
   /** This deployment has a GitHub OAuth app, so "Connect with GitHub" is offered. */
   readonly oauthAvailable?: boolean
+  /** GitHub stopped accepting the saved token (revoked, expired, or the app's access removed): reconnect it. */
+  readonly expired?: boolean
 }
 
 export interface BoatStatus {

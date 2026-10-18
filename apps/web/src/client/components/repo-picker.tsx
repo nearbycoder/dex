@@ -191,6 +191,22 @@ export function GitHubAccessNote() {
       </p>
     )
   }
+  if (state.github.expired) {
+    return (
+      <p className="text-xs leading-relaxed text-amber-300/90">
+        GitHub stopped accepting your connection, so only public repos show.{" "}
+        {state.github.via === "oauth" ? (
+          <a href="/auth/github/connect" className="font-medium underline">
+            Reconnect GitHub
+          </a>
+        ) : (
+          <Link to="/settings" className="font-medium underline">
+            Replace the token in Settings
+          </Link>
+        )}
+      </p>
+    )
+  }
   if (!access?.connected) return null
   return (
     <p className="text-xs leading-relaxed text-zinc-500">

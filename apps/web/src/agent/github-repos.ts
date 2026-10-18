@@ -5,6 +5,9 @@ const TIMEOUT_MS = 10_000
 const PAGES = 5
 const CACHE_MS = 5 * 60_000
 
+/** GitHub turned the connected account's token down (revoked, expired, or the app's access removed). */
+class GitHubRejected extends Error {}
+
 export interface GitHubAuth {
   readonly token: string
   readonly login: string
@@ -46,7 +49,9 @@ export class GitHubRepos {
 
   constructor(
     private readonly auth: () => Promise<GitHubAuth | null>,
-    private readonly clientId: () => Promise<string | null>
+    private readonly clientId: () => Promise<string | null>,
+    /** Called when GitHub rejects the token, so the app can show the connection as needing a reconnect. */
+    private readonly rejected: () => void
   ) {}
 
   private async get<T>(path: string, token: string | null): Promise<T> {
@@ -54,7 +59,13 @@ export class GitHubRepos {
       headers: { accept: "application/vnd.github+json", "user-agent": "Dex (repos)", "x-github-api-version": "2022-11-28", ...(token ? { authorization: `Bearer ${token}` } : {}) },
       signal: AbortSignal.timeout(TIMEOUT_MS)
     })
-    if (response.status === 401) throw new Error("GitHub didn't accept the connected account: reconnect it in Settings.")
+    if (response.status === 401) {
+      if (token) {
+        this.rejected()
+        throw new GitHubRejected("GitHub didn't accept the connected account: reconnect it in Settings.")
+      }
+      throw new Error("GitHub turned the request down.")
+    }
     if (response.status === 403 || response.status === 429) throw new Error(`GitHub is rate limiting${token ? "" : " anonymous searches; connect GitHub in Settings for more"}. Try again in a minute.`)
     if (!response.ok) throw new Error(`GitHub returned ${response.status}.`)
     return (await response.json()) as T
@@ -80,8 +91,15 @@ export class GitHubRepos {
   /** Repos matching `query` (all words, in the name or description): the user's first, then public ones. */
   async search(query: string): Promise<GitHubRepo[]> {
     const q = query.trim().toLowerCase().slice(0, 100)
-    const auth = await this.auth()
-    const mine = auth ? await this.accessible(auth) : []
+    let auth = await this.auth()
+    // A rejected connection still finds public repos (anonymously) while it waits for a reconnect.
+    const mine = auth
+      ? await this.accessible(auth).catch((error: unknown) => {
+          if (!(error instanceof GitHubRejected)) throw error
+          auth = null
+          return [] as GitHubRepo[]
+        })
+      : []
     if (!q) return mine.filter((repo) => !repo.archived).slice(0, 20)
     const words = q.split(/\s+/)
     const name = (repo: GitHubRepo) => repo.fullName.toLowerCase()
@@ -109,10 +127,13 @@ export class GitHubRepos {
   async branches(fullName: string): Promise<string[]> {
     if (!/^[\w.-]+\/[\w.-]+$/.test(fullName)) return []
     const auth = await this.auth()
-    const [repo, branches] = await Promise.all([
-      this.get<RawRepo>(`/repos/${fullName}`, auth?.token ?? null),
-      this.get<Array<{ name: string }>>(`/repos/${fullName}/branches?per_page=100`, auth?.token ?? null)
-    ])
+    const load = (token: string | null) =>
+      Promise.all([this.get<RawRepo>(`/repos/${fullName}`, token), this.get<Array<{ name: string }>>(`/repos/${fullName}/branches?per_page=100`, token)])
+    // A rejected connection: public repos still list their branches.
+    const [repo, branches] = await load(auth?.token ?? null).catch((error: unknown) => {
+      if (error instanceof GitHubRejected) return load(null)
+      throw error
+    })
     const names = branches.map((branch) => branch.name)
     return [repo.default_branch, ...names.filter((name) => name !== repo.default_branch)]
   }

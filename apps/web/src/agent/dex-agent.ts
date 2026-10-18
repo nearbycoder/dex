@@ -278,7 +278,8 @@ export class DexAgent extends Agent<Env, DexState> {
       const credentials = await this.githubCredentials()
       return credentials ? { token: credentials.token, login: credentials.login, via: this.secret("github_via") === "oauth" ? "oauth" : "token" } : null
     },
-    () => this.runtime.runPromise(AppConfig.use((config) => Effect.succeed(Option.isSome(config.github) ? config.github.value.clientId : null)))
+    () => this.runtime.runPromise(AppConfig.use((config) => Effect.succeed(Option.isSome(config.github) ? config.github.value.clientId : null))),
+    () => this.markGitHubExpired()
   )
 
   /** Secrets typed into chats' password fields: the chats only ever see placeholders. */
@@ -431,6 +432,7 @@ export class DexAgent extends Agent<Env, DexState> {
     for (const vm of this.vms.values()) void vm.refresh()
     this.ctx.waitUntil(this.reapOrphanVms())
     this.ctx.waitUntil(this.drainQueues().catch(() => undefined))
+    this.ctx.waitUntil(this.checkGitHubToken().catch(() => undefined))
     this.ctx.waitUntil(this.media.reap((id) => this.hasSession(id)).catch(() => undefined))
   }
 
@@ -1867,9 +1869,37 @@ export class DexAgent extends Agent<Env, DexState> {
     const identity = this.secret("github_identity")
     const oauthAvailable = Boolean((this.env as unknown as Record<string, unknown>).GITHUB_CLIENT_ID)
     const github: GitHubStatus = identity && this.secret("github_token")
-      ? { connected: true, login: (JSON.parse(identity) as GitHubIdentity).login, via: this.secret("github_via") === "oauth" ? "oauth" : "token", oauthAvailable }
+      ? {
+          connected: true,
+          login: (JSON.parse(identity) as GitHubIdentity).login,
+          via: this.secret("github_via") === "oauth" ? "oauth" : "token",
+          oauthAvailable,
+          expired: this.secret("github_expired") === "1"
+        }
       : { connected: false, login: null, via: null, oauthAvailable }
     this.publish({ github })
+  }
+
+  /** GitHub rejected the saved token (a 401): show the connection as needing a reconnect. Cleared by connecting again. */
+  private markGitHubExpired() {
+    if (this.secret("github_expired") === "1" || !this.secret("github_token")) return
+    this.ctx.storage.sql.exec(`INSERT INTO dex_secrets (name, value) VALUES ('github_expired', '1') ON CONFLICT(name) DO UPDATE SET value = '1'`)
+    this.refreshGitHubStatus()
+  }
+
+  /** Once per start: does GitHub still accept the saved token? Catches a revoked connection before something needs it. */
+  private async checkGitHubToken() {
+    const credentials = await this.githubCredentials()
+    if (!credentials) return
+    const response = await fetch("https://api.github.com/user", {
+      headers: { authorization: `Bearer ${credentials.token}`, accept: "application/vnd.github+json", "user-agent": "dex" },
+      signal: AbortSignal.timeout(10_000)
+    }).catch(() => null)
+    if (response?.status === 401) this.markGitHubExpired()
+    else if (response?.ok && this.secret("github_expired") === "1") {
+      this.ctx.storage.sql.exec(`DELETE FROM dex_secrets WHERE name = 'github_expired'`)
+      this.refreshGitHubStatus()
+    }
   }
 
   /**
@@ -1892,6 +1922,7 @@ export class DexAgent extends Agent<Env, DexState> {
     this.ctx.storage.sql.exec(upsert, "github_token", result.sealed)
     this.ctx.storage.sql.exec(upsert, "github_identity", JSON.stringify(result.identity))
     this.ctx.storage.sql.exec(upsert, "github_via", via === "oauth" ? "oauth" : "token")
+    this.ctx.storage.sql.exec(`DELETE FROM dex_secrets WHERE name = 'github_expired'`)
     this.refreshGitHubStatus()
     return { ok: true, login: result.identity.login }
   }
@@ -1919,7 +1950,7 @@ export class DexAgent extends Agent<Env, DexState> {
         )
         .catch(() => undefined)
     }
-    this.ctx.storage.sql.exec(`DELETE FROM dex_secrets WHERE name IN ('github_token', 'github_identity', 'github_via')`)
+    this.ctx.storage.sql.exec(`DELETE FROM dex_secrets WHERE name IN ('github_token', 'github_identity', 'github_via', 'github_expired')`)
     this.refreshGitHubStatus()
   }
 

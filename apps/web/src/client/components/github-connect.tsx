@@ -56,7 +56,7 @@ export function GitHubConnect() {
       <div>
         <SecretConnect
           connected={github?.connected ?? false}
-          status={`@${github?.login}${github?.via === "token" ? " · token" : ""}`}
+          status={`@${github?.login}${github?.via === "token" ? " · token" : ""}${github?.expired ? " · GitHub stopped accepting it: replace it" : ""}`}
           placeholder="github_pat_…"
           help={tokenHelp}
           onConnect={async (token) => {
@@ -78,6 +78,17 @@ export function GitHubConnect() {
   if (github?.connected) {
     return (
       <div>
+        {github.expired && (
+          <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-amber-900/60 bg-amber-950/30 px-3 py-2.5 text-xs text-amber-200">
+            <span className="min-w-0 flex-1">
+              GitHub stopped accepting this connection (revoked or expired). New VMs can't sign in and repo search shows public repos only until you
+              reconnect.
+            </span>
+            <a href="/auth/github/connect" className="shrink-0 rounded-md bg-amber-500/90 px-2.5 py-1 font-medium text-zinc-950 hover:bg-amber-400">
+              Reconnect
+            </a>
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
           <span className="flex min-w-0 items-center gap-2 text-emerald-400">
             <CheckCircle2 className="size-4 shrink-0" />
