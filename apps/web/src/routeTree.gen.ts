@@ -19,6 +19,7 @@ import { Route as AppSecretsRouteImport } from './routes/_app.secrets'
 import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppUsageRouteImport } from './routes/_app.usage'
 import { Route as ApiMcpRouteImport } from './routes/api.mcp'
+import { Route as ApiVersionRouteImport } from './routes/api.version'
 import { Route as AuthDevRouteImport } from './routes/auth.dev'
 import { Route as AuthLogoutRouteImport } from './routes/auth.logout'
 import { Route as AuthPasswordRouteImport } from './routes/auth.password'
@@ -88,6 +89,11 @@ const AppUsageRoute = AppUsageRouteImport.update({
 const ApiMcpRoute = ApiMcpRouteImport.update({
   id: '/api/mcp',
   path: '/api/mcp',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiVersionRoute = ApiVersionRouteImport.update({
+  id: '/api/version',
+  path: '/api/version',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthDevRoute = AuthDevRouteImport.update({
@@ -207,6 +213,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AppSettingsRoute
   '/usage': typeof AppUsageRoute
   '/api/mcp': typeof ApiMcpRoute
+  '/api/version': typeof ApiVersionRoute
   '/auth/dev': typeof AuthDevRoute
   '/auth/logout': typeof AuthLogoutRoute
   '/auth/password': typeof AuthPasswordRoute
@@ -239,6 +246,7 @@ export interface FileRoutesByTo {
   '/settings': typeof AppSettingsRoute
   '/usage': typeof AppUsageRoute
   '/api/mcp': typeof ApiMcpRoute
+  '/api/version': typeof ApiVersionRoute
   '/auth/dev': typeof AuthDevRoute
   '/auth/logout': typeof AuthLogoutRoute
   '/auth/password': typeof AuthPasswordRoute
@@ -273,6 +281,7 @@ export interface FileRoutesById {
   '/_app/settings': typeof AppSettingsRoute
   '/_app/usage': typeof AppUsageRoute
   '/api/mcp': typeof ApiMcpRoute
+  '/api/version': typeof ApiVersionRoute
   '/auth/dev': typeof AuthDevRoute
   '/auth/logout': typeof AuthLogoutRoute
   '/auth/password': typeof AuthPasswordRoute
@@ -307,6 +316,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/usage'
     | '/api/mcp'
+    | '/api/version'
     | '/auth/dev'
     | '/auth/logout'
     | '/auth/password'
@@ -339,6 +349,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/usage'
     | '/api/mcp'
+    | '/api/version'
     | '/auth/dev'
     | '/auth/logout'
     | '/auth/password'
@@ -372,6 +383,7 @@ export interface FileRouteTypes {
     | '/_app/settings'
     | '/_app/usage'
     | '/api/mcp'
+    | '/api/version'
     | '/auth/dev'
     | '/auth/logout'
     | '/auth/password'
@@ -400,6 +412,7 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
   ApiMcpRoute: typeof ApiMcpRoute
+  ApiVersionRoute: typeof ApiVersionRoute
   AuthDevRoute: typeof AuthDevRoute
   AuthLogoutRoute: typeof AuthLogoutRoute
   AuthPasswordRoute: typeof AuthPasswordRoute
@@ -480,6 +493,13 @@ declare module '@tanstack/react-router' {
       path: '/api/mcp'
       fullPath: '/api/mcp'
       preLoaderRoute: typeof ApiMcpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/version': {
+      id: '/api/version'
+      path: '/api/version'
+      fullPath: '/api/version'
+      preLoaderRoute: typeof ApiVersionRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth/dev': {
@@ -692,6 +712,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
   ApiMcpRoute: ApiMcpRoute,
+  ApiVersionRoute: ApiVersionRoute,
   AuthDevRoute: AuthDevRoute,
   AuthLogoutRoute: AuthLogoutRoute,
   AuthPasswordRoute: AuthPasswordRoute,

@@ -129,7 +129,7 @@
   </tr>
 </table>
 
-- **Install it** on a phone or tablet Home Screen. It runs full screen and edge to edge, keeps the composer above the keyboard, and opens the sidebar with a swipe from the left edge (never "back"). It adapts from folded phones to tablets.
+- **Install it** on a phone or tablet Home Screen. It runs full screen and edge to edge, keeps the composer above the keyboard, and opens the sidebar with a swipe from the left edge (never "back"). It adapts from folded phones to tablets. When a new version is deployed, an open app offers a one-tap **Refresh**, and reloads by itself when you come back to an idle chat.
 - **Push notifications** (opt in, per device) for replies, errors, scheduled prompts, machine setup, MCP sign-ins, and snoozed chats coming back. A chat that's open on any device stays quiet, and each chat has a mute bell. Android and desktop notifications carry quick actions; iOS 16.4+ delivers them to the installed app.
 - **Haptics** on every control you tap (buttons, links, menus, switches, tabs) and on swiping the sidebar. iPhone has no Vibration API, so Dex plays the system tap through a hidden `<input type="checkbox" switch>`; Android uses `navigator.vibrate`. Fields never zoom the page on focus.
 

@@ -6,6 +6,7 @@ import { ShellSkeleton } from "~/client/components/skeleton"
 import { DexProvider, forgetSavedState } from "~/client/lib/dex"
 import { MenuButton, NavContext, useNavState, useVisualViewportHeight } from "~/client/lib/mobile-nav"
 import { useHaptics } from "~/client/lib/haptics"
+import { UpdateBanner } from "~/client/lib/updates"
 import { getViewer, type ViewerResult } from "~/server/viewer"
 
 /**
@@ -90,6 +91,7 @@ function AppLayout() {
             <Outlet />
           </main>
         </div>
+        <UpdateBanner />
       </NavContext.Provider>
     </DexProvider>
   )
