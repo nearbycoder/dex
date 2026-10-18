@@ -78,19 +78,28 @@ export const Route = createFileRoute("/_app")({
   component: AppLayout
 })
 
-/** Fetches every page's code once the app is idle, so the first visit to a page doesn't wait on the network. */
+/** Fetches every page's code (and the UI renderer) once the app is idle, so a first visit doesn't wait on the network or parsing. */
 function usePreloadPages() {
   const router = useRouter()
   useEffect(() => {
     const load = () => {
       for (const route of Object.values(router.routesById)) void router.loadRouteChunk(route)?.catch(() => undefined)
     }
+    // The generative UI renderer is the biggest chunk (~1.4 MB): parse it a few seconds in, out of the way of the
+    // first taps (Safari has no requestIdleCallback), rather than when a card first needs it.
+    const renderer = setTimeout(() => void import("~/client/components/openui-block").catch(() => undefined), 4_000)
     if ("requestIdleCallback" in window) {
       const handle = requestIdleCallback(load, { timeout: 2_000 })
-      return () => cancelIdleCallback(handle)
+      return () => {
+        cancelIdleCallback(handle)
+        clearTimeout(renderer)
+      }
     }
     const timer = setTimeout(load, 500)
-    return () => clearTimeout(timer)
+    return () => {
+      clearTimeout(timer)
+      clearTimeout(renderer)
+    }
   }, [router])
 }
 

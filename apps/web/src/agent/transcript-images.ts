@@ -21,29 +21,65 @@ const messagesOf = (entry: unknown): readonly Message[] => {
   return Array.isArray(model) ? (model as Message[]) : []
 }
 
+/** A tool's output beyond this many characters isn't sent to the browser (the end is kept: that's where results are). */
+const MAX_OUTPUT = 12_000
+/** Tool results the page never shows in full: what they are, instead of their text. */
+const SUMMARIZED: Readonly<Record<string, string>> = {
+  load_ui_guide: "(Dex's generative UI guide, for the model; not shown here)"
+}
+
+type TextPart = { type: "text"; text: string }
+const isText = (part: unknown): part is TextPart =>
+  typeof part === "object" && part !== null && (part as TextPart).type === "text" && typeof (part as TextPart).text === "string"
+
 /**
- * A chat's snapshot without its screenshots' bytes: each large image keeps its type and gets a `ref` the page
- * loads it by when it's shown (they sit in collapsed tool steps, and a long VM session can carry megabytes).
+ * An entry as the browser needs it: screenshots' bytes left out (each keeps its type and gets a `ref` the page loads
+ * it by when shown: they sit in collapsed tool steps, and a long VM session carries megabytes), long tool outputs cut
+ * to their end, the UI guide summarized, and the system prompt (which the page never shows) left out. Together these
+ * were most of what opening a chat sent.
  */
-export function withoutImages(snapshot: SnapshotEvent): SnapshotEvent {
+export function slimEntry<E>(entry: E): E {
+  const kind = (entry as { kind?: unknown }).kind
+  if (kind === "pi.system") return { ...entry, model: [] }
+  const messages = messagesOf(entry)
   let changed = false
-  const entries = snapshot.entries.map((entry) => {
-    const messages = messagesOf(entry)
-    if (!messages.some((message) => Array.isArray(message.content) && message.content.some(isLargeImage))) return entry
-    changed = true
-    const model = messages.map((message, m) =>
-      Array.isArray(message.content)
-        ? {
-            ...message,
-            content: message.content.map((part: unknown, index: number) =>
-              isLargeImage(part) ? { type: "image", mimeType: part.mimeType, data: "", ref: `${String(entry.id)}:${m}:${index}` } : part
-            )
-          }
-        : message
-    )
-    return { ...entry, model } as unknown as typeof entry
+  const model = messages.map((message, m) => {
+    if (!Array.isArray(message.content)) return message
+    const toolName = (message as { toolName?: unknown }).toolName
+    const summary = typeof toolName === "string" ? SUMMARIZED[toolName] : undefined
+    const content = message.content.map((part: unknown, index: number) => {
+      if (isLargeImage(part)) {
+        changed = true
+        return { type: "image", mimeType: part.mimeType, data: "", ref: `${String((entry as { id?: unknown }).id)}:${m}:${index}` }
+      }
+      if ((message as { role?: unknown }).role === "toolResult" && isText(part)) {
+        if (summary) {
+          changed = true
+          return { type: "text", text: summary }
+        }
+        if (part.text.length > MAX_OUTPUT) {
+          changed = true
+          return { type: "text", text: `… [${part.text.length - MAX_OUTPUT} earlier characters not shown]\n${part.text.slice(-MAX_OUTPUT)}` }
+        }
+      }
+      return part
+    })
+    return { ...message, content }
   })
-  return changed ? { ...snapshot, entries } : snapshot
+  return changed ? ({ ...entry, model } as E) : entry
+}
+
+/** A chat's snapshot as the browser needs it (see slimEntry). */
+export function withoutImages(snapshot: SnapshotEvent): SnapshotEvent {
+  return { ...snapshot, entries: snapshot.entries.map(slimEntry) }
+}
+
+/** Live events as the browser needs them: entries they carry are slimmed like the snapshot's. */
+export function slimEvents<T>(events: readonly T[]): readonly T[] {
+  return events.map((event) => {
+    const entry = (event as { entry?: unknown }).entry
+    return entry && typeof entry === "object" ? ({ ...event, entry: slimEntry(entry) } as T) : event
+  })
 }
 
 /** The image a `ref` from withoutImages points to. */

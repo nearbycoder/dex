@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { Bell, BellOff, Check, CheckCheck, KeyRound, Monitor, Pencil } from "lucide-react"
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Composer } from "~/client/components/composer"
 import { ChatArtifactsContext, type ChatArtifacts } from "~/client/components/media"
 import { MessageList } from "~/client/components/message-list"
@@ -28,8 +28,40 @@ function Chat() {
   const agent = session?.agentId ? state?.agents.find((candidate) => candidate.id === session.agentId) : undefined
   const project = session?.projectId ? state?.projects.find((candidate) => candidate.id === session.projectId) : undefined
 
+  // What you just sent shows at once while the agent records it (a round trip, longer when it's waking up). Each
+  // pending message is matched to the next message the agent records, not by text: skills and secrets change it.
+  const [pending, setPending] = useState<{ text: string; after: number; at: number }[]>([])
+  const userCount = transcript.entries.filter((entry) => entry.kind === "pi.user").length
+  const live = useRef({ running: transcript.running, queued: transcript.queue.length, userCount })
+  live.current = { running: transcript.running, queued: transcript.queue.length, userCount }
+  useEffect(() => setPending([]), [sessionId])
+  useEffect(() => {
+    // Recorded (or queued instead, where the queue panel shows it), or never confirmed: let go.
+    setPending((list) => {
+      const recorded = Math.max(0, userCount - (list[0]?.after ?? userCount))
+      const next = list.slice(recorded).filter((item) => Date.now() - item.at < 20_000)
+      return transcript.queue.length > 0 && next.length ? [] : next.length === list.length ? list : next
+    })
+  }, [userCount, transcript.queue.length])
+  useEffect(() => {
+    if (!pending.length) return
+    const timer = setTimeout(() => setPending((list) => list.filter((item) => Date.now() - item.at < 20_000)), 20_500)
+    return () => clearTimeout(timer)
+  }, [pending])
+
   // Stable, so finished replies (memoized in MessageList) don't re-render when the page does.
-  const send = useCallback((text: string) => void stub.sendMessage(sessionId, text), [stub, sessionId])
+  const send = useCallback(
+    (text: string) => {
+      const trimmed = text.trim()
+      if (!trimmed) return
+      // A busy chat queues it instead, and the queue panel shows it.
+      const willQueue = live.current.running || live.current.queued > 0
+      if (!willQueue) setPending((list) => [...list, { text: trimmed, after: live.current.userCount + list.length, at: Date.now() }])
+      void stub.sendMessage(sessionId, text).catch(() => setPending((list) => list.filter((item) => item.text !== trimmed)))
+    },
+    [stub, sessionId]
+  )
+  const pendingTexts = useMemo(() => pending.map((item) => item.text), [pending])
   const storeSecret = useCallback((field: string, value: string) => stub.storeChatSecret(sessionId, field, value), [stub, sessionId])
   // Files saved into this chat replace the VM links they came from.
   const artifacts = useMemo<ChatArtifacts>(
@@ -149,7 +181,7 @@ function Chat() {
 
       <ChatSecretsContext.Provider value={storeSecret}>
         <ChatArtifactsContext.Provider value={artifacts}>
-          {transcript.loaded ? <MessageList key={sessionId} transcript={transcript} onSend={send} /> : <ChatSkeleton />}
+          {transcript.loaded ? <MessageList key={sessionId} transcript={transcript} onSend={send} pending={pendingTexts} /> : <ChatSkeleton />}
         </ChatArtifactsContext.Provider>
       </ChatSecretsContext.Provider>
 

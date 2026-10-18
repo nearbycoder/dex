@@ -1,7 +1,7 @@
 import type { AssistantMessage, ToolResultMessage } from "@earendil-works/pi-ai"
 import { Predicate } from "effect"
 import { Link } from "@tanstack/react-router"
-import { AlertTriangle, ArrowDown, Brain, ChevronRight, ListChecks, LoaderCircle } from "lucide-react"
+import { AlertTriangle, ArrowDown, Brain, ChevronRight, Clock, ListChecks, LoaderCircle } from "lucide-react"
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { displayItems, type LiveTool, toolResults, type TranscriptState } from "~/client/lib/transcript"
 import { invokedSkill } from "~/shared/skills"
@@ -280,7 +280,16 @@ function UserText({ text }: { text: string }) {
 }
 
 /** Memoized: the chat page re-renders on every synced-state change, but the transcript only on its own. */
-export const MessageList = memo(function MessageList({ transcript, onSend }: { transcript: TranscriptState; onSend: (text: string) => void }) {
+export const MessageList = memo(function MessageList({
+  transcript,
+  onSend,
+  pending = []
+}: {
+  transcript: TranscriptState
+  onSend: (text: string) => void
+  /** Messages just sent that the agent hasn't recorded yet, shown at once (see the chat page). */
+  pending?: readonly string[]
+}) {
   const items = useMemo(() => displayItems(transcript), [transcript])
   const results = useMemo(() => toolResults(transcript.entries), [transcript.entries])
   const scroller = useRef<HTMLDivElement>(null)
@@ -321,7 +330,7 @@ export const MessageList = memo(function MessageList({ transcript, onSend }: { t
   }, [])
 
   // Sending a message always brings you to the bottom.
-  const lastUser = items.findLast((item) => item.kind === "user")?.id
+  const lastUser = `${items.findLast((item) => item.kind === "user")?.id ?? ""}:${pending.length}`
   const seenUser = useRef(lastUser)
   useEffect(() => {
     if (lastUser === seenUser.current) return
@@ -397,6 +406,16 @@ export const MessageList = memo(function MessageList({ transcript, onSend }: { t
                 )
             }
           })}
+          {pending.map((text, index) => (
+            <div key={`pending-${index}`} className="flex animate-rise justify-end">
+              <div className="max-w-[85%] rounded-2xl rounded-br-md bg-zinc-800/70 px-4 py-2.5 text-sm whitespace-pre-wrap text-zinc-300 [overflow-wrap:anywhere]">
+                <UserText text={text} />
+                <div className="mt-1 flex items-center justify-end gap-1 text-[10px] text-zinc-500">
+                  <Clock className="size-3" /> Sending
+                </div>
+              </div>
+            </div>
+          ))}
           {transcript.running && items.at(-1)?.kind !== "assistant" && (
             <div className="flex animate-fade items-center gap-2 pl-9 text-xs text-zinc-500">
               <LoaderCircle className="size-3.5 animate-spin" /> Working…

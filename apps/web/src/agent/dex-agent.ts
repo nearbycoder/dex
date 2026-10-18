@@ -54,7 +54,7 @@ import { mediaTools } from "./tools/media-tools"
 import { GitHubRepos } from "./github-repos"
 import { checkServer, searchRegistry, searchSmithery } from "./mcp-registry"
 import { MessageQueue } from "./queue"
-import { findImage, withoutImages } from "./transcript-images"
+import { findImage, slimEvents, withoutImages } from "./transcript-images"
 import { AccountSecrets, SecretVault, VM_ENV_FILE, VM_ENV_HOOK } from "./secrets"
 import { SkillCenter } from "./skills"
 import { skillTools } from "./tools/skill-tools"
@@ -769,6 +769,7 @@ export class DexAgent extends Agent<Env, DexState> {
   @callable()
   async connectCline(apiKey: string): Promise<ConnectClineResult> {
     const key = apiKey.trim()
+    if (key.length > 512 || /\s/.test(key)) return { ok: false, error: "That doesn't look like a Cline API key." }
     if (!key) return { ok: false, error: "Paste your Cline API key." }
     const result = await this.runtime.runPromise(
       Effect.gen(function*() {
@@ -797,6 +798,7 @@ export class DexAgent extends Agent<Env, DexState> {
   @callable()
   async connectOpenCode(apiKey: string): Promise<ConnectClineResult> {
     const key = apiKey.trim()
+    if (key.length > 512 || /\s/.test(key)) return { ok: false, error: "That doesn't look like a OpenCode API key." }
     if (!key) return { ok: false, error: "Paste your OpenCode API key." }
     const result = await this.runtime.runPromise(
       Effect.gen(function*() {
@@ -1214,7 +1216,9 @@ export class DexAgent extends Agent<Env, DexState> {
       this.send(connection, this.artifactsMessage(sessionId))
       this.send(connection, this.queueMessage(sessionId))
       stream.start(async (events) => {
-        if (!this.send(connection, { type: "dex.events", sessionId, events })) {
+        // Screenshots and long outputs stay on the agent here too (see slimEntry); a computer-use run sends a
+        // screenshot per step.
+        if (!this.send(connection, { type: "dex.events", sessionId, events: slimEvents(events) })) {
           await this.unsubscribe(connection.id)
           return
         }

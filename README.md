@@ -174,6 +174,8 @@
 - **Snappy navigation:** pages render from the agent's synced state, so switching pages never waits on the network.
   - Every page's code is fetched while idle, and the last state, the last sign-in, and the last 8 chats you opened are kept on the device (signing out clears them), so a launch shows them at once while a cold agent wakes; the session is confirmed in the background.
   - Anything still loading shows a skeleton shaped like the page.
+  - Opening a chat sends only what the page shows: no system prompt, no screenshots (they load when opened), the UI guide as one line, and long tool outputs cut to their last 12,000 characters, which made snapshots about 85% smaller; live events during a run are slimmed the same way.
+  - What you send shows at once, before the agent has recorded it.
   - The agent batches and dedupes the updates it sends.
 - **Always current:** after a deploy, the first page load restarts a long-running agent onto the new code.
 - **Sign in** with GitHub (allowlisted logins), an owner password, or a local dev login. **Sign out everywhere** revokes every session on every device.
