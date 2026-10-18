@@ -110,6 +110,7 @@
 - The chat list works like an inbox. **Settle** a chat when you're done for now and it moves under a collapsed Settled group.
 - **Snooze** a chat (in an hour, this evening, tomorrow, this weekend, next week) and it waits under Snoozed, then comes back to the top at that time with a notification.
 - Any new message in a chat brings it back to the inbox.
+- On a phone, **long-press a chat** in the sidebar for its menu (regenerate the title, settle, snooze, delete), which frees the row's room a ⋯ button would take; on a computer, right-click or use the ⋯ that appears on hover.
 
 <br clear="right">
 

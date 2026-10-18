@@ -21,8 +21,9 @@ import {
   SlidersHorizontal,
   X
 } from "lucide-react"
-import { type ReactNode, useEffect, useRef, useState } from "react"
+import { type ReactNode, type TouchEvent, useEffect, useRef, useState } from "react"
 import { forgetSavedState, useDex } from "~/client/lib/dex"
+import { haptic } from "~/client/lib/haptics"
 import { timeAgo } from "~/client/lib/format"
 import { useNav } from "~/client/lib/mobile-nav"
 import { UpdateButton } from "~/client/lib/updates"
@@ -31,7 +32,7 @@ import type { SessionMeta } from "~/shared/protocol"
 import { AgentAvatar } from "./agent-avatar"
 import { mcpNeedsAttention } from "./mcp-picker"
 import { ModelLogo } from "./model-logo"
-import { inboxState, SessionMenu, snoozedLabel, useNaming } from "./session-menu"
+import { inboxState, SessionMenu, type SessionMenuHandle, snoozedLabel, useNaming } from "./session-menu"
 import { ChatListSkeleton } from "./skeleton"
 import { useNow } from "./vm-status"
 
@@ -251,14 +252,31 @@ export function Sidebar() {
 function ChatRow({ session, group, active, onPick }: { session: SessionMeta; group: ChatGroup; active: boolean; onPick: () => void }) {
   const { state } = useDex()
   const naming = useNaming(session.id)
+  const menu = useRef<SessionMenuHandle>(null)
+  const press = useLongPress((x, y) => menu.current?.openAt(x, y))
   if (!state) return null
   return (
     <div className="group relative animate-fade">
       <Link
         to="/chat/$sessionId"
         params={{ sessionId: session.id }}
-        onClick={onPick}
-        className={`block rounded-lg py-2 pr-8 pl-2.5 ${
+        {...press.handlers}
+        onClick={(event) => {
+          // The tap that ends a long press opened the menu; it doesn't open the chat too.
+          if (press.consume()) {
+            event.preventDefault()
+            return
+          }
+          onPick()
+        }}
+        // Right-click (and Android's long press) opens the chat's menu instead of the browser's.
+        onContextMenu={(event) => {
+          event.preventDefault()
+          menu.current?.openAt(event.clientX, event.clientY)
+        }}
+        // No iOS link preview or text selection on a long press.
+        style={{ WebkitTouchCallout: "none" }}
+        className={`block rounded-lg py-2 pr-8 pl-2.5 select-none [@media(hover:none)]:pr-2.5 ${
           active
             ? "bg-zinc-900 text-zinc-100"
             : group === "settled"
@@ -307,12 +325,54 @@ function ChatRow({ session, group, active, onPick }: { session: SessionMeta; gro
           )}
         </div>
       </Link>
+      {/* On touch screens a long press opens it, so the row gets the room the button took. */}
       <SessionMenu
         session={session}
-        className="absolute top-1/2 right-1.5 -translate-y-1/2 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100 md:aria-expanded:opacity-100"
+        handle={menu}
+        className="absolute top-1/2 right-1.5 -translate-y-1/2 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100 md:aria-expanded:opacity-100 [@media(hover:none)]:hidden"
       />
     </div>
   )
+}
+
+/**
+ * A press held still for about half a second on a touch screen calls `onLongPress` where the finger is. Moving
+ * (scrolling the list) cancels it. `consume()` tells the click that follows a long press to do nothing.
+ */
+function useLongPress(onLongPress: (x: number, y: number) => void, ms = 450) {
+  const state = useRef<{ timer: ReturnType<typeof setTimeout> | null; x: number; y: number; fired: boolean }>({ timer: null, x: 0, y: 0, fired: false })
+  const cancel = () => {
+    if (state.current.timer) clearTimeout(state.current.timer)
+    state.current.timer = null
+  }
+  useEffect(() => cancel, [])
+  return {
+    consume: () => {
+      const fired = state.current.fired
+      state.current.fired = false
+      return fired
+    },
+    handlers: {
+      onTouchStart: (event: TouchEvent) => {
+        const touch = event.touches[0]
+        if (!touch || event.touches.length > 1) return cancel()
+        cancel()
+        state.current = { timer: null, x: touch.clientX, y: touch.clientY, fired: false }
+        state.current.timer = setTimeout(() => {
+          state.current.timer = null
+          state.current.fired = true
+          haptic()
+          onLongPress(state.current.x, state.current.y)
+        }, ms)
+      },
+      onTouchMove: (event: TouchEvent) => {
+        const touch = event.touches[0]
+        if (touch && Math.hypot(touch.clientX - state.current.x, touch.clientY - state.current.y) > 10) cancel()
+      },
+      onTouchEnd: cancel,
+      onTouchCancel: cancel
+    }
+  }
 }
 
 type ChatGroup = "inbox" | "snoozed" | "settled"

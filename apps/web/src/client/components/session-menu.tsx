@@ -1,6 +1,6 @@
 import { useNavigate, useParams } from "@tanstack/react-router"
 import { AlarmClock, AlarmClockOff, CheckCheck, Inbox, MoreHorizontal, Sparkles, Trash2 } from "lucide-react"
-import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react"
+import { type ReactNode, type Ref, useEffect, useImperativeHandle, useRef, useState, useSyncExternalStore } from "react"
 import { createPortal } from "react-dom"
 import { useDex } from "~/client/lib/dex"
 import type { SessionMeta } from "~/shared/protocol"
@@ -82,16 +82,35 @@ function MenuItem({ icon, children, onClick, danger = false }: { icon: ReactNode
   )
 }
 
+/** Opens a chat's menu at a point on the screen: a long press or right-click on its row. */
+export interface SessionMenuHandle {
+  openAt(x: number, y: number): void
+}
+
+const MENU_WIDTH = 232
+
 /**
  * A chat's menu: regenerate its title, settle it (done for now) or bring it back, snooze it until a time, or delete it. Rendered in a
  * portal so the sidebar's scroll area can't clip it.
  */
-export function SessionMenu({ session, className = "", label = "Chat options" }: { session: SessionMeta; className?: string; label?: string }) {
+export function SessionMenu({
+  session,
+  className = "",
+  label = "Chat options",
+  handle
+}: {
+  session: SessionMeta
+  className?: string
+  label?: string
+  handle?: Ref<SessionMenuHandle>
+}) {
   const { stub } = useDex()
   const navigate = useNavigate()
   const params = useParams({ strict: false })
   const [open, setOpen] = useState(false)
   const [position, setPosition] = useState<{ top: number; left: number; up: boolean } | null>(null)
+  // Opened from a long press, away from its button: say which chat it's for.
+  const [fromPoint, setFromPoint] = useState(false)
   const button = useRef<HTMLButtonElement>(null)
   const panel = useRef<HTMLDivElement>(null)
   const now = Date.now()
@@ -117,12 +136,21 @@ export function SessionMenu({ session, className = "", label = "Chat options" }:
   const toggle = () => {
     const rect = button.current?.getBoundingClientRect()
     if (rect) {
-      const width = 232
       const up = rect.bottom + 320 > window.innerHeight
-      setPosition({ top: up ? rect.top - 6 : rect.bottom + 6, left: Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8)), up })
+      setPosition({ top: up ? rect.top - 6 : rect.bottom + 6, left: Math.max(8, Math.min(rect.right - MENU_WIDTH, window.innerWidth - MENU_WIDTH - 8)), up })
     }
+    setFromPoint(false)
     setOpen((value) => !value)
   }
+
+  useImperativeHandle(handle, () => ({
+    openAt: (x, y) => {
+      const up = y + 360 > window.innerHeight
+      setPosition({ top: up ? y - 8 : y + 8, left: Math.max(8, Math.min(x - MENU_WIDTH / 2, window.innerWidth - MENU_WIDTH - 8)), up })
+      setFromPoint(true)
+      setOpen(true)
+    }
+  }))
 
   const run = (work: () => Promise<unknown>) => {
     setOpen(false)
@@ -153,9 +181,10 @@ export function SessionMenu({ session, className = "", label = "Chat options" }:
           <div
             ref={panel}
             role="menu"
-            style={{ left: position.left, ...(position.up ? { bottom: window.innerHeight - position.top } : { top: position.top }), width: 232 }}
+            style={{ left: position.left, ...(position.up ? { bottom: window.innerHeight - position.top } : { top: position.top }), width: MENU_WIDTH }}
             className="fixed z-50 animate-pop rounded-xl border border-zinc-700/80 bg-zinc-900 p-1 shadow-xl shadow-black/50"
           >
+            {fromPoint && <div className="truncate border-b border-zinc-800 px-2.5 pt-1.5 pb-2 text-xs font-medium text-zinc-400">{session.title}</div>}
             <MenuItem icon={<Sparkles className="size-4" />} onClick={() => run(() => regenerateTitle(stub, session.id))}>
               Regenerate title
             </MenuItem>
