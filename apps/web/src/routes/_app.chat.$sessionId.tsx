@@ -9,6 +9,7 @@ import { QueuePanel } from "~/client/components/queue-panel"
 import { ModelPicker } from "~/client/components/model-picker"
 import { AgentAvatar } from "~/client/components/agent-avatar"
 import { SessionMenu } from "~/client/components/session-menu"
+import { VmPreview } from "~/client/components/vm-preview"
 import { Bone, ChatSkeleton } from "~/client/components/skeleton"
 import { ChatSecretsContext } from "~/client/lib/chat-secrets"
 import { useDex, useTranscript } from "~/client/lib/dex"
@@ -37,6 +38,8 @@ function Chat() {
     }),
     [transcript.artifacts, transcript.savingArtifacts, stub, sessionId]
   )
+
+  const vm = state?.vmConfigured ? state.vms.find((candidate) => candidate.key === sessionId) : undefined
 
   if (state && !session) {
     return <div className="flex flex-1 items-center justify-center text-sm text-zinc-500">This chat no longer exists.</div>
@@ -84,8 +87,7 @@ function Chat() {
         )}
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
           {(() => {
-            const vm = state?.vms.find((candidate) => candidate.key === sessionId)
-            if (!state?.vmConfigured || !vm) return null
+            if (!vm) return null
             return (
               <Link
                 to="/machine/$vmKey"
@@ -172,6 +174,8 @@ function Chat() {
           }
         />
       </div>
+      {/* Watch the VM while reading the chat: a floating button that opens a movable live preview. */}
+      {vm && (vm.status === "running" || vm.status === "starting") && <VmPreview key={sessionId} vm={vm} />}
     </div>
   )
 }
