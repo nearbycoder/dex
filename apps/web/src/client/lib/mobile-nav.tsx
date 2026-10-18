@@ -1,6 +1,7 @@
 import { Menu } from "lucide-react"
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react"
 import { haptic } from "./haptics"
+import { useUpdateAvailable } from "./updates"
 
 const WIDE = "(min-width: 768px)"
 const COLLAPSED_KEY = "dex.sidebarCollapsed"
@@ -174,15 +175,18 @@ export function useVisualViewportHeight() {
 /** Opens navigation. Shown on phones, and on wider screens while the sidebar is collapsed. */
 export function MenuButton() {
   const { show, collapsed } = useNav()
+  const update = useUpdateAvailable()
   return (
     <button
       type="button"
       onClick={show}
       title="Menu (⌘B)"
       aria-label="Menu"
-      className={`-ml-1.5 rounded-md p-1.5 text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100 ${collapsed ? "" : "md:hidden"}`}
+      className={`relative -ml-1.5 rounded-md p-1.5 text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100 ${collapsed ? "" : "md:hidden"}`}
     >
       <Menu className="size-5" />
+      {/* An update is waiting at the bottom of the sidebar. */}
+      {update && <span className="absolute top-1 right-1 size-2 rounded-full bg-emerald-400 ring-2 ring-zinc-950" aria-label="Update ready" />}
     </button>
   )
 }

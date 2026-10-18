@@ -1,5 +1,5 @@
-import { RefreshCw, X } from "lucide-react"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { RefreshCw } from "lucide-react"
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react"
 
 /**
  * Notices a deploy while the app is open. A Home Screen app is rarely closed: it resumes from the background on
@@ -41,8 +41,22 @@ export async function applyUpdate() {
 }
 
 /** The build the Worker has, once it differs from the one this page is running; null while they match. */
-export function useUpdateAvailable(): string | null {
-  const [available, setAvailable] = useState<string | null>(null)
+let available: string | null = null
+const listeners = new Set<() => void>()
+const subscribe = (listener: () => void) => {
+  listeners.add(listener)
+  return () => listeners.delete(listener)
+}
+const setAvailable = (build: string) => {
+  if (available === build) return
+  available = build
+  for (const listener of listeners) listener()
+}
+
+export const useUpdateAvailable = (): string | null => useSyncExternalStore(subscribe, () => available, () => null)
+
+/** Watches for a deploy while the app is open. Run once, in the signed-in shell. */
+export function useUpdateChecker() {
   const lastCheck = useRef(0)
   const hiddenAt = useRef<number | null>(null)
 
@@ -82,45 +96,27 @@ export function useUpdateAvailable(): string | null {
       removeEventListener("online", onOnline)
     }
   }, [check])
-
-  return available
 }
 
-/** A floating "Update available" pill with a Refresh button. Dismissing it hides it until the next deploy. */
-export function UpdateBanner() {
-  const available = useUpdateAvailable()
-  const [dismissed, setDismissed] = useState<string | null>(null)
+/** The sidebar's "Update ready" row: one tap reloads onto the new build. Nothing while the app is current. */
+export function UpdateButton({ className = "" }: { className?: string }) {
+  const update = useUpdateAvailable()
   const [refreshing, setRefreshing] = useState(false)
-  if (!available || dismissed === available) return null
+  if (!update) return null
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-[calc(env(safe-area-inset-top)+3.5rem)] z-50 flex justify-center px-4">
-      <div
-        role="status"
-        className="animate-rise pointer-events-auto flex items-center gap-1 rounded-full border border-zinc-800 bg-zinc-900/95 py-1 pr-1 pl-3.5 text-sm shadow-lg shadow-black/40 backdrop-blur"
-      >
-        <span className="mr-1 size-2 shrink-0 rounded-full bg-emerald-400" aria-hidden />
-        <span className="mr-2 whitespace-nowrap text-zinc-200">Update available</span>
-        <button
-          type="button"
-          disabled={refreshing}
-          onClick={() => {
-            setRefreshing(true)
-            void applyUpdate()
-          }}
-          className="flex items-center gap-1.5 rounded-full bg-emerald-500 px-3 py-1.5 font-medium text-zinc-950 hover:bg-emerald-400 disabled:opacity-70"
-        >
-          <RefreshCw className={`size-3.5 ${refreshing ? "animate-spin" : ""}`} />
-          Refresh
-        </button>
-        <button
-          type="button"
-          aria-label="Later"
-          onClick={() => setDismissed(available)}
-          className="rounded-full p-1.5 text-zinc-500 hover:text-zinc-200"
-        >
-          <X className="size-4" />
-        </button>
-      </div>
-    </div>
+    <button
+      type="button"
+      disabled={refreshing}
+      onClick={() => {
+        setRefreshing(true)
+        void applyUpdate()
+      }}
+      title="A new version of Dex is deployed"
+      className={`animate-fade flex w-full items-center gap-2 rounded-md bg-emerald-500/10 px-2 py-1.5 text-sm text-emerald-300 hover:bg-emerald-500/15 disabled:opacity-70 ${className}`}
+    >
+      <RefreshCw className={`size-4 ${refreshing ? "animate-spin" : ""}`} />
+      <span className="font-medium">Update ready</span>
+      <span className="ml-auto text-xs text-emerald-400/80">{refreshing ? "Refreshing…" : "Refresh"}</span>
+    </button>
   )
 }

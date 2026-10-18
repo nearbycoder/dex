@@ -6,7 +6,7 @@ import { ShellSkeleton } from "~/client/components/skeleton"
 import { DexProvider, forgetSavedState } from "~/client/lib/dex"
 import { MenuButton, NavContext, useNavState, useVisualViewportHeight } from "~/client/lib/mobile-nav"
 import { useHaptics } from "~/client/lib/haptics"
-import { UpdateBanner } from "~/client/lib/updates"
+import { useUpdateChecker } from "~/client/lib/updates"
 import { getViewer, type ViewerResult } from "~/server/viewer"
 
 /**
@@ -60,6 +60,7 @@ function AppLayout() {
   useVisualViewportHeight()
   useHaptics()
   usePreloadPages()
+  useUpdateChecker()
   const { pathname } = useLocation()
   // Chat and Machine pages put the menu button in their own header.
   const inChat = useMatch({ from: "/_app/chat/$sessionId", shouldThrow: false }) !== undefined
@@ -91,7 +92,6 @@ function AppLayout() {
             <Outlet />
           </main>
         </div>
-        <UpdateBanner />
       </NavContext.Provider>
     </DexProvider>
   )

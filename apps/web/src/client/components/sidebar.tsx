@@ -25,6 +25,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react"
 import { forgetSavedState, useDex } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
 import { useNav } from "~/client/lib/mobile-nav"
+import { UpdateButton } from "~/client/lib/updates"
 import { findModel } from "~/shared/models"
 import type { SessionMeta } from "~/shared/protocol"
 import { AgentAvatar } from "./agent-avatar"
@@ -225,6 +226,7 @@ export function Sidebar() {
               <ChevronRight className={`size-4 text-zinc-600 ${running > 0 || clineMissing || mcpAttention ? "" : "ml-auto"}`} />
             </button>
           )}
+          <UpdateButton />
           <div className="flex items-center gap-2 px-2 pt-2">
             {viewer.avatarUrl ? (
               <img src={viewer.avatarUrl} alt="" className="size-6 rounded-full" />

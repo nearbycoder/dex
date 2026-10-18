@@ -6,8 +6,12 @@ import agents from "agents/vite"
 import { fileURLToPath } from "node:url"
 import { defineConfig } from "vite"
 
-/** Stamped into every build, so the running agent can report which code it is (see DexState.build). */
-const BUILD_ID = new Date().toISOString()
+/**
+ * Stamped into every build, so the running agent can report which code it is (see DexState.build) and an open app
+ * can tell a deploy has landed (client/lib/updates.tsx). Vite loads this config once per environment (client,
+ * Worker), so keep the first value for the whole process: the two bundles must agree.
+ */
+const BUILD_ID = (process.env.DEX_BUILD_ID ??= new Date().toISOString())
 
 export default defineConfig({
   define: { __DEX_BUILD__: JSON.stringify(BUILD_ID) },
