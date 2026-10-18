@@ -136,7 +136,7 @@ function Chat() {
       </header>
 
       <ChatArtifactsContext.Provider value={artifacts}>
-        {transcript.loaded ? <MessageList transcript={transcript} onSend={send} /> : <ChatSkeleton />}
+        {transcript.loaded ? <MessageList key={sessionId} transcript={transcript} onSend={send} /> : <ChatSkeleton />}
       </ChatArtifactsContext.Provider>
 
       <div className="mx-auto w-full max-w-3xl px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:px-4 md:pb-[max(1rem,env(safe-area-inset-bottom))]">

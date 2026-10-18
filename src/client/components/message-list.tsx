@@ -1,8 +1,8 @@
 import type { AssistantMessage, ToolResultMessage } from "@earendil-works/pi-ai"
 import { Predicate } from "effect"
 import { Link } from "@tanstack/react-router"
-import { AlertTriangle, Brain, ChevronRight, ListChecks, LoaderCircle } from "lucide-react"
-import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from "react"
+import { AlertTriangle, ArrowDown, Brain, ChevronRight, ListChecks, LoaderCircle } from "lucide-react"
+import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { displayItems, type LiveTool, toolResults, type TranscriptState } from "~/client/lib/transcript"
 import { Collapse } from "./collapse"
 import { ConfirmCard } from "./confirm-card"
@@ -266,22 +266,52 @@ function AssistantTurnView(props: {
 export const MessageList = memo(function MessageList({ transcript, onSend }: { transcript: TranscriptState; onSend: (text: string) => void }) {
   const items = useMemo(() => displayItems(transcript), [transcript])
   const results = useMemo(() => toolResults(transcript.entries), [transcript.entries])
-  const bottom = useRef<HTMLDivElement>(null)
-  const pinned = useRef(true)
   const scroller = useRef<HTMLDivElement>(null)
-  const count = useRef(0)
+  const content = useRef<HTMLDivElement>(null)
+  // Following the bottom. Only scrolling up yourself lets go of it; reaching the bottom again takes it back.
+  const pinned = useRef(true)
+  const lastTop = useRef(0)
+  const clickedAt = useRef(0)
+  const [atBottom, setAtBottom] = useState(true)
 
-  // A new message glides into view; streaming text that grows the last one keeps the bottom pinned instantly.
-  // At most once a frame, however fast tokens arrive.
-  const frame = useRef(0)
+  const toBottom = useCallback((behavior: ScrollBehavior = "auto") => {
+    const element = scroller.current
+    if (element) element.scrollTo({ top: element.scrollHeight, behavior })
+  }, [])
+
+  // A chat opens at its latest message, before the first paint (the page remounts this per chat).
+  useLayoutEffect(() => toBottom(), [toBottom])
+
+  // While pinned, anything that grows keeps the bottom in view: streaming text, new messages, and media and cards
+  // that size themselves after they load, or the keyboard shrinking the view. Growth from a tap (opening an
+  // activity row) stays where you tapped.
   useEffect(() => {
-    const added = count.current > 0 && items.length > count.current
-    count.current = items.length
-    if (!pinned.current) return
-    cancelAnimationFrame(frame.current)
-    frame.current = requestAnimationFrame(() => bottom.current?.scrollIntoView({ block: "end", behavior: added ? "smooth" : "auto" }))
-  }, [items])
-  useEffect(() => () => cancelAnimationFrame(frame.current), [])
+    const element = scroller.current
+    const inner = content.current
+    if (!element || !inner) return
+    const observer = new ResizeObserver(() => {
+      const distance = element.scrollHeight - element.scrollTop - element.clientHeight
+      if (Date.now() - clickedAt.current < 1_000) {
+        pinned.current = distance < 80
+        setAtBottom(distance < 120)
+      } else if (pinned.current) {
+        element.scrollTop = element.scrollHeight
+      }
+    })
+    observer.observe(inner)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+
+  // Sending a message always brings you to the bottom.
+  const lastUser = items.findLast((item) => item.kind === "user")?.id
+  const seenUser = useRef(lastUser)
+  useEffect(() => {
+    if (lastUser === seenUser.current) return
+    seenUser.current = lastUser
+    pinned.current = true
+    toBottom()
+  }, [lastUser, toBottom])
 
   // load_ui_guide comes right before render_ui: start fetching the UI renderer then, so the card doesn't wait on it.
   const wantsUi = useMemo(
@@ -300,65 +330,87 @@ export const MessageList = memo(function MessageList({ transcript, onSend }: { t
   }, [wantsUi])
 
   return (
-    <div
-      ref={scroller}
-      className="scrollbar-thin flex-1 overflow-x-hidden overflow-y-auto overscroll-x-none"
-      onScroll={(event) => {
-        const element = event.currentTarget
-        pinned.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80
-      }}
-    >
-      <div className="mx-auto max-w-3xl space-y-5 px-4 py-6">
-        {items.map((item, index) => {
-          switch (item.kind) {
-            case "user":
-              return (
-                <div key={item.id} className="flex animate-rise justify-end">
-                  <div className="max-w-[85%] rounded-2xl rounded-br-md bg-zinc-800 px-4 py-2.5 text-sm whitespace-pre-wrap text-zinc-100 [overflow-wrap:anywhere]">
-                    {item.text}
-                    {item.images > 0 && <div className="mt-1 text-xs text-zinc-400">+{item.images} image(s)</div>}
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <div
+        ref={scroller}
+        className="scrollbar-thin flex-1 overflow-x-hidden overflow-y-auto overscroll-x-none"
+        onScroll={(event) => {
+          const element = event.currentTarget
+          const distance = element.scrollHeight - element.scrollTop - element.clientHeight
+          if (distance < 80) pinned.current = true
+          else if (element.scrollTop < lastTop.current - 1) pinned.current = false
+          lastTop.current = element.scrollTop
+          setAtBottom(distance < 120)
+        }}
+      >
+        <div ref={content} onClickCapture={() => (clickedAt.current = Date.now())} className="mx-auto max-w-3xl space-y-5 px-4 py-6">
+          {items.map((item, index) => {
+            switch (item.kind) {
+              case "user":
+                return (
+                  <div key={item.id} className="flex animate-rise justify-end">
+                    <div className="max-w-[85%] rounded-2xl rounded-br-md bg-zinc-800 px-4 py-2.5 text-sm whitespace-pre-wrap text-zinc-100 [overflow-wrap:anywhere]">
+                      {item.text}
+                      {item.images > 0 && <div className="mt-1 text-xs text-zinc-400">+{item.images} image(s)</div>}
+                    </div>
                   </div>
-                </div>
-              )
-            case "assistant":
-              return (
-                <div key={item.id} className="flex animate-rise gap-3">
-                  <img src="/favicon.svg" alt="Dex" className="mt-0.5 size-6 shrink-0" />
-                  <AssistantTurn
-                    messages={item.messages}
-                    streaming={item.streaming}
-                    active={transcript.running && index === items.length - 1}
-                    endedAt={item.endedAt}
-                    results={results}
-                    tools={transcript.tools}
-                    onSend={onSend}
-                  />
-                </div>
-              )
-            case "divider":
-              return (
-                <div key={item.id} className="flex items-center gap-3 text-xs text-zinc-600">
-                  <div className="h-px flex-1 bg-zinc-800" />
-                  {item.label}
-                  <div className="h-px flex-1 bg-zinc-800" />
-                </div>
-              )
-          }
-        })}
-        {transcript.running && items.at(-1)?.kind !== "assistant" && (
-          <div className="flex animate-fade items-center gap-2 pl-9 text-xs text-zinc-500">
-            <LoaderCircle className="size-3.5 animate-spin" /> Working…
-          </div>
-        )}
-        {transcript.retry && <div className="pl-9 text-xs text-amber-400/80">Retrying after an error: {transcript.retry.error}</div>}
-        {transcript.error && (
-          <div className="flex items-start gap-2 rounded-lg border border-red-900/60 bg-red-950/40 px-3 py-2 text-xs text-red-300">
-            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-            <span className="break-words">{transcript.error}</span>
-          </div>
-        )}
-        <div ref={bottom} />
+                )
+              case "assistant":
+                return (
+                  <div key={item.id} className="flex animate-rise gap-3">
+                    <img src="/favicon.svg" alt="Dex" className="mt-0.5 size-6 shrink-0" />
+                    <AssistantTurn
+                      messages={item.messages}
+                      streaming={item.streaming}
+                      active={transcript.running && index === items.length - 1}
+                      endedAt={item.endedAt}
+                      results={results}
+                      tools={transcript.tools}
+                      onSend={onSend}
+                    />
+                  </div>
+                )
+              case "divider":
+                return (
+                  <div key={item.id} className="flex items-center gap-3 text-xs text-zinc-600">
+                    <div className="h-px flex-1 bg-zinc-800" />
+                    {item.label}
+                    <div className="h-px flex-1 bg-zinc-800" />
+                  </div>
+                )
+            }
+          })}
+          {transcript.running && items.at(-1)?.kind !== "assistant" && (
+            <div className="flex animate-fade items-center gap-2 pl-9 text-xs text-zinc-500">
+              <LoaderCircle className="size-3.5 animate-spin" /> Working…
+            </div>
+          )}
+          {transcript.retry && <div className="pl-9 text-xs text-amber-400/80">Retrying after an error: {transcript.retry.error}</div>}
+          {transcript.error && (
+            <div className="flex items-start gap-2 rounded-lg border border-red-900/60 bg-red-950/40 px-3 py-2 text-xs text-red-300">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+              <span className="break-words">{transcript.error}</span>
+            </div>
+          )}
+        </div>
       </div>
+      {!atBottom && (
+        <button
+          type="button"
+          aria-label="Scroll to the latest message"
+          title="Latest message"
+          onClick={() => {
+            pinned.current = true
+            toBottom("smooth")
+          }}
+          className="absolute bottom-3 left-1/2 flex size-9 -translate-x-1/2 animate-fade items-center justify-center rounded-full border border-zinc-700/80 bg-zinc-900/90 text-zinc-200 shadow-lg shadow-black/40 backdrop-blur hover:bg-zinc-800"
+        >
+          <ArrowDown className="size-4" />
+          {transcript.running && (
+            <span className="absolute -top-0.5 -right-0.5 size-2.5 animate-pulse rounded-full bg-emerald-500 ring-2 ring-zinc-950" />
+          )}
+        </button>
+      )}
     </div>
   )
 })
