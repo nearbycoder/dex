@@ -266,7 +266,8 @@ function PreviewWindow({ vm, onClose }: { vm: VmInfo; onClose: () => void }) {
           <>
             <iframe
               key={url}
-              src={url}
+              // Dex's own desktop page (Selkies) has a watch-only view without its touch controls.
+              src={url.startsWith("/vm-desktop/") ? `${url}?view=watch` : url}
               title="VM desktop preview"
               allow="autoplay"
               tabIndex={-1}

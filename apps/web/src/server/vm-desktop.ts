@@ -13,11 +13,17 @@ import { activeViewer } from "./active-session"
 
 export const VM_DESKTOP_PREFIX = "/vm-desktop/"
 
+/**
+ * `?view=watch` (the chat's floating preview, which is watch-only): no Selkies touch controls, i.e. its sidebar
+ * tab, on-screen keyboard button, and touch gamepad. The Machine page keeps them for taking control.
+ */
+const WATCH_ONLY = `<style>.toggle-handle,.virtual-keyboard-button,#touch-gamepad-host{display:none!important}</style>`
+
 /** Selkies' own index.html, pointed at the copy of its client that ships with Dex. */
-const PAGE = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Desktop</title>
+const page = (watchOnly: boolean) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Desktop</title>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <script type="module" crossorigin src="/assets/selkies/index-CPWh3fQ6.js"></script>
-<link rel="stylesheet" crossorigin href="/assets/selkies/index-D97fjY6g.css">
+<link rel="stylesheet" crossorigin href="/assets/selkies/index-D97fjY6g.css">${watchOnly ? WATCH_ONLY : ""}
 </head><body><div id="app"></div><div id="root"></div><div id="touch-gamepad-host"></div></body></html>`
 
 /**
@@ -59,7 +65,7 @@ export async function handleVmDesktop(request: Request, env: Env): Promise<Respo
 
   const path = rest.join("/")
   if (path === "" || path === "index.html") {
-    return new Response(PAGE, {
+    return new Response(page(url.searchParams.get("view") === "watch"), {
       headers: {
         "content-type": "text/html; charset=utf-8",
         "cache-control": "no-store",
