@@ -1,5 +1,6 @@
 import { Menu } from "lucide-react"
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react"
+import { haptic } from "./haptics"
 
 const WIDE = "(min-width: 768px)"
 const COLLAPSED_KEY = "dex.sidebarCollapsed"
@@ -88,6 +89,8 @@ export function useNavState(): Nav {
   useEffect(() => {
     const EDGE = 24
     let start: { x: number; y: number; at: number; edge: boolean; moved: boolean } | null = null
+    // The drawer moves during the swipe, but iOS plays a haptic only from the touch's end.
+    let swiped = false
     const onStart = (event: TouchEvent) => {
       const touch = event.touches[0]
       if (!touch || event.touches.length > 1 || matchMedia(WIDE).matches) return
@@ -107,13 +110,21 @@ export function useNavState(): Nav {
       }
       if (start.edge && dx > 56) {
         setDrawerOpen(true)
+        swiped = true
         start = null
       } else if (!start.edge && dx < -56) {
-        setDrawerOpen(false)
+        setDrawerOpen((open) => {
+          if (open) swiped = true
+          return false
+        })
         start = null
       }
     }
     const onEnd = (event: TouchEvent) => {
+      if (swiped) {
+        swiped = false
+        haptic()
+      }
       const tap = start?.edge && !start.moved && Date.now() - start.at < 600 ? start : null
       start = null
       if (!tap) return
