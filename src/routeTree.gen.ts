@@ -34,7 +34,9 @@ import { Route as AppProjectsProjectIdRouteImport } from './routes/_app.projects
 import { Route as ApiMediaSplatRouteImport } from './routes/api.media.$'
 import { Route as ApiPushActionRouteImport } from './routes/api.push.action'
 import { Route as AuthGithubCallbackRouteImport } from './routes/auth.github.callback'
+import { Route as AuthGithubConnectRouteImport } from './routes/auth.github.connect'
 import { Route as AuthGithubStartRouteImport } from './routes/auth.github.start'
+import { Route as AuthGithubConnectCallbackRouteImport } from './routes/auth.github.connect.callback'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -160,11 +162,22 @@ const AuthGithubCallbackRoute = AuthGithubCallbackRouteImport.update({
   path: '/auth/github/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthGithubConnectRoute = AuthGithubConnectRouteImport.update({
+  id: '/auth/github/connect',
+  path: '/auth/github/connect',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthGithubStartRoute = AuthGithubStartRouteImport.update({
   id: '/auth/github/start',
   path: '/auth/github/start',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthGithubConnectCallbackRoute =
+  AuthGithubConnectCallbackRouteImport.update({
+    id: '/callback',
+    path: '/callback',
+    getParentRoute: () => AuthGithubConnectRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -186,12 +199,14 @@ export interface FileRoutesByFullPath {
   '/api/media/$': typeof ApiMediaSplatRoute
   '/api/push/action': typeof ApiPushActionRoute
   '/auth/github/callback': typeof AuthGithubCallbackRoute
+  '/auth/github/connect': typeof AuthGithubConnectRouteWithChildren
   '/auth/github/start': typeof AuthGithubStartRoute
   '/agents/': typeof AppAgentsIndexRoute
   '/chat/': typeof AppChatIndexRoute
   '/machine/': typeof AppMachineIndexRoute
   '/mcp/': typeof AppMcpIndexRoute
   '/projects/': typeof AppProjectsIndexRoute
+  '/auth/github/connect/callback': typeof AuthGithubConnectCallbackRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -213,12 +228,14 @@ export interface FileRoutesByTo {
   '/api/media/$': typeof ApiMediaSplatRoute
   '/api/push/action': typeof ApiPushActionRoute
   '/auth/github/callback': typeof AuthGithubCallbackRoute
+  '/auth/github/connect': typeof AuthGithubConnectRouteWithChildren
   '/auth/github/start': typeof AuthGithubStartRoute
   '/agents': typeof AppAgentsIndexRoute
   '/chat': typeof AppChatIndexRoute
   '/machine': typeof AppMachineIndexRoute
   '/mcp': typeof AppMcpIndexRoute
   '/projects': typeof AppProjectsIndexRoute
+  '/auth/github/connect/callback': typeof AuthGithubConnectCallbackRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -242,12 +259,14 @@ export interface FileRoutesById {
   '/api/media/$': typeof ApiMediaSplatRoute
   '/api/push/action': typeof ApiPushActionRoute
   '/auth/github/callback': typeof AuthGithubCallbackRoute
+  '/auth/github/connect': typeof AuthGithubConnectRouteWithChildren
   '/auth/github/start': typeof AuthGithubStartRoute
   '/_app/agents/': typeof AppAgentsIndexRoute
   '/_app/chat/': typeof AppChatIndexRoute
   '/_app/machine/': typeof AppMachineIndexRoute
   '/_app/mcp/': typeof AppMcpIndexRoute
   '/_app/projects/': typeof AppProjectsIndexRoute
+  '/auth/github/connect/callback': typeof AuthGithubConnectCallbackRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -271,12 +290,14 @@ export interface FileRouteTypes {
     | '/api/media/$'
     | '/api/push/action'
     | '/auth/github/callback'
+    | '/auth/github/connect'
     | '/auth/github/start'
     | '/agents/'
     | '/chat/'
     | '/machine/'
     | '/mcp/'
     | '/projects/'
+    | '/auth/github/connect/callback'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -298,12 +319,14 @@ export interface FileRouteTypes {
     | '/api/media/$'
     | '/api/push/action'
     | '/auth/github/callback'
+    | '/auth/github/connect'
     | '/auth/github/start'
     | '/agents'
     | '/chat'
     | '/machine'
     | '/mcp'
     | '/projects'
+    | '/auth/github/connect/callback'
   id:
     | '__root__'
     | '/'
@@ -326,12 +349,14 @@ export interface FileRouteTypes {
     | '/api/media/$'
     | '/api/push/action'
     | '/auth/github/callback'
+    | '/auth/github/connect'
     | '/auth/github/start'
     | '/_app/agents/'
     | '/_app/chat/'
     | '/_app/machine/'
     | '/_app/mcp/'
     | '/_app/projects/'
+    | '/auth/github/connect/callback'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -345,6 +370,7 @@ export interface RootRouteChildren {
   ApiMediaSplatRoute: typeof ApiMediaSplatRoute
   ApiPushActionRoute: typeof ApiPushActionRoute
   AuthGithubCallbackRoute: typeof AuthGithubCallbackRoute
+  AuthGithubConnectRoute: typeof AuthGithubConnectRouteWithChildren
   AuthGithubStartRoute: typeof AuthGithubStartRoute
 }
 
@@ -525,12 +551,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthGithubCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth/github/connect': {
+      id: '/auth/github/connect'
+      path: '/auth/github/connect'
+      fullPath: '/auth/github/connect'
+      preLoaderRoute: typeof AuthGithubConnectRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth/github/start': {
       id: '/auth/github/start'
       path: '/auth/github/start'
       fullPath: '/auth/github/start'
       preLoaderRoute: typeof AuthGithubStartRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/auth/github/connect/callback': {
+      id: '/auth/github/connect/callback'
+      path: '/callback'
+      fullPath: '/auth/github/connect/callback'
+      preLoaderRoute: typeof AuthGithubConnectCallbackRouteImport
+      parentRoute: typeof AuthGithubConnectRoute
     }
   }
 }
@@ -573,6 +613,17 @@ const AppRouteChildren: AppRouteChildren = {
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
+interface AuthGithubConnectRouteChildren {
+  AuthGithubConnectCallbackRoute: typeof AuthGithubConnectCallbackRoute
+}
+
+const AuthGithubConnectRouteChildren: AuthGithubConnectRouteChildren = {
+  AuthGithubConnectCallbackRoute: AuthGithubConnectCallbackRoute,
+}
+
+const AuthGithubConnectRouteWithChildren =
+  AuthGithubConnectRoute._addFileChildren(AuthGithubConnectRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
@@ -584,6 +635,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiMediaSplatRoute: ApiMediaSplatRoute,
   ApiPushActionRoute: ApiPushActionRoute,
   AuthGithubCallbackRoute: AuthGithubCallbackRoute,
+  AuthGithubConnectRoute: AuthGithubConnectRouteWithChildren,
   AuthGithubStartRoute: AuthGithubStartRoute,
 }
 export const routeTree = rootRouteImport

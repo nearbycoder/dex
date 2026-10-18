@@ -23,7 +23,10 @@ export class GitHubUser extends Schema.Class<GitHubUser>("GitHubUser")({
 /** GitHub's web application OAuth flow. */
 export class GitHubOAuth extends Context.Service<GitHubOAuth, {
   readonly enabled: boolean
-  authorizeUrl(options: { state: string; redirectUri: string }): Effect.Effect<string, OAuthError>
+  /** `scope` defaults to reading the profile (sign-in); connecting GitHub for VMs asks for repo access. */
+  authorizeUrl(options: { state: string; redirectUri: string; scope?: string }): Effect.Effect<string, OAuthError>
+  /** Exchange the callback's code for an access token. */
+  exchange(options: { code: string; redirectUri: string }): Effect.Effect<string, OAuthError>
   /** Exchange the callback's code and read the signed-in user. */
   complete(options: { code: string; redirectUri: string }): Effect.Effect<GitHubUser, OAuthError>
 }>()("dex/server/GitHubOAuth") {
@@ -40,18 +43,18 @@ export class GitHubOAuth extends Context.Service<GitHubOAuth, {
         Effect.mapError(() => new OAuthError({ reason: "not_configured", message: "GitHub sign-in is not configured" }))
       )
 
-      const authorizeUrl = Effect.fn("GitHubOAuth.authorizeUrl")(function*({ state, redirectUri }: { state: string; redirectUri: string }) {
+      const authorizeUrl = Effect.fn("GitHubOAuth.authorizeUrl")(function*({ state, redirectUri, scope = "read:user" }: { state: string; redirectUri: string; scope?: string }) {
         const { clientId } = yield* config
         const url = new URL("https://github.com/login/oauth/authorize")
         url.searchParams.set("client_id", clientId)
         url.searchParams.set("redirect_uri", redirectUri)
-        url.searchParams.set("scope", "read:user")
+        url.searchParams.set("scope", scope)
         url.searchParams.set("state", state)
         url.searchParams.set("allow_signup", "false")
         return url.toString()
       })
 
-      const complete = Effect.fn("GitHubOAuth.complete")(function*({ code, redirectUri }: { code: string; redirectUri: string }) {
+      const exchange = Effect.fn("GitHubOAuth.exchange")(function*({ code, redirectUri }: { code: string; redirectUri: string }) {
         const { clientId, clientSecret } = yield* config
         const token = yield* HttpClientRequest.post("https://github.com/login/oauth/access_token").pipe(
           HttpClientRequest.bodyUrlParams({
@@ -70,15 +73,20 @@ export class GitHubOAuth extends Context.Service<GitHubOAuth, {
             message: token.error_description ?? token.error ?? "GitHub returned no access token"
           })
         }
+        return token.access_token
+      })
+
+      const complete = Effect.fn("GitHubOAuth.complete")(function*({ code, redirectUri }: { code: string; redirectUri: string }) {
+        const accessToken = yield* exchange({ code, redirectUri })
         return yield* client.get("https://api.github.com/user", {
-          headers: { authorization: `Bearer ${token.access_token}` }
+          headers: { authorization: `Bearer ${accessToken}` }
         }).pipe(
           Effect.flatMap(HttpClientResponse.schemaBodyJson(GitHubUser)),
           Effect.mapError((cause) => new OAuthError({ reason: "profile_failed", message: String(cause) }))
         )
       })
 
-      return GitHubOAuth.of({ enabled: Option.isSome(github), authorizeUrl, complete })
+      return GitHubOAuth.of({ enabled: Option.isSome(github), authorizeUrl, exchange, complete })
     })
   ).pipe(Layer.provide(FetchHttpClient.layer))
 }

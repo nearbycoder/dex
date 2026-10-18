@@ -35,6 +35,10 @@ export interface SessionMeta {
 export interface GitHubStatus {
   readonly connected: boolean
   readonly login: string | null
+  /** How it was connected: "Connect with GitHub" (OAuth) or a pasted token. */
+  readonly via?: "oauth" | "token" | null
+  /** This deployment has a GitHub OAuth app, so "Connect with GitHub" is offered. */
+  readonly oauthAvailable?: boolean
 }
 
 export interface ClineStatus {

@@ -1352,15 +1352,19 @@ export class DexAgent extends Agent<Env, DexState> {
 
   private refreshGitHubStatus() {
     const identity = this.secret("github_identity")
+    const oauthAvailable = Boolean((this.env as unknown as Record<string, unknown>).GITHUB_CLIENT_ID)
     const github: GitHubStatus = identity && this.secret("github_token")
-      ? { connected: true, login: (JSON.parse(identity) as GitHubIdentity).login }
-      : { connected: false, login: null }
+      ? { connected: true, login: (JSON.parse(identity) as GitHubIdentity).login, via: this.secret("github_via") === "oauth" ? "oauth" : "token", oauthAvailable }
+      : { connected: false, login: null, via: null, oauthAvailable }
     this.publish({ github })
   }
 
-  /** Saves a GitHub personal access token (encrypted); new VMs sign in to gh and git with it. */
+  /**
+   * Saves a GitHub token (encrypted): a pasted personal access token, or (`via` "oauth") one from "Connect with
+   * GitHub", which the Worker's OAuth callback passes in. New VMs sign in to gh and git with it.
+   */
   @callable()
-  async connectGitHub(token: string): Promise<{ ok: true; login: string } | { ok: false; error: string }> {
+  async connectGitHub(token: string, via: "token" | "oauth" = "token"): Promise<{ ok: true; login: string } | { ok: false; error: string }> {
     const value = token.trim()
     if (!value) return { ok: false, error: "Paste a GitHub personal access token." }
     const result = await this.runtime.runPromise(
@@ -1374,13 +1378,35 @@ export class DexAgent extends Agent<Env, DexState> {
     const upsert = `INSERT INTO dex_secrets (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value`
     this.ctx.storage.sql.exec(upsert, "github_token", result.sealed)
     this.ctx.storage.sql.exec(upsert, "github_identity", JSON.stringify(result.identity))
+    this.ctx.storage.sql.exec(upsert, "github_via", via === "oauth" ? "oauth" : "token")
     this.refreshGitHubStatus()
     return { ok: true, login: result.identity.login }
   }
 
   @callable()
   async disconnectGitHub() {
-    this.ctx.storage.sql.exec(`DELETE FROM dex_secrets WHERE name IN ('github_token', 'github_identity')`)
+    // An OAuth token is revoked at GitHub too, so it stops working everywhere (VMs included), not just in Dex.
+    const sealed = this.secret("github_token")
+    if (sealed && this.secret("github_via") === "oauth") {
+      await this.runtime
+        .runPromise(
+          Effect.gen(function*() {
+            const { github } = yield* AppConfig
+            const token = yield* (yield* Keys).decrypt(sealed)
+            if (Option.isNone(github)) return
+            const basic = btoa(`${github.value.clientId}:${Redacted.value(github.value.clientSecret)}`)
+            yield* Effect.promise(() =>
+              fetch(`https://api.github.com/applications/${github.value.clientId}/token`, {
+                method: "DELETE",
+                headers: { authorization: `Basic ${basic}`, accept: "application/vnd.github+json", "user-agent": "dex", "content-type": "application/json" },
+                body: JSON.stringify({ access_token: token })
+              })
+            )
+          })
+        )
+        .catch(() => undefined)
+    }
+    this.ctx.storage.sql.exec(`DELETE FROM dex_secrets WHERE name IN ('github_token', 'github_identity', 'github_via')`)
     this.refreshGitHubStatus()
   }
 
