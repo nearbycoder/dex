@@ -5,10 +5,10 @@
 <p align="center">
   <a href="docs/media/dex-promo.mp4"><img src="docs/media/dex-preview.gif" alt="Dex answering a request with a live chart card" width="100%"></a>
   <br>
-  <sub><b><a href="docs/media/dex-promo.mp4">▶ Watch the 2-minute tour</a></b> · generative UI, ClinePass and OpenCode Go, a cloud VM per chat you can watch while you chat, GitHub repos, skills, MCP, usage, and the phone app</sub>
+  <sub><b><a href="https://trydex.dev">trydex.dev</a></b> · <b><a href="docs/media/dex-promo.mp4">▶ Watch the 2-minute tour</a></b> · generative UI, ClinePass and OpenCode Go, a cloud VM per chat you can watch while you chat, GitHub repos, skills, MCP, usage, and the phone app</sub>
 </p>
 
-**Dex** is a personal agent harness. Each user gets an agent in a Cloudflare Durable Object running [Pi Durable](https://developers.cloudflare.com/agents/harnesses/pi/), thinking with models through [ClinePass](https://docs.cline.bot/getting-started/clinepass) or [OpenCode Go](https://opencode.ai/docs/go/), answering with generative UI from [OpenUI](https://www.openui.com/), and doing real work on its own cloud VM from [boat.dev](https://boat.dev). Built with TanStack Start, Effect, and the Cloudflare Agents SDK, and installable on your phone.
+**Dex** is a personal agent harness. Each user gets an agent in a Cloudflare Durable Object running [Pi Durable](https://developers.cloudflare.com/agents/harnesses/pi/), thinking with models through [ClinePass](https://docs.cline.bot/getting-started/clinepass) or [OpenCode Go](https://opencode.ai/docs/go/), answering with generative UI from [OpenUI](https://www.openui.com/), and doing real work on its own cloud VM from [boat.dev](https://boat.dev). Built with TanStack Start, Effect, and the Cloudflare Agents SDK, and installable on your phone. See it at **[trydex.dev](https://trydex.dev)**, then [deploy your own](#deploy).
 
 [Highlights](#highlights) · [Features](#features) · [Repository](#repository) · [Architecture](#architecture) · [Develop](#develop) · [Deploy](#deploy) · [Security](#security) · [Limits](#limits) · [License](#license)
 
