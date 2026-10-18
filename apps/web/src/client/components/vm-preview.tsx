@@ -7,20 +7,26 @@ import type { VmInfo } from "~/shared/protocol"
 
 /**
  * A chat's VM, watchable while you read the chat: a small floating button that opens a picture-in-picture window of
- * the live desktop. Both can be dragged anywhere and stay where you leave them (on this device). The window is for
- * watching; "Open the Machine page" is where you take control. Closing it back to the button stops the stream.
+ * the live desktop. Both can be dragged anywhere, the window resized from a corner, and they stay as you leave them
+ * (on this device). The window is for watching; "Open the Machine page" is where you take control. Closing it back to
+ * the button stops the stream.
  */
 
 const OPEN_KEY = "dex-vm-preview-open"
-const SIZE_KEY = "dex-vm-preview-large"
+const WIDTH_KEY = "dex-vm-preview-width"
 const POSITION_KEY = (what: "button" | "window") => `dex-vm-preview-${what}`
 const MARGIN = 8
 /** Below the top bar (48px plus the status bar), so its buttons stay reachable. */
 const TOP = 56
 const BUTTON = 48
-/** Window widths; the desktop is 16:9 under a 32px title bar. */
-const WIDTH = { small: 240, large: 360 }
+/** Window widths: the two presets, and the resize limits. The desktop is 16:9 under a 32px title bar. */
+const WIDTH = { small: 240, large: 360, min: 180 }
 const TITLE_BAR = 32
+/**
+ * The desktop page always lays out at this size and is scaled to the window with CSS: the stream players fit their
+ * picture once, when they connect, so resizing the frame itself would leave the picture at its old size.
+ */
+const FRAME = { width: 960, height: 540 }
 
 type Point = { x: number; y: number }
 
@@ -112,8 +118,19 @@ function useDrag(key: string, width: number, height: number, fallback: () => Poi
     [key]
   )
 
+  /** Moves the box; `size` when it's changing size in the same step (the render hasn't caught up yet). */
+  const place = useCallback(
+    (next: Point, save = false, size?: { width: number; height: number }) => {
+      const fitted = clamp(next, size?.width ?? width, size?.height ?? height)
+      setPoint(fitted)
+      if (save) localStorage.setItem(key, JSON.stringify(fitted))
+    },
+    [key, width, height]
+  )
+
   return {
     point,
+    place,
     // Inline, so it beats styles.css giving every button `touch-action: manipulation` (unlayered CSS outranks
     // Tailwind's touch-none): otherwise iOS scrolls the page under the finger and cancels the drag.
     handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel, style: { touchAction: "none" } as const }
@@ -161,13 +178,57 @@ function PreviewButton({ vm, onOpen }: { vm: VmInfo; onOpen: () => void }) {
 }
 
 function PreviewWindow({ vm, onClose }: { vm: VmInfo; onClose: () => void }) {
-  const [large, setLarge] = useState(() => localStorage.getItem(SIZE_KEY) === "1")
-  const width = Math.min(large ? WIDTH.large : WIDTH.small, viewport().width - 2 * MARGIN)
+  const [chosenWidth, setChosenWidth] = useState(() => Number(localStorage.getItem(WIDTH_KEY)) || WIDTH.small)
+  const maxWidth = () => viewport().width - 2 * MARGIN
+  const width = Math.round(Math.min(Math.max(chosenWidth, WIDTH.min), maxWidth()))
   const height = Math.round((width * 9) / 16) + TITLE_BAR
-  const { point, handlers } = useDrag(POSITION_KEY("window"), width, height, () => ({
+  const large = width >= (WIDTH.small + WIDTH.large) / 2
+  const { point, place, handlers } = useDrag(POSITION_KEY("window"), width, height, () => ({
     x: viewport().width - width - 12,
     y: viewport().height - height - 180
   }))
+  const setWidth = (next: number) => {
+    setChosenWidth(next)
+    localStorage.setItem(WIDTH_KEY, String(Math.round(next)))
+  }
+
+  // Resizing from the bottom corner that faces the middle of the screen, so a window parked at an edge grows inward.
+  const fromLeft = point.x + width / 2 > viewport().width / 2
+  // The latest size and position live here too: the pointerup handler can belong to a render that hasn't caught up.
+  const resize = useRef<{ id: number; startX: number; startY: number; width: number; point: Point; fromLeft: boolean; next: number; at: Point } | null>(
+    null
+  )
+  const resizeHandlers = {
+    style: { touchAction: "none" } as const,
+    onPointerDown: (event: ReactPointerEvent<HTMLElement>) => {
+      if (event.button !== 0) return
+      event.stopPropagation()
+      event.currentTarget.setPointerCapture(event.pointerId)
+      resize.current = { id: event.pointerId, startX: event.clientX, startY: event.clientY, width, point, fromLeft, next: width, at: point }
+    },
+    onPointerMove: (event: ReactPointerEvent<HTMLElement>) => {
+      const current = resize.current
+      if (!current || current.id !== event.pointerId) return
+      // Whichever way the finger moved further sets the size; the window stays 16:9.
+      const dx = (event.clientX - current.startX) * (current.fromLeft ? -1 : 1)
+      const dy = ((event.clientY - current.startY) * 16) / 9
+      const next = Math.min(Math.max(current.width + (Math.abs(dx) > Math.abs(dy) ? dx : dy), WIDTH.min), maxWidth())
+      setChosenWidth(next)
+      current.next = next
+      // Growing leftward keeps the right edge where it was.
+      if (current.fromLeft) {
+        current.at = { x: current.point.x + current.width - next, y: current.point.y }
+        place(current.at, false, { width: next, height: Math.round((next * 9) / 16) + TITLE_BAR })
+      }
+    },
+    onPointerUp: (event: ReactPointerEvent<HTMLElement>) => {
+      const current = resize.current
+      if (current?.id !== event.pointerId) return
+      resize.current = null
+      localStorage.setItem(WIDTH_KEY, String(Math.round(current.next)))
+      localStorage.setItem(POSITION_KEY("window"), JSON.stringify(current.at))
+    }
+  }
   const running = vm.status === "running"
   const { url, loading, error } = useDesktopUrl(vm.key, savedDesktopMode(), running)
 
@@ -186,11 +247,8 @@ function PreviewWindow({ vm, onClose }: { vm: VmInfo; onClose: () => void }) {
         <div className="ml-auto flex shrink-0 items-center">
           <button
             type="button"
-            onClick={() => {
-              localStorage.setItem(SIZE_KEY, large ? "0" : "1")
-              setLarge(!large)
-            }}
-            title={large ? "Smaller" : "Larger"}
+            onClick={() => setWidth(large ? WIDTH.small : WIDTH.large)}
+            title={large ? "Small" : "Large"}
             className={iconButton}
           >
             {large ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
@@ -203,10 +261,18 @@ function PreviewWindow({ vm, onClose }: { vm: VmInfo; onClose: () => void }) {
           </button>
         </div>
       </div>
-      <div className="relative min-h-0 flex-1 bg-black">
+      <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
         {running && url ? (
           <>
-            <iframe key={url} src={url} title="VM desktop preview" allow="autoplay" tabIndex={-1} className="absolute inset-0 size-full border-0" />
+            <iframe
+              key={url}
+              src={url}
+              title="VM desktop preview"
+              allow="autoplay"
+              tabIndex={-1}
+              style={{ width: FRAME.width, height: FRAME.height, transform: `scale(${width / FRAME.width})`, transformOrigin: "0 0" }}
+              className="absolute top-0 left-0 border-0"
+            />
             {/* Watch only: taps and drags on the picture move the window instead of reaching the VM. */}
             <div {...handlers} className="absolute inset-0 cursor-grab touch-none active:cursor-grabbing" />
           </>
@@ -216,6 +282,17 @@ function PreviewWindow({ vm, onClose }: { vm: VmInfo; onClose: () => void }) {
             {running ? (error ?? "Connecting to the desktop…") : vm.status === "starting" ? "The VM is starting…" : "The VM isn't running."}
           </div>
         )}
+      </div>
+      {/* Resize grip: a bottom corner, with a hit area bigger than the mark. */}
+      <div
+        {...resizeHandlers}
+        onPointerCancel={resizeHandlers.onPointerUp}
+        title="Drag to resize"
+        className={`absolute bottom-0 z-10 flex size-7 items-end p-1 ${fromLeft ? "left-0 cursor-nesw-resize justify-start" : "right-0 cursor-nwse-resize justify-end"}`}
+      >
+        <svg viewBox="0 0 10 10" className={`size-2.5 text-zinc-400 drop-shadow ${fromLeft ? "-scale-x-100" : ""}`} aria-hidden>
+          <path d="M9 3 3 9M9 6 6 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+        </svg>
       </div>
     </div>
   )
