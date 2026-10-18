@@ -1,18 +1,36 @@
 import { ImageOff } from "lucide-react"
-import { memo } from "react"
+import { memo, type ReactNode } from "react"
 import type { Components } from "react-markdown"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
+import { MediaPlayer, videoSource } from "./media"
 
 /** Images from other sites aren't loaded (the CSP blocks them too): their URLs could carry chat content out. */
 const isInlineImage = (src: string) => src.startsWith("data:image/") || src.startsWith("blob:") || (src.startsWith("/") && !src.startsWith("//"))
 
 const REMARK_PLUGINS = [remarkGfm]
 
+const textOf = (children: ReactNode): string =>
+  typeof children === "string" ? children : Array.isArray(children) ? children.map(textOf).join("") : ""
+
 const COMPONENTS: Components = {
-  a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
+  a: ({ node: _node, href, children, ...props }) => {
+    // Links to videos (YouTube, Vimeo, a video file, or one Dex stores) play inline.
+    const source = typeof href === "string" ? videoSource(href) : null
+    if (source) {
+      const label = textOf(children)
+      return <MediaPlayer source={source} title={label && label !== href ? label : undefined} />
+    }
+    return (
+      <a {...props} href={href} target="_blank" rel="noreferrer">
+        {children}
+      </a>
+    )
+  },
   img: ({ node: _node, src, alt }) => {
     const url = typeof src === "string" ? src : ""
+    const source = videoSource(url)
+    if (source) return <MediaPlayer source={source} title={alt} />
     if (isInlineImage(url)) return <img src={url} alt={alt ?? ""} />
     let host = "external site"
     try {

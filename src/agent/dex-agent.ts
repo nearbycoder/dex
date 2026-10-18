@@ -36,6 +36,7 @@ import { normalizeRepoUrl, type ProjectDraft, type ProjectProfile, type ProjectR
 import { CLOUDFLARE_RATES, type CloudflareLine, type UsageRange, type UsageReport } from "~/shared/usage"
 import { AGENT_COLORS, AGENT_ICONS, type AgentDraft, type AgentProfile, STARTER_AGENTS } from "~/shared/agents"
 import { type AccessRisk, type CreatedAccessToken, NO_ACCESS } from "~/shared/access"
+import { MAX_MEDIA_BYTES } from "~/shared/media"
 import type { McpAuth, McpConnectResult, McpServerDraft, McpServerInfo, McpStatus, McpTransport } from "~/shared/mcp"
 import { BoatClient } from "./boat"
 import { CloudflareAnalytics, type CloudflareDay, dayCost, emptyDay } from "./cloudflare-analytics"
@@ -43,6 +44,8 @@ import { datesBetween, UsageLedger, utcDate } from "./usage-ledger"
 import { CLINEPASS_PROVIDER_ID, ClinePassClient, clinePassProvider } from "./clinepass"
 import { isMcpExtension, type McpCallResult, mcpExtension, mcpExtensionName, type McpToolSpec, toToolResult } from "./mcp-tools"
 import { AccessCenter, parseAccessToken } from "./access"
+import { MediaCenter, type SharedMedia } from "./media"
+import { mediaTools } from "./tools/media-tools"
 import { handleMcpBody } from "./mcp-server"
 import { webTools } from "./tools/agents-tools"
 import { appTools } from "./tools/app-tools"
@@ -79,6 +82,7 @@ You can:
 - Use this chat's own cloud VM, a full Ubuntu machine with a desktop (vm_exec, vm_screenshot, vm_read_file, vm_write_file, vm_expose_port, vm_stop). Use it for real work: cloning repos, installing packages, running code, tests, servers, Docker, and driving a browser. The user can watch it live and take over. It is created the first time you call a VM tool in this chat, which costs time and money, so only use it when the task needs real execution; answer questions, research, and light file work without it.
 - Keep notes and small files in ${WORKSPACE_ROOT} with a lightweight simulated shell (bash, read_file, write_file, edit_file). It cannot install or run programs; use the VM for that.
 - Research the web (web_search, web_fetch, and curl inside bash).
+- Show videos, audio, and images you made on the VM inline with share_media (it returns Markdown to put in your reply). Links to YouTube, Vimeo, and direct video files also play inline.
 - Show rich interactive UI with render_ui. Call load_ui_guide once per chat before your first render_ui.
 - Schedule prompts for yourself to run later (schedule_prompt); recurring schedules go through app_call (app_schedule_prompt) and need the user's confirmation.
 - Use tools from MCP servers the user attached to this chat (named <server>__<tool>), when any are.
@@ -228,6 +232,14 @@ export class DexAgent extends Agent<Env, DexState> {
     tellChat: (sessionId, text) => this.sendMessage(sessionId, text)
   })
 
+  /** Videos, audio, and images chats share from their VMs, stored in R2. */
+  readonly media: MediaCenter = new MediaCenter({
+    sql: this.ctx.storage.sql,
+    bucket: (this.env as unknown as { MEDIA?: R2Bucket }).MEDIA,
+    userId: () => this.name,
+    sign: (payload) => this.runtime.runPromise(Keys.use((keys) => keys.sign(payload)))
+  })
+
   /** One VM per chat (plus `shared`, from before VMs were per chat), created when a chat first needs one. */
   private readonly vms = new Map<string, VmManager>()
   private readonly vmHost: VmHost = {
@@ -333,7 +345,7 @@ export class DexAgent extends Agent<Env, DexState> {
     this.publishVms()
     this.refreshProjects()
     this.refreshGitHubStatus()
-    this.publish({ push: this.push.status(), access: this.access.status() })
+    this.publish({ push: this.push.status(), access: this.access.status(), build: __DEX_BUILD__ })
     void this.backfillUsage()
     this.seedAgents()
     this.refreshAgents()
@@ -342,6 +354,7 @@ export class DexAgent extends Agent<Env, DexState> {
     await this.refreshSessions()
     for (const vm of this.vms.values()) void vm.refresh()
     this.ctx.waitUntil(this.reapOrphanVms())
+    this.ctx.waitUntil(this.media.reap((id) => this.hasSession(id)).catch(() => undefined))
   }
 
   // ── Pi wiring ─────────────────────────────────────────────────────────────
@@ -386,7 +399,8 @@ export class DexAgent extends Agent<Env, DexState> {
         renderUiTool,
         ...scheduleTools(this),
         ...appTools(this.access),
-        ...(this.vmHost.configured ? vmTools((chatId) => this.vmFor(chatId)) : [])
+        ...(this.vmHost.configured ? vmTools((chatId) => this.vmFor(chatId)) : []),
+        ...(this.vmHost.configured && this.media.configured ? mediaTools((chatId, path, title) => this.shareMediaFromVm(chatId, path, title)) : [])
       ]
     })
   }
@@ -603,8 +617,9 @@ export class DexAgent extends Agent<Env, DexState> {
     await this.harness.session(sessionId).abort().catch(() => false)
     this.ctx.storage.sql.exec(`DELETE FROM dex_sessions WHERE id = ?`, sessionId)
     await this.refreshSessions()
-    // Its VM goes with it, disk and all (stopped first if it was running; deleting does both).
+    // Its VM goes with it, disk and all (stopped first if it was running; deleting does both), and its media.
     if (this.vms.has(sessionId)) this.ctx.waitUntil(this.reapOrphanVms())
+    this.ctx.waitUntil(this.media.reap((id) => this.hasSession(id)).catch(() => undefined))
   }
 
   /**
@@ -1599,6 +1614,42 @@ export class DexAgent extends Agent<Env, DexState> {
       if (current) depth++
     }
     return depth
+  }
+
+  // ── Media ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Uploads a file from a chat's VM into R2 and returns its private URL. The VM sends it straight to Dex with a
+   * single-use token, so large videos never pass through this object as base64.
+   */
+  async shareMediaFromVm(sessionId: string, path: string, title?: string): Promise<SharedMedia> {
+    if (!this.media.configured) throw new Error("Media sharing isn't set up on this deployment (no MEDIA bucket).")
+    const origin = this.appOrigin()
+    if (!origin || !origin.startsWith("https://")) throw new Error("Dex needs a public https address to receive uploads; open it once from its deployed URL.")
+    const upload = await this.media.createUpload(sessionId, path, title)
+    const file = `'${path.replace(/'/g, `'\\''`)}'`
+    const command = [
+      `f=${file}`,
+      `[ -f "$f" ] || { echo "No such file: $f" >&2; exit 2; }`,
+      `size=$(stat -c %s "$f")`,
+      `[ "$size" -le ${MAX_MEDIA_BYTES} ] || { echo "Too big: $size bytes (max ${MAX_MEDIA_BYTES}). Compress it first, e.g. ffmpeg -i in.mp4 -c:v libx264 -crf 28 -preset fast -movflags +faststart out.mp4" >&2; exit 3; }`,
+      // The token is single-use and spent by this request.
+      `curl -sS --fail-with-body --max-time 560 -X PUT -H 'Content-Type: application/octet-stream' --data-binary @"$f" '${origin}/api/media/upload/${upload.token}'`
+    ].join("\n")
+    const result = await this.vmFor(sessionId).exec(command, { actor: "agent", timeoutSeconds: 600 })
+    if (result.exitCode !== 0) throw new Error(result.output.trim().slice(-600) || "The upload failed.")
+    const shared = this.media.get(upload.key)
+    if (!shared) throw new Error("The upload didn't arrive.")
+    return shared
+  }
+
+  /** Claims a media upload token for `size` bytes (the Worker calls this before storing the body). */
+  async consumeMediaUpload(token: string, size: number) {
+    return this.media.consumeUpload(token, size)
+  }
+
+  finishMediaUpload(key: string, sessionId: string, name: string, contentType: string, size: number) {
+    this.media.finishUpload(key, sessionId, name, contentType, size)
   }
 
   // ── Sessions ──────────────────────────────────────────────────────────────

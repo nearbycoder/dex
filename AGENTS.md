@@ -24,6 +24,10 @@ When you add or change functionality:
 - Keep the Content Security Policy in src/server.ts strict; add an origin only when a feature truly needs it.
 - Worker → agent RPC: a Durable Object keeps running its old code until it restarts, so a method added in the same deploy may not exist yet on a live instance (calls throw). Callers must tolerate that (feature-detect, or ship the agent method a deploy before its caller); `activeViewer` fails closed, so don't rename `isSessionCurrent`.
 
+## Deploys and stale agents
+
+A busy agent (running VMs schedule an idle check every minute; open sockets and test scripts keep it warm) can keep serving the previous build for a long time after `npm run deploy`. Check `state.build` (the agent's build time, from `__DEX_BUILD__`) in the synced state before testing a change on production; if it's old, let the agent go idle (stop VMs, close sockets) and check again.
+
 ## Workflow
 
 - `npm run typecheck`, then `npm run deploy` (checks operations, builds, deploys), then commit and push to main.

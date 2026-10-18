@@ -77,6 +77,7 @@ const activities: Record<string, string> = {
   vm_expose_port: "Opening a port",
   vm_screenshot: "Looking at the VM's screen",
   vm_stop: "Stopping the VM",
+  share_media: "Sharing a file from the VM",
   app_operations: "Looking up app operations",
   app_call: "Managing Dex"
 }

@@ -29,17 +29,19 @@ const authorizeAgent = (env: Env) => async (request: Request, route: { name: str
  * - connect-src 'self': even injected script couldn't send chat content anywhere but Dex.
  * - img-src: images only from Dex (and GitHub avatars), so a prompt-injected "image" URL can't leak data.
  * - script-src 'self' 'unsafe-inline': no third-party scripts (TanStack Start inlines its hydration scripts).
- * - frame-src: only boat.dev, for the VM desktop. Dex itself is never framed.
+ * - frame-src: boat.dev (the VM desktop) and the YouTube/Vimeo players. Dex itself is never framed.
+ * - media-src https:: video elsewhere, loaded only when the user taps play.
  */
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https://avatars.githubusercontent.com",
+  "img-src 'self' data: blob: https://avatars.githubusercontent.com https://i.ytimg.com",
   "font-src 'self' data:",
   "connect-src 'self'",
-  "media-src 'self' blob:",
-  "frame-src https://boat.dev https://*.boat.dev",
+  // Video from other sites only loads after a tap (client/components/media.tsx), never from model output alone.
+  "media-src 'self' blob: https:",
+  "frame-src https://boat.dev https://*.boat.dev https://www.youtube-nocookie.com https://player.vimeo.com",
   "worker-src 'self'",
   "manifest-src 'self'",
   "frame-ancestors 'none'",
@@ -52,7 +54,8 @@ const withSecurityHeaders = (response: Response, request: Request) => {
   // WebSocket upgrades and the like can't be copied.
   if (response.status === 101 || response.webSocket) return response
   const secured = new Response(response.body, response)
-  secured.headers.set("Content-Security-Policy", CONTENT_SECURITY_POLICY)
+  // Responses with their own (stricter) policy keep it, e.g. sandboxed media.
+  if (!secured.headers.has("Content-Security-Policy")) secured.headers.set("Content-Security-Policy", CONTENT_SECURITY_POLICY)
   secured.headers.set("X-Content-Type-Options", "nosniff")
   secured.headers.set("Referrer-Policy", "strict-origin-when-cross-origin")
   secured.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")

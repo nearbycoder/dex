@@ -59,6 +59,7 @@ export type OperationHost = Pick<
   | "vmActivity"
   | "vmRun"
   | "vmExposePort"
+  | "shareMediaFromVm"
   | "pushUpdate"
   | "pushTest"
   | "pushUnsubscribe"
@@ -693,6 +694,22 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     covers: ["vmExposePort"],
     summarize: (args, state) => `Open port ${args.port} on the VM of ${quote(chatTitle(state, args.vm_key))}`,
     run: async (host, args) => ({ url: await host.vmExposePort(args.vm_key, args.port, false) })
+  }),
+  define({
+    name: "app_share_vm_media",
+    description:
+      "Share a video, audio file, or image from a chat's VM (mp4/mov/webm, mp3/m4a/wav/ogg, png/jpg/gif/webp, up to 95 MB). " +
+      "It's stored privately in Dex; returns a URL the user can play in Dex while signed in.",
+    risk: "write",
+    inChats: false,
+    parameters: Type.Object({
+      vm_key: vmKey,
+      path: Type.String({ minLength: 1, maxLength: 500, description: "Path of the file on the VM." }),
+      title: Type.Optional(Type.String({ maxLength: 120 }))
+    }),
+    covers: [],
+    summarize: (args, state) => `Share ${args.path} from the VM of ${quote(chatTitle(state, args.vm_key))}`,
+    run: async (host, args) => host.shareMediaFromVm(args.vm_key, args.path, args.title)
   }),
   define({
     name: "app_vm_destroy",

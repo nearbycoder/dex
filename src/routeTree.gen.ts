@@ -31,6 +31,7 @@ import { Route as AppMcpIndexRouteImport } from './routes/_app.mcp.index'
 import { Route as AppMcpServerIdRouteImport } from './routes/_app.mcp.$serverId'
 import { Route as AppProjectsIndexRouteImport } from './routes/_app.projects.index'
 import { Route as AppProjectsProjectIdRouteImport } from './routes/_app.projects.$projectId'
+import { Route as ApiMediaSplatRouteImport } from './routes/api.media.$'
 import { Route as ApiPushActionRouteImport } from './routes/api.push.action'
 import { Route as AuthGithubCallbackRouteImport } from './routes/auth.github.callback'
 import { Route as AuthGithubStartRouteImport } from './routes/auth.github.start'
@@ -144,6 +145,11 @@ const AppProjectsProjectIdRoute = AppProjectsProjectIdRouteImport.update({
   path: '/projects/$projectId',
   getParentRoute: () => AppRoute,
 } as any)
+const ApiMediaSplatRoute = ApiMediaSplatRouteImport.update({
+  id: '/api/media/$',
+  path: '/api/media/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPushActionRoute = ApiPushActionRouteImport.update({
   id: '/api/push/action',
   path: '/api/push/action',
@@ -177,6 +183,7 @@ export interface FileRoutesByFullPath {
   '/machine/$vmKey': typeof AppMachineVmKeyRoute
   '/mcp/$serverId': typeof AppMcpServerIdRoute
   '/projects/$projectId': typeof AppProjectsProjectIdRoute
+  '/api/media/$': typeof ApiMediaSplatRoute
   '/api/push/action': typeof ApiPushActionRoute
   '/auth/github/callback': typeof AuthGithubCallbackRoute
   '/auth/github/start': typeof AuthGithubStartRoute
@@ -203,6 +210,7 @@ export interface FileRoutesByTo {
   '/machine/$vmKey': typeof AppMachineVmKeyRoute
   '/mcp/$serverId': typeof AppMcpServerIdRoute
   '/projects/$projectId': typeof AppProjectsProjectIdRoute
+  '/api/media/$': typeof ApiMediaSplatRoute
   '/api/push/action': typeof ApiPushActionRoute
   '/auth/github/callback': typeof AuthGithubCallbackRoute
   '/auth/github/start': typeof AuthGithubStartRoute
@@ -231,6 +239,7 @@ export interface FileRoutesById {
   '/_app/machine/$vmKey': typeof AppMachineVmKeyRoute
   '/_app/mcp/$serverId': typeof AppMcpServerIdRoute
   '/_app/projects/$projectId': typeof AppProjectsProjectIdRoute
+  '/api/media/$': typeof ApiMediaSplatRoute
   '/api/push/action': typeof ApiPushActionRoute
   '/auth/github/callback': typeof AuthGithubCallbackRoute
   '/auth/github/start': typeof AuthGithubStartRoute
@@ -259,6 +268,7 @@ export interface FileRouteTypes {
     | '/machine/$vmKey'
     | '/mcp/$serverId'
     | '/projects/$projectId'
+    | '/api/media/$'
     | '/api/push/action'
     | '/auth/github/callback'
     | '/auth/github/start'
@@ -285,6 +295,7 @@ export interface FileRouteTypes {
     | '/machine/$vmKey'
     | '/mcp/$serverId'
     | '/projects/$projectId'
+    | '/api/media/$'
     | '/api/push/action'
     | '/auth/github/callback'
     | '/auth/github/start'
@@ -312,6 +323,7 @@ export interface FileRouteTypes {
     | '/_app/machine/$vmKey'
     | '/_app/mcp/$serverId'
     | '/_app/projects/$projectId'
+    | '/api/media/$'
     | '/api/push/action'
     | '/auth/github/callback'
     | '/auth/github/start'
@@ -330,6 +342,7 @@ export interface RootRouteChildren {
   AuthDevRoute: typeof AuthDevRoute
   AuthLogoutRoute: typeof AuthLogoutRoute
   AuthPasswordRoute: typeof AuthPasswordRoute
+  ApiMediaSplatRoute: typeof ApiMediaSplatRoute
   ApiPushActionRoute: typeof ApiPushActionRoute
   AuthGithubCallbackRoute: typeof AuthGithubCallbackRoute
   AuthGithubStartRoute: typeof AuthGithubStartRoute
@@ -491,6 +504,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppProjectsProjectIdRouteImport
       parentRoute: typeof AppRoute
     }
+    '/api/media/$': {
+      id: '/api/media/$'
+      path: '/api/media/$'
+      fullPath: '/api/media/$'
+      preLoaderRoute: typeof ApiMediaSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/push/action': {
       id: '/api/push/action'
       path: '/api/push/action'
@@ -561,6 +581,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthDevRoute: AuthDevRoute,
   AuthLogoutRoute: AuthLogoutRoute,
   AuthPasswordRoute: AuthPasswordRoute,
+  ApiMediaSplatRoute: ApiMediaSplatRoute,
   ApiPushActionRoute: ApiPushActionRoute,
   AuthGithubCallbackRoute: AuthGithubCallbackRoute,
   AuthGithubStartRoute: AuthGithubStartRoute,

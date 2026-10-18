@@ -151,6 +151,8 @@ export interface DexState {
   readonly mcp: ReadonlyArray<McpServerInfo>
   /** MCP access tokens, the audit log of app operations, and admin operations waiting for confirmation. */
   readonly access: AccessState
+  /** The build the agent is running (ISO time it was built): tells a deploy apart from a stale instance. */
+  readonly build?: string
 }
 
 export interface WorkspaceFile {

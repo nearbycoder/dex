@@ -6,6 +6,7 @@ import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from "reac
 import { displayItems, type LiveTool, toolResults, type TranscriptState } from "~/client/lib/transcript"
 import { Collapse } from "./collapse"
 import { ConfirmCard } from "./confirm-card"
+import { MediaPlayer, videoSource } from "./media"
 import { Markdown } from "./markdown"
 import { summarize, ToolCard, toolActivity } from "./tool-card"
 import { useNow } from "./vm-status"
@@ -190,6 +191,13 @@ function AssistantTurnView(props: {
     if (block.name === "bash") return /MEMORY\.md/i.test(String(args.command ?? "")) && /(>|\btee\b|sed\s+-i)/.test(String(args.command ?? ""))
     return false
   })
+  // Media the chat shared shows in the reply even if the model forgot to put its Markdown in the text.
+  const shownText = shown.map(({ block }) => (block.type === "text" ? block.text : "")).join("\n")
+  const sharedMedia = blocks.flatMap((step) => {
+    if (step.block.type !== "toolCall" || step.block.name !== "share_media") return []
+    const details = props.results.get(step.block.id)?.details as { media?: { url: string; name: string } } | undefined
+    return details?.media && !shownText.includes(details.media.url) ? [details.media] : []
+  })
   // Admin operations the chat asked for stay in view until you answer them.
   const confirmations = blocks.flatMap((step) => {
     if (step.block.type !== "toolCall" || step.block.name !== "app_call") return []
@@ -219,6 +227,10 @@ function AssistantTurnView(props: {
           <Brain className="size-3.5" /> Memory updated
         </Link>
       )}
+      {sharedMedia.map((media) => {
+        const source = videoSource(media.url)
+        return source ? <MediaPlayer key={media.url} source={source} title={media.name} /> : null
+      })}
       {confirmations.map((confirmation) => (
         <ConfirmCard key={confirmation.id} id={confirmation.id} summary={confirmation.summary} />
       ))}
