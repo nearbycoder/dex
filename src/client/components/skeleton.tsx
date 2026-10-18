@@ -703,6 +703,14 @@ export function SettingsSkeleton() {
             <Bone className="ml-auto h-3.5 w-28" />
           </div>
         </SectionBones>
+        {/* Cloud VMs: connected, like ClinePass. */}
+        <SectionBones title={76}>
+          <div className="flex h-6 items-center gap-2">
+            <Bone className="size-4 rounded-full" />
+            <Bone className="h-3.5 w-40" />
+            <Bone className="ml-auto h-3.5 w-14" />
+          </div>
+        </SectionBones>
         <SectionBones title={56}>
           <LineBone size="sm" width="95%" />
           <LineBone size="sm" width="60%" />

@@ -39,7 +39,7 @@ import { type AccessRisk, type CreatedAccessToken, NO_ACCESS } from "~/shared/ac
 import { extensionOf, MAX_MEDIA_BYTES, vmMediaLinks, vmMediaSource } from "~/shared/media"
 import { invokedSkill, type SkillDetail, type SkillPreview } from "~/shared/skills"
 import type { McpAuth, McpConnectResult, McpServerDraft, McpServerInfo, McpStatus, McpTransport } from "~/shared/mcp"
-import { BoatClient } from "./boat"
+import { BoatClient, BoatKey, checkBoatKey } from "./boat"
 import { CloudflareAnalytics, type CloudflareDay, dayCost, emptyDay } from "./cloudflare-analytics"
 import { datesBetween, UsageLedger, utcDate } from "./usage-ledger"
 import { CLINEPASS_PROVIDER_ID, ClinePassClient, clinePassProvider } from "./clinepass"
@@ -63,8 +63,8 @@ import type { BackgroundAction, NotifyKind, PushPayload } from "~/shared/notific
 import { adoptSharedVm, errorText, migrateVmTables, storedVmKeys, type VmHost, VmManager } from "./vm"
 import { Workspace, WORKSPACE_ROOT } from "./workspace"
 
-const AgentLayer = (env: object) =>
-  Layer.mergeAll(Keys.layer, ClinePassClient.layer, BoatClient.layer, CloudflareAnalytics.layer).pipe(
+const AgentLayer = (env: object, boatKey: BoatKey["Service"]) =>
+  Layer.mergeAll(Keys.layer, ClinePassClient.layer, BoatClient.layer.pipe(Layer.provide(Layer.succeed(BoatKey, boatKey))), CloudflareAnalytics.layer).pipe(
     Layer.provideMerge(AppConfig.layer),
     Layer.provide(envConfigProvider(env))
   )
@@ -188,6 +188,7 @@ const keyHint = (key: string) => (key.length > 8 ? `${key.slice(0, 4)}…${key.s
 export class DexAgent extends Agent<Env, DexState> {
   initialState: DexState = {
     cline: { connected: false, source: null, keyHint: null, verifiedAt: null },
+    boat: { connected: false, source: null, keyHint: null },
     settings: DEFAULT_SETTINGS,
     sessions: [],
     vms: [],
@@ -201,7 +202,7 @@ export class DexAgent extends Agent<Env, DexState> {
     skills: []
   }
 
-  readonly runtime = ManagedRuntime.make(AgentLayer(this.env))
+  readonly runtime = ManagedRuntime.make(AgentLayer(this.env, BoatKey.of({ get: Effect.promise(() => this.boatKey()) })))
   readonly workspace = new Workspace(this.ctx.storage.sql)
   readonly registry = createRegistry()
   readonly ledger = new UsageLedger(this.ctx.storage.sql)
@@ -261,7 +262,7 @@ export class DexAgent extends Agent<Env, DexState> {
   private readonly vms = new Map<string, VmManager>()
   private readonly vmHost: VmHost = {
     sql: this.ctx.storage.sql,
-    configured: Boolean((this.env as unknown as Record<string, unknown>).BOAT_API_KEY),
+    configured: () => this.boatSource() !== null,
     run: (effect, signal) => this.runtime.runPromise(effect, { signal }),
     settings: (key) => ({
       size: this.projectForSession(key)?.vmSize ?? this.state.settings.vmSize,
@@ -361,7 +362,8 @@ export class DexAgent extends Agent<Env, DexState> {
       if (settings.vmMinutes === 30) settings.vmMinutes = 5
       this.ctx.storage.sql.exec(`INSERT INTO dex_meta (key, value) VALUES ('vm_idle_default_5', '1')`)
     }
-    this.publish({ settings, vmConfigured: this.vmHost.configured })
+    this.publish({ settings })
+    this.refreshBoatStatus()
     this.publishVms()
     this.refreshProjects()
     this.refreshGitHubStatus()
@@ -401,6 +403,11 @@ export class DexAgent extends Agent<Env, DexState> {
         }),
         // The chat's project, with where its repos are and how far the VM's setup got.
         section("project", (input) => this.projectContext(String(input.conversationId))),
+        section("vm_access", () =>
+          this.vmHost.configured()
+            ? undefined
+            : "The user hasn't connected a boat.dev account, so the VM tools (vm_*, share_media) fail. If a task needs a VM, say so and that they can connect one in Settings → Cloud VMs; do everything else without it."
+        ),
         // Skills chats may load on their own, and the full text of the ones you invoked in this chat with /<name>.
         section("skills", () => this.skills.autoSection()),
         section("invoked_skills", (input) => this.skills.activeSection(String(input.conversationId)))
@@ -430,8 +437,10 @@ export class DexAgent extends Agent<Env, DexState> {
         ...scheduleTools(this),
         ...appTools(this.access),
         ...skillTools((name, file) => this.skills.use(name, file)),
-        ...(this.vmHost.configured ? vmTools((chatId) => this.vmFor(chatId)) : []),
-        ...(this.vmHost.configured && this.media.configured ? mediaTools((chatId, path, title) => this.shareMediaFromVm(chatId, path, title)) : [])
+        // Always offered: a user can connect a boat.dev key at any time. Without one they fail with how to fix it,
+        // and the vm_access section tells the model up front.
+        ...vmTools((chatId) => this.vmFor(chatId)),
+        ...(this.media.configured ? mediaTools((chatId, path, title) => this.shareMediaFromVm(chatId, path, title)) : [])
       ]
     })
   }
@@ -505,6 +514,82 @@ export class DexAgent extends Agent<Env, DexState> {
     )
   }
 
+  // ── boat.dev connection ───────────────────────────────────────────────────
+
+  /** The deployment's owner: its first allowlisted GitHub login (password sign-in signs in as them), or the local dev user. */
+  private isOwner() {
+    const env = this.env as unknown as Record<string, string | undefined>
+    const owner = (env.ALLOWED_GITHUB_USERS ?? "").split(",")[0]?.trim().toLowerCase()
+    let name: string
+    try {
+      name = this.name
+    } catch {
+      // No name (shouldn't happen: agents are addressed by name). Keep VM stops and idle checks working: only the
+      // owner can have VMs without a key of their own.
+      return true
+    }
+    return (owner ? name === `user-${owner}` : false) || (/^(true|1|yes|on)$/i.test(env.DEV_LOGIN ?? "") && name === "dev")
+  }
+
+  /** Whose boat.dev account this user's VMs use: their own key, else the deployment's key if they're its owner. */
+  private boatSource(): "user" | "server" | null {
+    if (this.secret("boat_api_key")) return "user"
+    return this.isOwner() && (this.env as unknown as Record<string, string | undefined>).BOAT_API_KEY ? "server" : null
+  }
+
+  private boatKeyCache: { sealed: string; key: string | null } | null = null
+
+  /** The key for this user's boat.dev requests (see boatSource), read on every request. */
+  private async boatKey(): Promise<Option.Option<string>> {
+    const sealed = this.secret("boat_api_key")
+    if (sealed) {
+      if (this.boatKeyCache?.sealed !== sealed) {
+        const key = await this.runtime.runPromise(Keys.use((keys) => keys.decrypt(sealed)).pipe(Effect.option))
+        this.boatKeyCache = { sealed, key: Option.getOrNull(key) }
+      }
+      return Option.fromNullishOr(this.boatKeyCache.key)
+    }
+    const shared = this.isOwner() ? (this.env as unknown as Record<string, string | undefined>).BOAT_API_KEY : undefined
+    return shared ? Option.some(shared) : Option.none()
+  }
+
+  private refreshBoatStatus() {
+    const source = this.boatSource()
+    this.publish({ vmConfigured: source !== null, boat: { connected: source !== null, source, keyHint: source === "user" ? (this.secret("boat_key_hint") ?? null) : null } })
+  }
+
+  /** VMs live in the boat.dev account that made them: switching accounts would strand them. */
+  private vmsBlockingKeyChange() {
+    const count = this.state.vms.filter((vm) => vm.id).length
+    return count ? `Delete your ${count === 1 ? "VM" : `${count} VMs`} on the Machines page first: ${count === 1 ? "it belongs" : "they belong"} to the boat.dev account you're using now.` : null
+  }
+
+  @callable()
+  async connectBoat(apiKey: string): Promise<ConnectClineResult> {
+    const key = apiKey.trim()
+    if (!key) return { ok: false, error: "Paste your boat.dev API key." }
+    const blocked = this.boatSource() ? this.vmsBlockingKeyChange() : null
+    if (blocked) return { ok: false, error: blocked }
+    const problem = await checkBoatKey(key)
+    if (problem) return { ok: false, error: problem }
+    const sealed = await this.runtime.runPromise(Keys.use((keys) => keys.encrypt(key)))
+    const upsert = `INSERT INTO dex_secrets (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value`
+    this.ctx.storage.sql.exec(upsert, "boat_api_key", sealed)
+    this.ctx.storage.sql.exec(upsert, "boat_key_hint", keyHint(key))
+    this.refreshBoatStatus()
+    return { ok: true }
+  }
+
+  @callable()
+  async disconnectBoat(): Promise<ConnectClineResult> {
+    const blocked = this.vmsBlockingKeyChange()
+    if (blocked) return { ok: false, error: blocked }
+    this.ctx.storage.sql.exec(`DELETE FROM dex_secrets WHERE name IN ('boat_api_key', 'boat_key_hint')`)
+    this.boatKeyCache = null
+    this.refreshBoatStatus()
+    return { ok: true }
+  }
+
   // ── ClinePass connection ──────────────────────────────────────────────────
 
   @callable()
@@ -574,7 +659,7 @@ export class DexAgent extends Agent<Env, DexState> {
     await this.refreshSessions()
     // A project chat will need its VM, so it starts now and is set up (repos, setup script) by the time the
     // model wants it. Other chats get a VM only when the model first uses one.
-    if (project && this.vmHost.configured) {
+    if (project && this.vmHost.configured()) {
       const vm = this.vmFor(session.id)
       void this.keepAliveWhile(() => vm.ensureRunning()).catch(() => undefined)
     }
@@ -1834,7 +1919,7 @@ export class DexAgent extends Agent<Env, DexState> {
    */
   async saveVmArtifact(sessionId: string, link: string): Promise<SharedMedia> {
     if (!this.hasSession(sessionId)) throw new Error("Chat not found")
-    if (!this.media.configured || !this.vmHost.configured) throw new Error("Saving files from VMs isn't set up on this deployment.")
+    if (!this.media.configured || !this.vmHost.configured()) throw new Error("Saving files from VMs isn't set up on this deployment.")
     const parsed = vmMediaSource(link)
     if (!parsed) throw new Error("That isn't a video, audio file, or image served from a chat's VM.")
     const existing = this.media.bySource(sessionId, parsed.source)

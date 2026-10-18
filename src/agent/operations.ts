@@ -105,6 +105,8 @@ export interface Operation<P extends TSchema = TSchema> {
 export const EXCLUDED: Readonly<Record<string, string>> = {
   connectCline: "Credentials are entered only in Settings, never through a chat or an external agent.",
   disconnectCline: "Credentials are managed only in Settings.",
+  connectBoat: "Credentials are entered only in Settings, never through a chat or an external agent.",
+  disconnectBoat: "Credentials are managed only in Settings.",
   connectGitHub: "Credentials are entered only in Settings, never through a chat or an external agent.",
   disconnectGitHub: "Credentials are managed only in Settings.",
   pushSubscribe: "A browser subscribes itself to push; there is nothing for an agent to do.",

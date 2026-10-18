@@ -1,6 +1,5 @@
-import { Context, Effect, Layer, Option, Redacted, Schedule, Schema, Stream } from "effect"
+import { Context, Effect, Layer, Option, Schedule, Schema, Stream } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
-import { AppConfig } from "~/server/config"
 
 export const BOAT_API = "https://boat.dev/api/v1"
 
@@ -88,9 +87,14 @@ export interface ExecOptions {
   readonly onOutput?: (stream: "stdout" | "stderr", data: string) => void
 }
 
+/**
+ * The boat.dev key for this agent's requests, read on each one: the key its user connected in Settings, or for the
+ * owner the deployment's BOAT_API_KEY. None: VMs aren't available to this user.
+ */
+export class BoatKey extends Context.Service<BoatKey, { readonly get: Effect.Effect<Option.Option<string>> }>()("dex/agent/BoatKey") {}
+
 /** boat.dev cloud VMs: lifecycle, commands, files, ports, and the live desktop. */
 export class BoatClient extends Context.Service<BoatClient, {
-  readonly configured: boolean
   create(options: { type: SandboxType; ttlSeconds: number; idempotencyKey: string }): Effect.Effect<Sandbox, BoatError>
   get(id: string): Effect.Effect<Sandbox, BoatError>
   resume(id: string, ttlSeconds: number): Effect.Effect<Sandbox, BoatError>
@@ -114,10 +118,10 @@ export class BoatClient extends Context.Service<BoatClient, {
   static readonly layer = Layer.effect(
     BoatClient,
     Effect.gen(function*() {
-      const { boatApiKey } = yield* AppConfig
+      const boatKey = yield* BoatKey
       const http = yield* HttpClient.HttpClient
 
-      const notConfigured = new BoatError({ code: "not_configured", status: 0, message: "No BOAT_API_KEY is set for this deployment.", retryable: false })
+      const notConfigured = new BoatError({ code: "not_configured", status: 0, message: "No boat.dev key: connect yours in Settings → Cloud VMs.", retryable: false })
 
       const failFrom = Effect.fnUntraced(function*(response: HttpClientResponse.HttpClientResponse) {
         const json = yield* response.json.pipe(Effect.orElseSucceed(() => ({})))
@@ -132,8 +136,9 @@ export class BoatClient extends Context.Service<BoatClient, {
       })
 
       const attempt = Effect.fnUntraced(function*(request: HttpClientRequest.HttpClientRequest) {
-        if (Option.isNone(boatApiKey)) return yield* notConfigured
-        const response = yield* http.execute(request.pipe(HttpClientRequest.bearerToken(Redacted.value(boatApiKey.value)))).pipe(
+        const key = yield* boatKey.get
+        if (Option.isNone(key)) return yield* notConfigured
+        const response = yield* http.execute(request.pipe(HttpClientRequest.bearerToken(key.value))).pipe(
           Effect.mapError((cause) => new BoatError({ code: "network", status: 0, message: `Could not reach boat.dev: ${cause}`, retryable: true }))
         )
         if (response.status >= 400) return yield* failFrom(response)
@@ -169,8 +174,6 @@ export class BoatClient extends Context.Service<BoatClient, {
       const sandbox = (request: HttpClientRequest.HttpClientRequest) => json(SandboxEnvelope)(request).pipe(Effect.map((envelope) => envelope.sandbox))
 
       return BoatClient.of({
-        configured: Option.isSome(boatApiKey),
-
         create: ({ type, ttlSeconds, idempotencyKey }) =>
           sandbox(HttpClientRequest.post(url("/sandboxes")).pipe(HttpClientRequest.setHeader("idempotency-key", idempotencyKey), body({ type, ttlSeconds }))),
 
@@ -238,4 +241,15 @@ export class BoatClient extends Context.Service<BoatClient, {
       })
     })
   ).pipe(Layer.provide(FetchHttpClient.layer))
+}
+
+/** Checks a boat.dev API key before Dex stores it: null when it works, else what's wrong. */
+export async function checkBoatKey(key: string): Promise<string | null> {
+  const response = await fetch(`${BOAT_API}/sandboxes?limit=1`, { headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(10_000) }).catch(
+    () => null
+  )
+  if (!response) return "Couldn't reach boat.dev. Try again in a moment."
+  if (response.status === 401 || response.status === 403) return "boat.dev didn't accept that key."
+  if (!response.ok) return `boat.dev returned ${response.status}. Try again in a moment.`
+  return null
 }

@@ -43,6 +43,13 @@ export interface GitHubStatus {
   readonly oauthAvailable?: boolean
 }
 
+export interface BoatStatus {
+  readonly connected: boolean
+  /** `user`: a key this user connected. `server`: the deployment's BOAT_API_KEY, which only its owner uses. */
+  readonly source: "user" | "server" | null
+  readonly keyHint: string | null
+}
+
 export interface ClineStatus {
   readonly connected: boolean
   /** `user`: a key this user connected. `server`: the deployment's shared CLINE_API_KEY. */
@@ -129,6 +136,7 @@ export const withStateDefaults = (state: DexState): DexState => ({
   ...state,
   vms: (state.vms ?? []).map((vm) => ({ ...noVm(vm.key), ...vm })),
   vmConfigured: state.vmConfigured ?? false,
+  boat: state.boat ?? { connected: false, source: null, keyHint: null },
   projects: state.projects ?? [],
   github: state.github ?? { connected: false, login: null },
   push: state.push ?? { configured: false, publicKey: null, devices: [] },
@@ -151,6 +159,8 @@ export const withStateDefaults = (state: DexState): DexState => ({
 /** Synced to every connected client through the Agents SDK state channel. Never put secrets here. */
 export interface DexState {
   readonly cline: ClineStatus
+  /** Whose boat.dev account this user's VMs run on. */
+  readonly boat: BoatStatus
   readonly settings: DexSettings
   readonly sessions: ReadonlyArray<SessionMeta>
   /** VMs that exist (running or stopped with a saved disk), one per chat that has used one. */

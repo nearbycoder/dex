@@ -35,6 +35,7 @@ export class AppConfig extends Context.Service<AppConfig, {
       const devLogin = yield* Config.Boolean("DEV_LOGIN").pipe(Config.withDefault(false))
       const clineApiKey = yield* Config.option(Config.Redacted("CLINE_API_KEY"))
       const ownerPassword = yield* Config.option(Config.Redacted("OWNER_PASSWORD"))
+      // The owner's VMs only (see DexAgent.boatSource); everyone else connects their own key.
       const boatApiKey = yield* Config.option(Config.Redacted("BOAT_API_KEY"))
       const cloudflareApiToken = yield* Config.option(Config.Redacted("CLOUDFLARE_API_TOKEN"))
       const cloudflareAccountId = yield* Config.option(Config.NonEmptyString("CLOUDFLARE_ACCOUNT_ID"))

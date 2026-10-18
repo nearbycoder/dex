@@ -55,7 +55,15 @@ export function SecretConnect(props: {
               </button>
             )}
             {props.onDisconnect && (
-              <button type="button" onClick={() => void props.onDisconnect?.()} className="rounded-md px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-800 hover:text-red-400">
+              <button
+                type="button"
+                onClick={async () => {
+                  setMessage(null)
+                  // A disconnect that can't happen yet says why (e.g. VMs still on that account).
+                  const result = (await props.onDisconnect?.()) as { ok?: boolean; error?: string } | undefined
+                  if (result?.ok === false && result.error) setMessage({ tone: "error", text: result.error })
+                }}
+                className="rounded-md px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-800 hover:text-red-400">
                 Disconnect
               </button>
             )}

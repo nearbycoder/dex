@@ -14,7 +14,8 @@ export interface VmHost {
   readonly sql: SqlStorage
   /** Runs a BoatClient program; aborting `signal` interrupts it. */
   run<A>(effect: Effect.Effect<A, BoatError, BoatClient>, signal?: AbortSignal): Promise<A>
-  readonly configured: boolean
+  /** Whether this user has a boat.dev key (theirs, or the deployment's for its owner). */
+  configured(): boolean
   settings(key: string): { size: VmSize; minutes: number }
   publish(info: VmInfo): void
   broadcast(message: ServerMessage): void
@@ -339,7 +340,7 @@ export class VmManager {
   /** Re-reads the VM's state from boat.dev. */
   async refresh(): Promise<VmInfo> {
     const id = this.sandboxId()
-    if (!id || !this.host.configured) {
+    if (!id || !this.host.configured()) {
       if (!this.starting) this.update({ id: null, status: "none", size: null, archiveAfter: null, error: null })
       return this.info
     }
@@ -360,7 +361,7 @@ export class VmManager {
 
   /** The running, prepared VM: created, resumed, set up, or waited on as needed. Concurrent callers share one start. */
   ensureRunning(onProgress?: (message: string) => void, signal?: AbortSignal): Promise<Sandbox> {
-    if (!this.host.configured) return Promise.reject(new Error("No VM is configured: set BOAT_API_KEY for this deployment."))
+    if (!this.host.configured()) return Promise.reject(new Error("No boat.dev key: connect yours in Settings → Cloud VMs."))
     this.starting ??= this.start(onProgress, signal)
       .then(async (sandbox) => {
         await this.prepare(sandbox, onProgress, signal)

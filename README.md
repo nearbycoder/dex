@@ -73,7 +73,7 @@ npx wrangler secret put GITHUB_CLIENT_ID
 npx wrangler secret put GITHUB_CLIENT_SECRET
 npx wrangler secret put CLINE_API_KEY   # optional shared key
 npx wrangler secret put OWNER_PASSWORD  # optional: password sign-in as the first allowlisted login
-npx wrangler secret put BOAT_API_KEY    # optional: boat.dev key for the agent's cloud VM
+npx wrangler secret put BOAT_API_KEY    # optional: boat.dev key for the owner's VMs (the first ALLOWED_GITHUB_USERS login); everyone else connects their own in Settings → Cloud VMs
 npx wrangler secret put CLOUDFLARE_API_TOKEN  # optional: Account Analytics: Read, for the Usage page
 npx wrangler secret put VAPID_PRIVATE_KEY     # optional: push notifications (a P-256 private JWK; its public key goes in VAPID_PUBLIC_KEY)
 npm run deploy

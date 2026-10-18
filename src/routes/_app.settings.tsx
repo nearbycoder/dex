@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { Check, Clock, LogOut, ShieldOff, Smartphone, Trash2, UserRound, Vibrate } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
+import { BoatConnect } from "~/client/components/boat-connect"
 import { ClineConnect } from "~/client/components/cline-connect"
 import { GitHubConnect } from "~/client/components/github-connect"
 import { InstallApp } from "~/client/components/install-app"
@@ -54,6 +55,10 @@ function SettingsPage() {
 
       <Section title="ClinePass" info="Dex's models run on your ClinePass subscription.">
         <ClineConnect />
+      </Section>
+
+      <Section title="Cloud VMs" info="Chats run code, browsers, and servers on VMs in your boat.dev account.">
+        <BoatConnect />
       </Section>
 
       <Section title="GitHub" info="Lets chats' VMs clone private repos, push branches, and open pull requests.">
