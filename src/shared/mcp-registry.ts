@@ -14,14 +14,19 @@ export interface RegistryHeader {
   readonly value: string | null
 }
 
+export type RegistrySource = "smithery" | "registry"
+
 export interface RegistryServer {
-  /** The registry name, e.g. `io.github.owner/server` or `com.example/server`. */
+  /** Smithery (fast, with use counts; hosted endpoints that sign in through Smithery) or the official MCP Registry. */
+  readonly source: RegistrySource
+  /** The registry name, e.g. `io.github.owner/server` or `com.example/server`; Smithery's qualified name. */
   readonly name: string
   /** A readable name from the last part of `name`. */
   readonly title: string
   readonly description: string
   readonly version: string
   readonly repository: string | null
+  /** Empty for Smithery results until checked (its endpoint comes from the server's details). */
   readonly url: string
   readonly transport: "streamable-http" | "sse"
   /** Headers the server asks for (an API key, usually). */
@@ -30,6 +35,9 @@ export interface RegistryServer {
   readonly templated: boolean
   readonly updatedAt: string | null
   readonly status: string
+  /** Smithery: how many people use it, and whether Smithery verified the publisher. */
+  readonly uses: number | null
+  readonly verified: boolean | null
 }
 
 export type CheckStatus = "pass" | "warn" | "fail" | "info"
@@ -42,6 +50,8 @@ export interface McpCheck {
 }
 
 export interface McpCheckReport {
+  /** The endpoint that was checked (for Smithery, found during the check). */
+  readonly url: string
   readonly checks: ReadonlyArray<McpCheck>
   /** How to connect it, from what the server answered: sign in with OAuth, send a header, or nothing. */
   readonly auth: "none" | "headers" | "oauth"

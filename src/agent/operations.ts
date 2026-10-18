@@ -331,23 +331,29 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
   define({
     name: "app_search_mcp_registry",
     description:
-      "Search the official MCP Registry for remote MCP servers to add (by name, e.g. \"linear\"). Each result has its endpoint URL and any headers it needs. Check one with app_check_mcp_server, then add it with app_save_mcp_server.",
+      "Search for remote MCP servers to add (by name, e.g. \"linear\"). source \"smithery\" (default) is fast and has use counts and verification; its endpoints are Smithery-hosted and sign in through Smithery. source \"registry\" is the official MCP Registry, with publishers' own endpoints (slow for new searches). Check one with app_check_mcp_server (it finds Smithery endpoints), then add it with app_save_mcp_server.",
     risk: "read",
-    parameters: Type.Object({ query: Type.String({ minLength: 2, maxLength: 100 }) }),
+    parameters: Type.Object({
+      query: Type.String({ minLength: 2, maxLength: 100 }),
+      source: Type.Optional(Type.Union([Type.Literal("smithery"), Type.Literal("registry")]))
+    }),
     covers: ["searchMcpRegistry"],
-    summarize: (args) => `Search the MCP Registry for ${quote(args.query)}`,
-    run: async (host, args) => host.searchMcpRegistry(args.query)
+    summarize: (args) => `Search ${args.source === "registry" ? "the MCP Registry" : "Smithery"} for ${quote(args.query)}`,
+    run: async (host, args) => host.searchMcpRegistry(args.query, args.source ?? "smithery")
   }),
   define({
     name: "app_check_mcp_server",
     description:
       "Run Dex's checks on a server from app_search_mcp_registry: HTTPS, the verified publisher and whether the endpoint is on their domain, an MCP handshake (open, OAuth, or a header), its tools, and its GitHub repo (stars, license, archived, last push).",
     risk: "read",
-    parameters: Type.Object({ name: Type.String({ maxLength: 200, description: "The registry name, e.g. io.github.owner/server." }) }),
+    parameters: Type.Object({
+      name: Type.String({ maxLength: 200, description: "The name from app_search_mcp_registry." }),
+      source: Type.Optional(Type.Union([Type.Literal("smithery"), Type.Literal("registry")]))
+    }),
     covers: ["checkMcpServer"],
     summarize: (args) => `Check MCP server ${args.name}`,
     run: async (host, args) => {
-      const server = await host.findRegistryServer(args.name)
+      const server = await host.findRegistryServer(args.name, args.source ?? "smithery")
       if (!server) throw new Error(`No remote server named ${args.name} in the MCP Registry.`)
       return { server, report: await host.checkMcpServer(server) }
     }

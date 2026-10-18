@@ -42,7 +42,10 @@ const toServer = (entry: RawEntry): RegistryServer | null => {
     headers,
     templated: /\{[^}]+\}/.test(remote.url),
     updatedAt: meta?.updatedAt ?? null,
-    status: meta?.status ?? "active"
+    status: meta?.status ?? "active",
+    source: "registry",
+    uses: null,
+    verified: null
   }
 }
 
@@ -86,6 +89,84 @@ export async function searchRegistry(query: string): Promise<RegistryServer[]> {
   searches.set(q, { at: Date.now(), results })
   if (searches.size > 200) searches.delete(searches.keys().next().value!)
   return results
+}
+
+// ── Smithery ─────────────────────────────────────────────────────────────────
+
+const SMITHERY = "https://registry.smithery.ai/servers"
+
+interface SmitheryListing {
+  qualifiedName?: string
+  displayName?: string
+  description?: string
+  verified?: boolean
+  useCount?: number
+  remote?: boolean
+  isDeployed?: boolean
+  unlisted?: boolean
+  inactive?: boolean
+  homepage?: string
+  createdAt?: string
+}
+
+/**
+ * Remote servers on Smithery matching `query`: answers in well under a second, with how many people use each and
+ * whether Smithery verified it. Its endpoints are Smithery-hosted (sign-in through Smithery), read when checked.
+ */
+export async function searchSmithery(query: string): Promise<RegistryServer[]> {
+  const q = query.trim().slice(0, 100)
+  if (q.length < 2) return []
+  const key = `smithery:${q.toLowerCase()}`
+  const cached = searches.get(key)
+  if (cached && Date.now() - cached.at < 60_000) return cached.results
+  const response = await fetch(`${SMITHERY}?q=${encodeURIComponent(q)}&pageSize=40`, {
+    headers: { accept: "application/json", "user-agent": "Dex (MCP search)" },
+    signal: AbortSignal.timeout(TIMEOUT_MS)
+  }).catch(() => null)
+  if (!response?.ok) throw new Error(response ? `Smithery returned ${response.status}.` : "Couldn't reach Smithery.")
+  const body = (await response.json()) as { servers?: SmitheryListing[] }
+  const lower = q.toLowerCase()
+  const results = (body.servers ?? [])
+    .filter((entry) => entry.qualifiedName && entry.remote && entry.isDeployed !== false && !entry.inactive && !entry.unlisted)
+    .map(
+      (entry): RegistryServer => ({
+        source: "smithery",
+        name: entry.qualifiedName!,
+        title: entry.displayName || registryTitle(entry.qualifiedName!),
+        description: entry.description ?? "",
+        version: "",
+        repository: entry.homepage && /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+/.test(entry.homepage) ? entry.homepage : null,
+        url: "",
+        transport: "streamable-http",
+        headers: [],
+        templated: false,
+        updatedAt: entry.createdAt ?? null,
+        status: "active",
+        uses: entry.useCount ?? 0,
+        verified: entry.verified ?? false
+      })
+    )
+    // Its own match first (the "linear" server for "linear"), then by how many people use it.
+    .sort((a, b) => {
+      // A display name alone is easy to copy ("Linear" on an unofficial proxy); it counts only when verified.
+      const exact = (server: RegistryServer) => (server.name.toLowerCase() === lower || (server.verified && server.title.toLowerCase() === lower) ? 0 : 1)
+      return exact(a) - exact(b) || (b.uses ?? 0) - (a.uses ?? 0)
+    })
+    .slice(0, RESULTS)
+  searches.set(key, { at: Date.now(), results })
+  return results
+}
+
+/** A Smithery server's endpoint and tools (listed without signing in). */
+async function smitheryDetail(name: string): Promise<{ url: string | null; tools: string[] }> {
+  const response = await fetch(`${SMITHERY}/${name.split("/").map(encodeURIComponent).join("/")}`, {
+    headers: { accept: "application/json", "user-agent": "Dex (MCP checks)" },
+    signal: AbortSignal.timeout(TIMEOUT_MS)
+  }).catch(() => null)
+  if (!response?.ok) return { url: null, tools: [] }
+  const body = (await response.json()) as { deploymentUrl?: string; connections?: Array<{ type?: string; deploymentUrl?: string }>; tools?: Array<{ name?: string }> }
+  const url = body.connections?.find((connection) => connection.type === "http" && connection.deploymentUrl)?.deploymentUrl ?? body.deploymentUrl ?? null
+  return { url: url?.startsWith("https://") ? url : null, tools: (body.tools ?? []).flatMap((tool) => (tool.name ? [tool.name] : [])) }
 }
 
 // ── Checks ───────────────────────────────────────────────────────────────────
@@ -142,9 +223,17 @@ async function oauthMetadata(url: URL, challenge: string | null): Promise<string
  * endpoint answers to an MCP handshake (and how it wants you to sign in), its tools when it's open, and the
  * health of its GitHub repo.
  */
-export async function checkServer(server: RegistryServer, githubToken: string | null): Promise<McpCheckReport> {
+export async function checkServer(listed: RegistryServer, githubToken: string | null): Promise<McpCheckReport> {
   const checks: McpCheck[] = []
   const add = (id: string, label: string, status: McpCheck["status"], detail: string) => checks.push({ id, label, status, detail })
+  // Smithery lists endpoints and tools only in a server's details.
+  let server = listed
+  let listedTools: string[] = []
+  if (listed.source === "smithery") {
+    const detail = await smitheryDetail(listed.name)
+    if (detail.url) server = { ...listed, url: detail.url }
+    listedTools = detail.tools
+  }
   let auth: McpCheckReport["auth"] = server.headers.some((header) => header.required) ? "headers" : "none"
   const header = server.headers.find((candidate) => candidate.required)?.name ?? null
   let tools: string[] = []
@@ -153,14 +242,28 @@ export async function checkServer(server: RegistryServer, githubToken: string | 
   try {
     url = new URL(server.url)
   } catch {
+    if (server.source === "smithery") {
+      add("reachable", "Endpoint", "fail", "Smithery lists no endpoint for it right now.")
+      return { url: "", checks, auth, header, tools: listedTools.slice(0, 50), checkedAt: Date.now() }
+    }
     add("https", "Secure endpoint", "fail", "The URL isn't valid.")
-    return { checks, auth, header, tools, checkedAt: Date.now() }
+    return { url: server.url, checks, auth, header, tools, checkedAt: Date.now() }
   }
   add("https", "Secure endpoint", url.protocol === "https:" ? "pass" : "fail", url.protocol === "https:" ? `Served over HTTPS from ${url.host}` : "Not HTTPS: credentials could be read in transit.")
 
   // The publisher: the registry checked they own the namespace (GitHub account or domain) when they published.
   const publisher = registryPublisher(server.name)
-  if (server.name.startsWith("ai.smithery/")) {
+  if (server.source === "smithery") {
+    add(
+      "publisher",
+      "Listing",
+      server.verified ? "pass" : "warn",
+      `${server.verified ? "Verified by Smithery" : "Not verified by Smithery"} · ${(server.uses ?? 0).toLocaleString()} ${server.uses === 1 ? "user" : "users"}`
+    )
+    if (url.hostname.endsWith(".run.tools")) {
+      add("hosting", "Hosting", "info", "Runs on Smithery: you sign in through Smithery, and your requests pass through it.")
+    }
+  } else if (server.name.startsWith("ai.smithery/")) {
     add("publisher", "Publisher", "warn", "Hosted by Smithery for someone else; it needs a Smithery API key, and Smithery sees your traffic.")
   } else if (publisher.kind === "github") {
     add("publisher", "Publisher", "info", `GitHub account ${publisher.id} (ownership verified by the MCP Registry).`)
@@ -176,7 +279,7 @@ export async function checkServer(server: RegistryServer, githubToken: string | 
     )
   }
 
-  const updated = server.updatedAt ? Date.parse(server.updatedAt) : NaN
+  const updated = server.source === "registry" && server.updatedAt ? Date.parse(server.updatedAt) : NaN
   if (!Number.isNaN(updated)) {
     const stale = Date.now() - updated > YEAR_MS
     add("fresh", "Registry entry", stale ? "warn" : "pass", `${server.status === "active" ? "Active" : server.status}, updated ${new Date(updated).toISOString().slice(0, 10)}${stale ? " (over a year ago)" : ""}.`)
@@ -258,5 +361,9 @@ export async function checkServer(server: RegistryServer, githubToken: string | 
     add("repo", "Source", "warn", "No public source repository listed.")
   }
 
-  return { checks, auth, header, tools, checkedAt: Date.now() }
+  if (!tools.length && listedTools.length) {
+    tools = listedTools.slice(0, 50)
+    add("tools", "Tools", "pass", `${listedTools.length} tools (as listed on Smithery)`)
+  }
+  return { url: server.url, checks, auth, header, tools, checkedAt: Date.now() }
 }
