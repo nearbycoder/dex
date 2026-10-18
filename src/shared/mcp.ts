@@ -20,6 +20,8 @@ export interface McpServerInfo {
   readonly auth: McpAuth
   /** Names of the headers sent with every request, e.g. `Authorization`. */
   readonly headerNames: ReadonlyArray<string>
+  /** A local (stdio) server Dex runs on the MCP VM: its command and the names of its environment variables. */
+  readonly local: { readonly command: string; readonly envNames: ReadonlyArray<string> } | null
   /** Attached to new chats that don't use an agent. */
   readonly defaultOn: boolean
   /** Tool names in chats are `<prefix>__<tool>`. */
@@ -39,6 +41,12 @@ export interface McpServerDraft {
   readonly auth: McpAuth
   /** For `headers` auth. An empty value keeps the header's saved value. */
   readonly headers?: ReadonlyArray<{ readonly name: string; readonly value: string }>
+  /**
+   * Run it on the MCP VM instead of connecting to a URL: the command that starts a stdio server (e.g.
+   * `npx -y @modelcontextprotocol/server-everything`), and environment variables for it. An empty value keeps the
+   * saved one. Saved secrets (Settings → Secrets) are available too.
+   */
+  readonly local?: { readonly command: string; readonly env?: ReadonlyArray<{ readonly name: string; readonly value: string }> }
   readonly defaultOn: boolean
 }
 

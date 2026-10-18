@@ -11,7 +11,12 @@ import { MCP_TEMPLATES } from "~/shared/mcp-templates"
 
 export const Route = createFileRoute("/_app/mcp/$serverId")({
   // `template`: one of the popular servers. `name`/`url`/`auth`/`header`: prefilled from an MCP Registry result.
-  validateSearch: (search: Record<string, unknown>): { template?: string; name?: string; url?: string; auth?: McpAuth; header?: string } => ({
+  // `command`/`env` (comma-separated names): a registry package to run on the MCP VM.
+  validateSearch: (
+    search: Record<string, unknown>
+  ): { template?: string; name?: string; url?: string; auth?: McpAuth; header?: string; command?: string; env?: string } => ({
+    ...(typeof search.command === "string" && search.command.length <= 2_000 && !/[\r\n]/.test(search.command) && { command: search.command }),
+    ...(typeof search.env === "string" && /^[A-Za-z0-9_,]{1,2000}$/.test(search.env) && { env: search.env }),
     ...(typeof search.template === "string" && { template: search.template }),
     ...(typeof search.name === "string" && { name: search.name.slice(0, 60) }),
     ...(typeof search.url === "string" && search.url.startsWith("https://") && { url: search.url }),
@@ -22,9 +27,11 @@ export const Route = createFileRoute("/_app/mcp/$serverId")({
 })
 
 type HeaderRow = { name: string; value: string; saved: boolean }
-type Draft = Omit<McpServerDraft, "headers"> & { headers: HeaderRow[] }
+/** `local`: a command Dex runs on the MCP VM, with environment variables, instead of a URL. */
+type Draft = Omit<McpServerDraft, "headers" | "local"> & { headers: HeaderRow[]; kind: "remote" | "local"; command: string; env: HeaderRow[] }
 
-const fieldBase = "rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-base text-zinc-100 placeholder:text-zinc-600 focus:border-emerald-600 focus:outline-none md:text-sm"
+const fieldBase =
+  "rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-base text-zinc-100 placeholder:text-zinc-600 focus:border-emerald-600 focus:outline-none md:text-sm"
 const field = `w-full ${fieldBase}`
 
 const AUTH_HINT: Record<McpAuth, string> = {
@@ -40,7 +47,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
         {label}
         {hint && <InfoTip>{hint}</InfoTip>}
       </span>
-      
+
       <div className="mt-2">{children}</div>
     </div>
   )
@@ -74,7 +81,10 @@ function McpEditor() {
         transport: existing.transport,
         auth: existing.auth,
         defaultOn: existing.defaultOn,
-        headers: existing.headerNames.map((name) => ({ name, value: "", saved: true }))
+        headers: existing.headerNames.map((name) => ({ name, value: "", saved: true })),
+        kind: existing.local ? "local" : "remote",
+        command: existing.local?.command ?? "",
+        env: existing.local?.envNames.map((name) => ({ name, value: "", saved: true })) ?? []
       })
     } else if (isNew) {
       const template = MCP_TEMPLATES.find((candidate) => candidate.id === templateId)
@@ -85,7 +95,10 @@ function McpEditor() {
         transport: "auto",
         auth: template?.auth ?? prefill.auth ?? "none",
         defaultOn: false,
-        headers: [{ name: template?.header?.name ?? prefill.header ?? "Authorization", value: "", saved: false }]
+        headers: [{ name: template?.header?.name ?? prefill.header ?? "Authorization", value: "", saved: false }],
+        kind: prefill.command ? "local" : "remote",
+        command: prefill.command ?? "",
+        env: (prefill.env ? prefill.env.split(",").filter(Boolean) : []).map((name) => ({ name, value: "", saved: false }))
       })
     }
   }, [state, existing, isNew, draft, templateId])
@@ -111,7 +124,19 @@ function McpEditor() {
     setSaving(true)
     setError(null)
     try {
-      const result = await stub.saveMcpServer({ ...draft, headers: draft.headers.map(({ name, value }) => ({ name, value })) })
+      const { kind, command, env, ...base } = draft
+      const result = await stub.saveMcpServer(
+        kind === "local"
+          ? {
+              ...base,
+              url: "",
+              transport: "auto",
+              auth: "none",
+              headers: [],
+              local: { command, env: env.map(({ name, value }) => ({ name, value })) }
+            }
+          : { ...base, headers: draft.headers.map(({ name, value }) => ({ name, value })) }
+      )
       if (!result.ok) {
         setError(result.error)
         // Saved but couldn't connect: keep editing the saved server.
@@ -148,107 +173,213 @@ function McpEditor() {
             void save()
           }}
         >
-          <div className="grid gap-4 sm:grid-cols-[1fr_2fr]">
-            <label className="block">
-              <span className="text-sm font-medium text-zinc-200">Name</span>
-              <input value={draft.name} onChange={(event) => update({ name: event.target.value })} placeholder="GitHub" maxLength={60} required className={`${field} mt-2`} />
-            </label>
-            <label className="block">
-              <span className="text-sm font-medium text-zinc-200">URL</span>
-              <input
-                value={draft.url}
-                onChange={(event) => update({ url: event.target.value })}
-                placeholder="https://example.com/mcp"
-                type="url"
-                inputMode="url"
-                autoCapitalize="off"
-                autoCorrect="off"
-                spellCheck={false}
-                required
-                className={`${field} mt-2 font-mono`}
-              />
-            </label>
+          <div className="grid grid-cols-2 gap-1 rounded-lg border border-zinc-800 bg-zinc-950 p-1">
+            {(
+              [
+                ["remote", "Remote URL"],
+                ["local", "Run on a VM"]
+              ] as const
+            ).map(([kind, label]) => (
+              <button
+                key={kind}
+                type="button"
+                aria-pressed={draft.kind === kind}
+                onClick={() => update({ kind })}
+                className={`rounded-md px-2 py-1.5 text-sm ${draft.kind === kind ? "bg-zinc-800 text-zinc-100" : "text-zinc-500 hover:text-zinc-200"}`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
 
-          <Field label="Authentication" hint={AUTH_HINT[draft.auth]}>
-            <div className="grid grid-cols-3 gap-1 rounded-lg border border-zinc-800 bg-zinc-950 p-1">
-              {(["none", "headers", "oauth"] as const).map((auth) => {
-                const Icon = AUTH_ICON[auth]
-                return (
-                  <button
-                    key={auth}
-                    type="button"
-                    aria-pressed={draft.auth === auth}
-                    onClick={() => update({ auth })}
-                    className={`flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
-                      draft.auth === auth ? "bg-zinc-800 text-zinc-100" : "text-zinc-500 hover:text-zinc-200"
-                    }`}
-                  >
-                    {Icon && <Icon className="size-3.5" />}
-                    {AUTH_LABEL[auth]}
-                  </button>
-                )
-              })}
-            </div>
-          </Field>
+          <div className={`grid gap-4 ${draft.kind === "remote" ? "sm:grid-cols-[1fr_2fr]" : ""}`}>
+            <label className="block">
+              <span className="text-sm font-medium text-zinc-200">Name</span>
+              <input
+                value={draft.name}
+                onChange={(event) => update({ name: event.target.value })}
+                placeholder="GitHub"
+                maxLength={60}
+                required
+                className={`${field} mt-2`}
+              />
+            </label>
+            {draft.kind === "remote" && (
+              <label className="block">
+                <span className="text-sm font-medium text-zinc-200">URL</span>
+                <input
+                  value={draft.url}
+                  onChange={(event) => update({ url: event.target.value })}
+                  placeholder="https://example.com/mcp"
+                  type="url"
+                  inputMode="url"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  required
+                  className={`${field} mt-2 font-mono`}
+                />
+              </label>
+            )}
+          </div>
 
-          {draft.auth === "headers" && (
-            <Field label="Headers" hint="Values are encrypted and never shown again; leave a saved value empty to keep it.">
-              <div className="space-y-2">
-                {draft.headers.map((header, index) => (
-                  <div key={index} className="flex gap-2">
-                    <input
-                      value={header.name}
-                      onChange={(event) => setHeader(index, { name: event.target.value, saved: false })}
-                      placeholder="Authorization"
-                      autoCapitalize="off"
-                      spellCheck={false}
-                      className={`${fieldBase} w-2/5 min-w-0 font-mono`}
-                    />
-                    <input
-                      value={header.value}
-                      onChange={(event) => setHeader(index, { value: event.target.value })}
-                      placeholder={header.saved ? "•••••••• saved" : placeholder}
-                      type="password"
-                      autoComplete="off"
-                      className={`${fieldBase} min-w-0 flex-1 font-mono`}
-                    />
-                    <button
-                      type="button"
-                      title="Remove header"
-                      onClick={() => update({ headers: draft.headers.filter((_, i) => i !== index) })}
-                      className="shrink-0 rounded-lg px-2 text-zinc-500 hover:text-red-400"
-                    >
-                      <X className="size-4" />
-                    </button>
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => update({ headers: [...draft.headers, { name: "", value: "", saved: false }] })}
-                  className="flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-100"
-                >
-                  <Plus className="size-4" /> Add header
-                </button>
-              </div>
-            </Field>
+          {draft.kind === "local" && (
+            <>
+              <Field
+                label="Command"
+                hint="Starts a stdio MCP server, e.g. npx -y <package>, uvx <package>, or docker run -i <image>. Dex runs it on its MCP VM behind a bridge to HTTP and connects to it; the VM stops when idle and starts again when a chat needs it."
+              >
+                {!state.vmConfigured && <p className="mb-2 text-xs text-amber-300">Needs a boat.dev account: connect one in Settings → Cloud VMs.</p>}
+                <input
+                  value={draft.command}
+                  onChange={(event) => update({ command: event.target.value })}
+                  placeholder="npx -y @modelcontextprotocol/server-everything"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  required
+                  className={`${field} font-mono`}
+                />
+              </Field>
+              <Field
+                label="Environment"
+                hint="Variables the server reads, encrypted and never shown again; leave a saved value empty to keep it. Saved secrets (Settings → Secrets) are set too, so a variable with the same name can stay empty."
+              >
+                <div className="space-y-2">
+                  {draft.env.map((variable, index) => (
+                    <div key={index} className="flex gap-2">
+                      <input
+                        value={variable.name}
+                        onChange={(event) =>
+                          update({ env: draft.env.map((each, i) => (i === index ? { ...each, name: event.target.value, saved: false } : each)) })
+                        }
+                        placeholder="API_KEY"
+                        autoCapitalize="characters"
+                        spellCheck={false}
+                        className={`${fieldBase} w-2/5 min-w-0 font-mono`}
+                      />
+                      <input
+                        value={variable.value}
+                        onChange={(event) =>
+                          update({ env: draft.env.map((each, i) => (i === index ? { ...each, value: event.target.value } : each)) })
+                        }
+                        placeholder={variable.saved ? "•••••••• saved" : "Value"}
+                        type="password"
+                        autoComplete="off"
+                        className={`${fieldBase} min-w-0 flex-1 font-mono`}
+                      />
+                      <button
+                        type="button"
+                        title="Remove variable"
+                        onClick={() => update({ env: draft.env.filter((_, i) => i !== index) })}
+                        className="shrink-0 rounded-lg px-2 text-zinc-500 hover:text-red-400"
+                      >
+                        <X className="size-4" />
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => update({ env: [...draft.env, { name: "", value: "", saved: false }] })}
+                    className="flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-100"
+                  >
+                    <Plus className="size-4" /> Add variable
+                  </button>
+                </div>
+              </Field>
+            </>
           )}
 
-          <details className="group">
-            <summary className="cursor-pointer text-sm text-zinc-400 hover:text-zinc-200">Advanced</summary>
-            <div className="mt-3">
-              <Field label="Transport" hint="Auto tries Streamable HTTP, then falls back to SSE.">
-                <select value={draft.transport} onChange={(event) => update({ transport: event.target.value as McpTransport })} className={field}>
-                  <option value="auto">Auto</option>
-                  <option value="streamable-http">Streamable HTTP</option>
-                  <option value="sse">SSE (legacy)</option>
-                </select>
+          {draft.kind === "remote" && (
+            <>
+              <Field label="Authentication" hint={AUTH_HINT[draft.auth]}>
+                <div className="grid grid-cols-3 gap-1 rounded-lg border border-zinc-800 bg-zinc-950 p-1">
+                  {(["none", "headers", "oauth"] as const).map((auth) => {
+                    const Icon = AUTH_ICON[auth]
+                    return (
+                      <button
+                        key={auth}
+                        type="button"
+                        aria-pressed={draft.auth === auth}
+                        onClick={() => update({ auth })}
+                        className={`flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-sm ${
+                          draft.auth === auth ? "bg-zinc-800 text-zinc-100" : "text-zinc-500 hover:text-zinc-200"
+                        }`}
+                      >
+                        {Icon && <Icon className="size-3.5" />}
+                        {AUTH_LABEL[auth]}
+                      </button>
+                    )
+                  })}
+                </div>
               </Field>
-            </div>
-          </details>
+
+              {draft.auth === "headers" && (
+                <Field label="Headers" hint="Values are encrypted and never shown again; leave a saved value empty to keep it.">
+                  <div className="space-y-2">
+                    {draft.headers.map((header, index) => (
+                      <div key={index} className="flex gap-2">
+                        <input
+                          value={header.name}
+                          onChange={(event) => setHeader(index, { name: event.target.value, saved: false })}
+                          placeholder="Authorization"
+                          autoCapitalize="off"
+                          spellCheck={false}
+                          className={`${fieldBase} w-2/5 min-w-0 font-mono`}
+                        />
+                        <input
+                          value={header.value}
+                          onChange={(event) => setHeader(index, { value: event.target.value })}
+                          placeholder={header.saved ? "•••••••• saved" : placeholder}
+                          type="password"
+                          autoComplete="off"
+                          className={`${fieldBase} min-w-0 flex-1 font-mono`}
+                        />
+                        <button
+                          type="button"
+                          title="Remove header"
+                          onClick={() => update({ headers: draft.headers.filter((_, i) => i !== index) })}
+                          className="shrink-0 rounded-lg px-2 text-zinc-500 hover:text-red-400"
+                        >
+                          <X className="size-4" />
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => update({ headers: [...draft.headers, { name: "", value: "", saved: false }] })}
+                      className="flex items-center gap-1.5 text-sm text-zinc-400 hover:text-zinc-100"
+                    >
+                      <Plus className="size-4" /> Add header
+                    </button>
+                  </div>
+                </Field>
+              )}
+            </>
+          )}
+
+          {draft.kind === "remote" && (
+            <details className="group">
+              <summary className="cursor-pointer text-sm text-zinc-400 hover:text-zinc-200">Advanced</summary>
+              <div className="mt-3">
+                <Field label="Transport" hint="Auto tries Streamable HTTP, then falls back to SSE.">
+                  <select value={draft.transport} onChange={(event) => update({ transport: event.target.value as McpTransport })} className={field}>
+                    <option value="auto">Auto</option>
+                    <option value="streamable-http">Streamable HTTP</option>
+                    <option value="sse">SSE (legacy)</option>
+                  </select>
+                </Field>
+              </div>
+            </details>
+          )}
 
           <label className="flex cursor-pointer items-start gap-3">
-            <input type="checkbox" checked={draft.defaultOn} onChange={(event) => update({ defaultOn: event.target.checked })} className="mt-0.5 size-4 accent-emerald-600" />
+            <input
+              type="checkbox"
+              checked={draft.defaultOn}
+              onChange={(event) => update({ defaultOn: event.target.checked })}
+              className="mt-0.5 size-4 accent-emerald-600"
+            />
             <span>
               <span className="flex items-center gap-1 text-sm text-zinc-200">
                 On for new chats
@@ -266,7 +397,13 @@ function McpEditor() {
               className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:bg-zinc-800 disabled:text-zinc-500"
             >
               {saving && <LoaderCircle className="size-4 animate-spin" />}
-              {saving ? "Connecting…" : draft.auth === "oauth" && (isNew || existing?.status !== "ready") ? "Save and sign in" : isNew ? "Add and connect" : "Save"}
+              {saving
+                ? "Connecting…"
+                : draft.auth === "oauth" && (isNew || existing?.status !== "ready")
+                  ? "Save and sign in"
+                  : isNew
+                    ? "Add and connect"
+                    : "Save"}
             </button>
             {!isNew && (
               <button

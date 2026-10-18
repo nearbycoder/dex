@@ -28,7 +28,10 @@ export interface RegistryServer {
   readonly repository: string | null
   /** Empty for Smithery results until checked (its endpoint comes from the server's details). */
   readonly url: string
-  readonly transport: "streamable-http" | "sse"
+  /** `stdio`: a package Dex runs on the MCP VM (see `run`). */
+  readonly transport: "streamable-http" | "sse" | "stdio"
+  /** For a package: the command that starts it, and the environment variables it reads. */
+  readonly run: { readonly command: string; readonly env: ReadonlyArray<RegistryHeader> } | null
   /** Headers the server asks for (an API key, usually). */
   readonly headers: ReadonlyArray<RegistryHeader>
   /** The URL has `{placeholders}` to fill in (a tenant, a region). */

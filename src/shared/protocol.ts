@@ -91,6 +91,9 @@ export const NO_SETUP: VmSetup = { status: "none", step: null, error: null }
 /** The VM key of the one VM that existed before VMs were per chat. */
 export const SHARED_VM = "shared"
 
+/** The VM key of the VM that runs local (stdio) MCP servers for every chat. */
+export const MCP_VM = "mcp-host"
+
 export interface VmInfo {
   /** The chat this VM belongs to, or `shared` for the VM from before VMs were per chat. */
   readonly key: string

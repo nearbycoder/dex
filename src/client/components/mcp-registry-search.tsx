@@ -87,7 +87,7 @@ function ResultRow({ server, addedUrls }: { server: RegistryServer; addedUrls: R
   const [report, setReport] = useState<McpCheckReport | null>(null)
   const [checking, setChecking] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const needsKey = server.headers.some((header) => header.required)
+  const needsKey = server.headers.some((header) => header.required) || (server.run?.env.some((variable) => variable.required && variable.secret) ?? false)
 
   const toggle = async () => {
     setOpen(!open)
@@ -119,6 +119,7 @@ function ResultRow({ server, addedUrls }: { server: RegistryServer; addedUrls: R
             {server.verified && <ShieldCheck className="size-3.5 shrink-0 text-emerald-400" aria-label="Verified by Smithery" />}
             {needsKey && <span className="shrink-0 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">API key</span>}
             {server.transport === "sse" && <span className="shrink-0 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">SSE</span>}
+            {server.transport === "stdio" && <span className="shrink-0 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">Runs on VM</span>}
             {server.templated && <span className="shrink-0 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">Needs setup</span>}
           </span>
           <span className="block truncate font-mono text-[11px] text-zinc-500">{server.name}</span>
@@ -150,6 +151,16 @@ function ResultRow({ server, addedUrls }: { server: RegistryServer; addedUrls: R
             <p className="text-xs break-words text-red-400">{error}</p>
           ) : (
             report && <Report report={report} />
+          )}
+          {report && server.run && (
+            <Link
+              to="/mcp/$serverId"
+              params={{ serverId: "new" }}
+              search={{ name: server.title, command: server.run.command, ...(server.run.env.length ? { env: server.run.env.map((variable) => variable.name).join(",") } : {}) }}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500"
+            >
+              <Plus className="size-3.5" /> Add to run on a VM
+            </Link>
           )}
           {report && url && !added && (
             <Link

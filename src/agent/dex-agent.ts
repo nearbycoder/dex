@@ -31,7 +31,7 @@ import type {
   GitHubStatus,
   WorkspaceFile
 } from "~/shared/protocol"
-import { SHARED_VM } from "~/shared/protocol"
+import { MCP_VM, SHARED_VM } from "~/shared/protocol"
 import { normalizeRepoUrl, type ProjectDraft, type ProjectProfile, type ProjectRepo, PROJECT_ROOT, repoDirName, repoLabel } from "~/shared/projects"
 import { CLOUDFLARE_RATES, type CloudflareLine, type UsageRange, type UsageReport } from "~/shared/usage"
 import { AGENT_COLORS, AGENT_ICONS, type AgentDraft, type AgentProfile, STARTER_AGENTS } from "~/shared/agents"
@@ -61,7 +61,7 @@ import { scheduleTools } from "./tools/schedule-tools"
 import { vmTools } from "./tools/vm-tools"
 import { workspaceTools } from "./tools/workspace-tools"
 import { verifyGitHubToken, type GitHubIdentity } from "./github-token"
-import { provisionVm } from "./provision"
+import { provisionVm, shellQuote } from "./provision"
 import { PushCenter, type SubscriptionInput } from "./push"
 import type { BackgroundAction, NotifyKind, PushPayload } from "~/shared/notifications"
 import { adoptSharedVm, errorText, migrateVmTables, storedVmKeys, type VmHost, VmManager } from "./vm"
@@ -135,6 +135,8 @@ interface McpRowData {
   headerNames: string[]
   defaultOn: boolean
   prefix: string
+  /** A stdio server Dex runs on the MCP VM behind supergateway; `url` is then its port's private address. */
+  local?: { command: string; port: number; envNames: string[]; sealedEnv: string | null }
 }
 
 interface McpRow extends McpRowData {
@@ -161,6 +163,10 @@ interface ScheduledPayload {
 }
 
 const MCP_TRANSPORTS = new Set<McpTransport>(["auto", "streamable-http", "sse"])
+/** The stdio → Streamable HTTP bridge local MCP servers run behind on the MCP VM (pinned: it handles every request). */
+const SUPERGATEWAY_VERSION = "4.2.0"
+/** Local MCP servers get ports from here up, one each. */
+const LOCAL_MCP_PORT = 8100
 const MCP_AUTHS = new Set<McpAuth>(["none", "headers", "oauth"])
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error))
 const parseIds = (value: string | null | undefined): string[] => {
@@ -961,7 +967,7 @@ export class DexAgent extends Agent<Env, DexState> {
   async reapOrphanVms() {
     let failed = false
     for (const key of storedVmKeys(this.ctx.storage.sql)) {
-      if (key === SHARED_VM || this.hasSession(key)) continue
+      if (key === SHARED_VM || key === MCP_VM || this.hasSession(key)) continue
       const vm = this.vmFor(key)
       try {
         await vm.destroy("system", { forget: true })
@@ -1237,8 +1243,10 @@ export class DexAgent extends Agent<Env, DexState> {
     try {
       if (fresh) await this.removeMcpServer(row.id).catch(() => undefined)
       const headers = row.auth === "headers" ? await this.mcpHeaders(row) : undefined
+      // A local server: start the MCP VM and the server first; its address can change when the VM restarts.
+      const url = row.local ? await this.ensureLocalMcp(row) : row.url
       // The SDK's name is the stable id, so renaming a server never conflicts with its stored connection.
-      const result = await this.addMcpServer(row.id, row.url, {
+      const result = await this.addMcpServer(row.id, url, {
         id: row.id,
         callbackHost: this.mcpCallbackHost(),
         transport: { type: row.transport, ...(headers && { headers }) }
@@ -1311,7 +1319,8 @@ export class DexAgent extends Agent<Env, DexState> {
           mcpExtension({
             id: row.id,
             name: row.name,
-            url: row.url,
+            // A local server's address carries its port's access token: the model gets the command instead.
+            url: row.local ? `run by Dex: ${row.local.command}` : row.url,
             prefix: row.prefix,
             tools,
             instructions: () => this.mcp.mcpConnections[row.id]?.instructions ?? null,
@@ -1324,10 +1333,11 @@ export class DexAgent extends Agent<Env, DexState> {
       servers.push({
         id: row.id,
         name: row.name,
-        url: row.url,
+        url: row.local ? "" : row.url,
         transport: row.transport,
         auth: row.auth,
         headerNames: row.headerNames,
+        local: row.local ? { command: row.local.command, envNames: row.local.envNames } : null,
         defaultOn: row.defaultOn,
         prefix: row.prefix,
         status: this.mcpStatus(row.id),
@@ -1348,8 +1358,12 @@ export class DexAgent extends Agent<Env, DexState> {
   /** Null once the server is ready, else why its tools can't run. Reconnects a dropped or failed server once. */
   private async ensureMcpReady(id: string): Promise<string | null> {
     const status = () => this.mcpStatus(id)
-    if (status() === "ready") return null
     const row = this.mcpRow(id)
+    // A local server whose VM stopped looks connected but can't answer: start it again first.
+    if (row?.local && status() === "ready" && this.vmFor(MCP_VM).current.status !== "running") {
+      await this.connectMcp(row, { fresh: true })
+    }
+    if (status() === "ready") return null
     if (!row) return "This MCP server was removed."
     if (status() === "disconnected" || status() === "failed") await this.connectMcp(row, { fresh: status() === "failed" })
     const deadline = Date.now() + 20_000
@@ -1364,12 +1378,81 @@ export class DexAgent extends Agent<Env, DexState> {
   private async callMcpTool(id: string, tool: string, args: Record<string, unknown>, signal: AbortSignal | undefined): Promise<ToolExecutionResult> {
     const problem = await this.ensureMcpReady(id)
     if (problem) return { output: [{ type: "text", text: problem }], isError: true }
+    const local = Boolean(this.mcpRow(id)?.local)
+    const call = () => this.mcp.callTool({ serverId: id, name: tool, arguments: args }, { signal, timeout: 5 * 60_000 })
     try {
-      const result = await this.mcp.callTool({ serverId: id, name: tool, arguments: args }, { signal, timeout: 5 * 60_000 })
+      const result = await call().catch(async (error: unknown) => {
+        // A local server may have stopped with its VM: start it again and retry once.
+        const row = this.mcpRow(id)
+        if (!row?.local || signal?.aborted) throw error
+        await this.connectMcp(row, { fresh: true })
+        if (await this.ensureMcpReady(id)) throw error
+        return call()
+      })
+      // Using it keeps the MCP VM awake, like any other VM use.
+      if (local) this.vmFor(MCP_VM).touch()
       return toToolResult(result as McpCallResult)
     } catch (error) {
       return { output: [{ type: "text", text: `MCP call failed: ${errorMessage(error)}` }], isError: true }
     }
+  }
+
+  // ── Local MCP servers (run on the MCP VM) ─────────────────────────────────
+
+  private async localMcpEnv(row: McpRow): Promise<Record<string, string>> {
+    const sealed = row.local?.sealedEnv
+    if (!sealed) return {}
+    return JSON.parse(await this.runtime.runPromise(Keys.use((keys) => keys.decrypt(sealed)))) as Record<string, string>
+  }
+
+  /**
+   * Makes a local server answer: starts the MCP VM if it's stopped, starts the server behind supergateway
+   * (stdio → Streamable HTTP, one port per server) if it isn't running, and opens its port privately. Returns
+   * the address Dex connects to, saving it when it changed (a restarted VM can get a new one).
+   */
+  private async ensureLocalMcp(row: McpRow): Promise<string> {
+    const local = row.local!
+    if (!this.vmHost.configured()) throw new Error("Local MCP servers run on a VM: connect boat.dev in Settings → Cloud VMs.")
+    const vm = this.vmFor(MCP_VM)
+    const dir = `/home/user/mcp/${row.id}`
+    const health = `[ "$(curl -s -m 2 http://127.0.0.1:${local.port}/healthz)" = ok ]`
+    const alive = await vm.exec(`${health} && echo up || echo down`, { actor: "system", title: `Check the ${row.name} MCP server` })
+    if (!alive.output.includes("up")) {
+      const env = await this.localMcpEnv(row)
+      const script = [
+        "#!/usr/bin/env bash",
+        // Saved secrets (Settings → Secrets), then this server's own variables.
+        `. ${VM_ENV_FILE} 2>/dev/null`,
+        ...Object.entries(env).map(([name, value]) => `export ${name}=${shellQuote(value)}`),
+        // PyPI servers run with uvx: install uv the first time one is needed.
+        `if [[ ${shellQuote(local.command)} == uvx* ]] && ! command -v uvx >/dev/null; then curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null 2>&1; fi`,
+        'export PATH="$HOME/.local/bin:$PATH"',
+        `exec npx -y supergateway@${SUPERGATEWAY_VERSION} --stdio ${shellQuote(local.command)} --outputTransport streamableHttp --port ${local.port} --stateful --healthEndpoint /healthz --logLevel info`
+      ].join("\n")
+      await vm.writeFile(`${dir}/run.sh`, `${script}\n`, "system")
+      await vm.spawn(`chmod 700 ${dir} && pkill -f "mcp/${row.id}/run.sh" ; bash ${dir}/run.sh > ${dir}/log 2>&1`, { actor: "system", title: `Start the ${row.name} MCP server` })
+      // The first start downloads the package; give it a couple of minutes.
+      const started = await vm.exec(`for i in $(seq 1 75); do ${health} && exit 0; sleep 2; done; echo "It didn't start. Its log:"; tail -n 40 ${dir}/log; exit 1`, {
+        actor: "system",
+        title: `Wait for the ${row.name} MCP server`,
+        timeoutSeconds: 180
+      })
+      if (started.exitCode !== 0) throw new Error(started.output.trim().slice(-1_500) || `${row.name} didn't start on the MCP VM.`)
+    }
+    const exposed = new URL(await vm.exposePort(local.port, false, "system"))
+    exposed.pathname = "/mcp"
+    if (exposed.href !== row.url) {
+      const { id: _id, sealedHeaders: _headers, tools: _tools, createdAt: _created, updatedAt: _updated, ...data } = row
+      this.ctx.storage.sql.exec(`UPDATE dex_mcp SET data = ? WHERE id = ?`, JSON.stringify({ ...data, url: exposed.href }), row.id)
+    }
+    return exposed.href
+  }
+
+  /** Stops a local server's process (if the MCP VM is up; a stopped VM runs nothing). */
+  private async stopLocalMcp(row: McpRow) {
+    const vm = this.vms.get(MCP_VM)
+    if (!vm || vm.current.status !== "running") return
+    await vm.exec(`pkill -f "mcp/${row.id}/run.sh"; pkill -f "port ${row.local!.port} "; true`, { actor: "system", title: `Stop the ${row.name} MCP server` }).catch(() => undefined)
   }
 
   /** Add (no id) or edit a server, then connect it. Returns an `authUrl` when the server wants the user to sign in. */
@@ -1377,6 +1460,7 @@ export class DexAgent extends Agent<Env, DexState> {
   async saveMcpServer(draft: McpServerDraft): Promise<McpConnectResult> {
     const name = String(draft.name ?? "").trim().slice(0, 60)
     if (!name) return { ok: false, error: "Give the server a name." }
+    if (draft.local) return this.saveLocalMcpServer(name, draft)
     let url: URL
     try {
       url = new URL(String(draft.url ?? "").trim())
@@ -1403,17 +1487,13 @@ export class DexAgent extends Agent<Env, DexState> {
       if (!Object.keys(headers).length) return { ok: false, error: "Add at least one header, e.g. Authorization: Bearer <key>." }
     }
 
-    // Tool names are `<prefix>__<tool>`; prefixes stay unique across servers.
-    const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 24) || "mcp"
-    const taken = new Set(this.mcpRows().filter((row) => row.id !== existing?.id).map((row) => row.prefix))
-    let prefix = /^[a-z]/.test(base) ? base : `mcp_${base}`
-    for (let n = 2; taken.has(prefix); n++) prefix = `${base}_${n}`
-
+    const prefix = this.mcpPrefix(name, existing?.id)
+    // It ran on the MCP VM before; now it's a URL.
+    if (existing?.local) await this.stopLocalMcp(existing)
     const sealedHeaders = auth === "headers" ? await this.runtime.runPromise(Keys.use((keys) => keys.encrypt(JSON.stringify(headers)))) : null
     const data: McpRowData = { name, url: url.href, transport, auth, headerNames: Object.keys(headers), defaultOn: Boolean(draft.defaultOn), prefix }
     const now = Date.now()
-    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32)
-    const id = existing?.id ?? `${/^[a-z]/.test(slug) ? slug : `mcp-${slug}`}-${crypto.randomUUID().slice(0, 6)}`.replace(/-+/g, "-")
+    const id = existing?.id ?? this.newMcpId(name)
     this.ctx.storage.sql.exec(
       `INSERT INTO dex_mcp (id, data, headers, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET data = excluded.data, headers = excluded.headers, updated_at = excluded.updated_at`,
@@ -1429,6 +1509,71 @@ export class DexAgent extends Agent<Env, DexState> {
     if (changed || this.mcpStatus(id) !== "ready") return this.connectMcp(row, { fresh: Boolean(existing) })
     this.syncMcp()
     return { ok: true, id }
+  }
+
+  /** Tool names are `<prefix>__<tool>`; prefixes stay unique across servers. */
+  private mcpPrefix(name: string, exceptId?: string) {
+    const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 24) || "mcp"
+    const taken = new Set(this.mcpRows().filter((row) => row.id !== exceptId).map((row) => row.prefix))
+    let prefix = /^[a-z]/.test(base) ? base : `mcp_${base}`
+    for (let n = 2; taken.has(prefix); n++) prefix = `${base}_${n}`
+    return prefix
+  }
+
+  private newMcpId(name: string) {
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32)
+    return `${/^[a-z]/.test(slug) ? slug : `mcp-${slug}`}-${crypto.randomUUID().slice(0, 6)}`.replace(/-+/g, "-")
+  }
+
+  /** A local server: a command Dex runs on the MCP VM (see ensureLocalMcp) instead of a URL. */
+  private async saveLocalMcpServer(name: string, draft: McpServerDraft): Promise<McpConnectResult> {
+    const command = String(draft.local?.command ?? "").trim()
+    if (!command) return { ok: false, error: "Enter the command that starts the server, e.g. npx -y @modelcontextprotocol/server-everything." }
+    if (command.length > 2_000 || /[\r\n]/.test(command)) return { ok: false, error: "The command must be a single line." }
+    if (/<[^<>]+>/.test(command)) return { ok: false, error: "Fill in the <placeholders> in the command first." }
+    if (!this.vmHost.configured()) return { ok: false, error: "Local MCP servers run on a VM: connect boat.dev in Settings → Cloud VMs." }
+    const existing = draft.id ? this.mcpRow(draft.id) : undefined
+    const saved = existing?.local ? await this.localMcpEnv(existing).catch(() => ({}) as Record<string, string>) : {}
+    const env: Record<string, string> = {}
+    for (const variable of draft.local?.env ?? []) {
+      const variableName = String(variable.name ?? "").trim()
+      if (!variableName) continue
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(variableName)) return { ok: false, error: `"${variableName}" isn't a valid environment variable name.` }
+      const value = String(variable.value ?? "") || saved[variableName]
+      // Left empty: it may come from Settings → Secrets under the same name.
+      if (!value) continue
+      if (/[\r\n]/.test(value)) return { ok: false, error: `The value of ${variableName} must be a single line.` }
+      env[variableName] = value
+    }
+    const ports = this.mcpRows().flatMap((row) => (row.local && row.id !== existing?.id ? [row.local.port] : []))
+    let port = existing?.local?.port ?? LOCAL_MCP_PORT
+    while (ports.includes(port)) port++
+    const sealedEnv = Object.keys(env).length ? await this.runtime.runPromise(Keys.use((keys) => keys.encrypt(JSON.stringify(env)))) : null
+    const data: McpRowData = {
+      name,
+      url: existing?.local ? existing.url : "",
+      transport: "streamable-http",
+      auth: "none",
+      headerNames: [],
+      defaultOn: Boolean(draft.defaultOn),
+      prefix: this.mcpPrefix(name, existing?.id),
+      local: { command, port, envNames: Object.keys(env), sealedEnv }
+    }
+    const now = Date.now()
+    const id = existing?.id ?? this.newMcpId(name)
+    this.ctx.storage.sql.exec(
+      `INSERT INTO dex_mcp (id, data, headers, created_at, updated_at) VALUES (?, ?, NULL, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET data = excluded.data, headers = NULL, updated_at = excluded.updated_at`,
+      id, JSON.stringify(data), existing?.createdAt ?? now, now
+    )
+    // A changed command or environment: stop the running copy so it starts again with the new one.
+    const changed = !existing?.local || existing.local.command !== command || JSON.stringify(saved) !== JSON.stringify(env)
+    if (existing?.local && changed) await this.stopLocalMcp(existing)
+    if (!changed && this.mcpStatus(id) === "ready") {
+      this.syncMcp()
+      return { ok: true, id }
+    }
+    return this.connectMcp(this.mcpRow(id)!, { fresh: Boolean(existing) })
   }
 
   /** Reconnects a server, or restarts its sign-in. */
@@ -1453,6 +1598,8 @@ export class DexAgent extends Agent<Env, DexState> {
   @callable()
   async deleteMcpServer(id: string) {
     await this.removeMcpServer(id).catch(() => undefined)
+    const row = this.mcpRow(id)
+    if (row?.local) await this.stopLocalMcp(row)
     this.ctx.storage.sql.exec(`DELETE FROM dex_mcp WHERE id = ?`, id)
     this.mcpErrors.delete(id)
     for (const row of this.ctx.storage.sql.exec<SessionRow>(`SELECT * FROM dex_sessions WHERE mcp_servers LIKE ?`, `%"${id}"%`).toArray()) {
@@ -2052,7 +2199,9 @@ export class DexAgent extends Agent<Env, DexState> {
   /** Runs Dex's checks on a registry server before you add it: does it answer, how it signs in, its tools and source. */
   @callable()
   async checkMcpServer(server: RegistryServer): Promise<McpCheckReport> {
-    if (typeof server?.url !== "string" || !server.url.startsWith("https://")) throw new Error("Only https MCP servers can be checked.")
+    // Smithery results get their endpoint during the check, and packages have none (they run on the MCP VM).
+    const endpointLater = server?.source === "smithery" || server?.transport === "stdio"
+    if (typeof server?.url !== "string" || (!endpointLater && !server.url.startsWith("https://"))) throw new Error("Only https MCP servers can be checked.")
     return checkServer(server, (await this.githubCredentials())?.token ?? null)
   }
 

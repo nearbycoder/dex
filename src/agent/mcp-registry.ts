@@ -2,7 +2,7 @@ import { type McpCheck, type McpCheckReport, type RegistryHeader, type RegistryS
 
 const REGISTRY = "https://registry.modelcontextprotocol.io/v0/servers"
 const PAGES = 2
-const RESULTS = 25
+const RESULTS = 40
 const TIMEOUT_MS = 8_000
 /** The registry's search can take many seconds for a query it hasn't seen lately (then it's cached). */
 const SEARCH_TIMEOUT_MS = 25_000
@@ -14,18 +14,94 @@ interface RawRemote {
   headers?: Array<{ name?: string; description?: string; isRequired?: boolean; isSecret?: boolean; value?: string }>
 }
 
+interface RawPackage {
+  registryType?: string
+  identifier?: string
+  version?: string
+  transport?: { type?: string }
+  environmentVariables?: Array<{ name?: string; description?: string; isRequired?: boolean; isSecret?: boolean; default?: string }>
+  packageArguments?: Array<{ type?: string; name?: string; value?: string; default?: string; isRequired?: boolean }>
+}
+
 interface RawEntry {
-  server?: { name?: string; description?: string; version?: string; repository?: { url?: string }; remotes?: RawRemote[] }
+  server?: { name?: string; description?: string; version?: string; repository?: { url?: string }; remotes?: RawRemote[]; packages?: RawPackage[] }
   _meta?: Record<string, { status?: string; updatedAt?: string; isLatest?: boolean } | undefined>
 }
 
 const searches = new Map<string, { at: number; results: RegistryServer[] }>()
 
+/** Shell-safe words only: registry data goes into a command line on the VM. */
+const SAFE = /^[\w@./:=+-]+$/
+
+/**
+ * The command that starts a stdio package, as it would run on the MCP VM: npm via npx, PyPI via uvx, images via
+ * docker. Required arguments without a value become `<name>` placeholders (`templated`). Null for anything else.
+ */
+const packageCommand = (pkg: RawPackage): { command: string; templated: boolean } | null => {
+  if (pkg.transport?.type !== "stdio" || !pkg.identifier || !SAFE.test(pkg.identifier) || (pkg.version && !SAFE.test(pkg.version))) return null
+  let templated = false
+  const args: string[] = []
+  for (const arg of pkg.packageArguments ?? []) {
+    const value = arg.value ?? arg.default
+    if (value === undefined || !SAFE.test(value)) {
+      if (!arg.isRequired && value === undefined) continue
+      templated = true
+      args.push(arg.type === "named" && arg.name ? `${arg.name} <value>` : `<${arg.name ?? "value"}>`)
+      continue
+    }
+    if (arg.type === "named" && arg.name && SAFE.test(arg.name)) args.push(arg.name, value)
+    else args.push(value)
+  }
+  const env = (pkg.environmentVariables ?? []).flatMap((variable) => (variable.name && /^[A-Za-z_]\w*$/.test(variable.name) ? [variable.name] : []))
+  const tail = args.length ? ` ${args.join(" ")}` : ""
+  switch (pkg.registryType) {
+    case "npm":
+      return { command: `npx -y ${pkg.identifier}${pkg.version ? `@${pkg.version}` : ""}${tail}`, templated }
+    case "pypi":
+      return { command: `uvx ${pkg.identifier}${pkg.version ? `==${pkg.version}` : ""}${tail}`, templated }
+    case "oci":
+      return { command: `docker run -i --rm ${env.map((name) => `-e ${name} `).join("")}${pkg.identifier}${tail}`, templated }
+    default:
+      return null
+  }
+}
+
 const toServer = (entry: RawEntry): RegistryServer | null => {
   const server = entry.server
   const meta = entry._meta?.["io.modelcontextprotocol.registry/official"]
-  const remote = server?.remotes?.find((candidate) => (candidate.type === "streamable-http" || candidate.type === "sse") && candidate.url?.startsWith("https://"))
-  if (!server?.name || !remote?.url || meta?.isLatest === false || (meta?.status && meta.status !== "active")) return null
+  if (!server?.name || meta?.isLatest === false || (meta?.status && meta.status !== "active")) return null
+  const remote = server.remotes?.find((candidate) => (candidate.type === "streamable-http" || candidate.type === "sse") && candidate.url?.startsWith("https://"))
+  // No remote endpoint: a package Dex can run on the MCP VM (npm first, then PyPI, then an image).
+  if (!remote?.url) {
+    const order = ["npm", "pypi", "oci"]
+    const pkg = [...(server.packages ?? [])].sort((a, b) => order.indexOf(a.registryType ?? "") - order.indexOf(b.registryType ?? "")).find((each) => packageCommand(each))
+    if (!pkg) return null
+    const run = packageCommand(pkg)!
+    return {
+      source: "registry",
+      name: server.name,
+      title: registryTitle(server.name),
+      description: (server.description ?? "").replace(/…$/, "").trim(),
+      version: server.version ?? "",
+      repository: server.repository?.url?.startsWith("https://") ? server.repository.url : null,
+      url: "",
+      transport: "stdio",
+      run: {
+        command: run.command,
+        env: (pkg.environmentVariables ?? []).flatMap((variable) =>
+          variable.name && /^[A-Za-z_]\w*$/.test(variable.name)
+            ? [{ name: variable.name, description: variable.description ?? "", required: variable.isRequired ?? false, secret: variable.isSecret ?? false, value: variable.default ?? null }]
+            : []
+        )
+      },
+      headers: [],
+      templated: run.templated,
+      updatedAt: meta?.updatedAt ?? null,
+      status: meta?.status ?? "active",
+      uses: null,
+      verified: null
+    }
+  }
   const headers: RegistryHeader[] = (remote.headers ?? []).flatMap((header) =>
     header.name
       ? [{ name: header.name, description: header.description ?? "", required: header.isRequired ?? false, secret: header.isSecret ?? false, value: header.value ?? null }]
@@ -39,6 +115,7 @@ const toServer = (entry: RawEntry): RegistryServer | null => {
     repository: server.repository?.url?.startsWith("https://") ? server.repository.url : null,
     url: remote.url,
     transport: remote.type as RegistryServer["transport"],
+    run: null,
     headers,
     templated: /\{[^}]+\}/.test(remote.url),
     updatedAt: meta?.updatedAt ?? null,
@@ -55,7 +132,8 @@ const rank = (server: RegistryServer, query: string) => {
   const namespace = server.name.split("/")[0]!.toLowerCase()
   // The company's own server (com.stripe/…) before others named after it; ones needing setup after ready ones.
   const base = namespace.endsWith(`.${query}`) || namespace === query ? 0 : last === query ? 1 : last.startsWith(query) ? 2 : last.includes(query) ? 3 : 4
-  return base * 2 + (server.templated ? 1 : 0)
+  // Remote servers before ones Dex runs itself, and ready ones before ones that need setup.
+  return base * 4 + (server.transport === "stdio" ? 2 : 0) + (server.templated ? 1 : 0)
 }
 
 /** Remote MCP servers in the official registry whose name matches `query`, best matches first. */
@@ -138,6 +216,7 @@ export async function searchSmithery(query: string): Promise<RegistryServer[]> {
         repository: entry.homepage && /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+/.test(entry.homepage) ? entry.homepage : null,
         url: "",
         transport: "streamable-http",
+        run: null,
         headers: [],
         templated: false,
         updatedAt: entry.createdAt ?? null,
@@ -238,6 +317,16 @@ export async function checkServer(listed: RegistryServer, githubToken: string | 
   const header = server.headers.find((candidate) => candidate.required)?.name ?? null
   let tools: string[] = []
 
+  if (server.transport === "stdio" && server.run) {
+    add("runs", "Runs on your MCP VM", server.templated ? "warn" : "info", `${server.run.command}${server.templated ? " (fill in the <placeholders>)" : ""}`)
+    const required = server.run.env.filter((variable) => variable.required)
+    if (required.length) add("env", "Needs", "info", required.map((variable) => `${variable.name}${variable.description ? ` (${variable.description})` : ""}`).join("; "))
+    const publisher = registryPublisher(server.name)
+    if (publisher.kind !== "unknown") add("publisher", "Publisher", "info", `${publisher.kind === "github" ? "GitHub account " : ""}${publisher.id} (ownership verified by the MCP Registry).`)
+    await repoChecks(server.repository, githubToken, add)
+    return { url: "", checks, auth: "none", header: null, tools: [], checkedAt: Date.now() }
+  }
+
   let url: URL
   try {
     url = new URL(server.url)
@@ -335,8 +424,18 @@ export async function checkServer(listed: RegistryServer, githubToken: string | 
   }
   if (auth === "headers") add("auth", "Credentials", "info", `Needs ${header ?? "a header"}${server.headers.find((each) => each.required)?.description ? `: ${server.headers.find((each) => each.required)!.description}` : ""}.`)
 
-  // The source: is it maintained, licensed, used?
-  const repo = server.repository && /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/.exec(server.repository)?.[1]
+  await repoChecks(server.repository, githubToken, add)
+
+  if (!tools.length && listedTools.length) {
+    tools = listedTools.slice(0, 50)
+    add("tools", "Tools", "pass", `${listedTools.length} tools (as listed on Smithery)`)
+  }
+  return { url: server.url, checks, auth, header, tools, checkedAt: Date.now() }
+}
+
+/** The source: is it maintained, licensed, used? */
+async function repoChecks(repository: string | null, githubToken: string | null, add: (id: string, label: string, status: McpCheck["status"], detail: string) => void) {
+  const repo = repository && /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/.exec(repository)?.[1]
   if (repo) {
     const response = await fetch(`https://api.github.com/repos/${repo}`, {
       headers: { accept: "application/vnd.github+json", "user-agent": "Dex (MCP checks)", ...(githubToken ? { authorization: `Bearer ${githubToken}` } : {}) },
@@ -361,9 +460,4 @@ export async function checkServer(listed: RegistryServer, githubToken: string | 
     add("repo", "Source", "warn", "No public source repository listed.")
   }
 
-  if (!tools.length && listedTools.length) {
-    tools = listedTools.slice(0, 50)
-    add("tools", "Tools", "pass", `${listedTools.length} tools (as listed on Smithery)`)
-  }
-  return { url: server.url, checks, auth, header, tools, checkedAt: Date.now() }
 }

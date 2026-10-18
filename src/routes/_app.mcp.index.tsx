@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
-import { ChevronRight, LoaderCircle, LogIn, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react"
+import { ChevronRight, LoaderCircle, LogIn, Monitor, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react"
 import { useState } from "react"
 import { McpStatusDot } from "~/client/components/mcp-picker"
 import { McpRegistrySearch } from "~/client/components/mcp-registry-search"
@@ -7,6 +7,7 @@ import { CardGridSkeleton } from "~/client/components/skeleton"
 import { InfoTip } from "~/client/components/info-tip"
 import { Switch } from "~/client/components/ui"
 import { useDex } from "~/client/lib/dex"
+import { MCP_VM } from "~/shared/protocol"
 import { AUTH_ICON, AUTH_LABEL, followConnect } from "~/client/lib/mcp"
 import { MCP_STATUS_LABEL, type McpServerInfo } from "~/shared/mcp"
 import { MCP_TEMPLATES } from "~/shared/mcp-templates"
@@ -24,10 +25,13 @@ export const Route = createFileRoute("/_app/mcp/")({
 const iconButton = "rounded-md p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 disabled:opacity-50"
 
 function ServerCard({ server, index }: { server: McpServerInfo; index: number }) {
-  const { stub } = useDex()
+  const { state, stub } = useDex()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const AuthIcon = AUTH_ICON[server.auth]
+  // A local server's VM stops when idle; its dropped connection isn't a failure.
+  const mcpVm = state?.vms.find((vm) => vm.key === MCP_VM)
+  const asleep = Boolean(server.local) && server.status !== "ready" && server.status !== "connecting" && mcpVm?.status !== "running"
 
   const connect = async () => {
     setBusy(true)
@@ -47,12 +51,18 @@ function ServerCard({ server, index }: { server: McpServerInfo; index: number })
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h2 className="truncate font-medium text-zinc-100">{server.name}</h2>
-            <span className="flex shrink-0 items-center gap-1 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">
-              {AuthIcon && <AuthIcon className="size-3" />}
-              {AUTH_LABEL[server.auth]}
-            </span>
+            {server.local ? (
+              <span className="flex shrink-0 items-center gap-1 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">
+                <Monitor className="size-3" /> Runs on VM
+              </span>
+            ) : (
+              <span className="flex shrink-0 items-center gap-1 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">
+                {AuthIcon && <AuthIcon className="size-3" />}
+                {AUTH_LABEL[server.auth]}
+              </span>
+            )}
           </div>
-          <p className="mt-0.5 truncate font-mono text-xs text-zinc-500">{server.url}</p>
+          <p className="mt-0.5 truncate font-mono text-xs text-zinc-500">{server.local ? server.local.command : server.url}</p>
         </div>
         <div className="-mt-1 -mr-1.5 flex shrink-0 items-center">
           {server.status !== "authenticating" && (
@@ -80,8 +90,8 @@ function ServerCard({ server, index }: { server: McpServerInfo; index: number })
 
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs">
         <span className="flex items-center gap-1.5 text-zinc-300">
-          <McpStatusDot status={server.status} />
-          {MCP_STATUS_LABEL[server.status]}
+          <McpStatusDot status={asleep ? "disconnected" : server.status} />
+          {asleep ? "Starts when a chat uses it" : MCP_STATUS_LABEL[server.status]}
         </span>
         {server.status === "authenticating" && (
           <button
@@ -98,7 +108,7 @@ function ServerCard({ server, index }: { server: McpServerInfo; index: number })
           <Switch label={`Attach ${server.name} to new chats`} checked={server.defaultOn} onChange={(on) => void stub.setMcpServerDefault(server.id, on)} />
         </span>
       </div>
-      {(error ?? server.error) && server.status !== "ready" && <p className="mt-2 text-xs break-words text-red-400">{error ?? server.error}</p>}
+      {(error ?? (asleep ? null : server.error)) && server.status !== "ready" && <p className="mt-2 text-xs break-words text-red-400">{error ?? server.error}</p>}
 
       {server.tools.length > 0 && (
         <details className="group mt-2">

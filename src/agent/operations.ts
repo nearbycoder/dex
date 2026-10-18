@@ -331,7 +331,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
   define({
     name: "app_search_mcp_registry",
     description:
-      "Search for remote MCP servers to add (by name, e.g. \"linear\"). source \"smithery\" (default) is fast and has use counts and verification; its endpoints are Smithery-hosted and sign in through Smithery. source \"registry\" is the official MCP Registry, with publishers' own endpoints (slow for new searches). Check one with app_check_mcp_server (it finds Smithery endpoints), then add it with app_save_mcp_server.",
+      "Search for MCP servers to add (by name, e.g. \"linear\"). Registry results include packages (transport stdio) that Dex runs on its MCP VM. source \"smithery\" (default) is fast and has use counts and verification; its endpoints are Smithery-hosted and sign in through Smithery. source \"registry\" is the official MCP Registry, with publishers' own endpoints (slow for new searches). Check one with app_check_mcp_server (it finds Smithery endpoints), then add it with app_save_mcp_server.",
     risk: "read",
     parameters: Type.Object({
       query: Type.String({ minLength: 2, maxLength: 100 }),
@@ -344,7 +344,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
   define({
     name: "app_check_mcp_server",
     description:
-      "Run Dex's checks on a server from app_search_mcp_registry: HTTPS, the verified publisher and whether the endpoint is on their domain, an MCP handshake (open, OAuth, or a header), its tools, and its GitHub repo (stars, license, archived, last push).",
+      "Run Dex's checks on a server from app_search_mcp_registry: HTTPS, the verified publisher and whether the endpoint is on their domain, an MCP handshake (open, OAuth, or a header), its tools, and its GitHub repo (stars, license, archived, last push). For a package (transport stdio) it reports the command Dex would run on its MCP VM and the environment variables it needs.",
     risk: "read",
     parameters: Type.Object({
       name: Type.String({ maxLength: 200, description: "The name from app_search_mcp_registry." }),
@@ -354,7 +354,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     summarize: (args) => `Check MCP server ${args.name}`,
     run: async (host, args) => {
       const server = await host.findRegistryServer(args.name, args.source ?? "smithery")
-      if (!server) throw new Error(`No remote server named ${args.name} in the MCP Registry.`)
+      if (!server) throw new Error(`No server named ${args.name} found there.`)
       return { server, report: await host.checkMcpServer(server) }
     }
   }),
@@ -796,13 +796,21 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
   define({
     name: "app_save_mcp_server",
     description:
-      "Add or change a remote MCP server. Its tools become available to chats that attach it. `headers` values are encrypted at rest " +
-      "(an empty value keeps the saved one). OAuth servers need the user to sign in on the MCP servers page.",
+      "Add or change an MCP server. Its tools become available to chats that attach it. Either a remote one (`url`; `headers` values " +
+      "are encrypted at rest, an empty value keeps the saved one; OAuth servers need the user to sign in on the MCP servers page), or " +
+      "a local stdio one Dex runs on its MCP VM (`command`, e.g. from a registry package, and `env`; saved secrets are available too).",
     risk: "admin",
     parameters: Type.Object({
       server_id: Type.Optional(id("Give to change an existing server.")),
       name: Type.String({ minLength: 1, maxLength: 60 }),
-      url: Type.String({ minLength: 1, maxLength: 500, description: "https URL of the server." }),
+      url: Type.Optional(Type.String({ minLength: 1, maxLength: 500, description: "https URL of a remote server." })),
+      command: Type.Optional(Type.String({ minLength: 1, maxLength: 2_000, description: "The command that starts a local stdio server, e.g. npx -y <package>." })),
+      env: Type.Optional(
+        Type.Array(Type.Object({ name: Type.String({ minLength: 1, maxLength: 100 }), value: Type.String({ maxLength: 4_000 }) }), {
+          maxItems: 30,
+          description: "Environment variables for a local server (encrypted at rest)."
+        })
+      ),
       transport: Type.Optional(Type.Union([Type.Literal("auto"), Type.Literal("streamable-http"), Type.Literal("sse")])),
       auth: Type.Optional(Type.Union([Type.Literal("none"), Type.Literal("headers"), Type.Literal("oauth")])),
       headers: Type.Optional(Type.Array(Type.Object({ name: Type.String({ minLength: 1, maxLength: 100 }), value: Type.String({ maxLength: 4_000 }) }), { maxItems: 10 })),
@@ -810,12 +818,15 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     }),
     covers: ["saveMcpServer"],
     summarize: (args) =>
-      `${args.server_id ? "Change" : "Add"} MCP server ${quote(args.name)} at ${args.url}${args.headers?.length ? ` with headers ${args.headers.map((header) => header.name).join(", ")}` : ""}`,
+      args.command
+        ? `${args.server_id ? "Change" : "Add"} local MCP server ${quote(args.name)}, run on the MCP VM with: ${args.command}${args.env?.length ? ` (env ${args.env.map((variable) => variable.name).join(", ")})` : ""}`
+        : `${args.server_id ? "Change" : "Add"} MCP server ${quote(args.name)} at ${args.url ?? "?"}${args.headers?.length ? ` with headers ${args.headers.map((header) => header.name).join(", ")}` : ""}`,
     run: async (host, args) =>
       host.saveMcpServer({
         id: args.server_id,
         name: args.name,
-        url: args.url,
+        url: args.url ?? "",
+        ...(args.command && { local: { command: args.command, env: args.env } }),
         transport: (args.transport ?? "auto") as McpTransport,
         auth: (args.auth ?? (args.headers?.length ? "headers" : "none")) as McpAuth,
         headers: args.headers,
