@@ -69,6 +69,9 @@ export type OperationHost = Pick<
   | "schedulePrompt"
   | "readTranscript"
   | "listArtifacts"
+  | "searchMcpRegistry"
+  | "checkMcpServer"
+  | "findRegistryServer"
   | "listQueue"
   | "editQueued"
   | "removeQueued"
@@ -324,6 +327,30 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     inChats: false,
     summarize: (args, state) => `Save a file into ${quote(chatTitle(state, args.session_id))}`,
     run: async (host, args) => host.saveArtifact(args.session_id, args.url)
+  }),
+  define({
+    name: "app_search_mcp_registry",
+    description:
+      "Search the official MCP Registry for remote MCP servers to add (by name, e.g. \"linear\"). Each result has its endpoint URL and any headers it needs. Check one with app_check_mcp_server, then add it with app_save_mcp_server.",
+    risk: "read",
+    parameters: Type.Object({ query: Type.String({ minLength: 2, maxLength: 100 }) }),
+    covers: ["searchMcpRegistry"],
+    summarize: (args) => `Search the MCP Registry for ${quote(args.query)}`,
+    run: async (host, args) => host.searchMcpRegistry(args.query)
+  }),
+  define({
+    name: "app_check_mcp_server",
+    description:
+      "Run Dex's checks on a server from app_search_mcp_registry: HTTPS, the verified publisher and whether the endpoint is on their domain, an MCP handshake (open, OAuth, or a header), its tools, and its GitHub repo (stars, license, archived, last push).",
+    risk: "read",
+    parameters: Type.Object({ name: Type.String({ maxLength: 200, description: "The registry name, e.g. io.github.owner/server." }) }),
+    covers: ["checkMcpServer"],
+    summarize: (args) => `Check MCP server ${args.name}`,
+    run: async (host, args) => {
+      const server = await host.findRegistryServer(args.name)
+      if (!server) throw new Error(`No remote server named ${args.name} in the MCP Registry.`)
+      return { server, report: await host.checkMcpServer(server) }
+    }
   }),
   define({
     name: "app_list_secrets",

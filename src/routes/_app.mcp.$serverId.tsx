@@ -10,7 +10,14 @@ import { MCP_STATUS_LABEL, type McpAuth, type McpServerDraft, type McpTransport 
 import { MCP_TEMPLATES } from "~/shared/mcp-templates"
 
 export const Route = createFileRoute("/_app/mcp/$serverId")({
-  validateSearch: (search: Record<string, unknown>): { template?: string } => (typeof search.template === "string" ? { template: search.template } : {}),
+  // `template`: one of the popular servers. `name`/`url`/`auth`/`header`: prefilled from an MCP Registry result.
+  validateSearch: (search: Record<string, unknown>): { template?: string; name?: string; url?: string; auth?: McpAuth; header?: string } => ({
+    ...(typeof search.template === "string" && { template: search.template }),
+    ...(typeof search.name === "string" && { name: search.name.slice(0, 60) }),
+    ...(typeof search.url === "string" && search.url.startsWith("https://") && { url: search.url }),
+    ...((search.auth === "none" || search.auth === "headers" || search.auth === "oauth") && { auth: search.auth }),
+    ...(typeof search.header === "string" && /^[\w-]{1,64}$/.test(search.header) && { header: search.header })
+  }),
   component: McpEditorPage
 })
 
@@ -47,7 +54,7 @@ function McpEditorPage() {
 
 function McpEditor() {
   const { serverId } = Route.useParams()
-  const { template: templateId } = Route.useSearch()
+  const { template: templateId, ...prefill } = Route.useSearch()
   const { state, stub } = useDex()
   const navigate = useNavigate()
   const isNew = serverId === "new"
@@ -73,12 +80,12 @@ function McpEditor() {
       const template = MCP_TEMPLATES.find((candidate) => candidate.id === templateId)
       if (template?.header) setPlaceholder(template.header.placeholder)
       setDraft({
-        name: template?.name ?? "",
-        url: template?.url ?? "",
+        name: template?.name ?? prefill.name ?? "",
+        url: template?.url ?? prefill.url ?? "",
         transport: "auto",
-        auth: template?.auth ?? "none",
+        auth: template?.auth ?? prefill.auth ?? "none",
         defaultOn: false,
-        headers: [{ name: template?.header?.name ?? "Authorization", value: "", saved: false }]
+        headers: [{ name: template?.header?.name ?? prefill.header ?? "Authorization", value: "", saved: false }]
       })
     }
   }, [state, existing, isNew, draft, templateId])

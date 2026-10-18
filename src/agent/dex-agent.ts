@@ -37,6 +37,7 @@ import { CLOUDFLARE_RATES, type CloudflareLine, type UsageRange, type UsageRepor
 import { AGENT_COLORS, AGENT_ICONS, type AgentDraft, type AgentProfile, STARTER_AGENTS } from "~/shared/agents"
 import { type AccessRisk, type CreatedAccessToken, NO_ACCESS } from "~/shared/access"
 import { extensionOf, MAX_MEDIA_BYTES, vmMediaLinks, vmMediaSource } from "~/shared/media"
+import type { McpCheckReport, RegistryServer } from "~/shared/mcp-registry"
 import { invokedSkill, type SkillDetail, type SkillPreview } from "~/shared/skills"
 import type { McpAuth, McpConnectResult, McpServerDraft, McpServerInfo, McpStatus, McpTransport } from "~/shared/mcp"
 import { BoatClient, BoatKey, checkBoatKey } from "./boat"
@@ -47,6 +48,7 @@ import { isMcpExtension, type McpCallResult, mcpExtension, mcpExtensionName, typ
 import { AccessCenter, parseAccessToken } from "./access"
 import { MediaCenter, type SharedMedia } from "./media"
 import { mediaTools } from "./tools/media-tools"
+import { checkServer, searchRegistry } from "./mcp-registry"
 import { MessageQueue } from "./queue"
 import { AccountSecrets, SecretVault, VM_ENV_FILE, VM_ENV_HOOK } from "./secrets"
 import { SkillCenter } from "./skills"
@@ -2037,6 +2039,27 @@ export class DexAgent extends Agent<Env, DexState> {
       sessionId: payload.sessionId,
       actions: [{ action: "open", title: "Open chat" }]
     })
+  }
+
+  // ── MCP Registry ──────────────────────────────────────────────────────────
+
+  /** Remote MCP servers in the official MCP Registry matching `query`. */
+  @callable()
+  async searchMcpRegistry(query: string): Promise<RegistryServer[]> {
+    return searchRegistry(query)
+  }
+
+  /** Runs Dex's checks on a registry server before you add it: does it answer, how it signs in, its tools and source. */
+  @callable()
+  async checkMcpServer(server: RegistryServer): Promise<McpCheckReport> {
+    if (typeof server?.url !== "string" || !server.url.startsWith("https://")) throw new Error("Only https MCP servers can be checked.")
+    return checkServer(server, (await this.githubCredentials())?.token ?? null)
+  }
+
+  /** A registry server by its full name (for operations, which name servers rather than pass them). */
+  async findRegistryServer(name: string): Promise<RegistryServer | null> {
+    const results = await searchRegistry(name.split("/").pop() ?? name)
+    return results.find((server) => server.name === name) ?? null
   }
 
   // ── Skills ────────────────────────────────────────────────────────────────

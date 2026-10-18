@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { ChevronRight, LoaderCircle, LogIn, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react"
 import { useState } from "react"
 import { McpStatusDot } from "~/client/components/mcp-picker"
+import { McpRegistrySearch } from "~/client/components/mcp-registry-search"
 import { CardGridSkeleton } from "~/client/components/skeleton"
 import { InfoTip } from "~/client/components/info-tip"
 import { Switch } from "~/client/components/ui"
@@ -161,6 +162,10 @@ function McpPage() {
             </button>
           </div>
         )}
+
+        <div className="mb-6">
+          <McpRegistrySearch />
+        </div>
 
         {!state ? (
           <CardGridSkeleton kind="mcp" count={3} columns="" />

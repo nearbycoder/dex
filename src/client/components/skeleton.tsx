@@ -371,6 +371,8 @@ function ListPageSkeleton({ kind }: { kind: CardKind }) {
           <Bone className="h-7 w-36" />
           <Bone className="ml-auto h-9 w-32 rounded-lg" />
         </div>
+        {/* The MCP page's registry search. */}
+        {kind === "mcp" && <Bone className="mb-6 h-[42px] w-full rounded-xl" />}
         <CardGridSkeleton kind={kind} count={kind === "mcp" ? 3 : 4} columns={kind === "mcp" ? "" : "sm:grid-cols-2"} />
       </div>
     </div>
