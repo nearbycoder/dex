@@ -14,6 +14,25 @@ const textOf = (children: ReactNode): string =>
   typeof children === "string" ? children : Array.isArray(children) ? children.map(textOf).join("") : ""
 
 const COMPONENTS: Components = {
+  // Tables: words wrap whole (the reply's break-anywhere would shrink columns to one letter), and a table wider
+  // than the chat scrolls sideways inside its own frame instead of squeezing.
+  table: ({ node: _node, children }) => (
+    <div className="scrollbar-thin not-prose my-3 max-w-full overflow-x-auto rounded-lg border border-zinc-800">
+      <table className="w-full border-collapse text-left text-[13px] leading-relaxed [overflow-wrap:normal] [word-break:normal]">{children}</table>
+    </div>
+  ),
+  thead: ({ node: _node, children }) => <thead className="border-b border-zinc-800 bg-zinc-900/80 text-xs text-zinc-400">{children}</thead>,
+  tr: ({ node: _node, children }) => <tr className="border-t border-zinc-800 first:border-t-0">{children}</tr>,
+  th: ({ node: _node, children, style }) => (
+    <th style={style} className="px-3 py-2 align-bottom font-medium whitespace-nowrap">
+      {children}
+    </th>
+  ),
+  td: ({ node: _node, children, style }) => (
+    <td style={style} className="max-w-[28rem] min-w-[4.5rem] px-3 py-2 align-top text-zinc-300 [&_code]:rounded [&_code]:bg-zinc-800/70 [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-[0.9em]">
+      {children}
+    </td>
+  ),
   a: ({ node: _node, href, children, ...props }) => {
     // Links to videos (YouTube, Vimeo, a video file, or one Dex stores) play inline.
     const source = typeof href === "string" ? videoSource(href) : null
