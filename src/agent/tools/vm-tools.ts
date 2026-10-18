@@ -9,23 +9,45 @@ const clip = (value: string) =>
 
 export const VM_GUIDE = `This chat has its own VM (other chats have their own), a full Ubuntu machine (user \`user\`, passwordless sudo) with Docker, Node 24, Bun, Python 3.12, git, the GitHub CLI and Google Chrome. Home is /home/user. It starts the first time you use a VM tool in this chat (that call can take ~30s) and keeps its disk across stops. It stops itself after a few minutes with no VM tool calls running, even if a background server is still up, so check that servers you started are still running before relying on them later. A desktop runs on DISPLAY=:0: GUI apps you launch there (e.g. \`DISPLAY=:0 google-chrome --no-first-run URL &\`) appear on it. The user can watch the desktop and every command you run live on the Machine page, and may take control of the desktop at any time; if something you did changed unexpectedly, take a fresh screenshot.`
 
+/** The chat's secrets (see SecretVault): filled in on the VM, never shown to the model. */
+export interface VmSecrets {
+  prepare(chatId: string): Promise<unknown>
+  command(chatId: string, command: string): Promise<{ command: string; env: string | null }>
+  fill(chatId: string, content: string): Promise<string>
+}
+
+const SECRET_NOTE =
+  " Secrets the user entered in a password field appear as {{secret:name}}: use that placeholder (unquoted or in double quotes) " +
+  "and Dex fills in the value on the VM; it's masked back in output, so you never see it."
+
 /** Each chat has its own VM; `vmFor` finds the calling chat's. */
-export const vmTools = (vmFor: (chatId: string) => VmManager) => [
+export const vmTools = (vmFor: (chatId: string) => VmManager, secrets: VmSecrets) => [
   defineTool({
     name: "vm_exec",
     description:
       `Run a shell command on your cloud VM and get its output. ${VM_GUIDE} ` +
       "Output streams live to the user. Commands time out after timeout_seconds (max 600). For servers, GUI apps, watchers, " +
       "or anything long-running, set background=true and read its log file later; never put `&` in the command, because the call " +
-      "waits for every process it starts. Use xdotool (with DISPLAY=:0) to click and type on the desktop.",
+      "waits for every process it starts. Use xdotool (with DISPLAY=:0) to click and type on the desktop." +
+      SECRET_NOTE,
     parameters: Type.Object({
       command: Type.String({ description: "Bash command or script." }),
       cwd: Type.Optional(Type.String({ description: "Working directory, relative to /home/user or absolute." })),
       timeout_seconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 600, description: "Default 120." })),
       background: Type.Optional(Type.Boolean({ description: "Start it and return immediately with its process id and log paths." }))
     }),
-    execute: async ({ command, cwd, timeout_seconds, background }, api, context) => {
-      const vm = vmFor(String(api.conversationId))
+    execute: async ({ command: written, cwd, timeout_seconds, background }, api, context) => {
+      const chatId = String(api.conversationId)
+      const vm = vmFor(chatId)
+      await secrets.prepare(chatId)
+      // Secrets reach the command as environment variables, defined in a file it sources and deletes first.
+      const resolved = await secrets.command(chatId, written)
+      let command = resolved.command
+      if (resolved.env) {
+        const file = `/tmp/.dex-env-${crypto.randomUUID()}`
+        await vm.writeFile(file, resolved.env, "agent", context.abortSignal)
+        command = `. ${file}; rm -f ${file}\n${command}`
+      }
       // A trailing `&` would keep the call open until the process exits; start it detached instead.
       const trailingAmpersand = /(^|[^&])&\s*$/.test(command)
       if (background || trailingAmpersand) {
@@ -69,11 +91,12 @@ export const vmTools = (vmFor: (chatId: string) => VmManager) => [
 
   defineTool({
     name: "vm_read_file",
-    description: "Read a text file from the VM (under /home/user or /tmp, up to 5 MB).",
+    description: "Read a text file from the VM (under /home/user or /tmp, up to 5 MB). Secret values in it are shown as {{secret:name}}.",
     parameters: Type.Object({ path: Type.String() }),
     replay: "safe",
     execute: async ({ path }, api, context) => {
       const vm = vmFor(String(api.conversationId))
+      await secrets.prepare(String(api.conversationId))
       const file = await vm.readFile(path, "agent", "utf8", context.abortSignal)
       return { output: text(clip(file.content)) }
     }
@@ -81,12 +104,14 @@ export const vmTools = (vmFor: (chatId: string) => VmManager) => [
 
   defineTool({
     name: "vm_write_file",
-    description: "Create or overwrite a file on the VM (under /home/user or /tmp, up to 5 MB). Parent directories are created.",
+    description:
+      "Create or overwrite a file on the VM (under /home/user or /tmp, up to 5 MB). Parent directories are created. " +
+      "{{secret:name}} placeholders in the content are written as the secret's value (e.g. an env file; chmod 600 it after).",
     parameters: Type.Object({ path: Type.String(), content: Type.String() }),
     replay: "safe",
     execute: async ({ path, content }, api, context) => {
       const vm = vmFor(String(api.conversationId))
-      await vm.writeFile(path, content, "agent", context.abortSignal)
+      await vm.writeFile(path, await secrets.fill(String(api.conversationId), content), "agent", context.abortSignal)
       return { output: text(`Wrote ${content.length} characters to ${path} on the VM.`) }
     }
   }),

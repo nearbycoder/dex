@@ -15,7 +15,8 @@ export const renderUiTool = defineTool({
   description:
     "Render rich, interactive UI for the user (cards, tables, charts, forms, follow-up buttons) from OpenUI Lang code. " +
     "Call load_ui_guide once per chat before your first render_ui to learn the language. Use it when a visual answer beats prose: " +
-    "comparisons, dashboards, data, step-by-step plans, or collecting input with a form.",
+    "comparisons, dashboards, data, step-by-step plans, or collecting input with a form. For API keys, tokens, and passwords use an " +
+    "Input of type \"password\": its value never reaches the chat; you get {{secret:<field name>}} for vm_exec and vm_write_file.",
   parameters: Type.Object({
     title: Type.Optional(Type.String({ description: "Short label for this UI." })),
     code: Type.String({ description: "OpenUI Lang program. Must define `root = Card(...)`." })

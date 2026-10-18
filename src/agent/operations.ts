@@ -111,6 +111,7 @@ export const EXCLUDED: Readonly<Record<string, string>> = {
   connectCline: "Credentials are entered only in Settings, never through a chat or an external agent.",
   disconnectCline: "Credentials are managed only in Settings.",
   connectBoat: "Credentials are entered only in Settings, never through a chat or an external agent.",
+  storeChatSecret: "Secrets come only from the user's password fields in the browser; no chat or external agent may set or read them.",
   disconnectBoat: "Credentials are managed only in Settings.",
   connectGitHub: "Credentials are entered only in Settings, never through a chat or an external agent.",
   disconnectGitHub: "Credentials are managed only in Settings.",

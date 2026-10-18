@@ -10,6 +10,7 @@ import { ModelPicker } from "~/client/components/model-picker"
 import { AgentAvatar } from "~/client/components/agent-avatar"
 import { SessionMenu } from "~/client/components/session-menu"
 import { Bone, ChatSkeleton } from "~/client/components/skeleton"
+import { ChatSecretsContext } from "~/client/lib/chat-secrets"
 import { useDex, useTranscript } from "~/client/lib/dex"
 import { MenuButton } from "~/client/lib/mobile-nav"
 
@@ -26,6 +27,7 @@ function Chat() {
 
   // Stable, so finished replies (memoized in MessageList) don't re-render when the page does.
   const send = useCallback((text: string) => void stub.sendMessage(sessionId, text), [stub, sessionId])
+  const storeSecret = useCallback((field: string, value: string) => stub.storeChatSecret(sessionId, field, value), [stub, sessionId])
   // Files saved into this chat replace the VM links they came from.
   const artifacts = useMemo<ChatArtifacts>(
     () => ({
@@ -135,9 +137,11 @@ function Chat() {
         </div>
       </header>
 
-      <ChatArtifactsContext.Provider value={artifacts}>
-        {transcript.loaded ? <MessageList key={sessionId} transcript={transcript} onSend={send} /> : <ChatSkeleton />}
-      </ChatArtifactsContext.Provider>
+      <ChatSecretsContext.Provider value={storeSecret}>
+        <ChatArtifactsContext.Provider value={artifacts}>
+          {transcript.loaded ? <MessageList key={sessionId} transcript={transcript} onSend={send} /> : <ChatSkeleton />}
+        </ChatArtifactsContext.Provider>
+      </ChatSecretsContext.Provider>
 
       <div className="mx-auto w-full max-w-3xl px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:px-4 md:pb-[max(1rem,env(safe-area-inset-bottom))]">
         {state && !state.cline.connected && (

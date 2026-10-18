@@ -16,6 +16,8 @@ export interface VmHost {
   run<A>(effect: Effect.Effect<A, BoatError, BoatClient>, signal?: AbortSignal): Promise<A>
   /** Whether this user has a boat.dev key (theirs, or the deployment's for its owner). */
   configured(): boolean
+  /** Masks the chat's secret values in VM output (see SecretVault), before anyone sees it. */
+  mask(key: string, text: string): string
   settings(key: string): { size: VmSize; minutes: number }
   publish(info: VmInfo): void
   broadcast(message: ServerMessage): void
@@ -623,7 +625,8 @@ export class VmManager {
           client.exec(id, command, {
             cwd: options.cwd,
             timeoutSeconds: options.timeoutSeconds,
-            onOutput: (_stream, data) => {
+            onOutput: (_stream, chunk) => {
+              const data = this.host.mask(this.key, chunk)
               output += data
               if (output.length > MAX_ACTIVITY_OUTPUT * 4) output = output.slice(-MAX_ACTIVITY_OUTPUT * 2)
               options.onOutput?.(data)
@@ -643,6 +646,8 @@ export class VmManager {
         result = await run((await this.ensureRunning(progress, options.signal)).id)
       }
       const exitCode = result.exitCode ?? -1
+      // Again on the whole output: a value can arrive split across two chunks.
+      output = this.host.mask(this.key, output)
       const notes = [result.timedOut && "[timed out]", result.oomKilled && "[killed: out of memory]"].filter(Boolean).join(" ")
       this.finishActivity(activity.id, exitCode === 0 ? "done" : "error", notes ? `${output}\n${notes}` : output, exitCode)
       return { ...result, output: notes ? `${output}\n${notes}` : output }
@@ -669,7 +674,10 @@ export class VmManager {
       actor,
       "file",
       `read ${path}`,
-      () => this.host.run(BoatClient.use((client) => client.readFile(sandbox.id, path, encoding)), signal),
+      async () => {
+        const file = await this.host.run(BoatClient.use((client) => client.readFile(sandbox.id, path, encoding)), signal)
+        return encoding === "utf8" ? { ...file, content: this.host.mask(this.key, file.content) } : file
+      },
       (file) => `${file.size} bytes`
     )
   }

@@ -48,6 +48,7 @@ import { AccessCenter, parseAccessToken } from "./access"
 import { MediaCenter, type SharedMedia } from "./media"
 import { mediaTools } from "./tools/media-tools"
 import { MessageQueue } from "./queue"
+import { SecretVault } from "./secrets"
 import { SkillCenter } from "./skills"
 import { skillTools } from "./tools/skill-tools"
 import { handleMcpBody } from "./mcp-server"
@@ -259,6 +260,13 @@ export class DexAgent extends Agent<Env, DexState> {
     githubToken: async () => (await this.githubCredentials())?.token ?? null
   })
 
+  /** Secrets typed into chats' password fields: the chats only ever see placeholders. */
+  readonly secrets: SecretVault = new SecretVault({
+    sql: this.ctx.storage.sql,
+    encrypt: (value) => this.runtime.runPromise(Keys.use((keys) => keys.encrypt(value))),
+    decrypt: (sealed) => this.runtime.runPromise(Keys.use((keys) => keys.decrypt(sealed)).pipe(Effect.option)).then(Option.getOrNull)
+  })
+
   /** Messages sent while their chat was busy, sent one per finished run. */
   readonly messageQueue = new MessageQueue(this.ctx.storage.sql)
   /** Chats whose next queued message is being sent, so two finishing runs don't send two. */
@@ -269,6 +277,7 @@ export class DexAgent extends Agent<Env, DexState> {
   private readonly vmHost: VmHost = {
     sql: this.ctx.storage.sql,
     configured: () => this.boatSource() !== null,
+    mask: (key, text) => this.secrets.mask(key, text),
     run: (effect, signal) => this.runtime.runPromise(effect, { signal }),
     settings: (key) => ({
       size: this.projectForSession(key)?.vmSize ?? this.state.settings.vmSize,
@@ -410,6 +419,12 @@ export class DexAgent extends Agent<Env, DexState> {
         }),
         // The chat's project, with where its repos are and how far the VM's setup got.
         section("project", (input) => this.projectContext(String(input.conversationId))),
+        section("chat_secrets", (input) => {
+          const names = this.secrets.names(String(input.conversationId))
+          return names.length
+            ? `Secrets the user gave in this chat (values hidden from you): ${names.map((name) => `{{secret:${name}}}`).join(", ")}. Put the placeholder in vm_exec commands or vm_write_file content and Dex fills in the value on the VM. Never ask the user to paste a secret into the chat; ask with a render_ui password field instead.`
+            : "To get an API key, token, or password from the user, ask with a render_ui form using an Input of type \"password\": Dex keeps the value out of the chat and you receive {{secret:<field name>}} to use in vm_exec and vm_write_file. Never ask them to paste one into a message."
+        }),
         section("vm_access", () =>
           this.vmHost.configured()
             ? undefined
@@ -446,7 +461,11 @@ export class DexAgent extends Agent<Env, DexState> {
         ...skillTools((name, file) => this.skills.use(name, file)),
         // Always offered: a user can connect a boat.dev key at any time. Without one they fail with how to fix it,
         // and the vm_access section tells the model up front.
-        ...vmTools((chatId) => this.vmFor(chatId)),
+        ...vmTools((chatId) => this.vmFor(chatId), {
+          prepare: (chatId) => this.secrets.prepare(chatId),
+          command: (chatId, command) => this.secrets.command(chatId, command),
+          fill: (chatId, content) => this.secrets.fill(chatId, content)
+        }),
         ...(this.media.configured ? mediaTools((chatId, path, title) => this.shareMediaFromVm(chatId, path, title)) : [])
       ]
     })
@@ -519,6 +538,17 @@ export class DexAgent extends Agent<Env, DexState> {
       },
       BACKGROUND_CONTEXT
     )
+  }
+
+  /**
+   * Stores a value typed into a chat's password field and returns the placeholder name the chat gets instead
+   * (the form's message carries `{{secret:<name>}}`, never the value).
+   */
+  @callable()
+  async storeChatSecret(sessionId: string, field: string, value: string) {
+    if (!this.hasSession(sessionId)) throw new Error("Chat not found")
+    if (!value || value.length > 10_000) throw new Error("That secret is empty or too long.")
+    return this.secrets.store(sessionId, field, value)
   }
 
   // ── boat.dev connection ───────────────────────────────────────────────────
@@ -868,6 +898,7 @@ export class DexAgent extends Agent<Env, DexState> {
     this.ctx.storage.sql.exec(`DELETE FROM dex_sessions WHERE id = ?`, sessionId)
     this.skills.forgetSession(sessionId)
     this.messageQueue.clear(sessionId)
+    this.secrets.forget(sessionId)
     await this.refreshSessions()
     // Its VM goes with it, disk and all (stopped first if it was running; deleting does both), and its media.
     if (this.vms.has(sessionId)) this.ctx.waitUntil(this.reapOrphanVms())
