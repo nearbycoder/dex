@@ -31,7 +31,7 @@ import type { SessionMeta } from "~/shared/protocol"
 import { AgentAvatar } from "./agent-avatar"
 import { mcpNeedsAttention } from "./mcp-picker"
 import { ModelLogo } from "./model-logo"
-import { inboxState, SessionMenu, snoozedLabel } from "./session-menu"
+import { inboxState, SessionMenu, snoozedLabel, useNaming } from "./session-menu"
 import { ChatListSkeleton } from "./skeleton"
 import { useNow } from "./vm-status"
 
@@ -250,6 +250,7 @@ export function Sidebar() {
 /** One chat in the sidebar: title, its agent / project / model, and when it last did something (or when it wakes). */
 function ChatRow({ session, group, active, onPick }: { session: SessionMeta; group: ChatGroup; active: boolean; onPick: () => void }) {
   const { state } = useDex()
+  const naming = useNaming(session.id)
   if (!state) return null
   return (
     <div className="group relative animate-fade">
@@ -265,7 +266,7 @@ function ChatRow({ session, group, active, onPick }: { session: SessionMeta; gro
               : "text-zinc-300 hover:bg-zinc-900/60 hover:text-zinc-100"
         }`}
       >
-        <div className="truncate text-sm">{session.title}</div>
+        <div className={`truncate text-sm ${naming ? "animate-pulse text-zinc-400" : ""}`}>{session.title}</div>
         <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-zinc-500">
           {(() => {
             const agent = session.agentId ? state.agents.find((candidate) => candidate.id === session.agentId) : undefined

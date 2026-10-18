@@ -8,7 +8,7 @@ import { McpPicker } from "~/client/components/mcp-picker"
 import { QueuePanel } from "~/client/components/queue-panel"
 import { ModelPicker } from "~/client/components/model-picker"
 import { AgentAvatar } from "~/client/components/agent-avatar"
-import { SessionMenu } from "~/client/components/session-menu"
+import { SessionMenu, useNaming } from "~/client/components/session-menu"
 import { VmPreview } from "~/client/components/vm-preview"
 import { Bone, ChatSkeleton } from "~/client/components/skeleton"
 import { ChatSecretsContext } from "~/client/lib/chat-secrets"
@@ -24,6 +24,7 @@ function Chat() {
   const transcript = useTranscript(sessionId)
   const session = state?.sessions.find((candidate) => candidate.id === sessionId)
   const [editing, setEditing] = useState<string | null>(null)
+  const naming = useNaming(sessionId)
   const agent = session?.agentId ? state?.agents.find((candidate) => candidate.id === session.agentId) : undefined
   const project = session?.projectId ? state?.projects.find((candidate) => candidate.id === session.projectId) : undefined
 
@@ -62,7 +63,13 @@ function Chat() {
         )}
         {editing === null ? (
           <button type="button" onClick={() => setEditing(session?.title ?? "")} className="group flex min-w-0 items-center gap-2">
-            {session ? <span className="truncate text-sm font-medium">{session.title}</span> : <Bone className="h-4 w-44" />}
+            {session ? (
+              <span className={`truncate text-sm font-medium ${naming ? "animate-pulse text-zinc-400" : ""}`} title={naming ? "Writing a new title…" : undefined}>
+                {session.title}
+              </span>
+            ) : (
+              <Bone className="h-4 w-44" />
+            )}
             <Pencil className="size-3 shrink-0 text-zinc-600 opacity-0 group-hover:opacity-100" />
           </button>
         ) : (

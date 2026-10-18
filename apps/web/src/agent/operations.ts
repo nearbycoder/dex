@@ -34,6 +34,7 @@ export type OperationHost = Pick<
   | "abort"
   | "configureSession"
   | "renameSession"
+  | "regenerateSessionTitle"
   | "deleteSession"
   | "setSessionMuted"
   | "triageSession"
@@ -751,6 +752,16 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
       }
       return sessionSummary(host.appState())(host.appState().sessions.find((session) => session.id === args.session_id)!)
     }
+  }),
+  define({
+    name: "app_regenerate_session_title",
+    description:
+      "Rewrite a chat's title from what it's about (its first and latest messages, summarized by a fast model on the user's subscription). Returns the new title.",
+    risk: "write",
+    parameters: Type.Object({ session_id: id("The chat's id.") }),
+    covers: ["regenerateSessionTitle"],
+    summarize: (args, state) => `Regenerate the title of ${quote(chatTitle(state, args.session_id))}`,
+    run: async (host, args) => ({ title: await host.regenerateSessionTitle(args.session_id) })
   }),
   define({
     name: "app_delete_sessions",

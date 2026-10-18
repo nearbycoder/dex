@@ -1,6 +1,6 @@
 import { useNavigate, useParams } from "@tanstack/react-router"
-import { AlarmClock, AlarmClockOff, CheckCheck, Inbox, MoreHorizontal, Trash2 } from "lucide-react"
-import { type ReactNode, useEffect, useRef, useState } from "react"
+import { AlarmClock, AlarmClockOff, CheckCheck, Inbox, MoreHorizontal, Sparkles, Trash2 } from "lucide-react"
+import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { createPortal } from "react-dom"
 import { useDex } from "~/client/lib/dex"
 import type { SessionMeta } from "~/shared/protocol"
@@ -35,6 +35,37 @@ export function snoozeOptions(now = new Date()): Array<{ label: string; at: Date
   return options
 }
 
+/** Chats whose title is being rewritten, so the header and sidebar can show it's on its way. */
+const naming = new Set<string>()
+const namingListeners = new Set<() => void>()
+const setNaming = (sessionId: string, on: boolean) => {
+  if (on) naming.add(sessionId)
+  else naming.delete(sessionId)
+  for (const listener of namingListeners) listener()
+}
+export const useNaming = (sessionId: string) =>
+  useSyncExternalStore(
+    (listener) => {
+      namingListeners.add(listener)
+      return () => namingListeners.delete(listener)
+    },
+    () => naming.has(sessionId),
+    () => false
+  )
+
+/** Asks the agent for a new title from the chat's messages. */
+export async function regenerateTitle(stub: { regenerateSessionTitle(sessionId: string): Promise<string> }, sessionId: string) {
+  if (naming.has(sessionId)) return
+  setNaming(sessionId, true)
+  try {
+    await stub.regenerateSessionTitle(sessionId)
+  } catch (error) {
+    alert(`Couldn't regenerate the title: ${error instanceof Error ? error.message : String(error)}`)
+  } finally {
+    setNaming(sessionId, false)
+  }
+}
+
 export const snoozedLabel = (until: number) => `until ${when(new Date(until))}`
 
 function MenuItem({ icon, children, onClick, danger = false }: { icon: ReactNode; children: ReactNode; onClick: () => void; danger?: boolean }) {
@@ -52,7 +83,7 @@ function MenuItem({ icon, children, onClick, danger = false }: { icon: ReactNode
 }
 
 /**
- * A chat's menu: settle it (done for now) or bring it back, snooze it until a time, or delete it. Rendered in a
+ * A chat's menu: regenerate its title, settle it (done for now) or bring it back, snooze it until a time, or delete it. Rendered in a
  * portal so the sidebar's scroll area can't clip it.
  */
 export function SessionMenu({ session, className = "", label = "Chat options" }: { session: SessionMeta; className?: string; label?: string }) {
@@ -125,6 +156,9 @@ export function SessionMenu({ session, className = "", label = "Chat options" }:
             style={{ left: position.left, ...(position.up ? { bottom: window.innerHeight - position.top } : { top: position.top }), width: 232 }}
             className="fixed z-50 animate-pop rounded-xl border border-zinc-700/80 bg-zinc-900 p-1 shadow-xl shadow-black/50"
           >
+            <MenuItem icon={<Sparkles className="size-4" />} onClick={() => run(() => regenerateTitle(stub, session.id))}>
+              Regenerate title
+            </MenuItem>
             {state === "settled" ? (
               <MenuItem icon={<Inbox className="size-4" />} onClick={() => run(() => stub.triageSession(session.id, { settled: false }))}>
                 Move to inbox

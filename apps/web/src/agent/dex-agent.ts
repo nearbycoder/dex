@@ -16,7 +16,7 @@ import { PiHarness } from "agents/harness/pi"
 import { Effect, Layer, ManagedRuntime, Option, Redacted, Schema } from "effect"
 import { AppConfig, envConfigProvider } from "~/server/config"
 import { Keys } from "~/server/crypto"
-import { clampThinking, DEFAULT_MODEL_ID, DEFAULT_THINKING, findModel, type ThinkingLevel, usableModel } from "~/shared/models"
+import { clampThinking, DEFAULT_MODEL_ID, DEFAULT_THINKING, findModel, providerOf, type ThinkingLevel, usableModel } from "~/shared/models"
 import type {
   ClientMessage,
   ConnectClineResult,
@@ -1036,6 +1036,64 @@ export class DexAgent extends Agent<Env, DexState> {
       model, thinking, mcpServers ? JSON.stringify(mcpServers) : row.mcp_servers, sessionId
     )
     await this.refreshSessions()
+  }
+
+  /** Models for one-off requests outside a chat's run (writing a chat's title), on the same subscriptions. */
+  private oneOffModels?: ReturnType<typeof createModels>
+  private models() {
+    if (!this.oneOffModels) {
+      this.oneOffModels = createModels()
+      this.oneOffModels.setProvider(clinePassProvider(() => this.resolveClineKey()))
+      this.oneOffModels.setProvider(openCodeGoProvider(() => this.resolveOpenCodeKey()))
+    }
+    return this.oneOffModels
+  }
+
+  /**
+   * Writes a chat's title from what it's about: its recent messages go to a fast, cheap model on a subscription
+   * that's connected (the chat's own if it can), which answers with a few words. Returns the new title.
+   */
+  @callable()
+  async regenerateSessionTitle(sessionId: string): Promise<string> {
+    if (!this.hasSession(sessionId)) throw new Error("No such chat")
+    const messages = await this.readTranscript(sessionId, 12)
+    if (messages.length === 0) throw new Error("This chat has no messages to name it from yet.")
+    // The first request says what the chat is for; the latest ones say where it went.
+    const picked = messages.length > 7 ? [messages[0]!, ...messages.slice(-6)] : messages
+    const text = picked
+      .map((message) => `${message.role === "user" ? "User" : "Assistant"}: ${message.text.replace(/\s+/g, " ").slice(0, 600)}`)
+      .join("\n")
+      .slice(0, 5_000)
+
+    const connected = { clinepass: this.state.cline.connected, "opencode-go": this.state.opencode.connected }
+    const session = this.state.sessions.find((candidate) => candidate.id === sessionId)
+    const own = providerOf(session?.model ?? DEFAULT_MODEL_ID)
+    const provider = connected[own] ? own : connected.clinepass ? "clinepass" : connected["opencode-go"] ? "opencode-go" : null
+    if (!provider) throw new Error("Connect ClinePass or OpenCode Go in Settings first.")
+    const fast = provider === "clinepass" ? { id: "cline-pass/deepseek-v4.1-flash", provider: CLINEPASS_PROVIDER_ID } : { id: "deepseek-v4.1-flash", provider: "opencode-go" }
+    const model = this.models().getModel(fast.provider, fast.id)
+    if (!model) throw new Error("The title model isn't available.")
+
+    const reply = await this.models().completeSimple(
+      model,
+      {
+        systemPrompt:
+          "You name chat conversations. Reply with only the title: 3 to 7 words, sentence case, no quotes, no emoji, no trailing period. Name the task or topic, not the people.",
+        messages: [{ role: "user", content: `Name this conversation:\n\n${text}`, timestamp: Date.now() }]
+      },
+      { reasoning: "minimal", maxTokens: 1_024, sessionId: `dex-title-${sessionId}` }
+    )
+    if (reply.stopReason === "error") throw new Error(reply.errorMessage ?? "The model couldn't write a title.")
+    const raw = reply.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join(" ")
+    const title = raw
+      .split("\n").map((line) => line.trim()).find(Boolean)
+      ?.replace(/^(title|chat title)\s*[:\-–]\s*/i, "")
+      .replace(/^["'“”‘’*`]+|["'“”‘’*`.]+$/g, "")
+      .trim()
+      .slice(0, 80)
+    if (!title) throw new Error("The model didn't return a title. Try again.")
+    await this.renameSession(sessionId, title)
+    return title
   }
 
   @callable()
