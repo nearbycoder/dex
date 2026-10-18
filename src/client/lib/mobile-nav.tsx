@@ -78,21 +78,30 @@ export function useNavState(): Nav {
     return () => removeEventListener("keydown", onKey)
   }, [toggleCollapsed])
 
-  // Edge swipe, like a native drawer: start within 24px of the left edge and pull right to open;
+  // Edge swipe, like a native drawer: start within EDGE px of the left edge and pull right to open;
   // swipe left anywhere while it is open to close it.
+  //
+  // iOS treats a swipe from the left edge as "back" (in Safari and in the Home Screen app), so the same gesture
+  // used to open the drawer *and* leave the page. Touches that start in the edge strip are claimed
+  // (preventDefault on a non-passive touchstart), which stops the system gesture; since that also cancels the
+  // tap, a touch that doesn't move is replayed as a click (or focus) on whatever is under it.
   useEffect(() => {
-    let start: { x: number; y: number; edge: boolean } | null = null
+    const EDGE = 24
+    let start: { x: number; y: number; at: number; edge: boolean; moved: boolean } | null = null
     const onStart = (event: TouchEvent) => {
       const touch = event.touches[0]
       if (!touch || event.touches.length > 1 || matchMedia(WIDE).matches) return
-      start = { x: touch.clientX, y: touch.clientY, edge: touch.clientX < 24 }
+      const edge = touch.clientX < EDGE
+      if (edge) event.preventDefault()
+      start = { x: touch.clientX, y: touch.clientY, at: Date.now(), edge, moved: false }
     }
     const onMove = (event: TouchEvent) => {
       const touch = event.touches[0]
       if (!start || !touch) return
       const dx = touch.clientX - start.x
       const dy = Math.abs(touch.clientY - start.y)
-      if (dy > 40) {
+      if (Math.abs(dx) > 10 || dy > 10) start.moved = true
+      if (dy > 40 && !start.edge) {
         start = null
         return
       }
@@ -104,12 +113,21 @@ export function useNavState(): Nav {
         start = null
       }
     }
-    const onEnd = () => {
+    const onEnd = (event: TouchEvent) => {
+      const tap = start?.edge && !start.moved && Date.now() - start.at < 600 ? start : null
       start = null
+      if (!tap) return
+      // The claimed touch never became a click: deliver it to what was tapped.
+      const target = document.elementFromPoint(tap.x, tap.y)
+      const control = target?.closest<HTMLElement>("input, textarea, select, [contenteditable='true']")
+      if (control) return control.focus()
+      const clickable = target?.closest<HTMLElement>("a, button, label, summary, [role='button']") ?? (target as HTMLElement | null)
+      clickable?.click()
+      event.preventDefault()
     }
-    addEventListener("touchstart", onStart, { passive: true })
+    addEventListener("touchstart", onStart, { passive: false })
     addEventListener("touchmove", onMove, { passive: true })
-    addEventListener("touchend", onEnd, { passive: true })
+    addEventListener("touchend", onEnd, { passive: false })
     return () => {
       removeEventListener("touchstart", onStart)
       removeEventListener("touchmove", onMove)
