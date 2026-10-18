@@ -62,3 +62,26 @@ export const repoLabel = (url: string) => {
   const match = /github\.com\/([\w.-]+\/[\w.-]+?)(?:\.git)?$/.exec(url)
   return match?.[1] ?? url.replace(/^https:\/\//, "").replace(/\.git$/, "")
 }
+
+/** A GitHub repo for the project editor's picker. `accessible`: the user's connection can clone it (private ones included). */
+export interface GitHubRepo {
+  readonly fullName: string
+  readonly private: boolean
+  readonly description: string
+  readonly defaultBranch: string
+  readonly pushedAt: string | null
+  readonly fork: boolean
+  readonly archived: boolean
+  readonly owner: string
+  readonly ownerAvatar: string
+  readonly accessible: boolean
+}
+
+/** Who's connected to GitHub, the orgs Dex can see, and where to grant it more. */
+export interface GitHubAccess {
+  readonly connected: boolean
+  readonly login: string | null
+  readonly via: "oauth" | "token" | null
+  readonly orgs: ReadonlyArray<{ readonly login: string; readonly avatarUrl: string }>
+  readonly manageUrl: string | null
+}

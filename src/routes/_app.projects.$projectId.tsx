@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { ArrowLeft, Check, LoaderCircle, MessageSquarePlus, Plus, Trash2, X } from "lucide-react"
 import { type ReactNode, useEffect, useState } from "react"
 import { AGENT_ICON_COMPONENTS, AgentAvatar } from "~/client/components/agent-avatar"
+import { BranchPicker, GitHubAccessNote, RepoPicker } from "~/client/components/repo-picker"
 import { EditorSkeleton } from "~/client/components/skeleton"
 import { InfoTip } from "~/client/components/info-tip"
 import { useDex } from "~/client/lib/dex"
@@ -137,27 +138,12 @@ function ProjectEditor() {
             </label>
           </div>
 
-          <Field label="Repositories" hint="Cloned into ~/work/<folder> on each chat's VM. Use owner/repo for GitHub, or any https:// git URL.">
+          <Field label="Repositories" hint="Cloned into ~/work/<folder> on each chat's VM. Search your GitHub repos (private and org ones included), or type owner/repo or any https:// git URL.">
             <div className="space-y-2">
               {draft.repos.map((repo, index) => (
                 <div key={index} className="flex flex-wrap gap-2 rounded-lg border border-zinc-800/80 p-2 sm:flex-nowrap sm:border-0 sm:p-0">
-                  <input
-                    value={repo.url}
-                    onChange={(event) => setRepo(index, { url: event.target.value })}
-                    placeholder="owner/repo"
-                    autoCapitalize="off"
-                    autoCorrect="off"
-                    spellCheck={false}
-                    className={`${fieldBase} w-full min-w-0 font-mono sm:flex-[3]`}
-                  />
-                  <input
-                    value={repo.branch}
-                    onChange={(event) => setRepo(index, { branch: event.target.value })}
-                    placeholder="branch"
-                    autoCapitalize="off"
-                    spellCheck={false}
-                    className={`${fieldBase} min-w-0 flex-1 font-mono`}
-                  />
+                  <RepoPicker value={repo.url} onChange={(url) => setRepo(index, { url })} className={fieldBase} />
+                  <BranchPicker repo={repo.url} value={repo.branch} onChange={(branch) => setRepo(index, { branch })} className={fieldBase} />
                   <input
                     value={repo.dir}
                     onChange={(event) => setRepo(index, { dir: event.target.value })}
@@ -183,15 +169,7 @@ function ProjectEditor() {
               >
                 <Plus className="size-4" /> Add repository
               </button>
-              {!state.github.connected && (
-                <p className="text-xs text-amber-300/90">
-                  Public repos only until you{" "}
-                  <Link to="/settings" className="underline">
-                    connect GitHub
-                  </Link>
-                  .
-                </p>
-              )}
+              <GitHubAccessNote />
             </div>
           </Field>
 

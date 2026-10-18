@@ -38,6 +38,7 @@ import { AGENT_COLORS, AGENT_ICONS, type AgentDraft, type AgentProfile, STARTER_
 import { type AccessRisk, type CreatedAccessToken, NO_ACCESS } from "~/shared/access"
 import { extensionOf, MAX_MEDIA_BYTES, vmMediaLinks, vmMediaSource } from "~/shared/media"
 import type { McpCheckReport, RegistryServer, RegistrySource } from "~/shared/mcp-registry"
+import type { GitHubAccess, GitHubRepo } from "~/shared/projects"
 import { invokedSkill, type SkillDetail, type SkillPreview } from "~/shared/skills"
 import type { McpAuth, McpConnectResult, McpServerDraft, McpServerInfo, McpStatus, McpTransport } from "~/shared/mcp"
 import { BoatClient, BoatKey, checkBoatKey } from "./boat"
@@ -48,6 +49,7 @@ import { isMcpExtension, type McpCallResult, mcpExtension, mcpExtensionName, typ
 import { AccessCenter, parseAccessToken } from "./access"
 import { MediaCenter, type SharedMedia } from "./media"
 import { mediaTools } from "./tools/media-tools"
+import { GitHubRepos } from "./github-repos"
 import { checkServer, searchRegistry, searchSmithery } from "./mcp-registry"
 import { MessageQueue } from "./queue"
 import { AccountSecrets, SecretVault, VM_ENV_FILE, VM_ENV_HOOK } from "./secrets"
@@ -268,6 +270,15 @@ export class DexAgent extends Agent<Env, DexState> {
     publish: (skills) => this.publish({ skills }),
     githubToken: async () => (await this.githubCredentials())?.token ?? null
   })
+
+  /** The project editor's repo picker, through the user's GitHub connection. */
+  readonly githubRepos = new GitHubRepos(
+    async () => {
+      const credentials = await this.githubCredentials()
+      return credentials ? { token: credentials.token, login: credentials.login, via: this.secret("github_via") === "oauth" ? "oauth" : "token" } : null
+    },
+    () => this.runtime.runPromise(AppConfig.use((config) => Effect.succeed(Option.isSome(config.github) ? config.github.value.clientId : null)))
+  )
 
   /** Secrets typed into chats' password fields: the chats only ever see placeholders. */
   readonly secrets: SecretVault = new SecretVault({
@@ -1821,6 +1832,8 @@ export class DexAgent extends Agent<Env, DexState> {
   }
 
   private refreshGitHubStatus() {
+    // A different (or no) connection reaches different repos.
+    this.githubRepos.forget()
     const identity = this.secret("github_identity")
     const oauthAvailable = Boolean((this.env as unknown as Record<string, unknown>).GITHUB_CLIENT_ID)
     const github: GitHubStatus = identity && this.secret("github_token")
@@ -2186,6 +2199,25 @@ export class DexAgent extends Agent<Env, DexState> {
       sessionId: payload.sessionId,
       actions: [{ action: "open", title: "Open chat" }]
     })
+  }
+
+  // ── GitHub repos (project editor) ─────────────────────────────────────────
+
+  /** Repos matching `query` the user's GitHub connection can reach (private and org ones included), then public ones. */
+  @callable()
+  async searchGitHubRepos(query: string): Promise<GitHubRepo[]> {
+    return this.githubRepos.search(query)
+  }
+
+  @callable()
+  async listGitHubBranches(fullName: string): Promise<string[]> {
+    return this.githubRepos.branches(fullName)
+  }
+
+  /** The connected GitHub account, the orgs Dex can see, and where to grant access to more. */
+  @callable()
+  async githubRepoAccess(): Promise<GitHubAccess> {
+    return this.githubRepos.access()
   }
 
   // ── MCP Registry ──────────────────────────────────────────────────────────

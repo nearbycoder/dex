@@ -69,6 +69,9 @@ export type OperationHost = Pick<
   | "schedulePrompt"
   | "readTranscript"
   | "listArtifacts"
+  | "searchGitHubRepos"
+  | "listGitHubBranches"
+  | "githubRepoAccess"
   | "searchMcpRegistry"
   | "checkMcpServer"
   | "findRegistryServer"
@@ -327,6 +330,28 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     inChats: false,
     summarize: (args, state) => `Save a file into ${quote(chatTitle(state, args.session_id))}`,
     run: async (host, args) => host.saveArtifact(args.session_id, args.url)
+  }),
+  define({
+    name: "app_search_github_repos",
+    description:
+      "Find GitHub repos for a project: the ones the user's GitHub connection can reach (theirs, collaborations, and org repos the org allowed Dex; private included) matching the words, then public repos by name. Empty query: their most recently pushed. Also says which orgs Dex can see.",
+    risk: "read",
+    parameters: Type.Object({ query: Type.String({ maxLength: 100, description: "Words in the repo's name or description; empty for recent." }) }),
+    covers: ["searchGitHubRepos", "githubRepoAccess"],
+    summarize: (args) => (args.query ? `Search GitHub repos for ${quote(args.query)}` : "List recent GitHub repos"),
+    run: async (host, args) => {
+      const [repos, access] = await Promise.all([host.searchGitHubRepos(args.query), host.githubRepoAccess()])
+      return { repos, access: { connected: access.connected, login: access.login, orgs: access.orgs.map((org) => org.login) } }
+    }
+  }),
+  define({
+    name: "app_list_github_branches",
+    description: "A GitHub repo's branches (owner/repo), its default branch first.",
+    risk: "read",
+    parameters: Type.Object({ repo: Type.String({ maxLength: 200, description: "owner/repo" }) }),
+    covers: ["listGitHubBranches"],
+    summarize: (args) => `List branches of ${args.repo}`,
+    run: async (host, args) => host.listGitHubBranches(args.repo)
   }),
   define({
     name: "app_search_mcp_registry",
