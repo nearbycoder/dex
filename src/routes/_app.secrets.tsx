@@ -48,7 +48,7 @@ function SecretForm({ name: fixed, onDone }: { name?: string; onDone?: () => voi
           <input
             value={name}
             onChange={(event) => setName(event.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, "_"))}
-            placeholder="YEEET_API_KEY"
+            placeholder="MY_API_KEY"
             aria-label="Name"
             autoCapitalize="characters"
             autoComplete="off"
@@ -142,7 +142,7 @@ function SecretsPage() {
   return (
     <Page
       title="Secrets"
-      info="API keys and tokens every chat's VM gets as environment variables (e.g. $YEEET_API_KEY), so you enter them once. Values are stored encrypted, never shown again, hidden from chats, and masked in VM output."
+      info="API keys and tokens every chat's VM gets as environment variables (e.g. $MY_API_KEY), so you enter them once. Values are stored encrypted, never shown again, hidden from chats, and masked in VM output."
     >
       <Section title="Add a secret">
         <SecretForm />

@@ -156,7 +156,7 @@ export class AccountSecrets {
   /** Saves a secret. A value is required for a new one; omitted, an existing one keeps its value (a note edit). */
   async save(name: string, value: string | undefined, note = "") {
     const key = name.trim().toUpperCase()
-    if (!ENV_NAME.test(key)) throw new Error("Use an environment variable name: capital letters, digits, and underscores (e.g. YEEET_API_KEY).")
+    if (!ENV_NAME.test(key)) throw new Error("Use an environment variable name: capital letters, digits, and underscores (e.g. MY_API_KEY).")
     if (RESERVED.test(key)) throw new Error(`${key} is reserved on VMs; pick another name.`)
     const existing = this.host.sql.exec<{ sealed: string }>(`SELECT sealed FROM dex_account_secrets WHERE name = ?`, key).toArray()[0]
     if (!value && !existing) throw new Error("Enter the secret's value.")

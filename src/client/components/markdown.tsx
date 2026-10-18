@@ -29,7 +29,7 @@ const COMPONENTS: Components = {
     </th>
   ),
   td: ({ node: _node, children, style }) => (
-    <td style={style} className="max-w-[28rem] min-w-[4.5rem] px-3 py-2 align-top text-zinc-300 [&_code]:rounded [&_code]:bg-zinc-800/70 [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-[0.9em]">
+    <td style={style} className="max-w-[28rem] min-w-[3rem] px-3 py-2 align-top text-zinc-300 [&_code]:rounded [&_code]:bg-zinc-800/70 [&_code]:px-1 [&_code]:py-0.5 [&_code]:text-[0.9em]">
       {children}
     </td>
   ),

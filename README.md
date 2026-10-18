@@ -1,35 +1,158 @@
-<img src="assets/icon.svg" width="64" height="64" alt="">
+<p align="center">
+  <img src="docs/media/title.png" alt="Dex: your personal AI agent, running on Cloudflare" width="100%">
+</p>
 
-# Dex
+<p align="center">
+  <a href="docs/media/dex-promo.mp4"><img src="docs/media/dex-preview.gif" alt="Dex answering a request with a live chart card" width="100%"></a>
+  <br>
+  <sub><b><a href="docs/media/dex-promo.mp4">▶ Watch the 75-second tour</a></b> · generative UI, a cloud VM per chat, skills, MCP, and the phone app</sub>
+</p>
 
-A personal agent harness: [Pi Durable](https://developers.cloudflare.com/agents/harnesses/pi/) running in a Cloudflare Durable Object, thinking with open-weight models through [ClinePass](https://docs.cline.bot/getting-started/clinepass), and answering with generative UI from [OpenUI](https://www.openui.com/). Built with TanStack Start and Effect.
+**Dex** is a personal agent harness. Each user gets an agent in a Cloudflare Durable Object running [Pi Durable](https://developers.cloudflare.com/agents/harnesses/pi/), thinking with open-weight models through [ClinePass](https://docs.cline.bot/getting-started/clinepass), answering with generative UI from [OpenUI](https://www.openui.com/), and doing real work on its own cloud VM from [boat.dev](https://boat.dev). Built with TanStack Start, Effect, and the Cloudflare Agents SDK, and installable on your phone.
 
-## What it does
+[Highlights](#highlights) · [Features](#features) · [Architecture](#architecture) · [Develop](#develop) · [Deploy](#deploy) · [Security](#security) · [Limits](#limits)
 
-- **Sign in** with GitHub (allowlisted logins), an owner password (`OWNER_PASSWORD`, until GitHub OAuth is set up), or a local dev login.
-- **Connect ClinePass** by pasting a Cline API key. Dex verifies it with Cline, then stores it AES-GCM encrypted in your agent.
-- **Custom agents**: presets with a name, icon, color, instructions, starter prompt, and default model and thinking level. Pick one on the Home Screen to start a chat with it; its instructions join the chat's system prompt (edits apply to existing chats). Agents can also preselect MCP servers. Starts with PR Author, PR Reviewer, Researcher, and Data Analyst.
-- **MCP servers**: connect remote MCP servers (Streamable HTTP or SSE) with no auth, API-key or custom headers (encrypted at rest), or OAuth (dynamic client registration with PKCE; the Agents SDK stores and refreshes tokens). Each server becomes a Pi extension whose tools appear as `<server>__<tool>`. Each chat picks its servers in the composer, agents preselect theirs, and servers marked "On for new chats" attach to plain new chats. Connections restore themselves after evictions and deploys.
-- **Chat** with any ClinePass model, with a per-chat model and thinking level. Responses stream live; runs survive restarts, evictions, and deploys. Each reply folds its thinking, tool calls, and in-between notes into one activity row that follows the current step live ("Running a command… npm test", rotating while the model thinks) with tool-call and thought counts and a timer, then reads "Worked for 1m 12s"; tap it to see every step. The answer and any UI cards stay in view.
-- **A cloud VM per chat** ([boat.dev](https://boat.dev)): a full Ubuntu VM with root, Docker, Node, Bun, Python, Chrome and a desktop. A chat gets its own VM the first time the model calls a VM tool (plain questions never start one); project chats get theirs as soon as they start. Tools: `vm_exec` (output streams live), `vm_screenshot` (the agent sees the desktop; it clicks and types with `xdotool`), `vm_read_file` / `vm_write_file`, `vm_expose_port` (token-protected URLs), `vm_stop`. Each VM keeps its disk while stopped and is deleted with its chat (if boat.dev can't be reached then, Dex retries every 5 minutes until it's gone). Requests to boat.dev are retried twice when Cloudflare can't connect (521–523) or a gateway fails; running a command is only retried when it never reached boat. It stops itself after 5 idle minutes (configurable); commands, file and port actions, screenshots, your terminal, and having control of the desktop all count as activity, and boat's own auto-stop deadline is kept 15 minutes further out as a fallback. When boat refuses another running VM (the free trial allows 2), Dex stops the least recently used idle one and retries.
-- **Inbox triage**: the chat list works like an inbox. Settle a chat when you're done for now (the ✓✓ button in its header, or its ⋯ menu) and it moves under a collapsed Settled group; snooze it (in an hour, this evening, tomorrow, this weekend, next week) and it waits under Snoozed, then comes back to the top at that time with a notification. Any new message in a chat (from you, a schedule, or another chat) brings it back to the inbox. Chats and external agents can settle and snooze too (`app_update_session`).
-- **Navigation**: the sidebar shows chats, with one Settings entry (a hint when VMs run or something needs attention). Settings and every configuration page switch the sidebar to links (General, Notifications, Machines, Projects, Agents, MCP servers, Workspace, Usage, Access & API) with a back button to the last chat; on phones the drawer stays open while switching.
-- **Machines**: a list of every chat's VM, each linking to its chat (status, chat, project, size, last use, setup state, quick Stop/Resume) and the VM defaults; each opens its own page to watch the live desktop and every command Dex runs as it happens, take control of the desktop, run your own commands, open ports, re-run setup, and stop the agent mid-run to take over.
-- **Projects**: one or more repos (GitHub `owner/repo` or any https git URL, with optional branch and folder), a setup script, notes for the model, a starter prompt, and a VM size. Starting a chat on a project boots its VM right away, signs in to GitHub, clones every repo into `~/work`, and runs the setup script (detached, up to 30 minutes, logged to `~/work/.dex/setup.log`) before the model's VM tools proceed. The chat's system prompt tells the model where everything is and whether setup succeeded. Projects combine with agents (e.g. PR Author on a project).
-- **GitHub**: Settings → GitHub → Connect with GitHub (OAuth, asks for repo and workflow access) or paste a fine-grained token for access limited to chosen repos. The token is verified and stored encrypted; every new VM signs the GitHub CLI and git in with it (`gh auth login`, `gh auth setup-git`, your noreply identity), so projects clone private repos and agents can push and open PRs. Disconnecting an OAuth connection revokes the token at GitHub. The same OAuth app enables Sign in with GitHub.
-- **Tools**: `bash` (a simulated shell with grep, sed, jq, sqlite3, curl and more, over a persistent `/workspace`), `read_file` / `write_file` / `edit_file`, `web_search` / `web_fetch` (Workers AI), `render_ui` (OpenUI cards, tables, charts, forms), and `schedule_prompt` (one-off or cron).
-- **Inline video**: videos play in the chat. A chat shares a video, audio file, or image it made on its VM with `share_media` (e.g. a screen recording made with ffmpeg): the VM uploads it straight to Dex with a single-use token, it's stored privately in R2 (`dex-media`), and it plays inline from `/api/media/…` for you only, with seeking (byte ranges, which Safari needs), after the VM stops, and is deleted with its chat. Media is never played from a VM: if a reply links a file served from its VM's port (`…on.boat.dev`), Dex copies it into the chat when the reply ends (or when you tap "Save to chat") and the link plays that copy. Links to YouTube, Vimeo, and direct video files render as players that load only when you tap play. Up to 95 MB per file (the Worker's request limit); larger videos should be compressed first.
-- **Skills**: instructions for particular tasks (a `SKILL.md` and the files beside it), installed from [skills.sh](https://skills.sh) or written in Dex (Skills page). Typing `/` in a message opens a quick lookup of your skills and skills.sh matches, which install in place; a message starting with `/<name>` puts that skill's instructions in the chat's prompt from then on. Skills set to Auto are listed for every chat, which loads one with `use_skill` when a request matches. Installing reads the skill from its GitHub repo (with your GitHub token if connected, for private repos and a higher rate limit): text files only, up to 60 files and 1 MB.
-- **MCP server search**: the MCP page searches [Smithery](https://smithery.ai) by default (answers in well under a second, with use counts and Smithery verification; its servers are hosted by Smithery and sign in through it) or the official [MCP Registry](https://registry.modelcontextprotocol.io) (publishers' own endpoints; slow for new searches). Opening a result runs Dex's checks: HTTPS, the verified publisher (and, for registry servers, whether the endpoint is on their domain), a live MCP handshake (open, OAuth, or a required header), its tools, and its GitHub repo (stars, license, archived, last push). "Add server" opens the editor prefilled. Chats and MCP clients get `app_search_mcp_registry` and `app_check_mcp_server`.
-- **Local MCP servers**: stdio servers (npm, PyPI, Docker packages, or any command) run on a dedicated "MCP servers" VM behind [supergateway](https://github.com/supercorp-ai/supergateway) (stdio → Streamable HTTP, one port each), and Dex connects to the port's private address like any remote server. Registry packages add with their command prefilled. The VM starts and the server launches when a chat calls one of its tools (or you save it), using a tool keeps the VM awake, and it stops when idle like any VM. The MCP VM never gets your GitHub token or saved secrets: each server gets only the environment variables it lists (encrypted values, or the saved secret of the same name).
-- **Memory**: `/workspace/MEMORY.md` is injected into every chat's system prompt.
-- **Workspace page**: browse and edit the agent's files, and run shell commands yourself.
-- **Installable app**: add Dex to a phone or tablet Home Screen (Settings → Install Dex). It runs full screen and edge to edge with safe-area insets, keeps the composer above the keyboard, swipes the sidebar in from the left edge, and adapts from folded phones to tablets, with a collapsible sidebar (⌘/Ctrl+B) and a split across the hinge on dual-screen devices. A service worker caches static assets and shows an offline screen; it never caches pages or API calls.
-- **Chats and external agents can run Dex**: every app capability is an operation in one registry (`src/agent/operations.ts`): start, message, read, stop, and delete chats; create and edit agents and projects; manage MCP servers, VMs, scheduled prompts, the workspace, notifications, and settings; read usage. Chats use them through two tools (`app_operations` lists them, `app_call` runs one), so asking a chat to "start a chat per repo and have each open a PR" just works. External agents connect over MCP at `/api/mcp` (Streamable HTTP) with a token from Settings → Access & API, where each token gets Read, Read & write, or Full access and an expiry. Admin operations (deleting anything, changing settings, editing existing agents or projects, MCP servers) need a Full token over MCP, and from a chat they show a Confirm button: nothing happens until you tap it, and your answer goes back to the chat. Every operation is validated, rate-limited, and listed in the Access page's activity log. `npm run check:ops` (run by `npm run deploy`) fails if a new callable isn't covered by an operation or explicitly excluded.
-- **Push notifications** (opt in, per device): Settings → Notifications turns them on for this phone or browser and picks what to hear about: replies when a run finishes, errors, scheduled prompts, project machines finishing setup, and MCP servers that need you to sign in again. "Skip what I'm looking at" stays quiet for a chat that's open and visible on any device, each chat has a mute bell, and the app icon shows a badge until you open Dex. On Android and desktop, notifications carry quick actions (Open chat, Mute this chat, Watch machine, Sign in); "Mute" runs in the background through `/api/push/action` without opening Dex. iOS (16.4+) delivers them to the Home Screen app only and shows no buttons; tapping opens the right page. Sent as standard Web Push (RFC 8291 aes128gcm, VAPID), straight from the agent.
-- **Snappy navigation**: pages render from the agent's synced state, so switching pages never waits on the network. Sign-in is checked once per launch (the agent socket checks the cookie on every connection), every page's code is fetched while the app is idle, and the last synced state is kept on the device so a launch shows your chats at once while the socket connects (signing out clears it). Recently opened chats and page data (usage, files, schedules, VM activity) reappear instantly and refresh in the background. Anything still loading shows a skeleton shaped like the page, including the server's first response on a cold launch.
-- **Haptics**: a light tap when pressing buttons on phones (Settings → Haptic feedback, saved per device). iPhone uses [ios-haptics](https://github.com/tijnjh/ios-haptics), which plays the system haptic through a hidden `<input type="checkbox" switch>` (Safari has no Vibration API); only `type="button"` buttons get one, since it would swallow link navigation and form submits. Android uses `navigator.vibrate`.
-- **Usage page**: what Dex costs across ClinePass (tokens per model and chat, at API list prices), boat.dev (VM run time × hourly rate), and Cloudflare (Workers, Durable Objects, and Workers AI from the Analytics API, against the plan's allowance), with a daily chart.
+## Highlights
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/chat-chart.png" alt="A chat answering with a bar chart card"><br><b>Answers as live UI.</b> Cards, tables, charts, and forms, streamed as the model writes them.</td>
+    <td width="50%"><img src="docs/screenshots/machine.png" alt="The Machine page with the VM's live desktop and activity log"><br><b>A cloud VM per chat.</b> Watch the desktop and every command live, or take over.</td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/skill-menu.png" alt="The slash menu listing installed skills and skills.sh results"><br><b>Skills on a keystroke.</b> Type <code>/</code> to use one, or install it from skills.sh in place.</td>
+    <td width="50%"><img src="docs/screenshots/mcp-search.png" alt="MCP search with Dex's checks on a server"><br><b>Any MCP server, checked first.</b> Search, see its tools and sign-in, add it in a tap.</td>
+  </tr>
+</table>
+
+## Features
+
+### Chat that answers with UI
+
+<img src="docs/screenshots/chat-vm.png" alt="A chat that used the VM, with its folded activity row and a table answer" width="100%">
+
+- **Any ClinePass model**, with a per-chat model and thinking level. Replies stream live, and runs survive restarts, evictions, and deploys.
+- **One activity row per reply** folds its thinking, tool calls, and in-between notes. While it works it shows what's really happening: the running tool and its arguments ("Running on the VM… npm test"), or the latest line of the model's thinking. Then it reads "Worked for 36s · 8 tools · 6 thoughts"; tap it to see every step. Screenshots in those steps load when you open them, so long VM chats stay light.
+- **Generative UI** with `render_ui` (OpenUI): cards, stat tiles, tables, charts, and forms. Markdown tables wrap at word boundaries and scroll sideways in their own frame on a phone.
+- **Tools:** `bash` over a persistent `/workspace` (a simulated shell with grep, sed, jq, sqlite3, curl), file tools, `web_search` / `web_fetch` (Workers AI), `schedule_prompt` (one-off or cron), and `use_skill`.
+- **Memory:** `/workspace/MEMORY.md` joins every chat's system prompt; edits to it are always shown in the chat.
+- **Pinned to the latest message:** chats open at the bottom and follow new content, and a round arrow jumps back down when you've scrolled up.
+
+### A cloud VM for every chat
+
+<img src="docs/screenshots/machine.png" alt="The Machine page" width="100%">
+
+- A chat gets its own Ubuntu VM ([boat.dev](https://boat.dev): root, Docker, Node, Bun, Python, Chrome, and a desktop) the first time the model needs one. Plain questions never start one.
+- **Tools:** `vm_exec` (output streams live), `vm_screenshot` (the agent sees the desktop and clicks and types with `xdotool`), `vm_read_file` / `vm_write_file`, `vm_expose_port` (token-protected URLs), `share_media`, `vm_stop`.
+- **The Machine page** shows the live desktop and every command as it happens. Take control of the desktop, run your own commands, open ports, re-run setup, or stop the agent mid-run to take over.
+- **Lifecycle:** a VM stops after 5 idle minutes (configurable) and keeps its disk. It's deleted with its chat, and Dex retries every 5 minutes if boat.dev can't be reached then. Requests retry when Cloudflare can't connect, and when boat refuses another running VM, Dex stops the least recently used idle one.
+- **Your own boat.dev account:** everyone connects their own boat.dev key in Settings → Cloud VMs (checked, then stored encrypted). The deployment's `BOAT_API_KEY` serves only its owner.
+
+### Skills
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/skills.png" alt="The Skills page searching skills.sh"></td>
+    <td width="50%"><img src="docs/screenshots/skill-menu.png" alt="The slash menu in the composer"></td>
+  </tr>
+</table>
+
+- Skills are instructions for particular tasks: a `SKILL.md` and the files beside it. Install them from [skills.sh](https://skills.sh), or write your own on the Skills page.
+- **Typing `/` in any message** opens a quick lookup of your skills and skills.sh matches, which install in place. A message starting with `/<name>` adds that skill's instructions to the chat from then on.
+- **Auto skills** are listed for every chat, which loads one with `use_skill` when a request matches.
+- Installing reads the skill from its GitHub repo, using your GitHub connection for private repos and a higher rate limit. Text files only, up to 60 files and 1 MB. Expand a search result to read it before installing.
+
+### MCP servers: remote, local, searched, and checked
+
+<img src="docs/screenshots/mcp-search.png" alt="MCP search with checks" width="100%">
+
+- **Remote servers** (Streamable HTTP or SSE) with no auth, headers (encrypted at rest), or OAuth (dynamic client registration with PKCE; the Agents SDK stores and refreshes tokens). Each server's tools appear as `<server>__<tool>`. Chats pick servers in the composer, agents preselect theirs, and servers marked "On for new chats" attach to plain new chats.
+- **Search** [Smithery](https://smithery.ai) by default: it answers in well under a second, with use counts and verification, and its servers sign in through Smithery. Or search the official [MCP Registry](https://registry.modelcontextprotocol.io) for publishers' own endpoints and packages.
+- **Checks before you add one:**
+  - HTTPS.
+  - The verified publisher, and whether the endpoint is on their domain.
+  - A live MCP handshake (open, OAuth, or a required header) and its tool list.
+  - Its GitHub repo: stars, license, archived, last push.
+
+  "Add server" opens the editor prefilled.
+- **Local (stdio) servers:** npm, PyPI, and Docker packages, or any command, run on a dedicated "MCP servers" VM. Each runs behind [supergateway](https://github.com/supercorp-ai/supergateway) (stdio to Streamable HTTP, one port each), and Dex connects to its private address like any remote server.
+  - The VM starts when a chat calls one of the server's tools, tool calls keep it awake, and it stops when idle.
+  - The MCP VM never gets your GitHub token or saved secrets. Each server gets only the environment variables it lists.
+
+### Queue, edit, and steer follow-ups
+
+- Messages you send while a chat is working wait in a collapsible panel above the message box.
+- Open the panel to edit, reorder, or delete them, or **Steer** one into the current run after its current step.
+- One message goes each time a run ends. Stopping a chat holds the queue until you send something.
+
+### Inbox triage
+
+<img src="docs/screenshots/mobile-sidebar.png" alt="The sidebar with Snoozed and Settled groups" width="320" align="right">
+
+- The chat list works like an inbox. **Settle** a chat when you're done for now and it moves under a collapsed Settled group.
+- **Snooze** a chat (in an hour, this evening, tomorrow, this weekend, next week) and it waits under Snoozed, then comes back to the top at that time with a notification.
+- Any new message in a chat brings it back to the inbox.
+
+<br clear="right">
+
+### Secrets
+
+<img src="docs/screenshots/secrets.png" alt="The Secrets page" width="100%">
+
+- **Saved secrets** (Settings → Secrets) are API keys every chat's VM gets as environment variables. Enter them once, and the model uses `$NAME` without ever seeing the value.
+- They're written to a private env file on each VM, loaded by every command, by login and interactive shells, and by project setup scripts. VMs pick up changes on their next command.
+- **Password fields in chat forms** keep the value out of the transcript. The browser stores it, encrypted per chat, before sending, and the message carries `{{secret:name}}`. VM tools fill placeholders in on the VM, as environment variables from a file the command sources and deletes.
+- Any secret value in VM output, read files, or the Machine page's log is masked before the model or you see it.
+
+### Projects, GitHub, and agents
+
+<img src="docs/screenshots/home.png" alt="The home screen with projects and agents" width="100%">
+
+- **Projects:** one or more repos (with branch and folder), a setup script, notes for the model, a starter prompt, and a VM size.
+  - The repo field searches every repo your GitHub connection can reach, private and org ones included, then public repos. The branch field suggests the repo's branches.
+  - Starting a project chat boots its VM, signs in to GitHub, clones the repos into `~/work`, and runs the setup script before the model's VM tools go ahead.
+- **GitHub:** Connect with GitHub (OAuth) or paste a fine-grained token. Every new VM signs the GitHub CLI and git in with it, so agents can push and open pull requests. Disconnecting an OAuth connection revokes the token at GitHub.
+- **Custom agents:** presets with a name, icon, color, instructions, starter prompt, model, thinking level, and MCP servers. Dex starts with PR Author, PR Reviewer, Researcher, Data Analyst, and Changelog Writer, and agents combine with projects.
+
+### Inline media
+
+- Videos, audio, and images a chat makes on its VM play inline with `share_media`. Dex stores them privately in R2, with seeking (byte ranges, which Safari needs), and deletes them with their chat.
+- Media is never played from a VM: when a reply links a file served from its VM's port, Dex copies it into the chat when the reply ends, or when you tap "Save to chat".
+- YouTube, Vimeo, and direct video links render as players that load only when you tap play.
+
+### On your phone
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/mobile-chart.png" alt="Dex on a phone showing a chart card"></td>
+    <td width="50%"><img src="docs/media/everywhere.png" alt="Dex on phones"></td>
+  </tr>
+</table>
+
+- **Install it** on a phone or tablet Home Screen. It runs full screen and edge to edge, keeps the composer above the keyboard, and opens the sidebar with a swipe from the left edge (never "back"). It adapts from folded phones to tablets.
+- **Push notifications** (opt in, per device) for replies, errors, scheduled prompts, machine setup, MCP sign-ins, and snoozed chats coming back. A chat that's open on any device stays quiet, and each chat has a mute bell. Android and desktop notifications carry quick actions; iOS 16.4+ delivers them to the installed app.
+- **Haptics** on every control you tap (buttons, links, menus, switches, tabs) and on swiping the sidebar. iPhone has no Vibration API, so Dex plays the system tap through a hidden `<input type="checkbox" switch>`; Android uses `navigator.vibrate`. Fields never zoom the page on focus.
+
+### Chats and external agents can run Dex
+
+- Every app capability is an operation in one registry (`src/agent/operations.ts`):
+  - Chats, agents, projects, skills, MCP servers, VMs, schedules, the workspace, the queue, notifications, settings, and usage.
+- **Chats** use them through `app_operations` / `app_call`, so "start a chat per repo and have each open a PR" just works.
+- **External agents** connect over MCP at `/api/mcp` with a token from Settings → Access & API. Each token is Read, Read & write, or Full, and has an expiry.
+- **Admin operations** (deleting things, settings, editing existing agents or projects, MCP servers, installing skills) need a Full token, or your tap on a Confirm card in the chat.
+- Every operation is validated, rate-limited, and logged. `npm run check:ops` (run by `npm run deploy`) fails if a new callable isn't covered or explicitly excluded.
+
+### Usage, speed, and the rest
+
+<img src="docs/screenshots/usage.png" alt="The Usage page" width="100%">
+
+- **Usage:** what Dex costs across ClinePass (tokens per model and chat, at list prices), boat.dev (VM time), and Cloudflare (from the Analytics API), with a daily chart.
+- **Snappy navigation:** pages render from the agent's synced state, so switching pages never waits on the network.
+  - Every page's code is fetched while idle, and the last state is kept on the device for instant launches.
+  - Anything still loading shows a skeleton shaped like the page.
+  - The agent batches and dedupes the updates it sends.
+- **Always current:** after a deploy, the first page load restarts a long-running agent onto the new code.
+- **Sign in** with GitHub (allowlisted logins), an owner password, or a local dev login. **Sign out everywhere** revokes every session on every device.
 
 ## Architecture
 
@@ -41,15 +164,18 @@ Worker (src/server.ts) ── auth check ──► DexAgent Durable Object, one 
   └─ TanStack Start handler                  ├─ PiHarness → Pi Durable (chats in the object's SQLite)
                                              ├─ ClinePass provider (openai-completions → api.cline.bot)
                                              ├─ tools + Workspace (SQLite-backed files, just-bash)
-                                             ├─ VmManager → boat.dev VM (commands, files, ports, desktop)
-                                             └─ Agents SDK schedules (scheduled prompts)
+                                             ├─ VmManager → boat.dev VMs (one per chat, plus the MCP VM)
+                                             ├─ MCP client (remote servers; local ones via supergateway)
+                                             ├─ Skills, secrets, message queue, media (R2), push
+                                             └─ Agents SDK schedules (scheduled prompts, queue checks)
 ```
 
 - `src/server/`: Effect services for config, keys (HMAC session signing, AES-GCM), sessions, and GitHub OAuth.
-- `src/agent/`: the Durable Object, the ClinePass provider and Effect key-verification client, the workspace, and the tools.
-- `src/shared/`: model catalog, wire protocol, and the generated OpenUI spec.
+- `src/agent/`: the Durable Object and its parts (operations, VMs, MCP and registry search, skills, secrets, queue, media, push, the ClinePass provider) and the tools.
+- `src/shared/`: model catalog, wire protocol, and shared types.
 - `src/client/`: the agent connection (`useAgent`), the Pi event reducer, and UI components.
 - `src/routes/`: pages and auth endpoints.
+- `docs/`: the screenshots and promo video in this README.
 
 ## Develop
 
@@ -59,48 +185,67 @@ cp .dev.vars.example .dev.vars   # set AUTH_SECRET; DEV_LOGIN=true enables the d
 npm run dev                      # http://localhost:5173
 ```
 
-Workers AI (web search and fetch) runs remotely even in dev, so `wrangler login` first.
-
-After changing `src/client/openui/library.tsx`, run `npm run openui:spec` to regenerate the component spec the agent learns from.
+Workers AI (web search and fetch) runs remotely even in dev, so run `wrangler login` first. After changing `src/client/openui/library.tsx`, run `npm run openui:spec` to regenerate the component spec the agent learns from. See [AGENTS.md](AGENTS.md) for the conventions every change follows (operations, skeletons, security, deploys).
 
 ## Deploy
 
 1. Create a GitHub OAuth app (github.com/settings/applications/new) with homepage `https://<your-worker>` and callback `https://<your-worker>/auth/github` (sign-in and "Connect with GitHub" use paths under it).
-2. Set `ALLOWED_GITHUB_USERS` in `wrangler.jsonc`.
+2. Set `ALLOWED_GITHUB_USERS` in `wrangler.jsonc` (the first login is the owner).
 3. Add the secrets, then deploy:
 
 ```sh
 npx wrangler secret put AUTH_SECRET
 npx wrangler secret put GITHUB_CLIENT_ID
 npx wrangler secret put GITHUB_CLIENT_SECRET
-npx wrangler secret put CLINE_API_KEY   # optional shared key
-npx wrangler secret put OWNER_PASSWORD  # optional: password sign-in as the first allowlisted login
-npx wrangler secret put BOAT_API_KEY    # optional: boat.dev key for the owner's VMs (the first ALLOWED_GITHUB_USERS login); everyone else connects their own in Settings → Cloud VMs
+npx wrangler secret put CLINE_API_KEY         # optional shared key
+npx wrangler secret put OWNER_PASSWORD        # optional: password sign-in as the owner
+npx wrangler secret put BOAT_API_KEY          # optional: boat.dev key for the owner's VMs; everyone else connects their own
 npx wrangler secret put CLOUDFLARE_API_TOKEN  # optional: Account Analytics: Read, for the Usage page
 npx wrangler secret put VAPID_PRIVATE_KEY     # optional: push notifications (a P-256 private JWK; its public key goes in VAPID_PUBLIC_KEY)
 npm run deploy
 ```
 
-The current deployment is https://dex.nearbycoder.workers.dev. Its secrets were uploaded from the gitignored `.prod.vars` (`npx wrangler deploy --secrets-file .prod.vars`).
+The current deployment is https://dex.nearbycoder.workers.dev.
 
 ## Security
 
-- **Sign-in:** GitHub OAuth (allowlisted logins, state-checked) or the owner password (compared by HMAC, rate limited to 10 attempts a minute per IP, same-origin posts only). Dev login is off unless `DEV_LOGIN` is set.
-- **Sessions:** signed, HttpOnly, SameSite=Lax, Secure cookies for 30 days. Settings → Sign out everywhere revokes every session on every device: the user's agent records the time, and every sign-in check (page loads, the agent socket, notification actions) rejects older sessions and closes open sockets. A revoked device clears its saved state.
-- **Agent access:** each user's agent accepts WebSocket and HTTP requests only from the same origin, with a current session for that user. Cross-site WebSockets get neither the cookie (SameSite) nor past the origin check.
-- **Secrets:** API keys, the GitHub token, and MCP header values are AES-GCM encrypted with a key derived from `AUTH_SECRET`. Nothing secret is synced to the browser (only key hints and header names).
-- **Browser:** a strict Content Security Policy limits scripts and connections to Dex itself (`connect-src 'self'`, so even injected script couldn't send chat content elsewhere), images to Dex, GitHub avatars, and YouTube thumbnails (prompt-injected "image" URLs can't leak data), frames to boat.dev (the VM desktop) and the YouTube/Vimeo players, and forbids framing Dex. Video from other sites (`media-src https:`) loads only after you tap play, never from model output alone. Also `Cross-Origin-Opener-Policy: same-origin`, HSTS, `nosniff`, a strict referrer policy, and a Permissions-Policy without camera, microphone, or location. Model output is rendered without raw HTML; model-written links only open http(s) pages, with `noopener`.
-- **Media:** shared files are served only to their owner (session cookie, keys prefixed per user), only for an allowlist of video, audio, and image types decided by the extension (never HTML, SVG, or PDF), sandboxed, with `nosniff`. VM uploads use single-use, HMAC-checked tokens that expire in 15 minutes; browsers can't use the upload endpoint.
-- **MCP access tokens:** 256-bit secrets bound to their user by an HMAC (checked in the Worker before any agent wakes), stored only as SHA-256 hashes, scoped (read / write / full), expiring, revocable, and rate limited. Failed attempts count against the sign-in limit. The endpoint sends no CORS headers and refuses other sites' pages.
-- **Prompt injection:** tools run without approval, so text from web pages and MCP servers can try to steer a chat. Anything lasting or destructive waits for you: deleting things, changing settings, editing existing agents or projects, adding MCP servers, and creating recurring schedules all show a Confirm card that only the signed-in app can answer. Chats started by chats go at most two levels deep and are rate limited; memory edits are shown in the chat, and memory is framed as notes, not instructions. Every app operation is in the Access page's activity log. Only you can make a VM port public; the agent gets token-protected URLs. Anything on a VM can use the GitHub token, so keep it fine-grained.
-- **Dependencies:** `npm audit` reports no high or critical issues (undici is pinned to a patched 7.x); the remaining low and moderate advisories are in KaTeX (UI cards only) and the simulated shell's `printf`, with no upstream fixes yet.
+- **Sign-in:**
+  - GitHub OAuth, for allowlisted logins only and state-checked.
+  - The owner password: compared by HMAC, limited to 10 attempts a minute per IP, same-origin posts only.
+  - Dev login is off unless `DEV_LOGIN` is set.
+- **Sessions:**
+  - Signed, HttpOnly, SameSite=Lax, Secure cookies, valid for 30 days.
+  - Sign out everywhere revokes every session; every sign-in check rejects older ones and closes their sockets.
+  - Each user's agent accepts requests only from the same origin, with a current session for that user.
+- **Stored secrets:** API keys, tokens, MCP headers and env values, and saved and chat secrets are AES-GCM encrypted. Nothing secret is synced to the browser or returned by an operation.
+- **Secrets and the model:** the model only ever sees placeholders and names. Values reach VMs through files that commands source, and are masked in output.
+  - Chat VMs get all saved secrets, so anything a chat installs there could read them.
+  - The MCP VM, which runs third-party packages, gets no GitHub token and no saved secrets, only each server's listed variables.
+- **Browser:** a strict Content Security Policy:
+  - Scripts and connections only to Dex itself (`connect-src 'self'`).
+  - Images only from Dex, GitHub avatars, and YouTube thumbnails.
+  - Frames only from boat.dev and the YouTube/Vimeo players, and nothing may frame Dex.
+
+  Also COOP same-origin, HSTS, `nosniff`, a strict referrer policy, and a minimal Permissions-Policy. Model output is rendered without raw HTML.
+- **Media:** served only to its owner, for an allowlist of video, audio, and image types (never HTML, SVG, or PDF), sandboxed. VM uploads use single-use, HMAC-checked tokens.
+- **MCP access tokens:**
+  - 256-bit secrets bound to their user by an HMAC, checked before any agent wakes.
+  - Stored only as SHA-256 hashes.
+  - Scoped, expiring, revocable, and rate limited.
+- **Prompt injection:** tools run without approval, so text from the web or an MCP server can try to steer a chat. Anything lasting or destructive waits for your Confirm:
+  - Deleting things, settings, editing existing agents or projects, MCP servers, skills, and recurring schedules.
+  - Chats started by chats go at most two levels deep.
+  - Every operation is in the Access page's activity log.
+
+  A tricked chat can still use a secret it has access to in a command, so give chats only the secrets they need.
+- **Dependencies:** `npm audit` reports no high or critical issues. KaTeX is pinned to a patched 0.18; the remaining moderate advisory is `sprintf-js` in the simulated workspace shell, with no upstream fix yet.
 
 ## Limits
 
 - Cline has no third-party OAuth, so users connect with an API key.
-- The `/workspace` shell is simulated (just-bash) and can't install or run programs; real work happens on the boat.dev VM.
-- boat.dev's free trial allows 2 running VMs at once and a 2-hour maximum auto-stop. Stopped VM disks are kept 14 days.
-- The embedded desktop uses boat's stream mode. noVNC is available too but authenticates with a third-party cookie, so some browsers (Safari) only show it in a new tab.
-- `web_search` needs Web Search billing enabled on the Cloudflare account; until then it reports `web_search_payment_required`.
-- Pi Durable has no tool-approval step yet, and cannot delete conversations. Deleting a chat hides it.
-- MCP connections are remote only (no stdio servers). Header values are encrypted in Dex's table, but the Agents SDK also keeps them, with OAuth tokens, in the agent's own storage so it can reconnect after an eviction. MCP tool calls run without approval, like every other tool.
+- The `/workspace` shell is simulated (just-bash) and can't install or run programs; real work happens on a VM.
+- boat.dev's free trial allows 2 running VMs at once; stopped VM disks are kept 14 days.
+- The embedded desktop uses boat's stream mode. noVNC needs a third-party cookie, so Safari opens it in a new tab.
+- `web_search` needs Web Search billing on the Cloudflare account.
+- Pi Durable has no tool-approval step yet and can't delete conversations, so deleting a chat hides it.
+- The official MCP Registry can take many seconds for a search it hasn't cached; Smithery is the fast default.
