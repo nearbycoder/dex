@@ -172,7 +172,7 @@
 
 - **Usage:** what Dex costs across ClinePass (tokens per model and chat, at list prices), OpenCode Go (tokens at Go's rates, plus your 5-hour, weekly, and monthly allowance read live from OpenCode), boat.dev (VM time), and Cloudflare (from the Analytics API), with a daily chart.
 - **Snappy navigation:** pages render from the agent's synced state, so switching pages never waits on the network.
-  - Every page's code is fetched while idle, and the last state, the last sign-in, and the last 8 chats you opened are kept on the device (signing out clears them), so a launch shows them at once while a cold agent wakes; the session is confirmed in the background.
+  - Every page's code is fetched while idle, and the last state, the last sign-in, and the last 8 chats you opened are kept on the device (signing out clears them), so a launch shows them at once while a cold agent wakes; the session is confirmed in the background. The service worker serves the app's shell from its last copy and refreshes it in the background, so a launch doesn't wait on the network (even offline, recent chats open); after a deploy the app moves onto the new build on its own when nothing is typed.
   - Anything still loading shows a skeleton shaped like the page.
   - Opening a chat sends only what the page shows: no system prompt, no screenshots (they load when opened), the UI guide as one line, and long tool outputs cut to their last 12,000 characters, which made snapshots about 85% smaller; live events during a run are slimmed the same way.
   - What you send shows at once, before the agent has recorded it.

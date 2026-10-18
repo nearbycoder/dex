@@ -33,11 +33,34 @@ const safeToReload = () =>
   /^\/chat(\/|$)/.test(location.pathname) &&
   ![...document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("textarea, input:not([type=hidden])")].some((field) => field.value.trim() !== "")
 
+/** The service worker's copy of app pages (see public/sw.js): cleared before reloading, so the reload is fresh. */
+const PAGE_CACHE = "dex-pages-v1"
+/** Forgets the service worker's copy of app pages (applying an update, signing out). */
+export const clearCachedPages = () => (typeof caches === "undefined" ? Promise.resolve(false) : caches.delete(PAGE_CACHE).catch(() => false))
+
 /** Reloads onto the new build, after letting the service worker pick up its own update. */
 export async function applyUpdate() {
   const registration = await navigator.serviceWorker?.getRegistration().catch(() => undefined)
-  await Promise.race([registration?.update().catch(() => undefined), new Promise((resolve) => setTimeout(resolve, 1_500))])
+  await Promise.race([
+    Promise.all([registration?.update().catch(() => undefined), clearCachedPages()]),
+    new Promise((resolve) => setTimeout(resolve, 1_500))
+  ])
   location.reload()
+}
+
+/**
+ * A page served from the service worker's copy can be one deploy behind, and ask for a chunk that's gone. Vite reports
+ * that as `vite:preloadError`: reload once onto a fresh page instead of failing.
+ */
+if (typeof window !== "undefined") {
+  addEventListener("vite:preloadError", (event) => {
+    if (sessionStorage.getItem("dex-chunk-reload")) return
+    sessionStorage.setItem("dex-chunk-reload", String(Date.now()))
+    event.preventDefault()
+    void applyUpdate()
+  })
+  // A page that loads fine clears the guard for next time.
+  addEventListener("load", () => setTimeout(() => sessionStorage.removeItem("dex-chunk-reload"), 10_000))
 }
 
 /** The build the Worker has, once it differs from the one this page is running; null while they match. */
@@ -83,7 +106,13 @@ export function useUpdateChecker() {
       if (build && away >= QUIET_RELOAD_AFTER_MS && safeToReload()) void applyUpdate()
     }
     const onOnline = () => void check()
-    const first = setTimeout(() => void check(true), 5_000)
+    // The first check, soon after launch: the page may have come from the service worker's copy, a deploy behind.
+    // Moving onto the new build right away is invisible on a chat with nothing typed; elsewhere the button shows.
+    const launchedAt = Date.now()
+    const first = setTimeout(async () => {
+      const build = await check(true)
+      if (build && Date.now() - launchedAt < 15_000 && safeToReload()) void applyUpdate()
+    }, 2_000)
     const poll = setInterval(() => {
       if (document.visibilityState === "visible") void check()
     }, POLL_MS)

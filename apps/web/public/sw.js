@@ -1,6 +1,12 @@
-// Dex service worker: fast launches and an offline screen. It never caches pages, API calls, or the
-// agent WebSocket, so a deploy is never served stale; only fingerprinted /assets/* files are cached.
+// Dex service worker: fast launches and an offline screen. Fingerprinted /assets/* files are cached for good. App
+// pages are served from the last copy at once and refreshed in the background (stale-while-revalidate): the page is
+// the app's shell, the same for everyone with nothing personal in it, and its scripts are cached, so a launch doesn't
+// wait on the network. After a deploy the app notices (client/lib/updates.tsx) and reloads onto the new shell,
+// clearing the page cache first. API calls, sign-in, the agent socket, and the VM desktop are never cached.
 const CACHE = "dex-static-v2"
+const PAGES = "dex-pages-v1"
+/** Never served from the page cache: sign-in flows, APIs, the VM desktop page, and the offline screen. */
+const UNCACHED_PAGES = /^\/(auth|api|vm-desktop|login|offline)(\/|$)/
 const SHELL = ["/offline", "/favicon.svg", "/icon-192.png"]
 
 /** Each deploy adds new fingerprinted files; keep the most recent ones so the cache doesn't grow forever. */
@@ -20,7 +26,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE && key !== PAGES).map((key) => caches.delete(key))))
       .then(() => self.clients.claim())
   )
 })
@@ -45,10 +51,29 @@ self.addEventListener("fetch", (event) => {
     return
   }
 
-  // Pages: always the network, with an offline screen when there is none.
-  if (request.mode === "navigate") {
+  if (request.mode !== "navigate") return
+  if (UNCACHED_PAGES.test(url.pathname)) {
     event.respondWith(fetch(request).catch(() => caches.match("/offline")))
+    return
   }
+  // App pages: the last copy now, a fresh one for next time.
+  const key = new Request(url.origin + url.pathname)
+  const refresh = fetch(request).then(async (response) => {
+    const type = response.headers.get("content-type") ?? ""
+    const cacheable = response.status === 200 && !response.redirected && type.includes("text/html") && !/no-store/.test(response.headers.get("cache-control") ?? "")
+    if (cacheable) await (await caches.open(PAGES)).put(key, response.clone())
+    return response
+  })
+  event.respondWith(
+    caches.open(PAGES).then(async (pages) => {
+      const hit = await pages.match(key)
+      if (hit) {
+        event.waitUntil(refresh.catch(() => undefined))
+        return hit
+      }
+      return refresh.catch(() => caches.match("/offline"))
+    })
+  )
 })
 
 // ── Push notifications ────────────────────────────────────────────────────

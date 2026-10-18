@@ -8,6 +8,7 @@ import { clearPageCache } from "./cache"
 import { skeletonPreview } from "./skeleton-preview"
 import { clearNotifications } from "./push"
 import { applyEvent, emptyTranscript, fromSnapshot, type TranscriptState } from "./transcript"
+import { clearCachedPages } from "./updates"
 import { clearTranscripts, loadTranscript, saveTranscript, setTranscriptStoreUser } from "./transcript-store"
 
 type Listener = (message: ServerMessage) => void
@@ -45,6 +46,7 @@ export function forgetSavedState() {
   transcripts.clear()
   clearTranscripts()
   clearPageCache()
+  void clearCachedPages()
 }
 
 /** One WebSocket to this user's DexAgent: synced state, RPC, and chat event streams. */
