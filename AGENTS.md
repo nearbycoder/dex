@@ -30,7 +30,7 @@ Each page has a skeleton in src/client/components/skeleton.tsx built from that p
 
 ## Deploys and stale agents
 
-A busy agent (running VMs schedule an idle check every minute; open sockets and test scripts keep it warm) can keep serving the previous build for a long time after `npm run deploy`. Check `state.build` (the agent's build time, from `__DEX_BUILD__`) in the synced state before testing a change on production; if it's old, let the agent go idle (stop VMs, close sockets) and check again.
+A busy agent (open apps ping it every 20s, running VMs schedule an idle check every minute) can stay in memory on the build it started with long after `npm run deploy`, so callables added since don't exist on it ("Method X does not exist"). The Worker always runs the newest build and passes `__DEX_BUILD__` to `isSessionCurrent` on every sign-in check; an agent whose own build is older resets itself (`restartIfOutdated`) and the next request starts it on the new code. So a page load after a deploy brings the agent up to date. Check `state.build` in the synced state if in doubt. Keep that argument and that check working: they're how every later fix reaches a busy agent.
 
 ## Workflow
 

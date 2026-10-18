@@ -16,7 +16,8 @@ export async function activeViewer(request: Request, env: Env): Promise<SessionU
   try {
     const issuedAt = tokenIssuedAt(readCookie(request.headers.get("cookie"), SESSION_COOKIE) ?? "")
     const agent = await getAgentByName(env.DexAgent as unknown as DurableObjectNamespace<DexAgent>, viewer.value.id)
-    return (await agent.isSessionCurrent(issuedAt)) ? viewer.value : null
+    // With this Worker's build: an agent left running older code since a deploy restarts onto this one.
+    return (await agent.isSessionCurrent(issuedAt, __DEX_BUILD__)) ? viewer.value : null
   } catch (error) {
     console.error("Session check failed:", error instanceof Error ? `${error.name}: ${error.message}` : String(error))
     return null

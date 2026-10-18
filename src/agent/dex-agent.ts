@@ -2220,9 +2220,26 @@ export class DexAgent extends Agent<Env, DexState> {
   // ── Sessions ──────────────────────────────────────────────────────────────
 
   /** Whether a session issued at `issuedAt` (seconds) is still allowed. Called by the Worker on every sign-in check. */
-  isSessionCurrent(issuedAt: number): boolean {
+  isSessionCurrent(issuedAt: number, workerBuild?: string): boolean {
+    this.restartIfOutdated(workerBuild)
     const row = this.ctx.storage.sql.exec<{ value: string }>(`SELECT value FROM dex_meta WHERE key = 'sessions_valid_after'`).toArray()[0]
     return issuedAt > Number(row?.value ?? 0)
+  }
+
+  private restarting = false
+
+  /**
+   * A busy agent (open apps ping it, running VMs check in every minute) can stay in memory on the code it started
+   * with long after a deploy, so methods added since then don't exist on it. The Worker always runs the newest
+   * build and passes its build time on every sign-in check: when that's newer than this instance's, it resets
+   * once the reply is out, and the next request starts it on the new code. Chats' runs resume on their own; open
+   * apps reconnect.
+   */
+  private restartIfOutdated(workerBuild: string | undefined) {
+    if (!workerBuild || this.restarting || workerBuild <= __DEX_BUILD__) return
+    this.restarting = true
+    console.log(`Restarting: running build ${__DEX_BUILD__}, the Worker has ${workerBuild}`)
+    setTimeout(() => this.ctx.abort("Restarting onto the new deploy"), 250)
   }
 
   /** Ends every session on every device (a lost phone, a leaked password): they must sign in again. */
