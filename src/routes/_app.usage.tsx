@@ -169,21 +169,21 @@ function DailyTable({ daily }: { daily: ReadonlyArray<DailySpend> }) {
           <tr>
             <th className="py-1.5 text-left font-normal">Date</th>
             {SERIES.map((series) => (
-              <th key={series.key} className="py-1.5 text-right font-normal">
+              <th key={series.key} className="py-1.5 pl-3 text-right font-normal whitespace-nowrap">
                 {series.label}
               </th>
             ))}
-            <th className="py-1.5 text-right font-normal">Total</th>
+            <th className="py-1.5 pl-3 text-right font-normal whitespace-nowrap">Total</th>
           </tr>
         </thead>
         <tbody className="text-zinc-300">
           {[...daily].reverse().map((day) => (
             <tr key={day.date} className="border-t border-zinc-900">
               <td className="py-1.5">{shortDate(day.date)}</td>
-              <td className="py-1.5 text-right">{usd(day.cline)}</td>
-              <td className="py-1.5 text-right">{usd(day.boat)}</td>
-              <td className="py-1.5 text-right">{usd(day.cloudflare)}</td>
-              <td className="py-1.5 text-right text-zinc-100">{usd(day.cline + day.boat + day.cloudflare)}</td>
+              <td className="py-1.5 pl-3 text-right whitespace-nowrap">{usd(day.cline)}</td>
+              <td className="py-1.5 pl-3 text-right whitespace-nowrap">{usd(day.boat)}</td>
+              <td className="py-1.5 pl-3 text-right whitespace-nowrap">{usd(day.cloudflare)}</td>
+              <td className="py-1.5 pl-3 text-right whitespace-nowrap text-zinc-100">{usd(day.cline + day.boat + day.cloudflare)}</td>
             </tr>
           ))}
         </tbody>
@@ -323,9 +323,9 @@ function UsagePage() {
                         <thead className="text-xs text-zinc-500">
                           <tr>
                             <th className="pb-2 text-left font-normal">Model</th>
-                            <th className="pb-2 text-right font-normal">Responses</th>
-                            <th className="pb-2 text-right font-normal">Tokens</th>
-                            <th className="pb-2 text-right font-normal">List price</th>
+                            <th className="pb-2 pl-4 text-right font-normal whitespace-nowrap">Responses</th>
+                            <th className="pb-2 pl-4 text-right font-normal whitespace-nowrap">Tokens</th>
+                            <th className="pb-2 pl-4 text-right font-normal whitespace-nowrap">List price</th>
                           </tr>
                         </thead>
                         <tbody className="text-zinc-300">
@@ -337,9 +337,9 @@ function UsagePage() {
                                   {findModel(row.model)?.name ?? row.model}
                                 </span>
                               </td>
-                              <td className="py-2 text-right">{row.responses}</td>
-                              <td className="py-2 text-right">{compact(row.totalTokens)}</td>
-                              <td className="py-2 text-right">{usd(row.listCost)}</td>
+                              <td className="py-2 pl-4 text-right whitespace-nowrap text-zinc-400">{row.responses}</td>
+                              <td className="py-2 pl-4 text-right whitespace-nowrap">{compact(row.totalTokens)}</td>
+                              <td className="py-2 pl-4 text-right whitespace-nowrap">{usd(row.listCost)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -386,8 +386,8 @@ function UsagePage() {
                           <thead className="text-xs text-zinc-500">
                             <tr>
                               <th className="pb-2 text-left font-normal">Started</th>
-                              <th className="pb-2 text-right font-normal">Duration</th>
-                              <th className="pb-2 text-right font-normal">Cost</th>
+                              <th className="pb-2 pl-4 text-right font-normal whitespace-nowrap">Duration</th>
+                              <th className="pb-2 pl-4 text-right font-normal whitespace-nowrap">Cost</th>
                             </tr>
                           </thead>
                           <tbody className="text-zinc-300">
@@ -397,8 +397,8 @@ function UsagePage() {
                                   {new Date(run.startedAt).toLocaleString("en", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
                                   {run.endedAt === null && <span className="ml-1.5 text-xs text-emerald-400">running</span>}
                                 </td>
-                                <td className="py-2 text-right">{run.hours < 1 ? `${Math.round(run.hours * 60)} min` : `${run.hours.toFixed(1)} h`}</td>
-                                <td className="py-2 text-right">{usd(run.cost)}</td>
+                                <td className="py-2 pl-4 text-right whitespace-nowrap">{run.hours < 1 ? `${Math.round(run.hours * 60)} min` : `${run.hours.toFixed(1)} h`}</td>
+                                <td className="py-2 pl-4 text-right whitespace-nowrap">{usd(run.cost)}</td>
                               </tr>
                             ))}
                           </tbody>
