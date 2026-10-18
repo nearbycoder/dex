@@ -225,6 +225,11 @@ function McpEditor() {
 
           {draft.kind === "local" && (
             <>
+              {prefill.command && isNew && (
+                <p className="rounded-lg border border-amber-900/60 bg-amber-950/30 px-3 py-2 text-xs leading-relaxed text-amber-200">
+                  This command was filled in for you. Check it before saving: it runs on your MCP VM, with the variables you give it.
+                </p>
+              )}
               <Field
                 label="Command"
                 hint="Starts a stdio MCP server, e.g. npx -y <package>, uvx <package>, or docker run -i <image>. Dex runs it on its MCP VM behind a bridge to HTTP and connects to it; the VM stops when idle and starts again when a chat needs it."
@@ -243,7 +248,7 @@ function McpEditor() {
               </Field>
               <Field
                 label="Environment"
-                hint="Variables the server reads, encrypted and never shown again; leave a saved value empty to keep it. Saved secrets (Settings → Secrets) are set too, so a variable with the same name can stay empty."
+                hint="Only the variables listed here reach the server. Values are encrypted and never shown again; leave one empty to keep its saved value, or to use the saved secret of the same name (Settings → Secrets)."
               >
                 <div className="space-y-2">
                   {draft.env.map((variable, index) => (

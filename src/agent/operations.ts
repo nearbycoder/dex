@@ -119,6 +119,7 @@ export const EXCLUDED: Readonly<Record<string, string>> = {
   connectBoat: "Credentials are entered only in Settings, never through a chat or an external agent.",
   saveSecret: "Secrets are entered only in Settings, never through a chat or an external agent.",
   removeSecret: "Secrets are managed only in Settings.",
+  transcriptImage: "The chat page loading a screenshot it shows; chats and external agents read chats with app_read_session.",
   storeChatSecret: "Secrets come only from the user's password fields in the browser; no chat or external agent may set or read them.",
   disconnectBoat: "Credentials are managed only in Settings.",
   connectGitHub: "Credentials are entered only in Settings, never through a chat or an external agent.",
@@ -823,7 +824,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     description:
       "Add or change an MCP server. Its tools become available to chats that attach it. Either a remote one (`url`; `headers` values " +
       "are encrypted at rest, an empty value keeps the saved one; OAuth servers need the user to sign in on the MCP servers page), or " +
-      "a local stdio one Dex runs on its MCP VM (`command`, e.g. from a registry package, and `env`; saved secrets are available too).",
+      "a local stdio one Dex runs on its MCP VM (`command`, e.g. from a registry package, and `env`; a variable left empty uses the saved secret of the same name, and only listed variables reach it).",
     risk: "admin",
     parameters: Type.Object({
       server_id: Type.Optional(id("Give to change an existing server.")),

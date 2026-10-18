@@ -52,6 +52,7 @@ import { mediaTools } from "./tools/media-tools"
 import { GitHubRepos } from "./github-repos"
 import { checkServer, searchRegistry, searchSmithery } from "./mcp-registry"
 import { MessageQueue } from "./queue"
+import { findImage, withoutImages } from "./transcript-images"
 import { AccountSecrets, SecretVault, VM_ENV_FILE, VM_ENV_HOOK } from "./secrets"
 import { SkillCenter } from "./skills"
 import { skillTools } from "./tools/skill-tools"
@@ -319,8 +320,11 @@ export class DexAgent extends Agent<Env, DexState> {
     runStarted: (sandboxId, size) => this.ledger.runStarted(sandboxId, size),
     runEnded: (sandboxId, at) => this.ledger.runEnded(sandboxId, at),
     provision: async (key, setup) => {
-      const github = await this.githubCredentials()
-      const version = this.accountSecrets.version()
+      // The MCP VM runs third-party packages: it gets neither the GitHub token nor the saved secrets (each local
+      // server gets only the variables it declares; see ensureLocalMcp).
+      const isolated = key === MCP_VM
+      const github = isolated ? null : await this.githubCredentials()
+      const version = isolated ? 0 : this.accountSecrets.version()
       const env = version ? await this.accountSecrets.envFile() : null
       await provisionVm(setup, { github, project: this.projectForSession(key) ?? null, env })
       if (env !== null) this.vmSecretsVersion.set(key, version)
@@ -530,7 +534,10 @@ export class DexAgent extends Agent<Env, DexState> {
     return this.ctx.storage.sql.exec<{ value: string }>(`SELECT value FROM dex_secrets WHERE name = ?`, name).toArray()[0]?.value
   }
 
+  /** Every publish sends the whole state to every open app (and stores it), so ones that change nothing are skipped. */
   private publish(patch: Partial<DexState>) {
+    const current = this.state as unknown as Record<string, unknown>
+    if (Object.entries(patch).every(([key, value]) => JSON.stringify(value) === JSON.stringify(current[key]))) return
     this.setState({ ...this.state, ...patch })
   }
 
@@ -663,7 +670,7 @@ export class DexAgent extends Agent<Env, DexState> {
 
   /** VMs live in the boat.dev account that made them: switching accounts would strand them. */
   private vmsBlockingKeyChange() {
-    const count = this.state.vms.filter((vm) => vm.id).length
+    const count = this.liveVms().filter((vm) => vm.id).length
     return count ? `Delete your ${count === 1 ? "VM" : `${count} VMs`} on the Machines page first: ${count === 1 ? "it belongs" : "they belong"} to the boat.dev account you're using now.` : null
   }
 
@@ -1038,7 +1045,8 @@ export class DexAgent extends Agent<Env, DexState> {
       }
       const stream = await this.harness.session(sessionId).events()
       this.subscriptions.set(connection.id, { sessionId, stream })
-      this.send(connection, { type: "dex.snapshot", sessionId, snapshot: stream.snapshot })
+      // Screenshots load when shown (transcriptImage), so opening a long VM chat doesn't send megabytes.
+      this.send(connection, { type: "dex.snapshot", sessionId, snapshot: withoutImages(stream.snapshot) })
       this.send(connection, this.artifactsMessage(sessionId))
       this.send(connection, this.queueMessage(sessionId))
       stream.start(async (events) => {
@@ -1429,11 +1437,13 @@ export class DexAgent extends Agent<Env, DexState> {
     const health = `[ "$(curl -s -m 2 http://127.0.0.1:${local.port}/healthz)" = ok ]`
     const alive = await vm.exec(`${health} && echo up || echo down`, { actor: "system", title: `Check the ${row.name} MCP server` })
     if (!alive.output.includes("up")) {
-      const env = await this.localMcpEnv(row)
+      // Only the variables it declares: its own values, or a saved secret (Settings → Secrets) of the same name.
+      // Never everything: these are third-party packages, sharing one VM.
+      const own = await this.localMcpEnv(row)
+      const saved = await this.accountSecrets.load()
+      const env = Object.fromEntries(local.envNames.flatMap((name) => (own[name] ?? saved.get(name)) !== undefined ? [[name, own[name] ?? saved.get(name)!]] : []))
       const script = [
         "#!/usr/bin/env bash",
-        // Saved secrets (Settings → Secrets), then this server's own variables.
-        `. ${VM_ENV_FILE} 2>/dev/null`,
         ...Object.entries(env).map(([name, value]) => `export ${name}=${shellQuote(value)}`),
         // PyPI servers run with uvx: install uv the first time one is needed.
         `if [[ ${shellQuote(local.command)} == uvx* ]] && ! command -v uvx >/dev/null; then curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null 2>&1; fi`,
@@ -1441,7 +1451,12 @@ export class DexAgent extends Agent<Env, DexState> {
         `exec npx -y supergateway@${SUPERGATEWAY_VERSION} --stdio ${shellQuote(local.command)} --outputTransport streamableHttp --port ${local.port} --stateful --healthEndpoint /healthz --logLevel info`
       ].join("\n")
       await vm.writeFile(`${dir}/run.sh`, `${script}\n`, "system")
-      await vm.spawn(`chmod 700 ${dir} && pkill -f "mcp/${row.id}/run.sh" ; bash ${dir}/run.sh > ${dir}/log 2>&1`, { actor: "system", title: `Start the ${row.name} MCP server` })
+      // Also clears credentials an older Dex left on this VM (it used to be set up like a chat's VM).
+      const scrub = `rm -f ${VM_ENV_FILE} ~/.config/gh/hosts.yml; git config --global --unset-all credential.https://github.com.helper 2>/dev/null`
+      await vm.spawn(`${scrub}; chmod 700 ${dir} && pkill -f "mcp/${row.id}/run.sh" ; bash ${dir}/run.sh > ${dir}/log 2>&1`, {
+        actor: "system",
+        title: `Start the ${row.name} MCP server`
+      })
       // The first start downloads the package; give it a couple of minutes.
       const started = await vm.exec(`for i in $(seq 1 75); do ${health} && exit 0; sleep 2; done; echo "It didn't start. Its log:"; tail -n 40 ${dir}/log; exit 1`, {
         actor: "system",
@@ -1546,12 +1561,14 @@ export class DexAgent extends Agent<Env, DexState> {
     const existing = draft.id ? this.mcpRow(draft.id) : undefined
     const saved = existing?.local ? await this.localMcpEnv(existing).catch(() => ({}) as Record<string, string>) : {}
     const env: Record<string, string> = {}
+    const declared: string[] = []
     for (const variable of draft.local?.env ?? []) {
       const variableName = String(variable.name ?? "").trim()
       if (!variableName) continue
       if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(variableName)) return { ok: false, error: `"${variableName}" isn't a valid environment variable name.` }
+      if (!declared.includes(variableName)) declared.push(variableName)
       const value = String(variable.value ?? "") || saved[variableName]
-      // Left empty: it may come from Settings → Secrets under the same name.
+      // Left empty: the saved secret (Settings → Secrets) of the same name, if there is one.
       if (!value) continue
       if (/[\r\n]/.test(value)) return { ok: false, error: `The value of ${variableName} must be a single line.` }
       env[variableName] = value
@@ -1568,7 +1585,7 @@ export class DexAgent extends Agent<Env, DexState> {
       headerNames: [],
       defaultOn: Boolean(draft.defaultOn),
       prefix: this.mcpPrefix(name, existing?.id),
-      local: { command, port, envNames: Object.keys(env), sealedEnv }
+      local: { command, port, envNames: declared, sealedEnv }
     }
     const now = Date.now()
     const id = existing?.id ?? this.newMcpId(name)
@@ -1578,7 +1595,8 @@ export class DexAgent extends Agent<Env, DexState> {
       id, JSON.stringify(data), existing?.createdAt ?? now, now
     )
     // A changed command or environment: stop the running copy so it starts again with the new one.
-    const changed = !existing?.local || existing.local.command !== command || JSON.stringify(saved) !== JSON.stringify(env)
+    const changed =
+      !existing?.local || existing.local.command !== command || JSON.stringify(saved) !== JSON.stringify(env) || existing.local.envNames.join() !== declared.join()
     if (existing?.local && changed) await this.stopLocalMcp(existing)
     if (!changed && this.mcpStatus(id) === "ready") {
       this.syncMcp()
@@ -1734,11 +1752,23 @@ export class DexAgent extends Agent<Env, DexState> {
   }
 
   /** VMs that exist or are being created. */
+  /** VMs that exist or are being created, as they are right now (the published copy can lag a moment). */
+  private liveVms(): VmInfo[] {
+    return [...this.vms.values()].map((vm) => vm.current).filter((info) => info.status !== "none" || info.busy || info.setup.status === "running")
+  }
+
+  private vmsPublishTimer: ReturnType<typeof setTimeout> | null = null
+
+  /**
+   * Publishes VM changes, batched: every command changes a VM's busy flag and last use a few times, and each
+   * publish resends the whole state. Last use is rounded to 10 seconds (the UI shows minutes).
+   */
   private publishVms() {
-    const vms = [...this.vms.values()]
-      .map((vm) => vm.current)
-      .filter((info) => info.status !== "none" || info.busy || info.setup.status === "running")
-    this.publish({ vms })
+    if (this.vmsPublishTimer) return
+    this.vmsPublishTimer = setTimeout(() => {
+      this.vmsPublishTimer = null
+      this.publish({ vms: this.liveVms().map((vm) => ({ ...vm, lastActiveAt: vm.lastActiveAt === null ? null : Math.floor(vm.lastActiveAt / 10_000) * 10_000 })) })
+    }, 200)
   }
 
   @callable()
@@ -2102,6 +2132,18 @@ export class DexAgent extends Agent<Env, DexState> {
     return this.state
   }
 
+  /** One image left out of a chat's snapshot (see withoutImages), for the page to show when it's opened. */
+  @callable()
+  async transcriptImage(sessionId: string, ref: string): Promise<{ data: string; mimeType: string } | null> {
+    if (!this.hasSession(sessionId) || typeof ref !== "string") return null
+    const stream = await this.harness.session(sessionId).events()
+    try {
+      return findImage(stream.snapshot, ref)
+    } finally {
+      await stream.stop().catch(() => undefined)
+    }
+  }
+
   /** A chat's latest messages as text, for operations that read chats. */
   async readTranscript(sessionId: string, limit: number) {
     const stream = await this.harness.session(sessionId).events()
@@ -2337,7 +2379,7 @@ export class DexAgent extends Agent<Env, DexState> {
     const existing = this.media.bySource(sessionId, parsed.source)
     if (existing) return existing
     // Only from a VM the chat already has: a stray link must not create one.
-    if (!this.state.vms.some((vm) => vm.key === sessionId && vm.id)) throw new Error("This chat has no VM to save it from.")
+    if (!this.liveVms().some((vm) => vm.key === sessionId && vm.id)) throw new Error("This chat has no VM to save it from.")
     const id = `${sessionId}\n${parsed.source}`
     const running = this.savingArtifacts.get(id)
     if (running) return running
