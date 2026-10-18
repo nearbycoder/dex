@@ -96,7 +96,9 @@ export const vmTools = (vmFor: (chatId: string) => VmManager) => [
     description:
       "Give a port on the VM an HTTPS URL (https://<vm>-<port>.on.boat.dev), e.g. to show the user a web app or API you started. " +
       "The URL carries an access token, so only people you give it to can open it. Only the user can make a port public " +
-      "(on the Machine page); ask them if something needs a public URL.",
+      "(on the Machine page); ask them if something needs a public URL. Ports are for live apps only: to show the user a video, " +
+      "audio file, or image, use share_media instead. A file served over a port stops working when the VM sleeps, and simple " +
+      "file servers (python -m http.server) can't stream video, so it won't play on iPhones.",
     parameters: Type.Object({
       port: Type.Integer({ minimum: 1, maximum: 65535 })
     }),
