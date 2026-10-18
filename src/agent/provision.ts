@@ -1,9 +1,12 @@
 import { PROJECT_ROOT, type ProjectProfile, repoLabel } from "~/shared/projects"
+import { VM_ENV_FILE, VM_ENV_HOOK } from "./secrets"
 import type { VmSetupContext } from "./vm"
 
 export interface ProvisionPlan {
   readonly github: { readonly token: string; readonly login: string; readonly name: string; readonly email: string } | null
   readonly project: ProjectProfile | null
+  /** The saved secrets' env file (see AccountSecrets), written first so setup scripts can use them. */
+  readonly env: string | null
 }
 
 const SETUP_TIMEOUT_MS = 30 * 60_000
@@ -17,6 +20,12 @@ export const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`
  * into ~/work, and runs its setup script. Throws on the first failed step.
  */
 export async function provisionVm(setup: VmSetupContext, plan: ProvisionPlan) {
+  if (plan.env) {
+    setup.step("Adding your secrets")
+    await setup.writeFile(VM_ENV_FILE, plan.env)
+    await setup.quiet(VM_ENV_HOOK)
+  }
+
   if (plan.github) {
     setup.step("Signing in to GitHub")
     // The token goes through a file, never a command line, so it stays out of the activity log.

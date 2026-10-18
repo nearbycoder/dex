@@ -740,6 +740,46 @@ export function SettingsSkeleton() {
   )
 }
 
+/** Secrets: the add form (name and note, then value with Save), then the saved list. */
+export function SecretsSkeleton() {
+  return (
+    <Status>
+      <PageBones>
+        <SectionBones title={92}>
+          <div className="space-y-2.5">
+            <div className="grid gap-2.5 sm:grid-cols-2">
+              <Bone className="h-[38px] w-full rounded-lg" />
+              <Bone className="h-[38px] w-full rounded-lg" />
+            </div>
+            <div className="flex gap-2">
+              <Bone className="h-[38px] flex-1 rounded-lg" />
+              <Bone className="h-[38px] w-[72px] rounded-lg" />
+            </div>
+          </div>
+        </SectionBones>
+        <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/40">
+          <div className="flex min-h-11 items-center px-4 pt-3 pb-1 md:px-5">
+            <Bone className="h-3.5 w-12" />
+          </div>
+          <div className="divide-y divide-zinc-800/80 border-t border-zinc-800/80">
+            {[0, 1].map((index) => (
+              <div key={index} className="flex items-center gap-3 px-4 py-3 md:px-5">
+                <Bone className="size-4 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <LineBone size="sm" width={widthAt(index, [40, 30])} />
+                  <LineBone size="xs" width={widthAt(index, [55, 35])} />
+                </div>
+                <Bone className="h-6 w-16" />
+                <Bone className="size-7" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </PageBones>
+    </Status>
+  )
+}
+
 /** Notifications: this device (the switches once on, the button before). */
 export function NotificationsSkeleton() {
   return (
@@ -919,6 +959,7 @@ export function RouteSkeleton({ pathname }: { pathname: string }) {
   if (/^\/mcp\/[^/]+/.test(pathname)) return <EditorSkeleton kind="mcp" />
   if (/^\/skills\/[^/]+/.test(pathname)) return <SkillEditorSkeleton />
   if (pathname === "/skills") return <SkillsPageSkeleton />
+  if (pathname === "/secrets") return <SecretsSkeleton />
   if (pathname === "/agents") return <ListPageSkeleton kind="agent" />
   if (pathname === "/projects") return <ListPageSkeleton kind="project" />
   if (pathname === "/mcp") return <ListPageSkeleton kind="mcp" />

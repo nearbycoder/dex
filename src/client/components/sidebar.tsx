@@ -10,6 +10,7 @@ import {
   FolderGit2,
   FolderOpen,
   KeyRound,
+  LockKeyhole,
   LogOut,
   MessageSquarePlus,
   Monitor,
@@ -34,7 +35,7 @@ import { ChatListSkeleton } from "./skeleton"
 import { useNow } from "./vm-status"
 
 /** Configuration pages: on these the sidebar shows the settings links instead of the chats. */
-const SETTINGS_AREA = ["/settings", "/notifications", "/machine", "/projects", "/agents", "/skills", "/mcp", "/files", "/usage", "/access"]
+const SETTINGS_AREA = ["/settings", "/notifications", "/machine", "/projects", "/agents", "/skills", "/secrets", "/mcp", "/files", "/usage", "/access"]
 const inSettingsArea = (pathname: string) => SETTINGS_AREA.some((path) => pathname === path || pathname.startsWith(`${path}/`))
 
 const linkClass =
@@ -117,6 +118,7 @@ export function Sidebar() {
       icon: <Plug className="size-4" />,
       hint: mcpAttention && <Hint dot="bg-amber-500" title="A server needs attention" />
     },
+    { to: "/secrets", label: "Secrets", icon: <LockKeyhole className="size-4" /> },
     { to: "/files", label: "Workspace", icon: <FolderOpen className="size-4" /> },
     { to: "/usage", label: "Usage", icon: <BarChart3 className="size-4" /> },
     {

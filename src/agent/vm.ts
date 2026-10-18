@@ -613,11 +613,19 @@ export class VmManager {
   /** Runs a shell command on the VM, streaming output to `onOutput` and to every watching client. */
   private async execUntracked(
     command: string,
-    options: { actor: VmActivity["actor"]; cwd?: string; timeoutSeconds?: number; signal?: AbortSignal; onOutput?: (data: string) => void }
+    options: {
+      actor: VmActivity["actor"]
+      cwd?: string
+      timeoutSeconds?: number
+      signal?: AbortSignal
+      onOutput?: (data: string) => void
+      /** What the activity log shows, when the command carries plumbing (e.g. loading the env file). */
+      title?: string
+    }
   ): Promise<CommandResult & { output: string }> {
     const progress = (message: string) => options.onOutput?.(message)
     const sandbox = await this.ensureRunning(progress, options.signal)
-    const activity = this.startActivity(options.actor, "exec", command)
+    const activity = this.startActivity(options.actor, "exec", options.title ?? command)
     let output = ""
     const run = (id: string) =>
       this.host.run(
@@ -657,12 +665,15 @@ export class VmManager {
     }
   }
 
-  private async spawnUntracked(command: string, options: { actor: VmActivity["actor"]; cwd?: string; signal?: AbortSignal; onOutput?: (data: string) => void }) {
+  private async spawnUntracked(
+    command: string,
+    options: { actor: VmActivity["actor"]; cwd?: string; signal?: AbortSignal; onOutput?: (data: string) => void; title?: string }
+  ) {
     const sandbox = await this.ensureRunning(options.onOutput, options.signal)
     return this.logged(
       options.actor,
       "spawn",
-      `${command} &`,
+      `${options.title ?? command} &`,
       () => this.host.run(BoatClient.use((client) => client.spawn(sandbox.id, command, options.cwd)), options.signal),
       (started) => `Running as process ${started.processId}\nlogs: ${started.logPath}\nerrors: ${started.errLogPath}`
     )

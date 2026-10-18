@@ -107,3 +107,103 @@ export class SecretVault {
     return masked
   }
 }
+
+/** An account secret's name is the environment variable it becomes on VMs. */
+export const ENV_NAME = /^[A-Z_][A-Z0-9_]{0,63}$/
+const RESERVED = /^(PATH|HOME|USER|SHELL|PWD|LANG|TERM|DISPLAY|HOSTNAME|DEX_SECRET_.*)$/
+
+/** Where VMs keep them: sourced by login and interactive shells and by every vm_exec command. */
+export const VM_ENV_FILE = "/home/user/.config/dex/env"
+
+/**
+ * Secrets you save once in Settings (API keys for CLIs and services) that every chat's VM gets as environment
+ * variables. Values are write-only: never sent to the browser or shown to a chat, masked in VM output.
+ */
+export class AccountSecrets {
+  private cache: Map<string, string> | null = null
+
+  constructor(private readonly host: SecretHost & { publish: (secrets: Array<{ name: string; note: string; updatedAt: number }>) => void }) {
+    host.sql.exec(`CREATE TABLE IF NOT EXISTS dex_account_secrets (
+      name TEXT PRIMARY KEY, sealed TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
+  }
+
+  list() {
+    return this.host.sql
+      .exec<{ name: string; note: string; updated_at: number }>(`SELECT name, note, updated_at FROM dex_account_secrets ORDER BY name`)
+      .toArray()
+      .map((row) => ({ name: row.name, note: row.note, updatedAt: row.updated_at }))
+  }
+
+  refresh() {
+    this.host.publish(this.list())
+  }
+
+  /** Changes on every save or delete, so VMs know to rewrite their env file. */
+  version(): number {
+    const row = this.host.sql.exec<{ value: string }>(`SELECT value FROM dex_meta WHERE key = 'account_secrets_version'`).toArray()[0]
+    return Number(row?.value ?? 0)
+  }
+
+  private bump() {
+    this.host.sql.exec(
+      `INSERT INTO dex_meta (key, value) VALUES ('account_secrets_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      String(this.version() + 1)
+    )
+    this.cache = null
+    this.refresh()
+  }
+
+  /** Saves a secret. A value is required for a new one; omitted, an existing one keeps its value (a note edit). */
+  async save(name: string, value: string | undefined, note = "") {
+    const key = name.trim().toUpperCase()
+    if (!ENV_NAME.test(key)) throw new Error("Use an environment variable name: capital letters, digits, and underscores (e.g. YEEET_API_KEY).")
+    if (RESERVED.test(key)) throw new Error(`${key} is reserved on VMs; pick another name.`)
+    const existing = this.host.sql.exec<{ sealed: string }>(`SELECT sealed FROM dex_account_secrets WHERE name = ?`, key).toArray()[0]
+    if (!value && !existing) throw new Error("Enter the secret's value.")
+    if (value && value.length > 10_000) throw new Error("That value is too long (10,000 characters at most).")
+    if (value?.includes("\n")) throw new Error("Values must be one line.")
+    const now = Date.now()
+    this.host.sql.exec(
+      `INSERT INTO dex_account_secrets (name, sealed, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(name) DO UPDATE SET sealed = excluded.sealed, note = excluded.note, updated_at = excluded.updated_at`,
+      key, value ? await this.host.encrypt(value) : existing!.sealed, note.trim().slice(0, 200), now, now
+    )
+    this.bump()
+    return key
+  }
+
+  remove(name: string) {
+    const removed = this.host.sql.exec(`DELETE FROM dex_account_secrets WHERE name = ?`, name).rowsWritten > 0
+    if (removed) this.bump()
+    return removed
+  }
+
+  /** Decrypted values, for the VM env file and for masking. */
+  async load(): Promise<ReadonlyMap<string, string>> {
+    if (this.cache) return this.cache
+    const values = new Map<string, string>()
+    for (const row of this.host.sql.exec<{ name: string; sealed: string }>(`SELECT name, sealed FROM dex_account_secrets`).toArray()) {
+      const value = await this.host.decrypt(row.sealed)
+      if (value) values.set(row.name, value)
+    }
+    this.cache = values
+    return values
+  }
+
+  /** The VM's env file: one `export NAME='value'` per secret. */
+  async envFile() {
+    const values = await this.load()
+    return [...values].map(([name, value]) => `export ${name}=${shellQuote(value)}`).join("\n") + (values.size ? "\n" : "")
+  }
+
+  /** Text with any account secret value replaced by `$NAME`. Uses values loaded by `load`. */
+  mask(text: string) {
+    if (!this.cache?.size || !text) return text
+    let masked = text
+    for (const [name, value] of this.cache) if (value.length >= 4) masked = masked.split(value).join(`$${name}`)
+    return masked
+  }
+}
+
+/** Makes VM shells load the env file: login shells (~/.profile) and interactive ones (~/.bashrc). */
+export const VM_ENV_HOOK = `chmod 600 ${VM_ENV_FILE}; for f in ~/.profile ~/.bashrc; do grep -qs 'config/dex/env' "$f" || echo '[ -f ~/.config/dex/env ] && . ~/.config/dex/env' >> "$f"; done`

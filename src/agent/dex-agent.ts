@@ -48,7 +48,7 @@ import { AccessCenter, parseAccessToken } from "./access"
 import { MediaCenter, type SharedMedia } from "./media"
 import { mediaTools } from "./tools/media-tools"
 import { MessageQueue } from "./queue"
-import { SecretVault } from "./secrets"
+import { AccountSecrets, SecretVault, VM_ENV_FILE, VM_ENV_HOOK } from "./secrets"
 import { SkillCenter } from "./skills"
 import { skillTools } from "./tools/skill-tools"
 import { handleMcpBody } from "./mcp-server"
@@ -201,7 +201,8 @@ export class DexAgent extends Agent<Env, DexState> {
     github: { connected: false, login: null },
     push: { configured: false, publicKey: null, devices: [] },
     access: NO_ACCESS,
-    skills: []
+    skills: [],
+    secrets: []
   }
 
   readonly runtime = ManagedRuntime.make(AgentLayer(this.env, BoatKey.of({ get: Effect.promise(() => this.boatKey()) })))
@@ -267,6 +268,16 @@ export class DexAgent extends Agent<Env, DexState> {
     decrypt: (sealed) => this.runtime.runPromise(Keys.use((keys) => keys.decrypt(sealed)).pipe(Effect.option)).then(Option.getOrNull)
   })
 
+  /** Secrets saved in Settings that every chat's VM gets as environment variables. */
+  readonly accountSecrets: AccountSecrets = new AccountSecrets({
+    sql: this.ctx.storage.sql,
+    encrypt: (value) => this.runtime.runPromise(Keys.use((keys) => keys.encrypt(value))),
+    decrypt: (sealed) => this.runtime.runPromise(Keys.use((keys) => keys.decrypt(sealed)).pipe(Effect.option)).then(Option.getOrNull),
+    publish: (secrets) => this.publish({ secrets })
+  })
+  /** The saved-secrets version each VM's env file has, so it's rewritten only after a change. */
+  private readonly vmSecretsVersion = new Map<string, number>()
+
   /** Messages sent while their chat was busy, sent one per finished run. */
   readonly messageQueue = new MessageQueue(this.ctx.storage.sql)
   /** Chats whose next queued message is being sent, so two finishing runs don't send two. */
@@ -277,7 +288,7 @@ export class DexAgent extends Agent<Env, DexState> {
   private readonly vmHost: VmHost = {
     sql: this.ctx.storage.sql,
     configured: () => this.boatSource() !== null,
-    mask: (key, text) => this.secrets.mask(key, text),
+    mask: (key, text) => this.accountSecrets.mask(this.secrets.mask(key, text)),
     run: (effect, signal) => this.runtime.runPromise(effect, { signal }),
     settings: (key) => ({
       size: this.projectForSession(key)?.vmSize ?? this.state.settings.vmSize,
@@ -290,7 +301,10 @@ export class DexAgent extends Agent<Env, DexState> {
     runEnded: (sandboxId, at) => this.ledger.runEnded(sandboxId, at),
     provision: async (key, setup) => {
       const github = await this.githubCredentials()
-      await provisionVm(setup, { github, project: this.projectForSession(key) ?? null })
+      const version = this.accountSecrets.version()
+      const env = version ? await this.accountSecrets.envFile() : null
+      await provisionVm(setup, { github, project: this.projectForSession(key) ?? null, env })
+      if (env !== null) this.vmSecretsVersion.set(key, version)
     },
     setupFinished: (key, error) => void this.notifyMachine(key, error),
     makeRoom: async (exceptKey) => {
@@ -387,6 +401,7 @@ export class DexAgent extends Agent<Env, DexState> {
     this.seedAgents()
     this.refreshAgents()
     this.skills.refresh()
+    this.accountSecrets.refresh()
     this.startMcp()
     await this.refreshClineStatus()
     await this.refreshSessions()
@@ -425,6 +440,14 @@ export class DexAgent extends Agent<Env, DexState> {
             ? `Secrets the user gave in this chat (values hidden from you): ${names.map((name) => `{{secret:${name}}}`).join(", ")}. Put the placeholder in vm_exec commands or vm_write_file content and Dex fills in the value on the VM. Never ask the user to paste a secret into the chat; ask with a render_ui password field instead.`
             : "To get an API key, token, or password from the user, ask with a render_ui form using an Input of type \"password\": Dex keeps the value out of the chat and you receive {{secret:<field name>}} to use in vm_exec and vm_write_file. Never ask them to paste one into a message."
         }),
+        section("saved_secrets", () => {
+          const saved = this.accountSecrets.list()
+          if (!saved.length) return undefined
+          return [
+            "Environment variables set on your VM from the user's saved secrets (Settings → Secrets). Use them by name ($NAME) in commands and config; their values are hidden from you and masked in output, so never print them or ask the user for these again:",
+            ...saved.map((secret) => `- ${secret.name}${secret.note ? `: ${secret.note}` : ""}`)
+          ].join("\n")
+        }),
         section("vm_access", () =>
           this.vmHost.configured()
             ? undefined
@@ -462,7 +485,10 @@ export class DexAgent extends Agent<Env, DexState> {
         // Always offered: a user can connect a boat.dev key at any time. Without one they fail with how to fix it,
         // and the vm_access section tells the model up front.
         ...vmTools((chatId) => this.vmFor(chatId), {
-          prepare: (chatId) => this.secrets.prepare(chatId),
+          prepare: async (chatId) => {
+            await Promise.all([this.secrets.prepare(chatId), this.accountSecrets.load()])
+            await this.syncVmSecrets(chatId)
+          },
           command: (chatId, command) => this.secrets.command(chatId, command),
           fill: (chatId, content) => this.secrets.fill(chatId, content)
         }),
@@ -538,6 +564,27 @@ export class DexAgent extends Agent<Env, DexState> {
       },
       BACKGROUND_CONTEXT
     )
+  }
+
+  /** Writes the saved secrets to a chat VM's env file if they changed since it last got them. */
+  private async syncVmSecrets(chatId: string) {
+    const version = this.accountSecrets.version()
+    if (!version || this.vmSecretsVersion.get(chatId) === version) return
+    const vm = this.vmFor(chatId)
+    await vm.writeFile(VM_ENV_FILE, await this.accountSecrets.envFile(), "system")
+    await vm.exec(VM_ENV_HOOK, { actor: "system", title: "Load saved secrets in VM shells" })
+    this.vmSecretsVersion.set(chatId, version)
+  }
+
+  /** Saves a secret every chat's VM gets as an environment variable. Omit `value` to change only the note. */
+  @callable()
+  async saveSecret(name: string, value: string | undefined, note?: string) {
+    return this.accountSecrets.save(name, value, note)
+  }
+
+  @callable()
+  removeSecret(name: string) {
+    return this.accountSecrets.remove(name)
   }
 
   /**

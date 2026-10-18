@@ -1,5 +1,6 @@
 import { Type } from "@earendil-works/pi-ai"
 import { defineTool } from "@earendil-works/pi-durable"
+import { VM_ENV_FILE } from "../secrets"
 import type { VmManager } from "../vm"
 
 const text = (value: string) => [{ type: "text" as const, text: value }]
@@ -11,6 +12,7 @@ export const VM_GUIDE = `This chat has its own VM (other chats have their own), 
 
 /** The chat's secrets (see SecretVault): filled in on the VM, never shown to the model. */
 export interface VmSecrets {
+  /** Loads the chat's and account's secrets for masking, and brings the VM's env file up to date. */
   prepare(chatId: string): Promise<unknown>
   command(chatId: string, command: string): Promise<{ command: string; env: string | null }>
   fill(chatId: string, content: string): Promise<string>
@@ -42,17 +44,25 @@ export const vmTools = (vmFor: (chatId: string) => VmManager, secrets: VmSecrets
       await secrets.prepare(chatId)
       // Secrets reach the command as environment variables, defined in a file it sources and deletes first.
       const resolved = await secrets.command(chatId, written)
-      let command = resolved.command
+      // Saved secrets (Settings → Secrets) load from the VM's env file before every command.
+      let command = `. ${VM_ENV_FILE} 2>/dev/null\n${resolved.command}`
       if (resolved.env) {
         const file = `/tmp/.dex-env-${crypto.randomUUID()}`
         await vm.writeFile(file, resolved.env, "agent", context.abortSignal)
         command = `. ${file}; rm -f ${file}\n${command}`
       }
+      const title = written
       // A trailing `&` would keep the call open until the process exits; start it detached instead.
       const trailingAmpersand = /(^|[^&])&\s*$/.test(command)
       if (background || trailingAmpersand) {
         const detached = trailingAmpersand ? command.replace(/&\s*$/, "").trim() : command
-        const started = await vm.spawn(detached, { actor: "agent", cwd, signal: context.abortSignal, onOutput: (data) => api.output(data) })
+        const started = await vm.spawn(detached, {
+          actor: "agent",
+          cwd,
+          signal: context.abortSignal,
+          onOutput: (data) => api.output(data),
+          title: title.replace(/&\s*$/, "").trim()
+        })
         return {
           output: text(
             `Started in the background as process ${started.processId}.\nstdout: ${started.logPath}\nstderr: ${started.errLogPath}\n` +
@@ -62,6 +72,7 @@ export const vmTools = (vmFor: (chatId: string) => VmManager, secrets: VmSecrets
       }
       const result = await vm.exec(command, {
         actor: "agent",
+        title,
         cwd,
         timeoutSeconds: timeout_seconds ?? 120,
         signal: context.abortSignal,

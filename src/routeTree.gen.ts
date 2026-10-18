@@ -15,6 +15,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppAccessRouteImport } from './routes/_app.access'
 import { Route as AppFilesRouteImport } from './routes/_app.files'
 import { Route as AppNotificationsRouteImport } from './routes/_app.notifications'
+import { Route as AppSecretsRouteImport } from './routes/_app.secrets'
 import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppUsageRouteImport } from './routes/_app.usage'
 import { Route as ApiMcpRouteImport } from './routes/api.mcp'
@@ -67,6 +68,11 @@ const AppFilesRoute = AppFilesRouteImport.update({
 const AppNotificationsRoute = AppNotificationsRouteImport.update({
   id: '/notifications',
   path: '/notifications',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSecretsRoute = AppSecretsRouteImport.update({
+  id: '/secrets',
+  path: '/secrets',
   getParentRoute: () => AppRoute,
 } as any)
 const AppSettingsRoute = AppSettingsRouteImport.update({
@@ -197,6 +203,7 @@ export interface FileRoutesByFullPath {
   '/access': typeof AppAccessRoute
   '/files': typeof AppFilesRoute
   '/notifications': typeof AppNotificationsRoute
+  '/secrets': typeof AppSecretsRoute
   '/settings': typeof AppSettingsRoute
   '/usage': typeof AppUsageRoute
   '/api/mcp': typeof ApiMcpRoute
@@ -228,6 +235,7 @@ export interface FileRoutesByTo {
   '/access': typeof AppAccessRoute
   '/files': typeof AppFilesRoute
   '/notifications': typeof AppNotificationsRoute
+  '/secrets': typeof AppSecretsRoute
   '/settings': typeof AppSettingsRoute
   '/usage': typeof AppUsageRoute
   '/api/mcp': typeof ApiMcpRoute
@@ -261,6 +269,7 @@ export interface FileRoutesById {
   '/_app/access': typeof AppAccessRoute
   '/_app/files': typeof AppFilesRoute
   '/_app/notifications': typeof AppNotificationsRoute
+  '/_app/secrets': typeof AppSecretsRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/usage': typeof AppUsageRoute
   '/api/mcp': typeof ApiMcpRoute
@@ -294,6 +303,7 @@ export interface FileRouteTypes {
     | '/access'
     | '/files'
     | '/notifications'
+    | '/secrets'
     | '/settings'
     | '/usage'
     | '/api/mcp'
@@ -325,6 +335,7 @@ export interface FileRouteTypes {
     | '/access'
     | '/files'
     | '/notifications'
+    | '/secrets'
     | '/settings'
     | '/usage'
     | '/api/mcp'
@@ -357,6 +368,7 @@ export interface FileRouteTypes {
     | '/_app/access'
     | '/_app/files'
     | '/_app/notifications'
+    | '/_app/secrets'
     | '/_app/settings'
     | '/_app/usage'
     | '/api/mcp'
@@ -440,6 +452,13 @@ declare module '@tanstack/react-router' {
       path: '/notifications'
       fullPath: '/notifications'
       preLoaderRoute: typeof AppNotificationsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/secrets': {
+      id: '/_app/secrets'
+      path: '/secrets'
+      fullPath: '/secrets'
+      preLoaderRoute: typeof AppSecretsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/settings': {
@@ -617,6 +636,7 @@ interface AppRouteChildren {
   AppAccessRoute: typeof AppAccessRoute
   AppFilesRoute: typeof AppFilesRoute
   AppNotificationsRoute: typeof AppNotificationsRoute
+  AppSecretsRoute: typeof AppSecretsRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppUsageRoute: typeof AppUsageRoute
   AppAgentsAgentIdRoute: typeof AppAgentsAgentIdRoute
@@ -637,6 +657,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAccessRoute: AppAccessRoute,
   AppFilesRoute: AppFilesRoute,
   AppNotificationsRoute: AppNotificationsRoute,
+  AppSecretsRoute: AppSecretsRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppUsageRoute: AppUsageRoute,
   AppAgentsAgentIdRoute: AppAgentsAgentIdRoute,

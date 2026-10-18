@@ -111,6 +111,8 @@ export const EXCLUDED: Readonly<Record<string, string>> = {
   connectCline: "Credentials are entered only in Settings, never through a chat or an external agent.",
   disconnectCline: "Credentials are managed only in Settings.",
   connectBoat: "Credentials are entered only in Settings, never through a chat or an external agent.",
+  saveSecret: "Secrets are entered only in Settings, never through a chat or an external agent.",
+  removeSecret: "Secrets are managed only in Settings.",
   storeChatSecret: "Secrets come only from the user's password fields in the browser; no chat or external agent may set or read them.",
   disconnectBoat: "Credentials are managed only in Settings.",
   connectGitHub: "Credentials are entered only in Settings, never through a chat or an external agent.",
@@ -322,6 +324,16 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     inChats: false,
     summarize: (args, state) => `Save a file into ${quote(chatTitle(state, args.session_id))}`,
     run: async (host, args) => host.saveArtifact(args.session_id, args.url)
+  }),
+  define({
+    name: "app_list_secrets",
+    description:
+      "The user's saved secrets: environment variable names (and notes) every chat's VM gets. Values are never available; they're added and changed only in Settings → Secrets.",
+    risk: "read",
+    parameters: Type.Object({}),
+    covers: [],
+    summarize: () => "List saved secret names",
+    run: async (host) => host.appState().secrets
   }),
   define({
     name: "app_list_skills",
