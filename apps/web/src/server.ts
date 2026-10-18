@@ -1,6 +1,7 @@
 import handler from "@tanstack/react-start/server-entry"
 import { routeAgentRequest } from "agents"
 import { activeViewer } from "./server/active-session"
+import { handleVmDesktop, VM_DESKTOP_PREFIX } from "./server/vm-desktop"
 
 export { DexAgent } from "./agent/dex-agent"
 
@@ -29,7 +30,8 @@ const authorizeAgent = (env: Env) => async (request: Request, route: { name: str
  * - connect-src 'self': even injected script couldn't send chat content anywhere but Dex.
  * - img-src: images only from Dex (and GitHub avatars), so a prompt-injected "image" URL can't leak data.
  * - script-src 'self' 'unsafe-inline': no third-party scripts (TanStack Start inlines its hydration scripts).
- * - frame-src: boat.dev (the VM desktop) and the YouTube/Vimeo players. Dex itself is never framed.
+ * - frame-src: the VM desktop (Dex's own /vm-desktop/ page, or boat.dev's players) and the YouTube/Vimeo players.
+ *   Only /vm-desktop/ may be framed, and only by Dex.
  * - media-src https:: video elsewhere, loaded only when the user taps play.
  */
 const CONTENT_SECURITY_POLICY = [
@@ -41,7 +43,7 @@ const CONTENT_SECURITY_POLICY = [
   "connect-src 'self'",
   // Video from other sites only loads after a tap (client/components/media.tsx), never from model output alone.
   "media-src 'self' blob: https:",
-  "frame-src https://boat.dev https://*.boat.dev https://www.youtube-nocookie.com https://player.vimeo.com",
+  "frame-src 'self' https://boat.dev https://*.boat.dev https://www.youtube-nocookie.com https://player.vimeo.com",
   "worker-src 'self'",
   "manifest-src 'self'",
   "frame-ancestors 'none'",
@@ -74,6 +76,7 @@ export default {
       const response = await routeAgentRequest(request, env, { onBeforeConnect: authorize, onBeforeRequest: authorize })
       if (response) return response
     }
+    if (new URL(request.url).pathname.startsWith(VM_DESKTOP_PREFIX)) return withSecurityHeaders(await handleVmDesktop(request, env), request)
     return withSecurityHeaders(await handler.fetch(request), request)
   }
 } satisfies ExportedHandler<Env>

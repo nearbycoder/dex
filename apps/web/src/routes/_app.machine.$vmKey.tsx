@@ -133,13 +133,22 @@ const iconButton = "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-
 
 /**
  * boat's Stream player needs MediaStreamTrackGenerator (Chromium only) and hangs elsewhere, notably on
- * iPhone/iPad where every browser is WebKit. Those get noVNC, which runs anywhere.
+ * iPhone/iPad where every browser is WebKit. Those get Selkies (H.264 over WebCodecs, served by Dex), with noVNC as
+ * the fallback that runs anywhere.
  */
 const streamSupported = () => typeof window !== "undefined" && "MediaStreamTrackGenerator" in window
 
+type DesktopMode = "stream" | "selkies" | "vnc"
+const MODE_KEY = "dex-desktop-mode"
+const initialMode = (): DesktopMode => {
+  const saved = typeof localStorage === "undefined" ? null : localStorage.getItem(MODE_KEY)
+  if (saved === "selkies" || saved === "vnc" || (saved === "stream" && streamSupported())) return saved
+  return streamSupported() ? "stream" : "selkies"
+}
+
 function Desktop({ vmKey, running }: { vmKey: string; running: boolean }) {
   const { stub } = useDex()
-  const [mode, setMode] = useState<"stream" | "vnc">(() => (streamSupported() ? "stream" : "vnc"))
+  const [mode, setMode] = useState<DesktopMode>(initialMode)
   const [url, setUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [control, setControl] = useState(false)
@@ -197,13 +206,18 @@ function Desktop({ vmKey, running }: { vmKey: string; running: boolean }) {
             </button>
             <select
               value={mode}
-              onChange={(event) => setMode(event.target.value as "stream" | "vnc")}
+              onChange={(event) => {
+                const next = event.target.value as DesktopMode
+                localStorage.setItem(MODE_KEY, next)
+                setMode(next)
+              }}
               className="rounded-md border border-zinc-800 bg-zinc-900 px-1.5 py-1 text-xs text-zinc-300"
               title="Streaming mode"
             >
               <option value="stream" disabled={!streamSupported()}>
                 Stream{streamSupported() ? "" : " (Chrome only)"}
               </option>
+              <option value="selkies">Selkies</option>
               <option value="vnc">noVNC</option>
             </select>
             <button type="button" onClick={() => void load()} title="Reconnect" className={iconButton}>
@@ -245,9 +259,11 @@ function Desktop({ vmKey, running }: { vmKey: string; running: boolean }) {
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4 text-center text-sm text-zinc-500">
             {loading ? <LoaderCircle className="size-5 animate-spin" /> : <MonitorPlay className="size-6" />}
-            {running ? (error ?? "Connecting to the desktop…") : "The desktop appears here while the VM is running."}
+            {running
+              ? (error ?? (mode === "selkies" ? "Starting the desktop stream… (the first time on a VM takes about 30 seconds)" : "Connecting to the desktop…"))
+              : "The desktop appears here while the VM is running."}
             {mode === "stream" && running && (
-              <span className="text-xs text-zinc-600">If the stream stays on “Connecting”, switch to noVNC.</span>
+              <span className="text-xs text-zinc-600">If the stream stays on “Connecting”, switch to Selkies or noVNC.</span>
             )}
           </div>
         )}

@@ -1,6 +1,7 @@
 import type { Effect } from "effect"
 import { NO_SETUP, SHARED_VM, type ServerMessage, type VmActivity, type VmInfo, type VmSetup, type VmSize } from "~/shared/protocol"
 import { BoatClient, BoatError, type CommandResult, type Sandbox } from "./boat"
+import { SELKIES_PORT, SELKIES_SETUP } from "./selkies"
 
 const READY = new Set(["ready", "idle", "running"])
 const BOOTING = new Set(["init", "provisioning", "provisioned", "cloning"])
@@ -9,6 +10,12 @@ const MAX_ACTIVITY_ROWS = 300
 const BOOT_TIMEOUT_MS = 4 * 60_000
 /** boat's own auto-stop deadline sits this far past the idle timeout: a fallback in case the agent is down. */
 const SAFETY_SECONDS = 15 * 60
+
+/** Where Dex's Worker reaches a VM's Selkies: boat's private port URL, with the cookie and login it needs. */
+export interface DesktopUpstream {
+  readonly origin: string
+  readonly headers: Record<string, string>
+}
 
 export interface VmHost {
   readonly sql: SqlStorage
@@ -32,6 +39,10 @@ export interface VmHost {
   makeRoom(exceptKey: string): Promise<boolean>
   /** A VM finished being set up: `error` is why it failed, or null. */
   setupFinished?(key: string, error: string | null): void
+  /** The template new VMs start from (see VmTemplate), or null for boat's base image. */
+  template?(): Promise<string | null>
+  /** Creating from the template found it gone. */
+  templateMissing?(): void
 }
 
 /** What `VmHost.provision` can do on a VM that is up but not handed to the model yet. */
@@ -161,6 +172,8 @@ export class VmManager {
   private lastExtend = 0
   /** Operations running on the VM; it never idle-stops while this is above zero. */
   private inFlight = 0
+  /** Selkies on the current sandbox, set up once; dropped when the Worker finds it gone (the VM restarted). */
+  private selkies: { sandboxId: string; upstream: Promise<DesktopUpstream> } | null = null
 
   constructor(private readonly host: VmHost, readonly key: string) {
     const row = this.row()
@@ -403,7 +416,15 @@ export class VmManager {
       return this.logged("system", "lifecycle", `Create ${size} VM`, async () => {
         this.ensureRow()
         this.update({ status: "starting", error: null })
-        const created = await withRoom(() => boat((client) => client.create({ type: size, ttlSeconds, idempotencyKey: crypto.randomUUID() })))
+        // From Dex's template when the account has one (the desktop stream is already installed), else boat's base image.
+        const from = (await this.host.template?.()) ?? undefined
+        const created = await withRoom(() => boat((client) => client.create({ type: size, ttlSeconds, idempotencyKey: crypto.randomUUID(), from }))).catch(
+          (error: unknown) => {
+            if (!from || !(error instanceof BoatError && error.status === 404)) throw error
+            this.host.templateMissing?.()
+            return withRoom(() => boat((client) => client.create({ type: size, ttlSeconds, idempotencyKey: crypto.randomUUID() })))
+          }
+        )
         this.setSandboxId(created.id)
         this.setSetup(NO_SETUP)
         this.fromSandbox(created)
@@ -773,5 +794,41 @@ export class VmManager {
       await sleep(2_000)
     }
     return null
+  }
+
+  /**
+   * Where the Worker streams this VM's desktop from (src/server/vm-desktop.ts), setting Selkies up on first use.
+   * Null while the VM isn't running. `refresh` starts over, for when the stream stopped answering. The result holds
+   * the port cookie and password: it goes to the Worker only, never to a browser.
+   */
+  desktopUpstream(refresh = false): Promise<DesktopUpstream | null> {
+    const id = this.sandboxId()
+    if (!id || this.info.status !== "running") return Promise.resolve(null)
+    if (refresh || this.selkies?.sandboxId !== id) {
+      const upstream = this.startSelkies(id)
+      this.selkies = { sandboxId: id, upstream }
+      upstream.catch(() => {
+        if (this.selkies?.upstream === upstream) this.selkies = null
+      })
+    }
+    this.touch()
+    return this.selkies!.upstream
+  }
+
+  private async startSelkies(id: string): Promise<DesktopUpstream> {
+    const boat = <A>(effect: (client: BoatClient["Service"]) => Effect.Effect<A, BoatError>) => this.host.run(BoatClient.use(effect))
+    const setup = await boat((client) => client.exec(id, SELKIES_SETUP, { timeoutSeconds: 240 }))
+    const password = (setup.stdout ?? "").trim().split("\n").pop() ?? ""
+    if (setup.exitCode !== 0 || !/^[A-Za-z0-9]{16,}$/.test(password)) {
+      throw new Error(`Couldn't start the desktop stream: ${tail(setup.stderr || setup.stdout || `exit ${setup.exitCode}`, 600)}`)
+    }
+    // boat trades the link's one-time token for a cookie on its port domain (SameSite=None, which Safari won't send
+    // from inside Dex); the Worker sends it instead.
+    const url = await boat((client) => client.hostPort(id, SELKIES_PORT, false))
+    const response = await fetch(url, { redirect: "manual" })
+    const cookies = response.headers.getSetCookie?.() ?? [response.headers.get("set-cookie") ?? ""]
+    const cookie = cookies.map((value) => value.split(";")[0]?.trim() ?? "").filter((value) => value.startsWith("_port_auth=")).join("; ")
+    if (!cookie) throw new Error(`boat.dev didn't open the desktop port (HTTP ${response.status})`)
+    return { origin: new URL(url).origin, headers: { cookie, authorization: `Basic ${btoa(`dex:${password}`)}` } }
   }
 }

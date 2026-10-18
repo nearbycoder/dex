@@ -45,6 +45,8 @@
 - A chat gets its own Ubuntu VM ([boat.dev](https://boat.dev): root, Docker, Node, Bun, Python, Chrome, and a desktop) the first time the model needs one. Plain questions never start one.
 - **Tools:** `vm_exec` (output streams live), `vm_screenshot` (the agent sees the desktop and clicks and types with `xdotool`), `vm_read_file` / `vm_write_file`, `vm_expose_port` (token-protected URLs), `share_media`, `vm_stop`.
 - **The Machine page** shows the live desktop and every command as it happens. Take control of the desktop, run your own commands, open ports, re-run setup, or stop the agent mid-run to take over.
+- **The desktop streams three ways:** boat's Stream player (Chrome), [Selkies](https://github.com/selkies-project/selkies) (H.264 over a WebSocket, decoded by WebCodecs, so it plays on iPhone and iPad too, and the default wherever Stream can't play), or noVNC. Selkies' client ships with Dex and the stream is relayed by the Worker, which adds the VM's port cookie and password, so neither reaches the browser.
+- **VM template:** Dex saves a prepared disk in your boat account (a named snapshot with the desktop stream installed, built on a throwaway VM without your credentials, rebuilt monthly), and new VMs start from it, ready in seconds. Until it exists, a VM installs the stream the first time you open its desktop.
 - **Lifecycle:** a VM stops after 5 idle minutes (configurable) and keeps its disk. It's deleted with its chat, and Dex retries every 5 minutes if boat.dev can't be reached then. Requests retry when Cloudflare can't connect, and when boat refuses another running VM, Dex stops the least recently used idle one.
 - **Your own boat.dev account:** everyone connects their own boat.dev key in Settings → Cloud VMs (checked, then stored encrypted). The deployment's `BOAT_API_KEY` serves only its owner.
 
@@ -264,7 +266,7 @@ cd ../.. && npm run deploy                    # checks operations, builds, and d
 - Cline has no third-party OAuth, so users connect with an API key.
 - The `/workspace` shell is simulated (just-bash) and can't install or run programs; real work happens on a VM.
 - boat.dev's free trial allows 2 running VMs at once; stopped VM disks are kept 14 days.
-- The embedded desktop uses boat's stream mode. noVNC needs a third-party cookie, so Safari opens it in a new tab.
+- boat's Stream player needs Chrome; other browsers (every iPhone and iPad browser) use Selkies. The Selkies desktop keeps the VM's screen size (the agent's screenshots and clicks depend on it) and scales the picture to fit.
 - `web_search` needs Web Search billing on the Cloudflare account.
 - Pi Durable has no tool-approval step yet and can't delete conversations, so deleting a chat hides it.
 - The official MCP Registry can take many seconds for a search it hasn't cached; Smithery is the fast default.
@@ -272,3 +274,5 @@ cd ../.. && npm run deploy                    # checks operations, builds, and d
 ## License
 
 [MIT](LICENSE)
+
+The Selkies web client in `apps/web/public/assets/selkies` is unmodified from its 2.0.0 release and is under the [Mozilla Public License 2.0](apps/web/public/assets/selkies/LICENSE.txt).

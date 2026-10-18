@@ -67,7 +67,8 @@ import { verifyGitHubToken, type GitHubIdentity } from "./github-token"
 import { provisionVm, shellQuote } from "./provision"
 import { PushCenter, type SubscriptionInput } from "./push"
 import type { BackgroundAction, NotifyKind, PushPayload } from "~/shared/notifications"
-import { adoptSharedVm, errorText, migrateVmTables, storedVmKeys, type VmHost, VmManager } from "./vm"
+import { VmTemplate } from "./vm-template"
+import { adoptSharedVm, type DesktopUpstream, errorText, migrateVmTables, storedVmKeys, type VmHost, VmManager } from "./vm"
 import { Workspace, WORKSPACE_ROOT } from "./workspace"
 
 const AgentLayer = (env: object, boatKey: BoatKey["Service"]) =>
@@ -304,6 +305,13 @@ export class DexAgent extends Agent<Env, DexState> {
   /** Chats whose next queued message is being sent, so two finishing runs don't send two. */
   private readonly draining = new Set<string>()
 
+  /** The prepared disk new VMs start from, built in the user's boat account. */
+  private readonly vmTemplate = new VmTemplate({
+    sql: this.ctx.storage.sql,
+    run: (effect) => this.runtime.runPromise(effect),
+    keepAliveWhile: (work) => this.keepAliveWhile(work)
+  })
+
   /** One VM per chat (plus `shared`, from before VMs were per chat), created when a chat first needs one. */
   private readonly vms = new Map<string, VmManager>()
   private readonly vmHost: VmHost = {
@@ -331,6 +339,8 @@ export class DexAgent extends Agent<Env, DexState> {
       if (env !== null) this.vmSecretsVersion.set(key, version)
     },
     setupFinished: (key, error) => void this.notifyMachine(key, error),
+    template: () => this.vmTemplate.current(),
+    templateMissing: () => this.vmTemplate.forget(),
     makeRoom: async (exceptKey) => {
       // The least recently used VM that nothing is running on.
       const candidate = [...this.vms.values()]
@@ -1840,9 +1850,24 @@ export class DexAgent extends Agent<Env, DexState> {
     return { exitCode: result.exitCode, output: result.output.slice(-16_000) }
   }
 
+  /**
+   * The desktop to frame on the Machine page. `selkies` is served by Dex itself (src/server/vm-desktop.ts): the
+   * stream is set up first (about 30s the first time on a VM), then the page is a same-origin path.
+   */
   @callable()
-  async vmDesktopUrl(key: string, mode: "stream" | "vnc"): Promise<string | null> {
-    return this.vms.get(key)?.desktopUrl(mode === "vnc" ? "vnc" : "stream") ?? null
+  async vmDesktopUrl(key: string, mode: "stream" | "vnc" | "selkies"): Promise<string | null> {
+    const vm = this.vms.get(key)
+    if (!vm) return null
+    if (mode === "selkies") return (await vm.desktopUpstream()) ? `/vm-desktop/${encodeURIComponent(key)}/` : null
+    return vm.desktopUrl(mode === "vnc" ? "vnc" : "stream")
+  }
+
+  /**
+   * For the Worker's desktop proxy only (not callable): where this user's VM streams its desktop, with the port
+   * cookie and password, which never reach a browser.
+   */
+  async vmDesktopUpstream(key: string, refresh = false): Promise<DesktopUpstream | null> {
+    return (await this.vms.get(key)?.desktopUpstream(refresh)) ?? null
   }
 
   @callable()

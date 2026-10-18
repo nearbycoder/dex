@@ -46,6 +46,7 @@ const CommandStarted = Schema.Struct({
 
 const FileRead = Schema.Struct({ content: Schema.String, size: Schema.Number })
 const PortHosted = Schema.Struct({ url: Schema.String })
+const NamedSnapshotEnvelope = Schema.Struct({ snapshot: Schema.Struct({ name: Schema.String, status: Schema.String }) })
 const DesktopResponse = Schema.Struct({ type: Schema.String, desktopUrl: OptionalString })
 
 const StreamFrame = Schema.Union([
@@ -95,7 +96,8 @@ export class BoatKey extends Context.Service<BoatKey, { readonly get: Effect.Eff
 
 /** boat.dev cloud VMs: lifecycle, commands, files, ports, and the live desktop. */
 export class BoatClient extends Context.Service<BoatClient, {
-  create(options: { type: SandboxType; ttlSeconds: number; idempotencyKey: string }): Effect.Effect<Sandbox, BoatError>
+  /** `from` starts from a named snapshot (a template); `noEnv` leaves out the account's environment (credentials). */
+  create(options: { type: SandboxType; ttlSeconds: number; idempotencyKey: string; from?: string; noEnv?: boolean }): Effect.Effect<Sandbox, BoatError>
   get(id: string): Effect.Effect<Sandbox, BoatError>
   resume(id: string, ttlSeconds: number): Effect.Effect<Sandbox, BoatError>
   stop(id: string): Effect.Effect<void, BoatError>
@@ -108,6 +110,10 @@ export class BoatClient extends Context.Service<BoatClient, {
   readFile(id: string, path: string, encoding?: "utf8" | "base64"): Effect.Effect<typeof FileRead.Type, BoatError>
   writeFile(id: string, path: string, content: string, encoding?: "utf8" | "base64"): Effect.Effect<void, BoatError>
   hostPort(id: string, port: number, isPublic: boolean): Effect.Effect<string, BoatError>
+  /** A named snapshot's status (`saving`, `ready`, …), or null if there's none by that name. */
+  namedSnapshot(name: string): Effect.Effect<string | null, BoatError>
+  /** Saves a sandbox's disk under a name (replacing an older save); it's `saving` until it settles at `ready`. */
+  saveNamedSnapshot(sandboxId: string, name: string): Effect.Effect<void, BoatError>
   /**
    * A desktop URL: `stream` (low-latency WebCodecs player, Chromium only) or `vnc` (noVNC, works everywhere).
    * noVNC is requested with public access: no cookie, gated by the VNC password in the URL, so it also works
@@ -174,8 +180,13 @@ export class BoatClient extends Context.Service<BoatClient, {
       const sandbox = (request: HttpClientRequest.HttpClientRequest) => json(SandboxEnvelope)(request).pipe(Effect.map((envelope) => envelope.sandbox))
 
       return BoatClient.of({
-        create: ({ type, ttlSeconds, idempotencyKey }) =>
-          sandbox(HttpClientRequest.post(url("/sandboxes")).pipe(HttpClientRequest.setHeader("idempotency-key", idempotencyKey), body({ type, ttlSeconds }))),
+        create: ({ type, ttlSeconds, idempotencyKey, from, noEnv }) =>
+          sandbox(
+            HttpClientRequest.post(url("/sandboxes")).pipe(
+              HttpClientRequest.setHeader("idempotency-key", idempotencyKey),
+              body({ type, ttlSeconds, ...(from ? { from } : {}), ...(noEnv ? { noEnv } : {}) })
+            )
+          ),
 
         get: (id) => sandbox(HttpClientRequest.get(url(`/sandboxes/${id}`))),
 
@@ -231,6 +242,15 @@ export class BoatClient extends Context.Service<BoatClient, {
 
         hostPort: (id, port, isPublic) =>
           json(PortHosted)(HttpClientRequest.post(url(`/sandboxes/${id}/host`)).pipe(body({ port, public: isPublic }))).pipe(Effect.map((hosted) => hosted.url)),
+
+        namedSnapshot: (name) =>
+          json(NamedSnapshotEnvelope)(HttpClientRequest.get(url(`/named-snapshots/${encodeURIComponent(name)}`))).pipe(
+            Effect.map((envelope) => envelope.snapshot.status),
+            Effect.catchIf((error) => error.status === 404, () => Effect.succeed(null))
+          ),
+
+        saveNamedSnapshot: (sandboxId, name) =>
+          send(HttpClientRequest.post(url("/named-snapshots")).pipe(body({ sandboxId, name }))).pipe(Effect.asVoid),
 
         desktop: (id, mode) =>
           json(DesktopResponse)(
