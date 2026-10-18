@@ -101,7 +101,23 @@ function useDrag(key: string, width: number, height: number, fallback: () => Poi
     [key, onTap]
   )
 
-  return { point, handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onPointerUp } }
+  // The browser took the gesture over (or it was interrupted): keep where it got to, and it isn't a tap.
+  const onPointerCancel = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => {
+      const current = drag.current
+      if (!current || current.id !== event.pointerId) return
+      drag.current = null
+      if (current.moved) setPoint((final) => (localStorage.setItem(key, JSON.stringify(final)), final))
+    },
+    [key]
+  )
+
+  return {
+    point,
+    // Inline, so it beats styles.css giving every button `touch-action: manipulation` (unlayered CSS outranks
+    // Tailwind's touch-none): otherwise iOS scrolls the page under the finger and cancels the drag.
+    handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel, style: { touchAction: "none" } as const }
+  }
 }
 
 export function VmPreview({ vm }: { vm: VmInfo }) {
@@ -133,7 +149,9 @@ function PreviewButton({ vm, onOpen }: { vm: VmInfo; onOpen: () => void }) {
       title="Watch this chat's VM"
       aria-label="Watch this chat's VM"
       data-no-haptic
-      style={{ left: point.x, top: point.y, width: BUTTON, height: BUTTON }}
+      data-no-press
+      // No pressed dimming (styles.css dims every tapped button on phones): it reads as broken while dragging.
+      style={{ ...handlers.style, opacity: 1, left: point.x, top: point.y, width: BUTTON, height: BUTTON }}
       className="animate-pop fixed z-40 flex touch-none items-center justify-center rounded-full border border-zinc-700 bg-zinc-900/95 text-zinc-200 shadow-lg shadow-black/50 backdrop-blur select-none hover:bg-zinc-800"
     >
       <Monitor className="size-5" />
