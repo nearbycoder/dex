@@ -10,7 +10,6 @@ import {
   FolderGit2,
   FolderOpen,
   KeyRound,
-  LayoutDashboard,
   LockKeyhole,
   LogOut,
   MessageSquarePlus,
@@ -199,10 +198,6 @@ export function Sidebar() {
                 className="flex items-center gap-2 rounded-lg border border-zinc-800 px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-900"
               >
                 <MessageSquarePlus className="size-4" /> New chat
-              </Link>
-              <Link to="/board" onClick={onClose} className={`${linkClass} mt-1`}>
-                <LayoutDashboard className="size-4" /> Board
-                {(state?.pins?.length ?? 0) > 0 && <span className="ml-auto text-[11px] text-zinc-600">{state?.pins?.length}</span>}
               </Link>
             </div>
             <nav className="scrollbar-thin mt-4 flex-1 space-y-0.5 overflow-y-auto px-3">

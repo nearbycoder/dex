@@ -1,7 +1,7 @@
 import { type ActionEvent, BuiltinActionType, type McpClientLike, type OpenUIError, type ParseResult, Renderer } from "@openuidev/react-lang"
 import { ThemeProvider } from "@openuidev/react-ui"
-import { Link, useNavigate } from "@tanstack/react-router"
-import { Check, Pin, ShieldAlert, Wrench, X } from "lucide-react"
+import { useNavigate } from "@tanstack/react-router"
+import { Check, ShieldAlert, Wrench, X } from "lucide-react"
 import { useContext, useEffect, useMemo, useRef, useState } from "react"
 import { ChatSecretsContext } from "~/client/lib/chat-secrets"
 import { OpenUIHostContext } from "~/client/lib/openui-host"
@@ -101,20 +101,16 @@ const programProblems = (errors: ReadonlyArray<OpenUIError>) =>
     .map((item) => [item.statementId && `${item.statementId}:`, item.component && `${item.component}`, item.message, item.hint && `(${item.hint})`].filter(Boolean).join(" "))
 
 /**
- * Renders a render_ui program (a chat's card, or a panel on the board), live while its arguments stream in. Its
+ * Renders a chat's render_ui program, live while its arguments stream in. Its
  * Query() and Mutation() calls run app operations through the host; its form and filter state is saved per card.
  */
 export default function OpenUIBlock(props: {
   code: string
   streaming: boolean
-  /** Which card this is, for its saved state: the render_ui call's id, or `main` on a board panel. */
+  /** Which card this is, for its saved state: the render_ui call's id. */
   card: string
-  /** The render_ui call's title, the default name when pinned. */
-  title?: string
-  /** Sends a message to the chat (@ToAssistant buttons and forms); absent where there's no chat to ask. */
-  onSend?: (message: string) => void
-  /** Offer to have the model fix a broken program (in its chat). */
-  fixable?: boolean
+  /** Sends a message to the chat (@ToAssistant buttons and forms, and Fix it). */
+  onSend: (message: string) => void
 }) {
   const storeSecret = useContext(ChatSecretsContext)
   const host = useContext(OpenUIHostContext)
@@ -125,7 +121,6 @@ export default function OpenUIBlock(props: {
   // Live data that didn't load and buttons that failed: the program only shows these if the model thought to.
   const [toolErrors, setToolErrors] = useState<ReadonlyArray<string>>([])
   const [problems, setProblems] = useState<ReadonlyArray<string>>([])
-  const [pinned, setPinned] = useState<"no" | "pinning" | "yes">("no")
   const mutationOnly = useRef<ReadonlySet<string>>(new Set())
   const wantsRows = useRef<ReadonlySet<string>>(new Set())
   // An admin operation a button asked for, shown with Dex's own summary of it (not the model's label).
@@ -225,7 +220,6 @@ export default function OpenUIBlock(props: {
     setError(null)
     const fields = passwordFields()
     try {
-      if (!props.onSend) throw new Error("This panel's chat was deleted, so there's no one to send this to.")
       if (fields.size && !storeSecret) throw new Error("Secrets can't be kept out of the chat here, so this wasn't sent.")
       const formState = fields.size && storeSecret ? await withoutSecrets(event.formState, fields, storeSecret) : event.formState
       props.onSend(toModelMessage(event, formState))
@@ -261,19 +255,6 @@ export default function OpenUIBlock(props: {
           () => setError("Couldn't copy to the clipboard.")
         )
       }
-    }
-  }
-
-  const pin = async () => {
-    if (!host?.pin) return
-    setPinned("pinning")
-    setError(null)
-    try {
-      await host.pin({ title: props.title?.trim() || "Pinned panel", code: props.code, state: latestState.current })
-      setPinned("yes")
-    } catch (cause) {
-      setPinned("no")
-      setError(cause instanceof Error ? cause.message : String(cause))
     }
   }
 
@@ -339,16 +320,15 @@ export default function OpenUIBlock(props: {
           </p>
         ))}
         {error && <p className="px-1 pt-2 text-xs text-red-400">{error}</p>}
-        {!props.streaming && (showProblems || host?.pin || notice) && (
+        {!props.streaming && (showProblems || notice) && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1 pt-2 text-xs text-zinc-500">
             {showProblems && (
               <span className="flex min-w-0 items-center gap-1.5 text-amber-300/90" title={problems.join("\n")}>
                 {problems.length} {problems.length === 1 ? "problem" : "problems"} in this UI
-                {props.fixable && props.onSend && (
-                  <button
+                <button
                     type="button"
                     onClick={() =>
-                      props.onSend?.(
+                      props.onSend(
                         `[UI errors] The UI you rendered has problems. Render it again, fixed:\n${problems.map((problem) => `- ${problem}`).join("\n")}`
                       )
                     }
@@ -356,29 +336,9 @@ export default function OpenUIBlock(props: {
                   >
                     <Wrench className="size-3" /> Fix it
                   </button>
-                )}
               </span>
             )}
             {notice && <span className="text-emerald-400">{notice}</span>}
-            {host?.pin &&
-              (pinned === "yes" ? (
-                <span className="ml-auto flex items-center gap-1 text-emerald-400">
-                  <Check className="size-3" /> Pinned ·{" "}
-                  <Link to="/board" className="underline-offset-2 hover:underline">
-                    Open board
-                  </Link>
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  disabled={pinned === "pinning"}
-                  onClick={() => void pin()}
-                  title="Keep this as a live panel on your board"
-                  className="ml-auto flex items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-zinc-900 hover:text-zinc-200 disabled:opacity-50"
-                >
-                  <Pin className="size-3" /> Pin to board
-                </button>
-              ))}
           </div>
         )}
       </div>

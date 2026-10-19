@@ -271,17 +271,6 @@ export const OUTPUTS: Readonly<Record<string, TSchema>> = {
   app_list_schedules: T.Array(
     T.Object({ id: T.String(), prompt: T.String(), sessionId: nullable(T.String()), when: T.String(), cron: nullable(T.String()) })
   ),
-  app_list_pins: T.Array(
-    T.Object({
-      id: T.String(),
-      title: T.String(),
-      sessionId: nullable(T.String({ description: "The chat it came from" })),
-      position: T.Number(),
-      createdAt: ms("Pinned"),
-      updatedAt: ms("Changed"),
-      code: T.String({ description: "Its OpenUI Lang program" })
-    })
-  ),
   app_list_files: T.Array(T.Object({ path: T.String(), size: T.Number(), mtime: ms("Modified") })),
   app_read_file: T.Object({ path: T.String(), content: nullable(T.String({ description: "null for a binary file" })), size: T.Number() })
 }

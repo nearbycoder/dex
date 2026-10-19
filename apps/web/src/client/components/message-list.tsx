@@ -5,7 +5,7 @@ import { AlertTriangle, ArrowDown, Brain, ChevronRight, Clock, ListChecks, Loade
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { displayItems, type LiveTool, toolResults, type TranscriptState } from "~/client/lib/transcript"
 import { invokedSkill } from "~/shared/skills"
-import { splitUiNotes } from "~/shared/board"
+import { splitUiNotes } from "~/shared/ui-notes"
 import { Collapse } from "./collapse"
 import { ConfirmCard } from "./confirm-card"
 import { MediaPlayer, videoSource } from "./media"
@@ -253,9 +253,7 @@ function AssistantTurnView(props: {
                 code={block.arguments.code as string}
                 streaming={props.streaming}
                 card={block.id}
-                title={typeof block.arguments.title === "string" ? block.arguments.title : undefined}
                 onSend={props.onSend}
-                fixable
               />
             </Suspense>
           )

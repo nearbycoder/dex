@@ -46,7 +46,7 @@ import type {
   WorkspaceFile
 } from "~/shared/protocol"
 import { MCP_VM, SHARED_VM } from "~/shared/protocol"
-import { type Pin, type PinInfo, pinOfScope, pinScope, withUiNotes } from "~/shared/board"
+import { withUiNotes } from "~/shared/ui-notes"
 import { githubFullName, isProjectImage, normalizeRepoUrl, type ProjectDraft, type ProjectImageCandidate, type ProjectProfile, type ProjectRepo, PROJECT_ROOT, repoDirName, repoLabel } from "~/shared/projects"
 import { CLOUDFLARE_RATES, type CloudflareLine, type OpenCodeLimits, type UsageRange, type UsageReport } from "~/shared/usage"
 import { AGENT_COLORS, AGENT_ICONS, type AgentDraft, type AgentProfile, STARTER_AGENTS } from "~/shared/agents"
@@ -465,9 +465,9 @@ export class DexAgent extends Agent<Env, DexState> {
   }
 
   override async onStart() {
-    // State saved before VMs were per chat has a single `vm`; `vms` replaced it.
-    if ("vm" in this.state) {
-      const { vm: _single, ...current } = this.state as DexState & { vm?: unknown }
+    // State saved before VMs were per chat has a single `vm`; `vms` replaced it. `pins` was the board's, now gone.
+    if ("vm" in this.state || "pins" in this.state) {
+      const { vm: _single, pins: _pins, ...current } = this.state as DexState & { vm?: unknown; pins?: unknown }
       this.setState(current)
     }
     // Settings saved before a field existed get its default.
@@ -482,7 +482,7 @@ export class DexAgent extends Agent<Env, DexState> {
     this.publishVms()
     this.refreshProjects()
     this.refreshGitHubStatus()
-    this.publish({ push: this.push.status(), access: this.access.status(), build: __DEX_BUILD__, pins: this.uiCards.pinInfos() })
+    this.publish({ push: this.push.status(), access: this.access.status(), build: __DEX_BUILD__ })
     this.ctx.waitUntil(this.refreshModels().catch(() => undefined))
     void this.backfillUsage()
     this.seedAgents()
@@ -1241,8 +1241,6 @@ export class DexAgent extends Agent<Env, DexState> {
     this.messageQueue.clear(sessionId)
     this.secrets.forget(sessionId)
     this.uiCards.forget(sessionId)
-    this.uiCards.detachChat(sessionId)
-    this.publish({ pins: this.uiCards.pinInfos() })
     await this.refreshSessions()
     // Its VM goes with it, disk and all (stopped first if it was running; deleting does both), and its media.
     if (this.vms.has(sessionId)) this.ctx.waitUntil(this.reapOrphanVms())
@@ -2875,66 +2873,28 @@ export class DexAgent extends Agent<Env, DexState> {
    * Admin ones come back as `confirm` until you confirm Dex's summary of them in the card (`confirmed`).
    */
   @callable()
-  async runUiOperation(scope: string, name: string, args: unknown, options: { query?: boolean; confirmed?: boolean } = {}): Promise<UiOperationResult> {
-    const where = this.uiScope(scope)
-    if (!where) return { ok: false, error: "That chat or panel is gone." }
-    const outcome = await this.access.runFromUi(where, String(name), args, { query: options.query !== false, confirmed: options.confirmed === true })
-    // A chat hears about the changes you made with its UI along with your next message.
-    if (outcome.ok === true && outcome.changed && !pinOfScope(scope)) this.uiCards.note(scope, outcome.changed)
+  async runUiOperation(sessionId: string, name: string, args: unknown, options: { query?: boolean; confirmed?: boolean } = {}): Promise<UiOperationResult> {
+    const session = this.state.sessions.find((candidate) => candidate.id === sessionId)
+    if (!session) return { ok: false, error: "Chat not found" }
+    const outcome = await this.access.runFromUi({ scope: session.id, label: session.title }, String(name), args, {
+      query: options.query !== false,
+      confirmed: options.confirmed === true
+    })
+    // The chat hears about the changes you made with its UI along with your next message.
+    if (outcome.ok === true && outcome.changed) this.uiCards.note(session.id, outcome.changed)
     return outcome
   }
 
-  /** A generated UI's home: a chat, or a panel on the board (with the chat it came from, if that's still around). */
-  private uiScope(scope: string): { scope: string; label: string } | null {
-    const pinId = pinOfScope(String(scope))
-    if (pinId) {
-      const pin = this.uiCards.pin(pinId)
-      return pin ? { scope: pinScope(pin.id), label: `the board panel “${pin.title}”` } : null
-    }
-    const session = this.state.sessions.find((candidate) => candidate.id === scope)
-    return session ? { scope: session.id, label: session.title } : null
-  }
-
-  /** A generated UI's saved form and filter state, by card (a chat's render_ui call id; a pin's is `main`). */
+  /** A chat's generated UIs' saved form and filter state, by card (its render_ui call id). */
   @callable()
-  async uiStates(scope: string): Promise<Record<string, unknown>> {
-    return this.uiScope(scope) ? this.uiCards.states(scope) : {}
+  async uiStates(sessionId: string): Promise<Record<string, unknown>> {
+    return this.hasSession(sessionId) ? this.uiCards.states(sessionId) : {}
   }
 
   @callable()
-  async saveUiState(scope: string, card: string, state: unknown) {
-    if (!this.uiScope(scope)) return
-    this.uiCards.saveState(scope, String(card), state)
-  }
-
-  // ── The board ─────────────────────────────────────────────────────────────
-
-  /** The board's panels with their programs (the synced state has only their titles and order). */
-  @callable()
-  async boardPins(): Promise<Pin[]> {
-    return this.uiCards.pins()
-  }
-
-  /** Pins a generated UI to the board, with the state it has now. `sessionId` is the chat it came from. */
-  @callable()
-  async pinUi(input: { title: string; code: string; sessionId?: string | null; state?: unknown }): Promise<PinInfo> {
-    const sessionId = input.sessionId && this.hasSession(input.sessionId) ? input.sessionId : null
-    const pin = this.uiCards.addPin({ title: String(input.title ?? ""), code: String(input.code ?? ""), sessionId, state: input.state })
-    this.publish({ pins: this.uiCards.pinInfos() })
-    return pin
-  }
-
-  @callable()
-  async updatePin(id: string, changes: { title?: string; code?: string; position?: number }): Promise<PinInfo> {
-    const pin = this.uiCards.updatePin(String(id), changes)
-    this.publish({ pins: this.uiCards.pinInfos() })
-    return pin
-  }
-
-  @callable()
-  async unpin(id: string) {
-    this.uiCards.removePin(String(id))
-    this.publish({ pins: this.uiCards.pinInfos() })
+  async saveUiState(sessionId: string, card: string, state: unknown) {
+    if (!this.hasSession(sessionId)) return
+    this.uiCards.saveState(sessionId, String(card), state)
   }
 
   /**

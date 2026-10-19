@@ -13,7 +13,6 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppAccessRouteImport } from './routes/_app.access'
-import { Route as AppBoardRouteImport } from './routes/_app.board'
 import { Route as AppFilesRouteImport } from './routes/_app.files'
 import { Route as AppNotificationsRouteImport } from './routes/_app.notifications'
 import { Route as AppSecretsRouteImport } from './routes/_app.secrets'
@@ -60,11 +59,6 @@ const LoginRoute = LoginRouteImport.update({
 const AppAccessRoute = AppAccessRouteImport.update({
   id: '/access',
   path: '/access',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppBoardRoute = AppBoardRouteImport.update({
-  id: '/board',
-  path: '/board',
   getParentRoute: () => AppRoute,
 } as any)
 const AppFilesRoute = AppFilesRouteImport.update({
@@ -213,7 +207,6 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/access': typeof AppAccessRoute
-  '/board': typeof AppBoardRoute
   '/files': typeof AppFilesRoute
   '/notifications': typeof AppNotificationsRoute
   '/secrets': typeof AppSecretsRoute
@@ -247,7 +240,6 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/access': typeof AppAccessRoute
-  '/board': typeof AppBoardRoute
   '/files': typeof AppFilesRoute
   '/notifications': typeof AppNotificationsRoute
   '/secrets': typeof AppSecretsRoute
@@ -283,7 +275,6 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
   '/_app/access': typeof AppAccessRoute
-  '/_app/board': typeof AppBoardRoute
   '/_app/files': typeof AppFilesRoute
   '/_app/notifications': typeof AppNotificationsRoute
   '/_app/secrets': typeof AppSecretsRoute
@@ -319,7 +310,6 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/access'
-    | '/board'
     | '/files'
     | '/notifications'
     | '/secrets'
@@ -353,7 +343,6 @@ export interface FileRouteTypes {
     | '/'
     | '/login'
     | '/access'
-    | '/board'
     | '/files'
     | '/notifications'
     | '/secrets'
@@ -388,7 +377,6 @@ export interface FileRouteTypes {
     | '/_app'
     | '/login'
     | '/_app/access'
-    | '/_app/board'
     | '/_app/files'
     | '/_app/notifications'
     | '/_app/secrets'
@@ -463,13 +451,6 @@ declare module '@tanstack/react-router' {
       path: '/access'
       fullPath: '/access'
       preLoaderRoute: typeof AppAccessRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/board': {
-      id: '/_app/board'
-      path: '/board'
-      fullPath: '/board'
-      preLoaderRoute: typeof AppBoardRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/files': {
@@ -673,7 +654,6 @@ declare module '@tanstack/react-router' {
 
 interface AppRouteChildren {
   AppAccessRoute: typeof AppAccessRoute
-  AppBoardRoute: typeof AppBoardRoute
   AppFilesRoute: typeof AppFilesRoute
   AppNotificationsRoute: typeof AppNotificationsRoute
   AppSecretsRoute: typeof AppSecretsRoute
@@ -695,7 +675,6 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppAccessRoute: AppAccessRoute,
-  AppBoardRoute: AppBoardRoute,
   AppFilesRoute: AppFilesRoute,
   AppNotificationsRoute: AppNotificationsRoute,
   AppSecretsRoute: AppSecretsRoute,

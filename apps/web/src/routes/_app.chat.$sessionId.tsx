@@ -64,7 +64,7 @@ function Chat() {
   )
   const pendingTexts = useMemo(() => pending.map((item) => item.text), [pending])
   const storeSecret = useCallback((field: string, value: string) => stub.storeChatSecret(sessionId, field, value), [stub, sessionId])
-  // Generated UIs in this chat: their operations, their saved filters and choices, and pinning them to the board.
+  // Generated UIs in this chat: their operations, and their saved filters and choices.
   const [uiStates, setUiStates] = useState<{ readonly sessionId: string; readonly states: Record<string, unknown> } | null>(null)
   useEffect(() => {
     let current = true
@@ -83,10 +83,7 @@ function Chat() {
       scope: sessionId,
       run: (name, args, options) => stub.runUiOperation(sessionId, name, args, options),
       states: uiStates?.sessionId === sessionId ? uiStates.states : null,
-      saveState: (card, state) => void stub.saveUiState(sessionId, card, state).catch(() => undefined),
-      pin: async (input) => {
-        await stub.pinUi({ ...input, sessionId })
-      }
+      saveState: (card, state) => void stub.saveUiState(sessionId, card, state).catch(() => undefined)
     }),
     [stub, sessionId, uiStates]
   )

@@ -2,7 +2,6 @@ import type { AgentEvent, SnapshotEvent } from "@earendil-works/pi-durable"
 import { Predicate } from "effect"
 import { type AccessState, NO_ACCESS } from "./access"
 import type { AgentProfile } from "./agents"
-import type { PinInfo } from "./board"
 import type { McpServerInfo } from "./mcp"
 import type { ChatArtifact } from "./media"
 import type { SkillInfo } from "./skills"
@@ -158,7 +157,6 @@ export const withStateDefaults = (state: DexState): DexState => ({
   access: state.access ?? NO_ACCESS,
   skills: state.skills ?? [],
   secrets: state.secrets ?? [],
-  pins: state.pins ?? [],
   sessions: state.sessions.map((session) => ({
     ...session,
     agentId: session.agentId ?? null,
@@ -199,8 +197,6 @@ export interface DexState {
   readonly build?: string
   /** The model list the agent last looked up (the list itself comes from `modelCatalog()` when `version` changes). */
   readonly models?: { readonly version: string; readonly updatedAt: number }
-  /** The board's pinned panels (their programs come from `boardPins()`). */
-  readonly pins?: ReadonlyArray<PinInfo>
 }
 
 export interface WorkspaceFile {
