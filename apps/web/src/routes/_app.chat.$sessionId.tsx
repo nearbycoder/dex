@@ -11,6 +11,7 @@ import { AgentAvatar } from "~/client/components/agent-avatar"
 import { SessionMenu, useNaming } from "~/client/components/session-menu"
 import { VmPreview } from "~/client/components/vm-preview"
 import { Bone, ChatSkeleton } from "~/client/components/skeleton"
+import { ChatOperationsContext, type RunUiOperation } from "~/client/lib/chat-operations"
 import { ChatSecretsContext } from "~/client/lib/chat-secrets"
 import { useDex, useTranscript } from "~/client/lib/dex"
 import { MenuButton } from "~/client/lib/mobile-nav"
@@ -63,6 +64,7 @@ function Chat() {
   )
   const pendingTexts = useMemo(() => pending.map((item) => item.text), [pending])
   const storeSecret = useCallback((field: string, value: string) => stub.storeChatSecret(sessionId, field, value), [stub, sessionId])
+  const runUiOperation = useCallback<RunUiOperation>((name, args, options) => stub.runUiOperation(sessionId, name, args, options), [stub, sessionId])
   // Files saved into this chat replace the VM links they came from.
   const artifacts = useMemo<ChatArtifacts>(
     () => ({
@@ -180,9 +182,11 @@ function Chat() {
       </header>
 
       <ChatSecretsContext.Provider value={storeSecret}>
-        <ChatArtifactsContext.Provider value={artifacts}>
-          {transcript.loaded ? <MessageList key={sessionId} transcript={transcript} onSend={send} pending={pendingTexts} /> : <ChatSkeleton />}
-        </ChatArtifactsContext.Provider>
+        <ChatOperationsContext.Provider value={runUiOperation}>
+          <ChatArtifactsContext.Provider value={artifacts}>
+            {transcript.loaded ? <MessageList key={sessionId} transcript={transcript} onSend={send} pending={pendingTexts} /> : <ChatSkeleton />}
+          </ChatArtifactsContext.Provider>
+        </ChatOperationsContext.Provider>
       </ChatSecretsContext.Provider>
 
       <div className="mx-auto w-full max-w-3xl px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:px-4 md:pb-[max(1rem,env(safe-area-inset-bottom))]">

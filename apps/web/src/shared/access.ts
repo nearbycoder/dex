@@ -27,11 +27,12 @@ export interface AccessToken {
   readonly expiresAt: number | null
 }
 
-/** One operation run by a chat or an external agent, kept for review. */
+/** One operation run by a chat, an external agent, or a chat's generated UI, kept for review. */
 export interface AuditEntry {
   readonly id: number
   readonly at: number
-  readonly actor: "chat" | "mcp" | "user"
+  /** `user`: an admin operation you confirmed. `ui`: a button (or live view) in a chat's generated UI. */
+  readonly actor: "chat" | "mcp" | "user" | "ui"
   /** The chat's title or the token's label. */
   readonly actorLabel: string
   readonly operation: string
@@ -64,3 +65,10 @@ export interface CreatedAccessToken {
   readonly token: AccessToken
   readonly secret: string
 }
+
+/** What a chat's generated UI gets back when it runs an operation (its Query and Mutation calls). */
+export type UiOperationResult =
+  | { readonly ok: true; readonly result: unknown }
+  | { readonly ok: false; readonly error: string }
+  /** An admin operation: run it again with `confirmed` once you've confirmed this summary. */
+  | { readonly ok: "confirm"; readonly summary: string }

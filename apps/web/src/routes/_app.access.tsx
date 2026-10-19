@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { Bot, Check, Copy, KeyRound, LoaderCircle, Plug, ShieldAlert, Trash2, X } from "lucide-react"
+import { Bot, Check, Copy, KeyRound, LoaderCircle, MousePointerClick, Plug, ShieldAlert, Trash2, X } from "lucide-react"
 import { useEffect, useState } from "react"
 import { AccessSkeleton } from "~/client/components/skeleton"
 import { Page, Section } from "~/client/components/ui"
@@ -244,7 +244,7 @@ function AccessPage() {
           </div>
         </Section>
 
-        <Section title="Activity" info="Every app operation run by a chat or an external agent, newest first.">
+        <Section title="Activity" info="Every app operation run by a chat, an external agent, or a button in a chat's UI, newest first.">
           {access.audit.length === 0 ? (
             <p className="text-sm text-zinc-500">Nothing yet.</p>
           ) : (
@@ -255,13 +255,15 @@ function AccessPage() {
                     <Plug className="mt-0.5 size-3.5 shrink-0 text-sky-400" />
                   ) : entry.actor === "user" ? (
                     <Check className="mt-0.5 size-3.5 shrink-0 text-amber-400" />
+                  ) : entry.actor === "ui" ? (
+                    <MousePointerClick className="mt-0.5 size-3.5 shrink-0 text-violet-400" />
                   ) : (
                     <Bot className="mt-0.5 size-3.5 shrink-0 text-emerald-400" />
                   )}
                   <span className="min-w-0 flex-1">
                     <span className={`block text-sm break-words ${entry.ok ? "text-zinc-200" : "text-zinc-400"}`}>{entry.summary}</span>
                     <span className="block truncate text-xs text-zinc-500">
-                      {entry.actor === "user" ? "You confirmed, for " : ""}
+                      {entry.actor === "user" ? "You confirmed, for " : entry.actor === "ui" ? "From a button in " : ""}
                       {entry.actorLabel} · {timeAgo(entry.at)}
                       {!entry.ok && entry.error && <span className="text-red-400"> · {entry.error}</span>}
                     </span>

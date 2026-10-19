@@ -49,7 +49,7 @@ import { MCP_VM, SHARED_VM } from "~/shared/protocol"
 import { githubFullName, isProjectImage, normalizeRepoUrl, type ProjectDraft, type ProjectImageCandidate, type ProjectProfile, type ProjectRepo, PROJECT_ROOT, repoDirName, repoLabel } from "~/shared/projects"
 import { CLOUDFLARE_RATES, type CloudflareLine, type OpenCodeLimits, type UsageRange, type UsageReport } from "~/shared/usage"
 import { AGENT_COLORS, AGENT_ICONS, type AgentDraft, type AgentProfile, STARTER_AGENTS } from "~/shared/agents"
-import { type AccessRisk, type CreatedAccessToken, NO_ACCESS } from "~/shared/access"
+import { type AccessRisk, type CreatedAccessToken, NO_ACCESS, type UiOperationResult } from "~/shared/access"
 import { extensionOf, MAX_MEDIA_BYTES, vmMediaLinks, vmMediaSource } from "~/shared/media"
 import type { McpCheckReport, RegistryServer, RegistrySource } from "~/shared/mcp-registry"
 import type { GitHubAccess, GitHubRepo } from "~/shared/projects"
@@ -2848,6 +2848,16 @@ export class DexAgent extends Agent<Env, DexState> {
   @callable()
   async resolvePendingAction(id: string, approve: boolean) {
     await this.access.resolve(id, approve)
+  }
+
+  /**
+   * An operation run by a chat's generated UI: a Query's live data (`query`, reads only) or a button's Mutation.
+   * Admin ones come back as `confirm` until you confirm Dex's summary of them in the card (`confirmed`).
+   */
+  @callable()
+  async runUiOperation(sessionId: string, name: string, args: unknown, options: { query?: boolean; confirmed?: boolean } = {}): Promise<UiOperationResult> {
+    if (!this.hasSession(sessionId)) return { ok: false, error: "Chat not found" }
+    return this.access.runFromUi(sessionId, String(name), args, { query: options.query !== false, confirmed: options.confirmed === true })
   }
 
   /**

@@ -1,5 +1,5 @@
 import { Value } from "typebox/value"
-import type { AccessRisk, AccessState, AccessToken, AuditEntry, CreatedAccessToken, PendingAction } from "~/shared/access"
+import type { AccessRisk, AccessState, AccessToken, AuditEntry, CreatedAccessToken, PendingAction, UiOperationResult } from "~/shared/access"
 import { riskRank } from "~/shared/access"
 import type { DexState } from "~/shared/protocol"
 import { type Caller, type Operation, type OperationHost, operationByName, riskOf } from "./operations"
@@ -8,11 +8,14 @@ const TOKEN_PREFIX = "dexk"
 /** A chat's request for an admin operation waits this long for the user. */
 const PENDING_TTL_MS = 60 * 60_000
 const MAX_RESULT_CHARS = 60_000
+const MAX_UI_RESULT_CHARS = 500_000
 
 /** Per caller, per window: generous for real work, small enough to stop a loop or a leaked token from running away. */
 const LIMITS = {
   mcpPerMinute: 120,
   chatCallsPerMinute: 60,
+  /** A chat's generated UI: its live views refetch on their own and every card in the chat loads its data. */
+  uiCallsPerMinute: 120,
   chatSessionsPerHour: 20,
   chatMessagesPerHour: 60
 }
@@ -145,6 +148,9 @@ const toPending = (row: PendingRow): PendingAction => ({
  * rate-limited, and written to the audit log shown on the Access page.
  */
 export class AccessCenter {
+  /** Recent calls from each chat's generated UI (its reads aren't audited, so they're counted here). */
+  private readonly uiCalls = new Map<string, number[]>()
+
   constructor(private readonly host: AccessHost) {
     host.sql.exec(`CREATE TABLE IF NOT EXISTS dex_access_tokens (
       id TEXT PRIMARY KEY, label TEXT NOT NULL, hash TEXT NOT NULL UNIQUE, scope TEXT NOT NULL,
@@ -240,7 +246,7 @@ export class AccessCenter {
     const [actor, ref, label] =
       caller.kind === "mcp"
         ? ["mcp", `mcp:${caller.tokenId}`, caller.label]
-        : [caller.kind, `chat:${caller.sessionId}`, state.sessions.find((session) => session.id === caller.sessionId)?.title ?? `chat ${caller.sessionId}`]
+        : [caller.kind, `${caller.kind === "ui" ? "ui" : "chat"}:${caller.sessionId}`, state.sessions.find((session) => session.id === caller.sessionId)?.title ?? `chat ${caller.sessionId}`]
     this.host.sql.exec(
       `INSERT INTO dex_audit (at, actor, actor_ref, actor_label, operation, summary, ok, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       Date.now(), actor, ref, label.slice(0, 120), operation, summary.slice(0, 300), error ? 0 : 1, error?.slice(0, 500) ?? null
@@ -290,17 +296,46 @@ export class AccessCenter {
     return this.run(operation, args, caller, summary)
   }
 
-  private async run(operation: Operation, args: unknown, caller: Caller, summary: string): Promise<OperationOutcome> {
+  /**
+   * Runs an operation for a chat's generated UI: a Query (live data, which runs on its own, so it may only read) or
+   * a Mutation (a button you pressed). Write operations run like a chat's; admin ones first come back as `confirm`
+   * with Dex's own summary of what they do (not the model's button label) and run once you've confirmed it.
+   * Reads aren't audited: a live view refreshing every 30 seconds would bury everything else.
+   */
+  async runFromUi(sessionId: string, name: string, rawArgs: unknown, options: { readonly query: boolean; readonly confirmed: boolean }): Promise<UiOperationResult> {
+    const operation = operationByName.get(name)
+    if (!operation || operation.inChats === false) return { ok: false, error: `Unknown operation ${name}.` }
+    // A UI passes `null` for a filter that isn't set (a $variable with no value); operations want the field left out.
+    const args = rawArgs && typeof rawArgs === "object" && !Array.isArray(rawArgs) ? Object.fromEntries(Object.entries(rawArgs).filter(([, value]) => value !== null)) : (rawArgs ?? {})
+    if (!Value.Check(operation.parameters, args)) return { ok: false, error: `Invalid arguments for ${name}: ${describeErrors(operation, args)}` }
+    const now = Date.now()
+    const recent = (this.uiCalls.get(sessionId) ?? []).filter((at) => now - at < 60_000)
+    if (recent.length >= LIMITS.uiCallsPerMinute) return { ok: false, error: "Too many requests from this chat's UI; slow down." }
+    this.uiCalls.set(sessionId, [...recent, now])
+
+    const risk = riskOf(operation, args)
+    const summary = this.summarize(operation, args)
+    if (options.query && risk !== "read") return { ok: false, error: `${name} changes things, so it runs only from a button (Mutation), not as live data (Query).` }
+    if (risk === "admin" && !options.confirmed) return { ok: "confirm", summary }
+    const caller: Caller = { kind: "ui", sessionId }
+    const outcome = await this.run(operation, args, caller, summary, risk !== "read")
+    if (outcome.ok !== true) return { ok: false, error: outcome.ok === false ? outcome.error : "Not run." }
+    // It goes back over the app's WebSocket, whose messages are limited to 1 MB.
+    if ((JSON.stringify(outcome.result) ?? "").length > MAX_UI_RESULT_CHARS) return { ok: false, error: `${name} returned too much to show here; ask for less.` }
+    return outcome
+  }
+
+  private async run(operation: Operation, args: unknown, caller: Caller, summary: string, audited = true): Promise<OperationOutcome> {
     try {
       const result = await operation.run(this.host.operations, args as never, caller)
-      this.audit(caller, operation.name, summary, null)
+      if (audited) this.audit(caller, operation.name, summary, null)
       return { ok: true, result }
     } catch (cause) {
       const error = cause instanceof Error ? cause.message : String(cause)
-      this.audit(caller, operation.name, summary, error)
+      if (audited) this.audit(caller, operation.name, summary, error)
       return { ok: false, error }
     } finally {
-      this.refresh()
+      if (audited) this.refresh()
     }
   }
 

@@ -20,11 +20,15 @@ import type { DexAgent } from "./dex-agent"
  * (an MCP token's scope; a chat must get the user's confirmation for `admin`), rate-limits, and audits it.
  */
 
-/** Who is asking. A chat runs operations from its own tools; an MCP caller holds a token. */
+/**
+ * Who is asking. A chat runs operations from its own tools; an MCP caller holds a token; `user` is you confirming
+ * a chat's admin request; `ui` is you using a chat's generated UI (its live data and buttons).
+ */
 export type Caller =
   | { readonly kind: "chat"; readonly sessionId: string }
   | { readonly kind: "mcp"; readonly tokenId: string; readonly label: string }
   | { readonly kind: "user"; readonly sessionId: string }
+  | { readonly kind: "ui"; readonly sessionId: string }
 
 /** The parts of DexAgent operations use: its callables plus a few helpers for programmatic callers. */
 export type OperationHost = Pick<
@@ -135,6 +139,7 @@ export const EXCLUDED: Readonly<Record<string, string>> = {
   createAccessToken: "Access is granted only by the signed-in user, so no token can mint more access.",
   revokeAccessToken: "Access is managed only by the signed-in user.",
   resolvePendingAction: "Confirming an admin operation must come from the user, not from an agent.",
+  runUiOperation: "The runner behind a chat's generated UI (its Query and Mutation calls); it runs these operations itself, gated like a chat's app_call.",
   signOutEverywhere: "Sessions are managed only by the signed-in user."
 }
 
