@@ -1,7 +1,8 @@
 import { Link } from "@tanstack/react-router"
-import { Brain, Check, ChevronDown, Eye, Search, Type } from "lucide-react"
+import { Brain, Check, ChevronDown, Eye, RefreshCw, Search, Type } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { useDex } from "~/client/lib/dex"
+import { timeAgo } from "~/client/lib/format"
 import {
   clampThinking,
   type DexModel,
@@ -43,7 +44,8 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
   const [only, setOnly] = useState<ModelProvider | "all">("all")
   const root = useRef<HTMLDivElement>(null)
   const current = findModel(props.model)
-  const { state } = useDex()
+  const { state, stub, connected: online } = useDex()
+  const [checking, setChecking] = useState(false)
   const connected: Record<ModelProvider, boolean> = { clinepass: state?.cline.connected ?? true, "opencode-go": state?.opencode.connected ?? true }
   // Connected subscriptions first; a model matches on its name, maker, or subscription.
   const providers = (Object.keys(MODEL_PROVIDERS) as ModelProvider[]).sort((a, b) => Number(connected[b]) - Number(connected[a]))
@@ -207,6 +209,26 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
           <p className="border-t border-zinc-900 px-3 py-2 text-[11px] leading-relaxed text-zinc-500">
             Text-only models can't see images or VM screenshots. Pick a <span className="text-emerald-400">Vision</span> model for
             those.
+            {state?.models && state.models.updatedAt > 0 && (
+              <span className="mt-1 flex items-center gap-1 text-zinc-600">
+                List checked with the providers {timeAgo(state.models.updatedAt)}.
+                <button
+                  type="button"
+                  title="Check for new and retired models now"
+                  disabled={!online || checking}
+                  onClick={() => {
+                    setChecking(true)
+                    void stub
+                      .refreshModelList()
+                      .catch(() => undefined)
+                      .finally(() => setChecking(false))
+                  }}
+                  className="p-0.5 text-zinc-500 hover:text-zinc-300 disabled:opacity-50"
+                >
+                  <RefreshCw className={`size-3 ${checking ? "animate-spin" : ""}`} />
+                </button>
+              </span>
+            )}
           </p>
         </div>
       )}

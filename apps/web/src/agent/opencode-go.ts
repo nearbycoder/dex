@@ -6,7 +6,7 @@ import type { ProviderStreams } from "@earendil-works/pi-ai"
 import { createProvider } from "@earendil-works/pi-ai/models"
 import { Context, Effect, Layer, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
-import { OPENCODE_GO_MODELS } from "~/shared/models"
+import { modelsOf } from "~/shared/models"
 import type { OpenCodeLimits } from "~/shared/usage"
 
 export const OPENCODE_GO_PROVIDER_ID = "opencode-go"
@@ -52,7 +52,7 @@ export const openCodeGoProvider = (resolveKey: () => Promise<{ key: string; sour
         }
       }
     },
-    models: OPENCODE_GO_MODELS.map((model) => ({
+    models: modelsOf("opencode-go").map((model) => ({
       id: model.apiId,
       name: model.name,
       api: model.api ?? "openai-completions",

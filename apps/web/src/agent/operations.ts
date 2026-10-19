@@ -30,6 +30,7 @@ export type Caller =
 export type OperationHost = Pick<
   DexAgent,
   | "createSession"
+  | "refreshModelList"
   | "sendMessage"
   | "abort"
   | "configureSession"
@@ -584,12 +585,13 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
   define({
     name: "app_list_models",
     description:
-      "Models chats and agents can use: each runs on a subscription (ClinePass or OpenCode Go), usable only while that one is connected. With image input, context window, thinking levels, and cost per million tokens.",
+      "Models chats and agents can use: each runs on a subscription (ClinePass or OpenCode Go), usable only while that one is connected. With image input, context window, thinking levels, and cost per million tokens. The list refreshes from the providers hourly; `refresh` looks it up now (when a model seems missing or renamed).",
     risk: "read",
-    parameters: Type.Object({}),
-    covers: [],
-    summarize: () => "List models",
-    run: async (host) => {
+    parameters: Type.Object({ refresh: Type.Optional(Type.Boolean()) }),
+    covers: ["modelCatalog", "refreshModelList"],
+    summarize: (args) => (args.refresh ? "Refresh and list models" : "List models"),
+    run: async (host, args) => {
+      if (args.refresh) await host.refreshModelList()
       const state = host.appState()
       const connected = { clinepass: state.cline.connected, "opencode-go": state.opencode.connected }
       return MODELS.map((model) => ({

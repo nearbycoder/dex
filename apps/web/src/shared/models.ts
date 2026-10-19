@@ -7,6 +7,10 @@
  *   models Go lists and serves.
  * `id` is unique across both (it's what chats store); `apiId` is what the provider's API calls the model.
  * In a thinking map, `null` marks a level the model rejects; a missing key uses the provider's default.
+ *
+ * This list is built in, so a fresh agent has models before it has looked anything up. Providers add, rename, and
+ * retire models often, so each agent refreshes it from the providers (src/agent/model-catalog.ts) and installs the
+ * result with `setModelCatalog`; open apps fetch it when the synced state says it changed.
  */
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const
 export type ThinkingLevel = (typeof THINKING_LEVELS)[number]
@@ -89,7 +93,7 @@ const CLINEPASS: ReadonlyArray<CatalogEntry & { id: string }> = [
   { id: "cline-pass/muse-spark-1.3-contributor", name: "Muse Spark 1.3 (Contributor)", maker: "meta", input: ["text", "image"], contextWindow: 1_048_576, maxTokens: 943_718, cost: { input: 0.1, output: 0.2, cacheRead: 0.002, cacheWrite: 0 }, thinkingLevelMap: { off: null, minimal: "minimal", low: "low", medium: "medium", high: "high", xhigh: "xhigh" } }
 ]
 
-export const CLINEPASS_MODELS: ReadonlyArray<DexModel> = CLINEPASS.map((model) => ({ ...model, apiId: model.id, provider: "clinepass" }))
+const BUILT_IN_CLINEPASS: ReadonlyArray<DexModel> = CLINEPASS.map((model) => ({ ...model, apiId: model.id, provider: "clinepass" }))
 
 const OPENCODE_GO: ReadonlyArray<CatalogEntry & { apiId: string }> = [
   {"apiId": "glm-5.3", "name": "GLM-5.3", "maker": "zai", "api": "openai-completions", "baseUrl": "https://opencode.ai/inference/go/v1", "input": ["text"], "contextWindow": 1000000, "maxTokens": 131072, "cost": {"input": 1.4, "output": 4.4, "cacheRead": 0.26, "cacheWrite": 0}, "thinkingLevelMap": {"off": null, "minimal": null, "low": "low", "medium": null, "high": "high", "xhigh": null, "max": "max"}, "compat": {"supportsStore": false, "supportsDeveloperRole": false, "supportsStrictMode": true, "maxTokensField": "max_tokens"}},
@@ -119,21 +123,50 @@ const OPENCODE_GO: ReadonlyArray<CatalogEntry & { apiId: string }> = [
   {"apiId": "hy4-preview", "name": "Hy4 Preview", "maker": "tencent", "api": "openai-completions", "baseUrl": "https://opencode.ai/inference/go/v1", "input": ["text"], "contextWindow": 1024000, "maxTokens": 64000, "cost": {"input": 0.834, "output": 2.501, "cacheRead": 0.042, "cacheWrite": 0}, "thinkingLevelMap": {"off": "none", "minimal": null, "low": null, "medium": null, "high": "high", "xhigh": null, "max": null}, "compat": {"supportsStore": false, "supportsDeveloperRole": false, "supportsStrictMode": true, "maxTokensField": "max_tokens"}},
   {"apiId": "hy3", "name": "Hy3", "maker": "tencent", "api": "openai-completions", "baseUrl": "https://opencode.ai/inference/go/v1", "input": ["text"], "contextWindow": 256000, "maxTokens": 128000, "cost": {"input": 0.14, "output": 0.58, "cacheRead": 0.035, "cacheWrite": 0}, "thinkingLevelMap": {"off": "none", "minimal": null, "low": "low", "medium": null, "high": "high", "xhigh": null, "max": null}, "compat": {"supportsStore": false, "supportsDeveloperRole": false, "supportsStrictMode": true, "maxTokensField": "max_tokens"}},
   {"apiId": "step-5-preview", "name": "Step 5 Preview", "maker": "stepfun", "api": "openai-completions", "baseUrl": "https://opencode.ai/inference/go/v1", "input": ["text", "image"], "contextWindow": 1000000, "maxTokens": 65536, "cost": {"input": 1.0, "output": 2.7, "cacheRead": 0.1, "cacheWrite": 0}, "thinkingLevelMap": {"off": null, "minimal": null, "low": "low", "medium": "medium", "high": "high", "xhigh": null, "max": null}, "compat": {"supportsStore": false, "supportsDeveloperRole": false, "supportsStrictMode": true, "maxTokensField": "max_tokens"}},
-  {"apiId": "space-bunny", "name": "Space Bunny", "maker": "opencode", "api": "openai-completions", "baseUrl": "https://opencode.ai/inference/go/v1", "input": ["text", "image"], "contextWindow": 1048576, "maxTokens": 524288, "cost": {"input": 0.15, "output": 0.6, "cacheRead": 0.03, "cacheWrite": 0}, "thinkingLevelMap": {"off": null, "minimal": null, "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": "max"}, "compat": {"supportsStore": false, "supportsDeveloperRole": false, "supportsStrictMode": true, "maxTokensField": "max_tokens"}}
 ]
 
-export const OPENCODE_GO_MODELS: ReadonlyArray<DexModel> = OPENCODE_GO.map((model) => ({
+const BUILT_IN_OPENCODE_GO: ReadonlyArray<DexModel> = OPENCODE_GO.map((model) => ({
   ...model,
   id: `opencode-go/${model.apiId}`,
   provider: "opencode-go"
 }))
 
-export const MODELS: ReadonlyArray<DexModel> = [...CLINEPASS_MODELS, ...OPENCODE_GO_MODELS]
+export const BUILT_IN_MODELS: ReadonlyArray<DexModel> = [...BUILT_IN_CLINEPASS, ...BUILT_IN_OPENCODE_GO]
+
+/** A refreshed model list: `version` changes only when the list does; `updatedAt` is when it was last checked. */
+export interface ModelCatalog {
+  readonly version: string
+  readonly updatedAt: number
+  readonly models: ReadonlyArray<DexModel>
+}
+
+/** Every model that can run now. The same array is updated in place by `setModelCatalog`, so importers see changes. */
+const current: DexModel[] = [...BUILT_IN_MODELS]
+let currentUpdatedAt = 0
+export const MODELS: ReadonlyArray<DexModel> = current
+
+/**
+ * Installs a refreshed list, unless one checked more recently is already in place (agents can share a runtime).
+ * Models from a maker or provider this build doesn't know (a newer agent's list in an older app) are left out.
+ */
+export function setModelCatalog(catalog: Pick<ModelCatalog, "models" | "updatedAt">): boolean {
+  const models = catalog.models.filter((model) => model.maker in MODEL_MAKERS && model.provider in MODEL_PROVIDERS)
+  if (catalog.updatedAt < currentUpdatedAt || models.length === 0) return false
+  current.splice(0, current.length, ...models)
+  currentUpdatedAt = catalog.updatedAt
+  return true
+}
+
+/** The models one subscription offers now. */
+export const modelsOf = (provider: ModelProvider) => MODELS.filter((model) => model.provider === provider)
 
 export const DEFAULT_MODEL_ID = "cline-pass/glm-5.3"
 export const DEFAULT_THINKING: ThinkingLevel = "low"
 
 export const findModel = (id: string) => MODELS.find((model) => model.id === id)
+
+/** The default model, or the first one listed if the provider has retired it. */
+export const defaultModelId = () => (findModel(DEFAULT_MODEL_ID) ? DEFAULT_MODEL_ID : (MODELS[0]?.id ?? DEFAULT_MODEL_ID))
 
 /** Which subscription a chat's model runs on (a stored id that's no longer listed counts as ClinePass, as before). */
 export const providerOf = (id: string): ModelProvider => findModel(id)?.provider ?? (id.startsWith("opencode-go/") ? "opencode-go" : "clinepass")

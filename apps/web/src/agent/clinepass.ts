@@ -2,7 +2,7 @@ import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completio
 import { createProvider } from "@earendil-works/pi-ai/models"
 import { Context, Effect, Layer, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
-import { CLINEPASS_MODELS } from "~/shared/models"
+import { modelsOf } from "~/shared/models"
 
 export const CLINEPASS_PROVIDER_ID = "clinepass"
 export const CLINEPASS_BASE_URL = "https://api.cline.bot/api/v1"
@@ -26,7 +26,7 @@ export const clinePassProvider = (resolveKey: () => Promise<{ key: string; sourc
         }
       }
     },
-    models: CLINEPASS_MODELS.map((model) => ({
+    models: modelsOf("clinepass").map((model) => ({
       id: model.id,
       name: model.name,
       api: "openai-completions" as const,

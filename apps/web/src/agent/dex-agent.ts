@@ -17,7 +17,20 @@ import { PiHarness } from "agents/harness/pi"
 import { Effect, Layer, ManagedRuntime, Option, Redacted, Schema } from "effect"
 import { AppConfig, envConfigProvider } from "~/server/config"
 import { Keys } from "~/server/crypto"
-import { clampThinking, DEFAULT_MODEL_ID, DEFAULT_THINKING, findModel, providerOf, type ThinkingLevel, usableModel } from "~/shared/models"
+import {
+  clampThinking,
+  DEFAULT_MODEL_ID,
+  DEFAULT_THINKING,
+  defaultModelId,
+  findModel,
+  MODELS,
+  type ModelCatalog,
+  modelsOf,
+  providerOf,
+  setModelCatalog,
+  type ThinkingLevel,
+  usableModel
+} from "~/shared/models"
 import type {
   ClientMessage,
   ConnectClineResult,
@@ -46,6 +59,7 @@ import { BoatClient, BoatKey, checkBoatKey } from "./boat"
 import { CloudflareAnalytics, type CloudflareDay, dayCost, emptyDay } from "./cloudflare-analytics"
 import { datesBetween, UsageLedger, utcDate } from "./usage-ledger"
 import { CLINEPASS_PROVIDER_ID, ClinePassClient, clinePassProvider } from "./clinepass"
+import { catalogChanges, catalogVersion, fetchModelCatalog } from "./model-catalog"
 import { OpenCodeGoClient, openCodeGoProvider } from "./opencode-go"
 import { isMcpExtension, type McpCallResult, mcpExtension, mcpExtensionName, type McpToolSpec, toToolResult } from "./mcp-tools"
 import { AccessCenter, parseAccessToken } from "./access"
@@ -382,8 +396,8 @@ export class DexAgent extends Agent<Env, DexState> {
       this.registry.install(this.coreExtension())
       const registry = this.registry
       const models = createModels()
-      models.setProvider(clinePassProvider(() => this.resolveClineKey()))
-      models.setProvider(openCodeGoProvider(() => this.resolveOpenCodeKey()))
+      this.installProviders(models)
+      this.chatModels = models
       return Harness.open(
         storage,
         {
@@ -402,6 +416,9 @@ export class DexAgent extends Agent<Env, DexState> {
     },
     defaults: { model: { provider: CLINEPASS_PROVIDER_ID, id: DEFAULT_MODEL_ID }, thinkingLevel: DEFAULT_THINKING }
   })
+
+  /** The model registry chats run on, kept so a refreshed model list reaches running chats too. */
+  private chatModels?: ReturnType<typeof createModels>
 
   /** Live event streams, by WebSocket connection id. They live in memory; clients re-subscribe after an eviction. */
   private readonly subscriptions = new Map<string, { sessionId: string; stream: AgentEventStream }>()
@@ -435,6 +452,10 @@ export class DexAgent extends Agent<Env, DexState> {
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_mcp (
       id TEXT PRIMARY KEY, data TEXT NOT NULL, headers TEXT, tools TEXT NOT NULL DEFAULT '[]',
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
+    // The model list this agent last looked up, if it was made by this build (a new build's built-in list wins
+    // until the next lookup, which onStart starts at once).
+    const catalog = this.storedCatalog()
+    if (catalog?.build === __DEX_BUILD__) setModelCatalog(catalog)
     this.lifecycle.use(this.harness)
   }
 
@@ -457,6 +478,7 @@ export class DexAgent extends Agent<Env, DexState> {
     this.refreshProjects()
     this.refreshGitHubStatus()
     this.publish({ push: this.push.status(), access: this.access.status(), build: __DEX_BUILD__ })
+    this.ctx.waitUntil(this.refreshModels().catch(() => undefined))
     void this.backfillUsage()
     this.seedAgents()
     this.refreshAgents()
@@ -837,7 +859,7 @@ export class DexAgent extends Agent<Env, DexState> {
   @callable()
   async updateSettings(patch: Partial<DexSettings>) {
     const settings = { ...this.state.settings, ...patch }
-    if (!findModel(settings.defaultModel)) settings.defaultModel = DEFAULT_MODEL_ID
+    if (!findModel(settings.defaultModel)) settings.defaultModel = defaultModelId()
     if (!VM_SIZES.has(settings.vmSize)) settings.vmSize = DEFAULT_SETTINGS.vmSize
     settings.vmMinutes = Math.min(24 * 60, Math.max(1, Math.round(Number(settings.vmMinutes) || DEFAULT_SETTINGS.vmMinutes)))
     settings.defaultThinking = clampThinking(findModel(settings.defaultModel), settings.defaultThinking)
@@ -860,7 +882,7 @@ export class DexAgent extends Agent<Env, DexState> {
     const agent = options.agentId ? this.agentById(options.agentId) : undefined
     const project = options.projectId ? this.projectById(options.projectId) : undefined
     const fallbackModel = agent?.model ?? this.state.settings.defaultModel
-    const picked = options.model && findModel(options.model) ? options.model : findModel(fallbackModel) ? fallbackModel : DEFAULT_MODEL_ID
+    const picked = options.model && findModel(options.model) ? options.model : findModel(fallbackModel) ? fallbackModel : defaultModelId()
     // An agent or default on a subscription this user hasn't connected runs the same model on one they have.
     const model = usableModel(picked, { clinepass: this.state.cline.connected, "opencode-go": this.state.opencode.connected })
     const thinking = clampThinking(findModel(model), options.thinking ?? agent?.thinking ?? this.state.settings.defaultThinking)
@@ -931,6 +953,8 @@ export class DexAgent extends Agent<Env, DexState> {
   private async deliver(sessionId: string, content: string, { steer = false } = {}) {
     const row = this.ctx.storage.sql.exec<SessionRow>(`SELECT * FROM dex_sessions WHERE id = ?`, sessionId).toArray()[0]
     if (!row) return
+    // The provider retired this chat's model since its last message: it continues on the default one.
+    if (!findModel(row.model)) await this.configureSession(sessionId, {})
     // `/<name> …` invokes a skill: its instructions join this chat's prompt from this message on.
     const skill = invokedSkill(content)
     if (skill) this.skills.activate(sessionId, skill)
@@ -1055,7 +1079,7 @@ export class DexAgent extends Agent<Env, DexState> {
   async configureSession(sessionId: string, options: { model?: string; thinking?: ThinkingLevel; mcpServers?: readonly string[] }) {
     const row = this.ctx.storage.sql.exec<SessionRow>(`SELECT * FROM dex_sessions WHERE id = ?`, sessionId).toArray()[0]
     if (!row) throw new Error("Chat not found")
-    const model = options.model && findModel(options.model) ? options.model : row.model
+    const model = options.model && findModel(options.model) ? options.model : findModel(row.model) ? row.model : this.replacementModel()
     const thinking = clampThinking(findModel(model), options.thinking ?? (row.thinking as ThinkingLevel))
     const mcpServers = options.mcpServers ? this.knownMcpIds(options.mcpServers) : undefined
     await this.configureConversation(sessionId, model, thinking, mcpServers)
@@ -1071,10 +1095,79 @@ export class DexAgent extends Agent<Env, DexState> {
   private models() {
     if (!this.oneOffModels) {
       this.oneOffModels = createModels()
-      this.oneOffModels.setProvider(clinePassProvider(() => this.resolveClineKey()))
-      this.oneOffModels.setProvider(openCodeGoProvider(() => this.resolveOpenCodeKey()))
+      this.installProviders(this.oneOffModels)
     }
     return this.oneOffModels
+  }
+
+  // ── Model list ────────────────────────────────────────────────────────────
+
+  /** Both subscriptions as pi-ai providers, with the models listed now (installing again replaces them). */
+  private installProviders(models: ReturnType<typeof createModels>) {
+    models.setProvider(clinePassProvider(() => this.resolveClineKey()))
+    models.setProvider(openCodeGoProvider(() => this.resolveOpenCodeKey()))
+  }
+
+  private storedCatalog(): (ModelCatalog & { build?: string }) | undefined {
+    const value = this.ctx.storage.sql.exec<{ value: string }>(`SELECT value FROM dex_meta WHERE key = 'model_catalog'`).toArray()[0]?.value
+    try {
+      return value ? (JSON.parse(value) as ModelCatalog & { build?: string }) : undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  private modelsRefresh?: Promise<{ added: string[]; retired: string[] }>
+  private modelsAttemptedAt = 0
+
+  /**
+   * Looks up what models ClinePass and OpenCode Go offer now (src/agent/model-catalog.ts), at most hourly unless
+   * forced, and puts the result in place: chats and title writing use it from their next request, open apps fetch it,
+   * and a default model that's been retired moves to one that's listed. A failed lookup waits 10 minutes to retry.
+   */
+  private async refreshModels({ force = false } = {}): Promise<{ added: string[]; retired: string[] }> {
+    if (this.modelsRefresh) return this.modelsRefresh
+    const stored = this.storedCatalog()
+    const fresh = stored?.build === __DEX_BUILD__ && Date.now() - stored.updatedAt < 60 * 60_000
+    if (!force && (fresh || Date.now() - this.modelsAttemptedAt < 10 * 60_000)) return { added: [], retired: [] }
+    this.modelsAttemptedAt = Date.now()
+    this.modelsRefresh = (async () => {
+      const before = [...MODELS]
+      const models = await fetchModelCatalog(before)
+      const catalog = { version: catalogVersion(models), updatedAt: Date.now(), models }
+      this.ctx.storage.sql.exec(
+        `INSERT OR REPLACE INTO dex_meta (key, value) VALUES ('model_catalog', ?)`,
+        JSON.stringify({ ...catalog, build: __DEX_BUILD__ })
+      )
+      setModelCatalog(catalog)
+      if (this.chatModels) this.installProviders(this.chatModels)
+      if (this.oneOffModels) this.installProviders(this.oneOffModels)
+      this.publish({ models: { version: catalog.version, updatedAt: catalog.updatedAt } })
+      if (!findModel(this.state.settings.defaultModel)) await this.updateSettings({})
+      return catalogChanges(before, MODELS)
+    })().finally(() => {
+      this.modelsRefresh = undefined
+    })
+    return this.modelsRefresh
+  }
+
+  /** What a chat on a retired model continues with: your default model, on a subscription you've connected. */
+  private replacementModel() {
+    const preferred = findModel(this.state.settings.defaultModel) ? this.state.settings.defaultModel : defaultModelId()
+    return usableModel(preferred, { clinepass: this.state.cline.connected, "opencode-go": this.state.opencode.connected })
+  }
+
+  /** The current model list, for apps (state carries only its version, so every state change doesn't resend it). */
+  @callable()
+  async modelCatalog(): Promise<ModelCatalog> {
+    return { version: this.state.models?.version ?? catalogVersion(MODELS), updatedAt: this.state.models?.updatedAt ?? 0, models: MODELS }
+  }
+
+  /** Looks up the providers' model lists now. Returns the names of models added and retired. */
+  @callable()
+  async refreshModelList(): Promise<{ added: string[]; retired: string[]; count: number }> {
+    const changes = await this.refreshModels({ force: true })
+    return { ...changes, count: MODELS.length }
   }
 
   /**
@@ -1098,8 +1191,11 @@ export class DexAgent extends Agent<Env, DexState> {
     const own = providerOf(session?.model ?? DEFAULT_MODEL_ID)
     const provider = connected[own] ? own : connected.clinepass ? "clinepass" : connected["opencode-go"] ? "opencode-go" : null
     if (!provider) throw new Error("Connect ClinePass or OpenCode Go in Settings first.")
-    const fast = provider === "clinepass" ? { id: "cline-pass/deepseek-v4.1-flash", provider: CLINEPASS_PROVIDER_ID } : { id: "deepseek-v4.1-flash", provider: "opencode-go" }
-    const model = this.models().getModel(fast.provider, fast.id)
+    // DeepSeek V4.1 Flash, or the cheapest model the subscription has if that one's been retired.
+    const fast =
+      findModel(provider === "clinepass" ? "cline-pass/deepseek-v4.1-flash" : "opencode-go/deepseek-v4.1-flash") ??
+      modelsOf(provider).toSorted((a, b) => a.cost.output - b.cost.output)[0]
+    const model = fast && this.models().getModel(provider === "clinepass" ? CLINEPASS_PROVIDER_ID : "opencode-go", fast.apiId)
     if (!model) throw new Error("The title model isn't available.")
 
     const reply = await this.models().completeSimple(
@@ -1176,6 +1272,8 @@ export class DexAgent extends Agent<Env, DexState> {
       case "dex.subscribe":
         return this.subscribe(connection, msg.sessionId, { force: true })
       case "dex.ping":
+        // Open apps ping every 20 seconds, so a list older than an hour is looked up again while someone's using Dex.
+        void this.refreshModels().catch(() => undefined)
         return msg.sessionId ? this.subscribe(connection, msg.sessionId) : this.unsubscribe(connection.id)
       case "dex.unsubscribe":
         return this.unsubscribe(connection.id)
@@ -1323,7 +1421,7 @@ export class DexAgent extends Agent<Env, DexState> {
   async saveAgent(draft: AgentDraft): Promise<AgentProfile> {
     const name = String(draft.name ?? "").trim().slice(0, 60)
     if (!name) throw new Error("Give the agent a name.")
-    const model = findModel(draft.model) ? draft.model : DEFAULT_MODEL_ID
+    const model = findModel(draft.model) ? draft.model : defaultModelId()
     const clean: Omit<AgentDraft, "id"> = {
       name,
       description: String(draft.description ?? "").trim().slice(0, 200),

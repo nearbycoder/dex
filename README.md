@@ -24,7 +24,7 @@
     <td width="50%"><img src="docs/screenshots/mcp-search.png" alt="MCP search with Dex's checks on a server"><br><b>Any MCP server, checked first.</b> Search, see its tools and sign-in, add it in a tap.</td>
   </tr>
   <tr>
-    <td width="50%"><img src="docs/screenshots/models.png" alt="The model menu on its OpenCode Go tab"><br><b>Two model subscriptions.</b> ClinePass and OpenCode Go, 40 models in one searchable menu.</td>
+    <td width="50%"><img src="docs/screenshots/models.png" alt="The model menu on its OpenCode Go tab"><br><b>Two model subscriptions.</b> ClinePass and OpenCode Go, nearly 50 models in one searchable menu that stays current.</td>
     <td width="50%"><img src="docs/screenshots/vm-preview.png" alt="A chat with a floating, live preview of its VM's desktop"><br><b>Watch the VM while you chat.</b> A live picture-in-picture you can drag and resize.</td>
   </tr>
 </table>
@@ -40,7 +40,7 @@
   </tr>
 </table>
 
-- **Two model subscriptions, connect either or both:** ClinePass and OpenCode Go (GLM, Kimi, DeepSeek, Qwen, MiniMax, MiMo, Claude Haiku, GPT Luna, Grok, Gemini, and more, each on the API style Go serves it with). Pick a model and thinking level per chat from one searchable menu with All / ClinePass / OpenCode Go tabs; free models and ones whose provider trains on your prompts are marked, and the model button says which subscription it's on. An agent or default on a subscription you haven't connected runs the same model on one you have. Replies stream live, and runs survive restarts, evictions, and deploys.
+- **Two model subscriptions, connect either or both:** ClinePass and OpenCode Go (GLM, Kimi, DeepSeek, Qwen, MiniMax, MiMo, Claude Haiku, GPT Luna, Grok, Gemini, and more, each on the API style Go serves it with). Pick a model and thinking level per chat from one searchable menu with All / ClinePass / OpenCode Go tabs; free models and ones whose provider trains on your prompts are marked, and the model button says which subscription it's on. An agent or default on a subscription you haven't connected runs the same model on one you have. The list keeps itself current: each agent checks OpenCode Go's live model list and [models.dev](https://models.dev) at startup and hourly while you're using it (or now, from the menu's refresh button), so new models appear, retired ones drop out, and a chat on a retired model continues on your default one. Replies stream live, and runs survive restarts, evictions, and deploys.
 - **One activity row per reply** folds its thinking, tool calls, and in-between notes. While it works it shows what's really happening: the running tool and its arguments ("Running on the VM… npm test"), or the latest line of the model's thinking. Then it reads "Worked for 36s · 8 tools · 6 thoughts"; tap it to see every step. Screenshots in those steps load when you open them, so long VM chats stay light.
 - **Generative UI** with `render_ui` (OpenUI): cards, stat tiles, tables, charts, and forms. Markdown tables wrap at word boundaries and scroll sideways in their own frame on a phone.
 - **Tools:** `bash` over a persistent `/workspace` (a simulated shell with grep, sed, jq, sqlite3, curl), file tools, `web_search` / `web_fetch` (Workers AI), `schedule_prompt` (one-off or cron), and `use_skill`.

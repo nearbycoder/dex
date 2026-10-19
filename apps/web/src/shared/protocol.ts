@@ -195,6 +195,8 @@ export interface DexState {
   readonly skills: ReadonlyArray<SkillInfo>
   /** The build the agent is running (ISO time it was built): tells a deploy apart from a stale instance. */
   readonly build?: string
+  /** The model list the agent last looked up (the list itself comes from `modelCatalog()` when `version` changes). */
+  readonly models?: { readonly version: string; readonly updatedAt: number }
 }
 
 export interface WorkspaceFile {

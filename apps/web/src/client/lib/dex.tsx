@@ -3,6 +3,7 @@ import { useAgent } from "agents/react"
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState } from "react"
 import type { DexAgent } from "~/agent/dex-agent"
 import type { Viewer } from "~/server/viewer"
+import { type ModelCatalog, setModelCatalog } from "~/shared/models"
 import { AGENT_CLASS, type ClientMessage, type DexState, isServerMessage, type ServerMessage, withStateDefaults } from "~/shared/protocol"
 import { clearPageCache } from "./cache"
 import { skeletonPreview } from "./skeleton-preview"
@@ -20,6 +21,8 @@ interface DexContextValue {
   readonly stub: ReturnType<typeof useAgent<DexAgent, DexState>>["stub"]
   readonly send: (message: ClientMessage) => void
   readonly listen: (listener: Listener) => () => void
+  /** The model list's version, so pages that list models redraw when it changes. */
+  readonly models: string | null
 }
 
 const DexContext = createContext<DexContextValue | null>(null)
@@ -36,6 +39,23 @@ const readSavedState = (userId: string): DexState | undefined => {
     return saved ? withStateDefaults(JSON.parse(saved) as DexState) : undefined
   } catch {
     return undefined
+  }
+}
+
+/**
+ * The model list the agent last sent (the same for everyone, so it stays on sign out). Installed at launch so a
+ * renamed or new model shows before the socket connects; without it the app starts on the built-in list.
+ */
+const MODELS_KEY = "dex-models"
+
+const installSavedModels = (): string | null => {
+  try {
+    const saved = localStorage.getItem(MODELS_KEY)
+    if (!saved) return null
+    const catalog = JSON.parse(saved) as ModelCatalog
+    return setModelCatalog(catalog) ? catalog.version : null
+  } catch {
+    return null
   }
 }
 
@@ -79,6 +99,30 @@ export function DexProvider({ viewer, children }: { viewer: Viewer; children: Re
   const live = useMemo(() => agent.state && withStateDefaults(agent.state), [agent.state])
   const state = skeletonPreview() ? undefined : (live ?? saved)
 
+  // The agent refreshes the model list from the providers; when its version changes, fetch and install it.
+  const [models, setModels] = useState(installSavedModels)
+  const latest = live?.models?.version
+  useEffect(() => {
+    if (!agent.identified || !latest || latest === models) return
+    let cancelled = false
+    agent.stub
+      .modelCatalog()
+      .then((catalog) => {
+        if (cancelled || !setModelCatalog(catalog)) return
+        try {
+          localStorage.setItem(MODELS_KEY, JSON.stringify(catalog))
+        } catch {
+          // Storage full or blocked: the next launch starts on the built-in list until this arrives again.
+        }
+        setModels(catalog.version)
+      })
+      // An agent still on an older build has no list to give; it restarts on the new one.
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [agent.identified, agent.stub, latest, models])
+
   // Saved a moment after it settles, not on every streamed change.
   useEffect(() => {
     if (!live) return
@@ -108,8 +152,8 @@ export function DexProvider({ viewer, children }: { viewer: Viewer; children: Re
     return () => document.removeEventListener("visibilitychange", report)
   }, [agent.identified, send, sessionId])
   const value = useMemo<DexContextValue>(
-    () => ({ viewer, state, connected: agent.identified && !skeletonPreview(), stub: agent.stub, send, listen }),
-    [viewer, state, agent.identified, agent.stub, send, listen]
+    () => ({ viewer, state, connected: agent.identified && !skeletonPreview(), stub: agent.stub, send, listen, models }),
+    [viewer, state, agent.identified, agent.stub, send, listen, models]
   )
   return <DexContext.Provider value={value}>{children}</DexContext.Provider>
 }
