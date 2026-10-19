@@ -291,7 +291,7 @@ function ChatRow({ session, group, active, onPick }: { session: SessionMeta; gro
             const project = session.projectId ? state.projects.find((candidate) => candidate.id === session.projectId) : undefined
             return project ? (
               <>
-                <AgentAvatar icon={project.icon} color={project.color} size={14} />
+                <AgentAvatar icon={project.icon} color={project.color} image={project.image} size={14} />
                 <span className="max-w-24 shrink-0 truncate text-zinc-400">{project.name}</span>
                 {agent && <span className="truncate text-zinc-500">· {agent.name}</span>}
               </>

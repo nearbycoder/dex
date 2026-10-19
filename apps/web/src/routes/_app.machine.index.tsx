@@ -44,7 +44,7 @@ function MachineCard({ vm, index }: { vm: VmInfo; index: number }) {
     >
       <Link to="/machine/$vmKey" params={{ vmKey: vm.key }} className="flex min-w-0 items-start gap-3 p-4 hover:bg-zinc-900/70">
         {badge ? (
-          <AgentAvatar icon={badge.icon} color={badge.color} size={36} />
+          <AgentAvatar icon={badge.icon} color={badge.color} image={"image" in badge ? badge.image : null} size={36} />
         ) : (
           <span className="flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-zinc-800 text-zinc-400">
             <Monitor className="size-4.5" />

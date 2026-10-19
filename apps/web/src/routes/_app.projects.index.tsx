@@ -53,7 +53,7 @@ function ProjectsPage() {
             {projects.map((project, index) => (
               <li key={project.id} style={{ animationDelay: `${Math.min(index, 12) * 35}ms` }} className="flex min-w-0 animate-rise flex-col rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
                 <div className="flex items-start gap-3">
-                  <AgentAvatar icon={project.icon} color={project.color} size={40} />
+                  <AgentAvatar icon={project.icon} color={project.color} image={project.image} size={40} />
                   <div className="min-w-0 flex-1">
                     <h2 className="truncate font-medium text-zinc-100">{project.name}</h2>
                     <p className="mt-0.5 line-clamp-2 text-sm text-zinc-400">{project.description || "Project"}</p>

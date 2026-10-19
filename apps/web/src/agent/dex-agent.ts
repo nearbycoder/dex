@@ -33,7 +33,7 @@ import type {
   WorkspaceFile
 } from "~/shared/protocol"
 import { MCP_VM, SHARED_VM } from "~/shared/protocol"
-import { normalizeRepoUrl, type ProjectDraft, type ProjectProfile, type ProjectRepo, PROJECT_ROOT, repoDirName, repoLabel } from "~/shared/projects"
+import { githubFullName, isProjectImage, normalizeRepoUrl, type ProjectDraft, type ProjectImageCandidate, type ProjectProfile, type ProjectRepo, PROJECT_ROOT, repoDirName, repoLabel } from "~/shared/projects"
 import { CLOUDFLARE_RATES, type CloudflareLine, type OpenCodeLimits, type UsageRange, type UsageReport } from "~/shared/usage"
 import { AGENT_COLORS, AGENT_ICONS, type AgentDraft, type AgentProfile, STARTER_AGENTS } from "~/shared/agents"
 import { type AccessRisk, type CreatedAccessToken, NO_ACCESS } from "~/shared/access"
@@ -2212,6 +2212,7 @@ export class DexAgent extends Agent<Env, DexState> {
       if (branch && !/^[\w./-]+$/.test(branch)) throw new Error(`"${branch}" isn't a valid branch name.`)
       repos.push({ url, branch, dir })
     }
+    const existing = draft.id ? this.projectById(draft.id) : undefined
     const clean: Omit<ProjectDraft, "id"> = {
       name,
       description: String(draft.description ?? "").trim().slice(0, 200),
@@ -2221,10 +2222,11 @@ export class DexAgent extends Agent<Env, DexState> {
       setupScript: String(draft.setupScript ?? "").slice(0, 20_000),
       instructions: String(draft.instructions ?? "").slice(0, 20_000),
       starter: String(draft.starter ?? "").slice(0, 2_000),
-      vmSize: draft.vmSize && VM_SIZES.has(draft.vmSize) ? draft.vmSize : null
+      vmSize: draft.vmSize && VM_SIZES.has(draft.vmSize) ? draft.vmSize : null,
+      // Left out (an operation that doesn't touch it): keep the current picture.
+      image: draft.image === undefined ? (existing?.image ?? null) : isProjectImage(draft.image) ? draft.image : null
     }
     const now = Date.now()
-    const existing = draft.id ? this.projectById(draft.id) : undefined
     const id = existing?.id ?? `${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 32) || "project"}-${crypto.randomUUID().slice(0, 6)}`
     this.ctx.storage.sql.exec(
       `INSERT INTO dex_projects (id, data, created_at, updated_at) VALUES (?, ?, ?, ?)
@@ -2471,6 +2473,16 @@ export class DexAgent extends Agent<Env, DexState> {
   @callable()
   async searchGitHubRepos(query: string, owner?: string): Promise<GitHubRepo[]> {
     return this.githubRepos.search(query, owner)
+  }
+
+  /**
+   * Pictures a project could show, from a repo (owner/repo or a GitHub clone URL): its favicon, app icon, and logo
+   * files, then the owner's avatar, each as a data: URL.
+   */
+  @callable()
+  async projectImageCandidates(repo: string): Promise<ProjectImageCandidate[]> {
+    const fullName = githubFullName(normalizeRepoUrl(String(repo ?? "")) ?? "")
+    return fullName ? this.githubRepos.iconCandidates(fullName) : []
   }
 
   @callable()

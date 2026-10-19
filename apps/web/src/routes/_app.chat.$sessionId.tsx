@@ -85,7 +85,7 @@ function Chat() {
         <MenuButton />
         {project && (
           <Link to="/projects/$projectId" params={{ projectId: project.id }} title={`${project.name} project`} className="shrink-0">
-            <AgentAvatar icon={project.icon} color={project.color} size={24} />
+            <AgentAvatar icon={project.icon} color={project.color} image={project.image} size={24} />
           </Link>
         )}
         {agent && (

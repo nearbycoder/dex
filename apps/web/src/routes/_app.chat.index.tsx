@@ -140,7 +140,7 @@ function NewChat() {
                           : "border-zinc-800/80 text-zinc-300 hover:border-zinc-700 hover:bg-zinc-900/60"
                       }`}
                     >
-                      <AgentAvatar icon={candidate.icon} color={candidate.color} size={24} />
+                      <AgentAvatar icon={candidate.icon} color={candidate.color} image={candidate.image} size={24} />
                       <span className="truncate">{candidate.name}</span>
                       <span className="shrink-0 text-xs text-zinc-500">
                         {candidate.repos.length} repo{candidate.repos.length === 1 ? "" : "s"}
@@ -229,7 +229,7 @@ function NewChat() {
                     className="flex min-w-0 animate-pop items-center gap-2 rounded-full border border-zinc-700/80 bg-zinc-800/60 py-1 pr-1 pl-1 text-xs text-zinc-200"
                     title="This chat's VM starts now, with the project's repos cloned"
                   >
-                    <AgentAvatar icon={project.icon} color={project.color} size={20} />
+                    <AgentAvatar icon={project.icon} color={project.color} image={project.image} size={20} />
                     <span className="truncate">{project.name}</span>
                     <button
                       type="button"

@@ -54,8 +54,33 @@ export const AGENT_ICON_COMPONENTS: Record<AgentIcon, LucideIcon> = {
   sparkles: Sparkles
 }
 
-/** An agent's icon on its color: a rounded tile sized by `size` (px). */
-export function AgentAvatar({ icon, color, size = 32, className = "" }: { icon: AgentIcon; color: AgentColor; size?: number; className?: string }) {
+/**
+ * An agent's icon on its color: a rounded tile sized by `size` (px). With `image` (a project's picture, a data: URL),
+ * the picture on a dark tile instead.
+ */
+export function AgentAvatar({
+  icon,
+  color,
+  image,
+  size = 32,
+  className = ""
+}: {
+  icon: AgentIcon
+  color: AgentColor
+  image?: string | null
+  size?: number
+  className?: string
+}) {
+  if (image) {
+    return (
+      <span
+        className={`inline-flex shrink-0 items-center justify-center overflow-hidden bg-zinc-900 ring-1 ring-zinc-800 ring-inset ${className}`}
+        style={{ width: size, height: size, borderRadius: Math.round(size * 0.28), padding: Math.max(1, Math.round(size * 0.14)) }}
+      >
+        <img src={image} alt="" className="size-full object-contain" draggable={false} />
+      </span>
+    )
+  }
   const Icon = AGENT_ICON_COMPONENTS[icon] ?? Bot
   const [background, foreground] = AGENT_COLORS[color] ?? AGENT_COLORS.emerald
   return (

@@ -1,4 +1,4 @@
-import type { GitHubAccess, GitHubRepo } from "~/shared/projects"
+import { type GitHubAccess, type GitHubRepo, PROJECT_IMAGE_MAX_BYTES, type ProjectImageCandidate } from "~/shared/projects"
 
 const API = "https://api.github.com"
 const TIMEOUT_MS = 10_000
@@ -13,6 +13,30 @@ export interface GitHubAuth {
   readonly login: string
   /** How it was connected: OAuth (Connect with GitHub) or a pasted token. */
   readonly via: "oauth" | "token"
+}
+
+/** Files that are probably a project's icon: favicons, app icons, and logos. */
+const ICON_FILE = /^(favicon|apple-touch-icon(-precomposed)?|apple-icon|icon|logo|logomark|logo-mark|logo-icon|mark|android-chrome-\d+x\d+|icon-\d+(x\d+)?)\.(svg|png|ico|jpe?g|webp)$/i
+/** Folders whose images aren't the project's own (dependencies, tests, examples). */
+const SKIPPED_DIR = /(^|\/)(node_modules|vendor|third_party|\.git|test|tests|__tests__|fixtures|examples?|e2e|coverage|dist|build|out|\.next)\//i
+const IMAGE_TYPES: Record<string, string> = { svg: "image/svg+xml", png: "image/png", ico: "image/x-icon", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp" }
+const MAX_ICONS = 6
+
+/** Lower is likelier the project's icon: a favicon over a logo, an SVG over a bitmap, near the top over deep. */
+const iconScore = (path: string) => {
+  const name = path.split("/").pop()!.toLowerCase()
+  const base = name.replace(/\.[^.]+$/, "")
+  const extension = name.split(".").pop()!
+  const kind = base === "favicon" ? 0 : base.startsWith("apple") ? 1 : base === "icon" ? 2 : base.startsWith("logo") || base === "mark" ? 3 : 4
+  const format = extension === "svg" ? 0 : extension === "png" ? 1 : extension === "ico" ? 2 : 3
+  const usual = /(^|\/)(public|static|app|assets|images|img|icons|branding|\.github|docs)\//i.test(path) || !path.includes("/") ? 0 : 2
+  return kind * 10 + format * 2 + usual + path.split("/").length
+}
+
+const toBase64 = (bytes: Uint8Array) => {
+  let binary = ""
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return btoa(binary)
 }
 
 interface RawRepo {
@@ -151,6 +175,59 @@ export class GitHubRepos {
     })
     const names = branches.map((branch) => branch.name)
     return [repo.default_branch, ...names.filter((name) => name !== repo.default_branch)]
+  }
+
+  /**
+   * Pictures a project on this repo could show: its favicon, app icon, and logo files (best first), then the owner's
+   * GitHub avatar. Private repos go through the connection. Files too big to keep are skipped.
+   */
+  async iconCandidates(fullName: string): Promise<ProjectImageCandidate[]> {
+    if (!/^[\w.-]+\/[\w.-]+$/.test(fullName)) return []
+    const auth = await this.auth()
+    let token = auth?.token ?? null
+    const repo = await this.get<RawRepo>(`/repos/${fullName}`, token).catch((error: unknown) => {
+      if (!(error instanceof GitHubRejected)) throw error
+      token = null
+      return this.get<RawRepo>(`/repos/${fullName}`, null)
+    })
+    const tree = await this.get<{ tree: Array<{ path: string; type: string; size?: number }> }>(
+      `/repos/${fullName}/git/trees/${encodeURIComponent(repo.default_branch)}?recursive=1`,
+      token
+    ).catch(() => ({ tree: [] }))
+    const files = tree.tree
+      .filter((entry) => entry.type === "blob" && (entry.size ?? 0) > 0 && (entry.size ?? 0) <= PROJECT_IMAGE_MAX_BYTES)
+      .filter((entry) => ICON_FILE.test(entry.path.split("/").pop() ?? "") && !SKIPPED_DIR.test(entry.path) && entry.path.split("/").length <= 6)
+      .sort((a, b) => iconScore(a.path) - iconScore(b.path))
+      .slice(0, MAX_ICONS)
+
+    const download = async (url: string, accept: string, type: string | null, auth: boolean) => {
+      const response = await fetch(url, {
+        headers: { accept, "user-agent": "Dex (repos)", ...(auth && token ? { authorization: `Bearer ${token}` } : {}) },
+        signal: AbortSignal.timeout(TIMEOUT_MS)
+      })
+      if (!response.ok) return null
+      const bytes = new Uint8Array(await response.arrayBuffer())
+      const mime = type ?? response.headers.get("content-type")?.split(";")[0]?.trim() ?? ""
+      if (bytes.length === 0 || bytes.length > PROJECT_IMAGE_MAX_BYTES || !Object.values(IMAGE_TYPES).includes(mime)) return null
+      return `data:${mime};base64,${toBase64(bytes)}`
+    }
+    const found = await Promise.all(
+      files.map(async (file) => {
+        const extension = file.path.split(".").pop()!.toLowerCase()
+        const path = file.path.split("/").map(encodeURIComponent).join("/")
+        const dataUrl = await download(
+          `${API}/repos/${fullName}/contents/${path}?ref=${encodeURIComponent(repo.default_branch)}`,
+          "application/vnd.github.raw",
+          IMAGE_TYPES[extension] ?? null,
+          true
+        ).catch(() => null)
+        return dataUrl ? { path: file.path, dataUrl } : null
+      })
+    )
+    const avatar = await download(`https://avatars.githubusercontent.com/${encodeURIComponent(repo.owner.login)}?s=96`, "image/*", null, false).catch(() => null)
+    // The same picture in several places (assets/icon.svg copied to public/favicon.svg) is offered once.
+    const unique = found.filter((entry, index): entry is ProjectImageCandidate => entry !== null && found.findIndex((other) => other?.dataUrl === entry.dataUrl) === index)
+    return [...unique, ...(avatar ? [{ path: "avatar", dataUrl: avatar }] : [])]
   }
 
   /** Who's connected, which orgs Dex can see, and where to grant it more. */

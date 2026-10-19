@@ -32,11 +32,35 @@ export interface ProjectProfile {
   readonly starter: string
   /** VM size for this project's chats; null uses the default from Settings. */
   readonly vmSize: VmSize | null
+  /**
+   * A picture from one of its repos (a favicon or logo) or the repo owner's avatar, as a data: URL, shown instead of
+   * the icon. Missing on projects saved before pictures existed.
+   */
+  readonly image?: string | null
   readonly createdAt: number
   readonly updatedAt: number
 }
 
 export type ProjectDraft = Omit<ProjectProfile, "id" | "createdAt" | "updatedAt"> & { readonly id?: string }
+
+/** A picture a project can show: from one of its repo's files, or the repo owner's GitHub avatar. */
+export interface ProjectImageCandidate {
+  /** The file's path in the repo, or "avatar" for the owner's avatar. */
+  readonly path: string
+  readonly dataUrl: string
+}
+
+/** Pictures are kept small: they're synced with every project. */
+export const PROJECT_IMAGE_MAX_BYTES = 48_000
+
+/** A data: URL of a raster or SVG image, small enough to keep. (Shown with <img>, so an SVG's scripts never run.) */
+export const isProjectImage = (value: unknown): value is string =>
+  typeof value === "string" &&
+  value.length <= Math.ceil(PROJECT_IMAGE_MAX_BYTES / 3) * 4 + 40 &&
+  /^data:image\/(svg\+xml|png|x-icon|vnd\.microsoft\.icon|jpeg|webp|gif);base64,[A-Za-z0-9+/]+=*$/.test(value)
+
+/** The `owner/repo` of a GitHub clone URL; null for other hosts. */
+export const githubFullName = (url: string) => /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/.exec(url)?.[1] ?? null
 
 /** `owner/repo`, `github.com/owner/repo`, or a full URL, as a clone URL; null if it isn't a repo. */
 export const normalizeRepoUrl = (input: string): string | null => {

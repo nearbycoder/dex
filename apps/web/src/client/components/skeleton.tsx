@@ -668,6 +668,8 @@ export function EditorSkeleton({ kind }: { kind: EditorKind }) {
                 <FieldBones height={151} label="28%" />
                 <FieldBones height={130} label="26%" />
                 <TwoFields height={42} />
+                {/* Picture: the "none" tile and pictures found in the repo. */}
+                <FieldBones height={48} label="16%" />
                 <IconsField />
                 <ColorsField />
               </>

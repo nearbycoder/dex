@@ -367,7 +367,7 @@ function MachinePage() {
           {info.subtitle && <span className="text-xs text-zinc-500">{info.subtitle}</span>}
           {info.project && (
             <Link to="/projects/$projectId" params={{ projectId: info.project.id }} className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200">
-              <AgentAvatar icon={info.project.icon} color={info.project.color} size={16} /> {info.project.name}
+              <AgentAvatar icon={info.project.icon} color={info.project.color} image={info.project.image} size={16} /> {info.project.name}
             </Link>
           )}
           {session && (

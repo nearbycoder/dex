@@ -5,7 +5,7 @@ import { AGENT_COLORS, AGENT_ICONS, type AgentProfile } from "~/shared/agents"
 import { MODEL_PROVIDERS, MODELS, supportedThinkingLevels, THINKING_LEVELS, type ThinkingLevel } from "~/shared/models"
 import type { McpAuth, McpTransport } from "~/shared/mcp"
 import { NOTIFY_KINDS, type NotifyKind } from "~/shared/notifications"
-import type { ProjectProfile, ProjectRepo } from "~/shared/projects"
+import { githubFullName, normalizeRepoUrl, type ProjectProfile, type ProjectRepo } from "~/shared/projects"
 import { type DexState, type VmSize, VM_SIZES } from "~/shared/protocol"
 import { USAGE_RANGES, type UsageRange } from "~/shared/usage"
 import type { DexAgent } from "./dex-agent"
@@ -46,6 +46,7 @@ export type OperationHost = Pick<
   | "saveAgent"
   | "deleteAgent"
   | "saveProject"
+  | "projectImageCandidates"
   | "deleteProject"
   | "saveMcpServer"
   | "connectMcpServer"
@@ -176,7 +177,13 @@ const projectFields = {
   starter: Type.Optional(Type.String({ maxLength: 2_000 })),
   vm_size: Type.Optional(Type.Union([...VM_SIZES.map((size) => Type.Literal(size.id)), Type.Null()])),
   icon,
-  color
+  color,
+  image: Type.Optional(
+    Type.Union([Type.String({ maxLength: 300 }), Type.Null()], {
+      description: "A picture shown instead of the icon: a path from app_find_project_images (or \"avatar\" for the repo owner's), found in `image_repo` or the project's first GitHub repo. null removes it."
+    })
+  ),
+  image_repo: Type.Optional(Type.String({ maxLength: 200, description: "owner/repo to take `image` from, if not the project's first GitHub repo." }))
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -217,6 +224,23 @@ const agentDraft = (args: Static<typeof createAgentParams>, existing?: AgentProf
   icon: (args.icon ?? existing?.icon ?? "bot") as AgentProfile["icon"],
   color: (args.color ?? existing?.color ?? "emerald") as AgentProfile["color"]
 })
+
+/** Projects as operations return them: a picture is a data: URL, too big to be worth a model's context. */
+const projectSummary = (project: ProjectProfile) => {
+  const { image, ...rest } = project
+  return { ...rest, hasImage: Boolean(image) }
+}
+
+/** The picture an operation asked for (a path from app_find_project_images), as a data: URL; undefined leaves it. */
+const projectImage = async (host: OperationHost, args: { image?: string | null; image_repo?: string }, repos: ReadonlyArray<ProjectRepo>) => {
+  if (args.image === undefined) return undefined
+  if (args.image === null) return null
+  const repo = args.image_repo ?? repos.map((entry) => githubFullName(normalizeRepoUrl(entry.url) ?? "")).find(Boolean)
+  if (!repo) throw new Error("The project has no GitHub repo to take a picture from. Set image_repo.")
+  const found = (await host.projectImageCandidates(repo)).find((candidate) => candidate.path === args.image)
+  if (!found) throw new Error(`No picture "${args.image}" in ${repo}. Use a path from app_find_project_images.`)
+  return found.dataUrl
+}
 
 const projectDraft = (args: Static<typeof createProjectParams>, existing?: ProjectProfile) => ({
   id: existing?.id,
@@ -545,7 +569,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     parameters: Type.Object({}),
     covers: [],
     summarize: () => "List projects",
-    run: async (host) => host.appState().projects
+    run: async (host) => host.appState().projects.map(projectSummary)
   }),
   define({
     name: "app_list_mcp_servers",
@@ -822,7 +846,10 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     parameters: createProjectParams,
     covers: ["saveProject"],
     summarize: (args) => `Create project ${quote(args.name)}`,
-    run: async (host, args) => host.saveProject(projectDraft(args))
+    run: async (host, args) => {
+      const draft = projectDraft(args)
+      return projectSummary(await host.saveProject({ ...draft, image: await projectImage(host, args, draft.repos) }))
+    }
   }),
   define({
     name: "app_update_project",
@@ -834,8 +861,20 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     run: async (host, args) => {
       const existing = host.appState().projects.find((project) => project.id === args.project_id)
       if (!existing) throw new Error(`No project ${args.project_id}.`)
-      return host.saveProject(projectDraft({ ...args, name: args.name ?? existing.name }, existing))
+      const draft = projectDraft({ ...args, name: args.name ?? existing.name }, existing)
+      return projectSummary(await host.saveProject({ ...draft, image: await projectImage(host, args, draft.repos) }))
     }
+  }),
+  define({
+    name: "app_find_project_images",
+    description:
+      "Pictures a project could show instead of its icon, found in a GitHub repo: favicon, app icon, and logo files (likeliest first), then \"avatar\" (the owner's GitHub avatar). Pass a path as `image` to app_create_project or app_update_project.",
+    risk: "read",
+    parameters: Type.Object({ repo: Type.String({ maxLength: 200, description: "owner/repo" }) }),
+    covers: ["projectImageCandidates"],
+    summarize: (args) => `Find pictures in ${args.repo}`,
+    run: async (host, args) =>
+      (await host.projectImageCandidates(args.repo)).map((candidate) => ({ path: candidate.path, kind: candidate.dataUrl.slice(5, candidate.dataUrl.indexOf(";")) }))
   }),
   define({
     name: "app_delete_project",

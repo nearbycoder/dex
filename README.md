@@ -133,7 +133,7 @@
   </tr>
 </table>
 
-- **Projects:** one or more repos (with branch and folder), a setup script, notes for the model, a starter prompt, and a VM size.
+- **Projects:** one or more repos (with branch and folder), a setup script, notes for the model, a starter prompt, a VM size, and a picture: Dex looks through the first GitHub repo for its favicon, app icon, and logo files (and offers the owner's avatar), and the one you pick replaces the project's icon everywhere.
   - **Add repository** opens a sheet that searches every repo your GitHub connection can reach, private and org ones included, then public repos, with owner filters, avatars, language, stars, and last push. Pick one, then its branch (filterable) and folder, or paste any git URL. If GitHub revokes the connection, Dex says so, offers Reconnect, and falls back to public repos.
   - Starting a project chat boots its VM, signs in to GitHub, clones the repos into `~/work`, and runs the setup script before the model's VM tools go ahead.
 - **GitHub:** Connect with GitHub (OAuth) or paste a fine-grained token. Every new VM signs the GitHub CLI and git in with it, so agents can push and open pull requests. Disconnecting an OAuth connection revokes the token at GitHub.

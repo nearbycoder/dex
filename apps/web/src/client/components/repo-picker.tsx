@@ -337,6 +337,9 @@ function PickRepo({
             className="flex gap-2"
             onSubmit={(event) => {
               event.preventDefault()
+              // The sheet renders in a portal inside the project form, and React bubbles submit through portals:
+              // without this, Next would also save the project.
+              event.stopPropagation()
               if (url.trim()) onUrl(url.trim())
             }}
           >

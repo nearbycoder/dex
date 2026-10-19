@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
-import { ArrowLeft, Check, LoaderCircle, MessageSquarePlus, Plus, Trash2, X } from "lucide-react"
+import { ArrowLeft, Ban, Check, LoaderCircle, MessageSquarePlus, Plus, Search, Trash2, X } from "lucide-react"
 import { type ReactNode, useEffect, useState } from "react"
 import { AGENT_ICON_COMPONENTS, AgentAvatar } from "~/client/components/agent-avatar"
 import { RepoCard, RepoSheet } from "~/client/components/repo-picker"
@@ -7,7 +7,7 @@ import { EditorSkeleton } from "~/client/components/skeleton"
 import { InfoTip } from "~/client/components/info-tip"
 import { useDex } from "~/client/lib/dex"
 import { AGENT_COLORS, AGENT_ICONS, type AgentColor } from "~/shared/agents"
-import { type ProjectDraft, type ProjectRepo, repoLabel } from "~/shared/projects"
+import { githubFullName, normalizeRepoUrl, type ProjectDraft, type ProjectImageCandidate, type ProjectRepo, repoLabel } from "~/shared/projects"
 import { VM_SIZES, type VmSize } from "~/shared/protocol"
 
 export const Route = createFileRoute("/_app/projects/$projectId")({ component: ProjectEditorPage })
@@ -74,6 +74,85 @@ function GitHubNote() {
     )
   }
   return null
+}
+
+/**
+ * The project's picture: favicons, app icons, and logos found in its first GitHub repo, or the owner's avatar, shown
+ * instead of the icon. Looked up on its own when the project has a repo and no picture yet; otherwise on request.
+ */
+function ProjectPicture({ draft, onChange }: { draft: ProjectDraft; onChange: (image: string | null) => void }) {
+  const { stub } = useDex()
+  const repo = draft.repos.map((entry) => githubFullName(normalizeRepoUrl(entry.url) ?? "")).find((name): name is string => Boolean(name))
+  const [found, setFound] = useState<{ repo: string; candidates: ProjectImageCandidate[] } | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const look = async (name: string) => {
+    setLoading(true)
+    setError(null)
+    try {
+      const candidates = await stub.projectImageCandidates(name)
+      setFound((current) => (repo === name || !current ? { repo: name, candidates } : current))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setLoading(false)
+    }
+  }
+  useEffect(() => {
+    if (repo && !draft.image && found?.repo !== repo) void look(repo)
+    // Only when the repo changes; picking a picture shouldn't search again.
+  }, [repo])
+
+  if (!repo) return <p className="text-xs text-zinc-500">Add a GitHub repo to use its favicon or logo.</p>
+  const candidates = found?.repo === repo ? found.candidates : []
+  const tile = "flex size-12 items-center justify-center rounded-xl border p-2 transition"
+  const selectedTile = "border-emerald-500 bg-emerald-950/40"
+  const idleTile = "border-zinc-800 bg-zinc-900 hover:border-zinc-700"
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" title="No picture: the icon below" aria-pressed={!draft.image} onClick={() => onChange(null)} className={`${tile} ${!draft.image ? selectedTile : idleTile}`}>
+          <Ban className="size-4 text-zinc-500" />
+        </button>
+        {draft.image && !candidates.some((candidate) => candidate.dataUrl === draft.image) && (
+          <span title="Current picture" className={`${tile} ${selectedTile}`}>
+            <img src={draft.image} alt="" className="size-full object-contain" />
+          </span>
+        )}
+        {candidates.map((candidate) => {
+          const selected = draft.image === candidate.dataUrl
+          return (
+            <button
+              key={candidate.path}
+              type="button"
+              title={candidate.path === "avatar" ? `${repo.split("/")[0]}'s GitHub avatar` : candidate.path}
+              aria-pressed={selected}
+              onClick={() => onChange(candidate.dataUrl)}
+              className={`${tile} ${selected ? selectedTile : idleTile}`}
+            >
+              <img src={candidate.dataUrl} alt={candidate.path} className={`size-full object-contain ${candidate.path === "avatar" ? "rounded-md" : ""}`} />
+            </button>
+          )
+        })}
+        {loading ? (
+          <span className="flex items-center gap-1.5 px-1 text-xs text-zinc-500">
+            <LoaderCircle className="size-3.5 animate-spin" /> Looking in {repo}…
+          </span>
+        ) : (
+          found?.repo !== repo && (
+            <button type="button" onClick={() => void look(repo)} className="flex items-center gap-1.5 rounded-lg border border-zinc-800 px-3 py-2 text-xs text-zinc-300 hover:border-zinc-700">
+              <Search className="size-3.5" /> Find in {repo}
+            </button>
+          )
+        )}
+      </div>
+      {error && <p className="text-xs text-red-400">{error}</p>}
+      {found?.repo === repo && !loading && (
+        <p className="text-xs text-zinc-500">{candidates.length ? `From ${repo}. Hover a picture for its file.` : `No favicon or logo found in ${repo}.`}</p>
+      )}
+    </div>
+  )
 }
 
 /** Keyed by id: moving from one item (or “new”) to another starts a fresh draft instead of keeping the last one. */
@@ -144,7 +223,7 @@ function ProjectEditor() {
         </Link>
 
         <div className="mb-6 flex items-center gap-4">
-          <AgentAvatar icon={draft.icon} color={draft.color} size={56} />
+          <AgentAvatar icon={draft.icon} color={draft.color} image={draft.image} size={56} />
           <div className="min-w-0">
             <h1 className="truncate text-2xl font-semibold tracking-tight">{draft.name || (isNew ? "New project" : "Untitled")}</h1>
             <p className="truncate text-sm text-zinc-400">{draft.description || "What this project is"}</p>
@@ -255,6 +334,10 @@ function ProjectEditor() {
               </select>
             </Field>
           </div>
+
+          <Field label="Picture" hint="A favicon or logo from the project's repo, shown instead of the icon.">
+            <ProjectPicture draft={draft} onChange={(image) => update({ image })} />
+          </Field>
 
           <Field label="Icon">
             <div className="flex flex-wrap gap-1.5">
