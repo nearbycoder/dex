@@ -2,7 +2,7 @@ import { Value } from "typebox/value"
 import type { AccessRisk, AccessState, AccessToken, AuditEntry, CreatedAccessToken, PendingAction, UiOperationResult } from "~/shared/access"
 import { riskRank } from "~/shared/access"
 import type { DexState } from "~/shared/protocol"
-import { type Caller, type Operation, type OperationHost, operationByName, riskOf } from "./operations"
+import { type Caller, inUi, type Operation, type OperationHost, operationByName, riskOf } from "./operations"
 
 const TOKEN_PREFIX = "dexk"
 /** A chat's request for an admin operation waits this long for the user. */
@@ -246,7 +246,9 @@ export class AccessCenter {
     const [actor, ref, label] =
       caller.kind === "mcp"
         ? ["mcp", `mcp:${caller.tokenId}`, caller.label]
-        : [caller.kind, `${caller.kind === "ui" ? "ui" : "chat"}:${caller.sessionId}`, state.sessions.find((session) => session.id === caller.sessionId)?.title ?? `chat ${caller.sessionId}`]
+        : caller.kind === "ui"
+          ? ["ui", `ui:${caller.sessionId}`, caller.label]
+          : [caller.kind, `chat:${caller.sessionId}`, state.sessions.find((session) => session.id === caller.sessionId)?.title ?? `chat ${caller.sessionId}`]
     this.host.sql.exec(
       `INSERT INTO dex_audit (at, actor, actor_ref, actor_label, operation, summary, ok, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       Date.now(), actor, ref, label.slice(0, 120), operation, summary.slice(0, 300), error ? 0 : 1, error?.slice(0, 500) ?? null
@@ -302,9 +304,15 @@ export class AccessCenter {
    * with Dex's own summary of what they do (not the model's button label) and run once you've confirmed it.
    * Reads aren't audited: a live view refreshing every 30 seconds would bury everything else.
    */
-  async runFromUi(sessionId: string, name: string, rawArgs: unknown, options: { readonly query: boolean; readonly confirmed: boolean }): Promise<UiOperationResult> {
+  async runFromUi(
+    where: { readonly scope: string; readonly label: string },
+    name: string,
+    rawArgs: unknown,
+    options: { readonly query: boolean; readonly confirmed: boolean }
+  ): Promise<UiOperationResult> {
+    const sessionId = where.scope
     const operation = operationByName.get(name)
-    if (!operation || operation.inChats === false) return { ok: false, error: `Unknown operation ${name}.` }
+    if (!operation || !inUi(operation)) return { ok: false, error: `Unknown operation ${name}.` }
     // A UI passes `null` for a filter that isn't set (a $variable with no value); operations want the field left out.
     const args = rawArgs && typeof rawArgs === "object" && !Array.isArray(rawArgs) ? Object.fromEntries(Object.entries(rawArgs).filter(([, value]) => value !== null)) : (rawArgs ?? {})
     if (!Value.Check(operation.parameters, args)) return { ok: false, error: `Invalid arguments for ${name}: ${describeErrors(operation, args)}` }
@@ -317,12 +325,12 @@ export class AccessCenter {
     const summary = this.summarize(operation, args)
     if (options.query && risk !== "read") return { ok: false, error: `${name} changes things, so it runs only from a button (Mutation), not as live data (Query).` }
     if (risk === "admin" && !options.confirmed) return { ok: "confirm", summary }
-    const caller: Caller = { kind: "ui", sessionId }
+    const caller: Caller = { kind: "ui", sessionId, label: where.label }
     const outcome = await this.run(operation, args, caller, summary, risk !== "read")
     if (outcome.ok !== true) return { ok: false, error: outcome.ok === false ? outcome.error : "Not run." }
     // It goes back over the app's WebSocket, whose messages are limited to 1 MB.
     if ((JSON.stringify(outcome.result) ?? "").length > MAX_UI_RESULT_CHARS) return { ok: false, error: `${name} returned too much to show here; ask for less.` }
-    return outcome
+    return risk === "read" ? outcome : { ...outcome, changed: summary }
   }
 
   private async run(operation: Operation, args: unknown, caller: Caller, summary: string, audited = true): Promise<OperationOutcome> {

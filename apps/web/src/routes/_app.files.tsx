@@ -9,7 +9,11 @@ import { useDex } from "~/client/lib/dex"
 import { formatBytes, timeAgo } from "~/client/lib/format"
 import type { WorkspaceFile } from "~/shared/protocol"
 
-export const Route = createFileRoute("/_app/files")({ component: FilesPage })
+export const Route = createFileRoute("/_app/files")({
+  component: FilesPage,
+  // `?path=` opens that file (a generated UI's OpenFile button links here).
+  validateSearch: (search: Record<string, unknown>): { path?: string } => (typeof search.path === "string" && search.path ? { path: search.path } : {})
+})
 
 /** Files shown rendered (with an Edit tab for the source): Markdown, and HTML in a sandboxed frame. */
 const previewKind = (path: string) => (/\.(md|markdown)$/i.test(path) ? "markdown" : /\.html?$/i.test(path) ? "html" : null)
@@ -59,6 +63,12 @@ function FilesPage() {
       setError(cause instanceof Error ? cause.message : String(cause))
     }
   }
+
+  const { path: linked } = Route.useSearch()
+  useEffect(() => {
+    if (linked && connected) void select(linked.startsWith("/") ? linked : `/workspace/${linked}`)
+    // Opens once per link; `select` is recreated every render.
+  }, [linked, connected])
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">

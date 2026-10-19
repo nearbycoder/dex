@@ -68,7 +68,8 @@ export interface CreatedAccessToken {
 
 /** What a chat's generated UI gets back when it runs an operation (its Query and Mutation calls). */
 export type UiOperationResult =
-  | { readonly ok: true; readonly result: unknown }
+  /** `changed`: what it did, when it changed something (Dex's summary; the chat hears about it with your next message). */
+  | { readonly ok: true; readonly result: unknown; readonly changed?: string }
   | { readonly ok: false; readonly error: string }
   /** An admin operation: run it again with `confirmed` once you've confirmed this summary. */
   | { readonly ok: "confirm"; readonly summary: string }

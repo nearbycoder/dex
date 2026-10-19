@@ -535,6 +535,38 @@
       ]
     }
   ],
+  "functions": {
+    "Ago": {
+      "signature": "Ago(time: number | string) → string",
+      "description": "How long ago a time was, e.g. \"5 min. ago\" (a time in ms since 1970 or ISO 8601). For last-used, created, updated."
+    },
+    "DateTime": {
+      "signature": "DateTime(time: number | string) → string",
+      "description": "A time as a short local date and time, e.g. \"Oct 19, 5:08 PM\" (ms since 1970 or ISO 8601)."
+    },
+    "Bytes": {
+      "signature": "Bytes(bytes: number) → string",
+      "description": "A size in bytes for people, e.g. \"34.2 KB\"."
+    }
+  },
+  "actions": {
+    "OpenChat": {
+      "signature": "OpenChat(sessionId: string)",
+      "description": "Open a Dex chat (its id, e.g. from app_list_sessions)."
+    },
+    "OpenFile": {
+      "signature": "OpenFile(path: string)",
+      "description": "Open a file from the agent's /workspace on the Files page (its path, e.g. from app_list_files)."
+    },
+    "OpenMachine": {
+      "signature": "OpenMachine(vmKey: string)",
+      "description": "Open a chat's VM on the Machine page (its vm key: the chat's id)."
+    },
+    "Copy": {
+      "signature": "Copy(text: string)",
+      "description": "Copy text to the clipboard."
+    }
+  },
   "schema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
@@ -4360,6 +4392,130 @@
         ],
         "additionalProperties": false,
         "description": "Individual switch toggle"
+      }
+    },
+    "functions": {
+      "Ago": {
+        "description": "How long ago a time was, e.g. \"5 min. ago\" (a time in ms since 1970 or ISO 8601). For last-used, created, updated.",
+        "params": {
+          "type": "object",
+          "properties": {
+            "time": {
+              "type": [
+                "number",
+                "string"
+              ]
+            }
+          },
+          "required": [
+            "time"
+          ],
+          "additionalProperties": false
+        },
+        "returns": {
+          "type": "string"
+        }
+      },
+      "DateTime": {
+        "description": "A time as a short local date and time, e.g. \"Oct 19, 5:08 PM\" (ms since 1970 or ISO 8601).",
+        "params": {
+          "type": "object",
+          "properties": {
+            "time": {
+              "type": [
+                "number",
+                "string"
+              ]
+            }
+          },
+          "required": [
+            "time"
+          ],
+          "additionalProperties": false
+        },
+        "returns": {
+          "type": "string"
+        }
+      },
+      "Bytes": {
+        "description": "A size in bytes for people, e.g. \"34.2 KB\".",
+        "params": {
+          "type": "object",
+          "properties": {
+            "bytes": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "bytes"
+          ],
+          "additionalProperties": false
+        },
+        "returns": {
+          "type": "string"
+        }
+      }
+    },
+    "actions": {
+      "OpenChat": {
+        "description": "Open a Dex chat (its id, e.g. from app_list_sessions).",
+        "params": {
+          "type": "object",
+          "properties": {
+            "sessionId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "sessionId"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "OpenFile": {
+        "description": "Open a file from the agent's /workspace on the Files page (its path, e.g. from app_list_files).",
+        "params": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "OpenMachine": {
+        "description": "Open a chat's VM on the Machine page (its vm key: the chat's id).",
+        "params": {
+          "type": "object",
+          "properties": {
+            "vmKey": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "vmKey"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "Copy": {
+        "description": "Copy text to the clipboard.",
+        "params": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "additionalProperties": false
+        }
       }
     }
   },

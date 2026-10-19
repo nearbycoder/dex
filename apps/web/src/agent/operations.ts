@@ -7,7 +7,9 @@ import type { McpAuth, McpTransport } from "~/shared/mcp"
 import { NOTIFY_KINDS, type NotifyKind } from "~/shared/notifications"
 import { githubFullName, normalizeRepoUrl, type ProjectProfile, type ProjectRepo } from "~/shared/projects"
 import { type DexState, type VmSize, VM_SIZES } from "~/shared/protocol"
+import { MAX_PIN_CODE } from "~/shared/board"
 import { USAGE_RANGES, type UsageRange } from "~/shared/usage"
+import { VM_PEEK_VIEWS } from "./vm-peek"
 import type { DexAgent } from "./dex-agent"
 
 /**
@@ -28,7 +30,8 @@ export type Caller =
   | { readonly kind: "chat"; readonly sessionId: string }
   | { readonly kind: "mcp"; readonly tokenId: string; readonly label: string }
   | { readonly kind: "user"; readonly sessionId: string }
-  | { readonly kind: "ui"; readonly sessionId: string }
+  /** `sessionId` is the UI's scope: its chat's id, or `pin:<id>` for a panel on the board. */
+  | { readonly kind: "ui"; readonly sessionId: string; readonly label: string }
 
 /** The parts of DexAgent operations use: its callables plus a few helpers for programmatic callers. */
 export type OperationHost = Pick<
@@ -66,6 +69,11 @@ export type OperationHost = Pick<
   | "vmRerunSetup"
   | "vmActivity"
   | "vmRun"
+  | "vmPeek"
+  | "boardPins"
+  | "pinUi"
+  | "updatePin"
+  | "unpin"
   | "vmExposePort"
   | "shareMediaFromVm"
   | "pushUpdate"
@@ -139,6 +147,8 @@ export const EXCLUDED: Readonly<Record<string, string>> = {
   createAccessToken: "Access is granted only by the signed-in user, so no token can mint more access.",
   revokeAccessToken: "Access is managed only by the signed-in user.",
   resolvePendingAction: "Confirming an admin operation must come from the user, not from an agent.",
+  uiStates: "A generated UI's own form and filter state, which the browser saves and restores; nothing for an agent to read.",
+  saveUiState: "A generated UI's own form and filter state, which the browser saves and restores; nothing for an agent to set.",
   runUiOperation: "The runner behind a chat's generated UI (its Query and Mutation calls); it runs these operations itself, gated like a chat's app_call.",
   signOutEverywhere: "Sessions are managed only by the signed-in user."
 }
@@ -636,6 +646,21 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
       (await host.vmActivity(args.vm_key, args.limit ?? 30)).map((item) => ({ ...item, output: item.output.slice(-2_000) }))
   }),
   define({
+    name: "app_vm_peek",
+    description:
+      "A read-only look at a chat's running VM: a folder's entries (files), the last lines of a file (file), listening ports, the busiest processes, or a repo's git status and recent commits (git). Never starts or wakes the VM: when it isn't running, returns running: false. path defaults to ~/work.",
+    risk: "read",
+    parameters: Type.Object({
+      vm_key: vmKey,
+      view: Type.Union(VM_PEEK_VIEWS.map((view) => Type.Literal(view))),
+      path: Type.Optional(Type.String({ minLength: 1, maxLength: 500, description: "A folder (files, git) or file (file); ~/ is the home folder." })),
+      lines: Type.Optional(Type.Integer({ minimum: 1, maximum: 2_000, description: "How many lines from the end of the file (default 200)." }))
+    }),
+    covers: ["vmPeek"],
+    summarize: (args, state) => `Look at ${args.view}${args.path ? ` ${args.path}` : ""} on the VM of ${quote(chatTitle(state, args.vm_key))}`,
+    run: async (host, args) => host.vmPeek(args.vm_key, args.view, args.path, args.lines)
+  }),
+  define({
     name: "app_usage_report",
     description:
       "What Dex costs: ClinePass and OpenCode Go tokens per model and chat (with OpenCode Go's 5-hour, weekly, and monthly allowance used), boat.dev VM time, and Cloudflare usage, with daily totals.",
@@ -767,7 +792,18 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
       snoozed_until: Type.Optional(Type.Union([Type.String({ maxLength: 40, description: "ISO 8601 time to come back." }), Type.Null()]))
     }),
     covers: ["renameSession", "configureSession", "setSessionMuted", "triageSession"],
-    summarize: (args, state) => `Update ${quote(chatTitle(state, args.session_id))}`,
+    summarize: (args, state) => {
+      const changes = [
+        args.title !== undefined && `rename it ${quote(args.title)}`,
+        args.model !== undefined && `model ${args.model}`,
+        args.thinking !== undefined && `thinking ${args.thinking}`,
+        args.mcp_servers !== undefined && "MCP servers",
+        args.muted !== undefined && (args.muted ? "mute" : "unmute"),
+        args.settled !== undefined && (args.settled ? "settle" : "back to the inbox"),
+        args.snoozed_until !== undefined && (args.snoozed_until === null ? "unsnooze" : `snooze until ${args.snoozed_until}`)
+      ].filter(Boolean)
+      return `Update ${quote(chatTitle(state, args.session_id))}${changes.length ? `: ${changes.join(", ")}` : ""}`
+    },
     run: async (host, args) => {
       if (!host.appState().sessions.some((session) => session.id === args.session_id)) throw new Error(`No chat ${args.session_id}.`)
       if (args.title !== undefined) await host.renameSession(args.session_id, args.title)
@@ -1148,6 +1184,59 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     run: async (host, args) => host.runCommand(args.command)
   }),
 
+  // The board
+  define({
+    name: "app_list_pins",
+    description:
+      "The board's panels: generated UIs (render_ui programs) pinned from chats, shown as live panels on the Board page, in order. Each has its program (code) and the chat it came from.",
+    risk: "read",
+    parameters: Type.Object({}),
+    covers: ["boardPins"],
+    summarize: () => "List board panels",
+    run: async (host) => host.boardPins()
+  }),
+  define({
+    name: "app_pin_ui",
+    description:
+      "Pin a generated UI to the board as a live panel: an OpenUI Lang program like render_ui's `code` (its Query() calls keep it current there). Usually the UI you just rendered; the user can also pin any card with its pin button.",
+    risk: "admin",
+    parameters: Type.Object({
+      title: Type.String({ minLength: 1, maxLength: 80 }),
+      code: Type.String({ minLength: 1, maxLength: MAX_PIN_CODE, description: "The OpenUI Lang program, as given to render_ui." }),
+      session_id: Type.Optional(id("The chat it belongs to (its @ToAssistant buttons go there); defaults to this chat."))
+    }),
+    covers: ["pinUi"],
+    summarize: (args) => `Pin ${quote(args.title)} to the board`,
+    run: async (host, args, caller) =>
+      host.pinUi({ title: args.title, code: args.code, sessionId: args.session_id ?? (caller.kind === "chat" ? caller.sessionId : null) })
+  }),
+  define({
+    name: "app_update_pin",
+    description: "Change a board panel: its title, its program (code), or its place (position, 0 is first).",
+    risk: "admin",
+    parameters: Type.Object({
+      pin_id: id("From app_list_pins."),
+      title: Type.Optional(Type.String({ minLength: 1, maxLength: 80 })),
+      code: Type.Optional(Type.String({ minLength: 1, maxLength: MAX_PIN_CODE })),
+      position: Type.Optional(Type.Integer({ minimum: 0, maximum: 100 }))
+    }),
+    covers: ["updatePin"],
+    summarize: (args, state) => `Change board panel ${quote(state.pins?.find((pin) => pin.id === args.pin_id)?.title ?? args.pin_id)}`,
+    run: async (host, args) => host.updatePin(args.pin_id, { title: args.title, code: args.code, position: args.position })
+  }),
+  define({
+    name: "app_unpin",
+    description: "Remove a panel from the board.",
+    risk: "admin",
+    parameters: Type.Object({ pin_id: id("From app_list_pins.") }),
+    covers: ["unpin"],
+    summarize: (args, state) => `Unpin ${quote(state.pins?.find((pin) => pin.id === args.pin_id)?.title ?? args.pin_id)} from the board`,
+    run: async (host, args) => {
+      await host.unpin(args.pin_id)
+      return { removed: args.pin_id }
+    }
+  }),
+
   // Notifications
   define({
     name: "app_update_push_device",
@@ -1193,6 +1282,12 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
 ]
 
 export const operationByName = new Map(OPERATIONS.map((operation) => [operation.name, operation]))
+
+/**
+ * Operations a chat's generated UI may call: what the chat itself can, plus reads it has a native tool for instead
+ * (workspace files, schedules), which a live view still needs.
+ */
+export const inUi = (operation: Operation) => operation.inChats !== false || operation.risk === "read"
 
 export const riskOf = (operation: Operation, args: unknown): AccessRisk =>
   typeof operation.risk === "function" ? operation.risk(args as never) : operation.risk

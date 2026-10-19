@@ -1,10 +1,11 @@
 import type { AssistantMessage, ToolResultMessage } from "@earendil-works/pi-ai"
 import { Predicate } from "effect"
 import { Link } from "@tanstack/react-router"
-import { AlertTriangle, ArrowDown, Brain, ChevronRight, Clock, ListChecks, LoaderCircle } from "lucide-react"
+import { AlertTriangle, ArrowDown, Brain, ChevronRight, Clock, ListChecks, LoaderCircle, MousePointerClick } from "lucide-react"
 import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { displayItems, type LiveTool, toolResults, type TranscriptState } from "~/client/lib/transcript"
 import { invokedSkill } from "~/shared/skills"
+import { splitUiNotes } from "~/shared/board"
 import { Collapse } from "./collapse"
 import { ConfirmCard } from "./confirm-card"
 import { MediaPlayer, videoSource } from "./media"
@@ -248,7 +249,14 @@ function AssistantTurnView(props: {
         if (isUi(block)) {
           return (
             <Suspense key={step.key} fallback={<div className="my-3 h-24 animate-pulse rounded-xl bg-zinc-900" />}>
-              <OpenUIBlock code={block.arguments.code as string} streaming={props.streaming} onSend={props.onSend} />
+              <OpenUIBlock
+                code={block.arguments.code as string}
+                streaming={props.streaming}
+                card={block.id}
+                title={typeof block.arguments.title === "string" ? block.arguments.title : undefined}
+                onSend={props.onSend}
+                fixable
+              />
             </Suspense>
           )
         }
@@ -265,16 +273,31 @@ function AssistantTurnView(props: {
   )
 }
 
-/** A message's text, with a leading `/skill` set off: that message invoked the skill. */
-function UserText({ text }: { text: string }) {
+/**
+ * A message's text, with a leading `/skill` set off (that message invoked the skill), and the note Dex added about
+ * what you did in the chat's UI since your last message shown as a note rather than as your words.
+ */
+function UserText({ text: raw }: { text: string }) {
+  const { notes, text } = splitUiNotes(raw)
   const skill = invokedSkill(text)
-  if (!skill) return text
-  const at = text.indexOf(`/${skill}`)
+  const at = skill ? text.indexOf(`/${skill}`) : -1
   return (
     <>
-      {text.slice(0, at)}
-      <span className="font-mono font-medium text-emerald-300">/{skill}</span>
-      {text.slice(at + skill.length + 1)}
+      {notes.length > 0 && (
+        <span className="mb-1.5 flex items-start gap-1.5 text-xs text-zinc-400" title="Dex told the chat what you did with its UI since your last message">
+          <MousePointerClick className="mt-0.5 size-3 shrink-0" />
+          <span>In the UI: {notes.join("; ")}</span>
+        </span>
+      )}
+      {skill && at !== -1 ? (
+        <>
+          {text.slice(0, at)}
+          <span className="font-mono font-medium text-emerald-300">/{skill}</span>
+          {text.slice(at + skill.length + 1)}
+        </>
+      ) : (
+        text
+      )}
     </>
   )
 }

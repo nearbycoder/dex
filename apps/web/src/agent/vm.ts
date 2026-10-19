@@ -662,6 +662,29 @@ export class VmManager {
     })
   }
 
+  /**
+   * A quick look at a running VM for a live view: never starts it, isn't activity (a view refreshing every 30 seconds
+   * mustn't keep the VM from idling or fill the Machine page), and its output is masked like any other. Null when the
+   * VM isn't running.
+   */
+  async peek(command: string, signal?: AbortSignal): Promise<{ exitCode: number; output: string } | null> {
+    const id = this.sandboxId()
+    if (!id || this.info.status !== "running") return null
+    let output = ""
+    const result = await this.host.run(
+      BoatClient.use((client) =>
+        client.exec(id, command, {
+          timeoutSeconds: 15,
+          onOutput: (stream, chunk) => {
+            if (stream === "stdout" && output.length < 200_000) output += chunk
+          }
+        })
+      ),
+      signal
+    )
+    return { exitCode: result.exitCode ?? -1, output: this.host.mask(this.key, output) }
+  }
+
   // ── Work ──────────────────────────────────────────────────────────────────
 
   /** Runs a shell command on the VM, streaming output to `onOutput` and to every watching client. */

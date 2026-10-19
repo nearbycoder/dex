@@ -2,7 +2,8 @@ import { Type } from "@earendil-works/pi-ai"
 import { defineTool } from "@earendil-works/pi-durable"
 import { generateSystemPrompt, type LibrarySpec, type ToolSpec } from "@openuidev/lang-core"
 import spec from "~/shared/openui-spec.json"
-import { OPERATIONS } from "../operations"
+import { OUTPUTS } from "../operation-outputs"
+import { inUi, OPERATIONS } from "../operations"
 
 export const RENDER_UI_TOOL = "render_ui"
 
@@ -40,19 +41,54 @@ export const renderUiTool = defineTool({
   })
 })
 
+type JsonSchema = { [key: string]: unknown }
+
 /**
- * The tools a UI's Query() and Mutation() can call: the app operations a chat can run with app_call (so it can call
- * one first to see the shape of its result). Descriptions lead with what running one takes.
+ * A schema in the subset OpenUI's guide prints (it shows anything else as `any`): unions of string literals become
+ * enums, `X | null` becomes X, and intersections of objects one object.
  */
-const uiTools: ToolSpec[] = OPERATIONS.filter((operation) => operation.inChats !== false).map((operation) => {
+const forPrompt = (input: unknown): JsonSchema => {
+  const schema = (input ?? {}) as JsonSchema
+  const anyOf = schema.anyOf as JsonSchema[] | undefined
+  if (anyOf) {
+    const options = anyOf.filter((option) => option.type !== "null")
+    if (options.length > 0 && options.every((option) => typeof option.const === "string")) return { type: "string", enum: options.map((option) => option.const) }
+    if (options.length === 1) return forPrompt(options[0])
+    return schema
+  }
+  const allOf = schema.allOf as JsonSchema[] | undefined
+  if (allOf) {
+    const parts = allOf.map(forPrompt)
+    return {
+      type: "object",
+      properties: Object.assign({}, ...parts.map((part) => part.properties)),
+      required: parts.flatMap((part) => (part.required as string[] | undefined) ?? [])
+    }
+  }
+  if (schema.type === "array") return { ...schema, items: forPrompt(schema.items) }
+  if (schema.type === "object" && schema.properties) {
+    return { ...schema, properties: Object.fromEntries(Object.entries(schema.properties as JsonSchema).map(([key, value]) => [key, forPrompt(value)])) }
+  }
+  return schema
+}
+
+/** A UI reads a list as `{ rows: [...] }` (the OpenUI block wraps it), the shape OpenUI's guide uses throughout. */
+const asRows = (schema: JsonSchema): JsonSchema => (schema.type === "array" ? { type: "object", properties: { rows: schema }, required: ["rows"] } : schema)
+
+/**
+ * The tools a UI's Query() and Mutation() can call: the app operations, with what the read ones return (OUTPUTS).
+ * Descriptions lead with what running one takes.
+ */
+const uiTools: ToolSpec[] = OPERATIONS.filter(inUi).map((operation) => {
   const risk = typeof operation.risk === "function" ? "varies" : operation.risk
   const label = risk === "read" ? "read: Query or Mutation" : risk === "admin" ? "admin: Mutation only; the user confirms it on click" : "changes things: Mutation only"
   return {
     name: operation.name,
     description: `[${label}] ${(operation.description.split(/(?<!e\.g|i\.e)\.\s/)[0] ?? "").replace(/\.$/, "")}.`,
-    inputSchema: JSON.parse(JSON.stringify(operation.parameters)) as Record<string, unknown>,
+    inputSchema: forPrompt(JSON.parse(JSON.stringify(operation.parameters))),
+    // Untyped results get none: the guide would list `null` defaults; app_call shows the real shape.
+    ...(OUTPUTS[operation.name] && { outputSchema: asRows(forPrompt(JSON.parse(JSON.stringify(OUTPUTS[operation.name])))) }),
     annotations: { readOnlyHint: risk === "read", destructiveHint: risk === "admin" }
-    // No outputSchema: results aren't typed, so the guide would list `null` defaults; app_call shows the real shape.
   } as ToolSpec
 })
 
@@ -73,8 +109,11 @@ const reference = generateSystemPrompt({
       "without you, and you don't see their results.",
     additionalRules: [
       ...((spec as { promptOptions?: { additionalRules?: string[] } }).promptOptions?.additionalRules ?? []),
-      "The tools below are Dex's app operations. To learn a result's shape, run the operation once with app_call " +
-        "before writing the UI, and use what it returned (condensed) as the Query defaults.",
+      "The tools below are Dex's app operations. Most read tools show what they return (after →); build on those fields. " +
+        "Every list comes wrapped as {rows: [...]}, so read `q.rows` (app_call shows it unwrapped). " +
+        "For a tool without one, run it once with app_call before writing the UI. Use real values (condensed) as Query defaults. " +
+        "Fields that can be empty come back as null. Times are milliseconds since 1970 when they're numbers, ISO 8601 when " +
+        "strings: show them with @Ago or @DateTime, and sizes in bytes with @Bytes, never raw.",
       "Query() may only use [read] tools: it runs on its own whenever the UI shows. Anything else goes in a Mutation() " +
         "run by a button, with a label that says exactly what it does.",
       "Admin tools ask the user to confirm Dex's own description of the action when they click; don't add a confirmation step of your own.",

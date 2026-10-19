@@ -46,6 +46,7 @@ import type {
   WorkspaceFile
 } from "~/shared/protocol"
 import { MCP_VM, SHARED_VM } from "~/shared/protocol"
+import { type Pin, type PinInfo, pinOfScope, pinScope, withUiNotes } from "~/shared/board"
 import { githubFullName, isProjectImage, normalizeRepoUrl, type ProjectDraft, type ProjectImageCandidate, type ProjectProfile, type ProjectRepo, PROJECT_ROOT, repoDirName, repoLabel } from "~/shared/projects"
 import { CLOUDFLARE_RATES, type CloudflareLine, type OpenCodeLimits, type UsageRange, type UsageReport } from "~/shared/usage"
 import { AGENT_COLORS, AGENT_ICONS, type AgentDraft, type AgentProfile, STARTER_AGENTS } from "~/shared/agents"
@@ -85,6 +86,8 @@ import { PushCenter, type SubscriptionInput } from "./push"
 import type { BackgroundAction, NotifyKind, PushPayload } from "~/shared/notifications"
 import { VmTemplate } from "./vm-template"
 import { adoptSharedVm, type DesktopUpstream, errorText, migrateVmTables, storedVmKeys, type VmHost, VmManager } from "./vm"
+import { parsePeek, peekCommand, VM_PEEK_VIEWS, type VmPeekView } from "./vm-peek"
+import { UiCards } from "./ui-cards"
 import { Workspace, WORKSPACE_ROOT } from "./workspace"
 
 const AgentLayer = (env: object, boatKey: BoatKey["Service"]) =>
@@ -341,6 +344,8 @@ export class DexAgent extends Agent<Env, DexState> {
 
   /** Messages sent while their chat was busy, sent one per finished run. */
   readonly messageQueue = new MessageQueue(this.ctx.storage.sql)
+  /** Generated UIs' saved state, the board's pinned panels, and notes for chats about what you did in their UI. */
+  readonly uiCards = new UiCards(this.ctx.storage.sql)
   /** Chats whose next queued message is being sent, so two finishing runs don't send two. */
   private readonly draining = new Set<string>()
 
@@ -477,7 +482,7 @@ export class DexAgent extends Agent<Env, DexState> {
     this.publishVms()
     this.refreshProjects()
     this.refreshGitHubStatus()
-    this.publish({ push: this.push.status(), access: this.access.status(), build: __DEX_BUILD__ })
+    this.publish({ push: this.push.status(), access: this.access.status(), build: __DEX_BUILD__, pins: this.uiCards.pinInfos() })
     this.ctx.waitUntil(this.refreshModels().catch(() => undefined))
     void this.backfillUsage()
     this.seedAgents()
@@ -960,7 +965,8 @@ export class DexAgent extends Agent<Env, DexState> {
     if (skill) this.skills.activate(sessionId, skill)
 
     const session = this.harness.session(sessionId)
-    const receipt = await session.submit(content, steer ? { whenBusy: "steer" } : undefined)
+    // What you did with this chat's UI since your last message, so the chat isn't working from a stale picture.
+    const receipt = await session.submit(withUiNotes(this.uiCards.takeNotes(sessionId), content), steer ? { whenBusy: "steer" } : undefined)
     const title = row.title === "New chat" ? content.replace(/\s+/g, " ").slice(0, 60) : row.title
     this.ctx.storage.sql.exec(`UPDATE dex_sessions SET title = ?, updated_at = ? WHERE id = ?`, title, Date.now(), sessionId)
     // Something new in it: back to the inbox, whether it was settled or snoozed.
@@ -1234,6 +1240,9 @@ export class DexAgent extends Agent<Env, DexState> {
     this.skills.forgetSession(sessionId)
     this.messageQueue.clear(sessionId)
     this.secrets.forget(sessionId)
+    this.uiCards.forget(sessionId)
+    this.uiCards.detachChat(sessionId)
+    this.publish({ pins: this.uiCards.pinInfos() })
     await this.refreshSessions()
     // Its VM goes with it, disk and all (stopped first if it was running; deleting does both), and its media.
     if (this.vms.has(sessionId)) this.ctx.waitUntil(this.reapOrphanVms())
@@ -2114,6 +2123,17 @@ export class DexAgent extends Agent<Env, DexState> {
     return { exitCode: result.exitCode, output: result.output.slice(-16_000) }
   }
 
+  /** A read-only look at a running VM (a folder, a file's end, ports, processes, git) that never starts or wakes it. */
+  @callable()
+  async vmPeek(key: string, view: VmPeekView, path = "~/work", lines = 200) {
+    if (!VM_PEEK_VIEWS.includes(view)) throw new Error(`Unknown view ${view}.`)
+    const vm = this.vmForUser(key)
+    const at = String(path || "~/work").slice(0, 500)
+    const result = await vm.peek(peekCommand(view, at, Math.min(2_000, Math.max(1, Math.round(lines)))))
+    if (!result) return { running: false, status: vm.current.status, view }
+    return { running: true, status: "running", view, ...parsePeek(view, at, result.output) }
+  }
+
   /**
    * The desktop to frame on the Machine page. `selkies` is served by Dex itself (src/server/vm-desktop.ts): the
    * stream is set up first (about 30s the first time on a VM), then the page is a same-origin path.
@@ -2855,9 +2875,66 @@ export class DexAgent extends Agent<Env, DexState> {
    * Admin ones come back as `confirm` until you confirm Dex's summary of them in the card (`confirmed`).
    */
   @callable()
-  async runUiOperation(sessionId: string, name: string, args: unknown, options: { query?: boolean; confirmed?: boolean } = {}): Promise<UiOperationResult> {
-    if (!this.hasSession(sessionId)) return { ok: false, error: "Chat not found" }
-    return this.access.runFromUi(sessionId, String(name), args, { query: options.query !== false, confirmed: options.confirmed === true })
+  async runUiOperation(scope: string, name: string, args: unknown, options: { query?: boolean; confirmed?: boolean } = {}): Promise<UiOperationResult> {
+    const where = this.uiScope(scope)
+    if (!where) return { ok: false, error: "That chat or panel is gone." }
+    const outcome = await this.access.runFromUi(where, String(name), args, { query: options.query !== false, confirmed: options.confirmed === true })
+    // A chat hears about the changes you made with its UI along with your next message.
+    if (outcome.ok === true && outcome.changed && !pinOfScope(scope)) this.uiCards.note(scope, outcome.changed)
+    return outcome
+  }
+
+  /** A generated UI's home: a chat, or a panel on the board (with the chat it came from, if that's still around). */
+  private uiScope(scope: string): { scope: string; label: string } | null {
+    const pinId = pinOfScope(String(scope))
+    if (pinId) {
+      const pin = this.uiCards.pin(pinId)
+      return pin ? { scope: pinScope(pin.id), label: `the board panel “${pin.title}”` } : null
+    }
+    const session = this.state.sessions.find((candidate) => candidate.id === scope)
+    return session ? { scope: session.id, label: session.title } : null
+  }
+
+  /** A generated UI's saved form and filter state, by card (a chat's render_ui call id; a pin's is `main`). */
+  @callable()
+  async uiStates(scope: string): Promise<Record<string, unknown>> {
+    return this.uiScope(scope) ? this.uiCards.states(scope) : {}
+  }
+
+  @callable()
+  async saveUiState(scope: string, card: string, state: unknown) {
+    if (!this.uiScope(scope)) return
+    this.uiCards.saveState(scope, String(card), state)
+  }
+
+  // ── The board ─────────────────────────────────────────────────────────────
+
+  /** The board's panels with their programs (the synced state has only their titles and order). */
+  @callable()
+  async boardPins(): Promise<Pin[]> {
+    return this.uiCards.pins()
+  }
+
+  /** Pins a generated UI to the board, with the state it has now. `sessionId` is the chat it came from. */
+  @callable()
+  async pinUi(input: { title: string; code: string; sessionId?: string | null; state?: unknown }): Promise<PinInfo> {
+    const sessionId = input.sessionId && this.hasSession(input.sessionId) ? input.sessionId : null
+    const pin = this.uiCards.addPin({ title: String(input.title ?? ""), code: String(input.code ?? ""), sessionId, state: input.state })
+    this.publish({ pins: this.uiCards.pinInfos() })
+    return pin
+  }
+
+  @callable()
+  async updatePin(id: string, changes: { title?: string; code?: string; position?: number }): Promise<PinInfo> {
+    const pin = this.uiCards.updatePin(String(id), changes)
+    this.publish({ pins: this.uiCards.pinInfos() })
+    return pin
+  }
+
+  @callable()
+  async unpin(id: string) {
+    this.uiCards.removePin(String(id))
+    this.publish({ pins: this.uiCards.pinInfos() })
   }
 
   /**

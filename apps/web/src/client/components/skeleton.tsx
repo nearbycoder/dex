@@ -953,6 +953,38 @@ function UsagePageSkeleton() {
   )
 }
 
+/** The Board: the page title, then panels (a title row with its buttons, and a card) two across on wide screens. */
+export function BoardSkeleton() {
+  return (
+    <Status>
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <div className="mx-auto max-w-5xl space-y-5 px-4 pt-6 md:pt-10">
+          <div className="flex min-h-9 items-center gap-2">
+            <Bone className="h-7 w-24" />
+          </div>
+          <div className="grid items-start gap-4 lg:grid-cols-2">
+            {[0, 1].map((index) => (
+              <div key={index} className="rounded-xl border border-zinc-800/80 p-3">
+                <div className="flex h-8 items-center gap-2">
+                  <div className="min-w-0 flex-1">
+                    <LineBone size="sm" width={widthAt(index, [40, 55])} />
+                  </div>
+                  <Bone className="h-4 w-24" />
+                </div>
+                <div className="my-3 space-y-3 rounded-xl border border-zinc-800/60 p-4">
+                  <LineBone size="base" width="45%" />
+                  <Lines count={3} />
+                  <Bone className="h-24 w-full rounded-lg" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </Status>
+  )
+}
+
 // ── By route ────────────────────────────────────────────────────────────────
 
 /** Pages that draw their own header instead of the app's (the app shell shows its header for the rest). */
@@ -967,6 +999,7 @@ export function RouteSkeleton({ pathname }: { pathname: string }) {
   if (pathname === "/machine") return <MachinesPageSkeleton />
   if (pathname === "/usage") return <UsagePageSkeleton />
   if (pathname === "/files") return <FilesSkeleton />
+  if (pathname === "/board") return <BoardSkeleton />
   if (/^\/agents\/[^/]+/.test(pathname)) return <EditorSkeleton kind="agent" />
   if (/^\/projects\/[^/]+/.test(pathname)) return <EditorSkeleton kind="project" />
   if (/^\/mcp\/[^/]+/.test(pathname)) return <EditorSkeleton kind="mcp" />
@@ -1002,7 +1035,12 @@ export function ShellSkeleton() {
           <span className="font-semibold tracking-tight">Dex</span>
         </div>
         <div className="px-3">
-          <Bone className="mb-4 h-9 w-full rounded-lg" />
+          <Bone className="h-9 w-full rounded-lg" />
+          {/* The Board link, like the sidebar's. */}
+          <div className="mt-1 mb-4 flex h-9 items-center gap-2.5 px-2.5">
+            <Bone className="size-4" />
+            <Bone className="h-3.5 w-12" />
+          </div>
           <Bone className="mb-2 ml-2.5 h-3 w-12" />
           <ChatListSkeleton />
         </div>
