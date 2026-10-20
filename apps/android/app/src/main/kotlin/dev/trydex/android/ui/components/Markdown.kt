@@ -380,6 +380,7 @@ private fun TableView(node: TableBlock, context: MarkdownContext) {
                 rows = rows.size,
                 columns = columns,
                 modifier = Modifier.widthIn(min = width),
+                fitWidth = width,
                 rowBackground = { r ->
                     Box(
                         Modifier.background(if (rows[r].first) head else Color.Transparent).drawBehind {

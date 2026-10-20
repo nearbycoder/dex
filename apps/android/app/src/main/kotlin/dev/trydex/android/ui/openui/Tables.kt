@@ -135,6 +135,7 @@ fun TableView(node: ElementNode) {
                 rows = shown + 1,
                 columns = columns.size,
                 modifier = Modifier.widthIn(min = minWidth),
+                fitWidth = minWidth,
                 rowBackground = { r -> RowBackground(r, r == shown) },
             ) { r, c ->
                 Box(Modifier.widthIn(max = 360.dp).padding(horizontal = 14.dp, vertical = 12.dp)) {
@@ -144,7 +145,7 @@ fun TableView(node: ElementNode) {
                         when (val value = data[c].getOrNull(start + r - 1)) {
                             is ElementNode -> RenderNode(value)
                             is List<*> -> Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) { value.forEach { if (it is ElementNode) RenderNode(it) else Text(cellText(it), style = MaterialTheme.typography.bodyMedium, maxLines = 1) } }
-                            else -> Text(cellText(value), style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+                            else -> Text(cellText(value), style = MaterialTheme.typography.bodyMedium)
                         }
                     }
                 }
