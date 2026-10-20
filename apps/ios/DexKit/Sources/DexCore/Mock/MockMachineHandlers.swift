@@ -262,7 +262,7 @@ extension MockAgent {
     /// A tiny desktop-like page for the web view (there's no real VM): a panel, a terminal window, and a clock.
     nonisolated static func desktopPage(key: String, mode: String) -> String {
         let html = """
-        <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Mock desktop</title>
+        <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Mock desktop</title>
         <style>
         html,body{margin:0;height:100%;font:14px -apple-system,system-ui,sans-serif;color:#e4e4e7;overflow:hidden}
         body{background:linear-gradient(135deg,#0f172a,#1e3a5f 55%,#0e7490)}
