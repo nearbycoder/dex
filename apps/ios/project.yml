@@ -1,0 +1,92 @@
+# The Xcode project is generated from this file: run `xcodegen` in apps/ios (or scripts/generate.sh) after changing it.
+# Sources are synced folders, so adding a Swift file needs no project change.
+name: Dex
+options:
+  bundleIdPrefix: dev.trydex
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+    SWIFT_APPROACHABLE_CONCURRENCY: "YES"
+    SWIFT_STRICT_CONCURRENCY: complete
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_USER_SCRIPT_SANDBOXING: "YES"
+    LOCALIZATION_PREFERS_STRING_CATALOGS: "YES"
+packages:
+  DexKit:
+    path: DexKit
+  Markdown:
+    url: https://github.com/swiftlang/swift-markdown
+    from: "0.9.0"
+targets:
+  Dex:
+    type: application
+    platform: iOS
+    sources:
+      - path: Dex
+        type: syncedFolder
+    dependencies:
+      - package: DexKit
+        product: DexCore
+      - package: Markdown
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.trydex.Dex
+        PRODUCT_NAME: Dex
+        TARGETED_DEVICE_FAMILY: "1,2"
+        INFOPLIST_FILE: Dex/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        CODE_SIGN_ENTITLEMENTS: Dex/Dex.entitlements
+        SUPPORTS_MACCATALYST: "NO"
+        GENERATE_INFOPLIST_FILE: "NO"
+  DexTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: DexTests
+        type: syncedFolder
+    dependencies:
+      - target: Dex
+      - package: DexKit
+        product: DexCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.trydex.DexTests
+        GENERATE_INFOPLIST_FILE: "YES"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Dex.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Dex"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+  DexUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: DexUITests
+        type: syncedFolder
+    dependencies:
+      - target: Dex
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.trydex.DexUITests
+        GENERATE_INFOPLIST_FILE: "YES"
+        TEST_TARGET_NAME: Dex
+schemes:
+  Dex:
+    build:
+      targets:
+        Dex: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - name: DexTests
+        - name: DexUITests
+        - package: DexKit/DexCoreTests

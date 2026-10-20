@@ -233,3 +233,68 @@ import Testing
         #expect(Format.invokedSkill("/a/b") == nil)
     }
 }
+
+@Suite struct InboxTests {
+    @Test func groupsChats() {
+        let now = Double.nowMs
+        let state = MockData.state(now: now)
+        let groups = Inbox.groups(state.sessions, now: now)
+        #expect(groups.inbox.map(\.id) == [MockData.welcomeId, MockData.vmChatId, MockData.chartChatId])
+        #expect(groups.snoozed.map(\.id) == ["s-snoozed"])
+        #expect(groups.settled.map(\.id) == ["s-settled"])
+        // A snooze that ended puts the chat back in the inbox.
+        #expect(Inbox.place(of: state.sessions[3], now: now + 2 * 86_400_000) == .inbox)
+    }
+
+    @Test func snoozeChoices() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        // Wednesday 2026-10-14 10:00 UTC.
+        let wednesday = Date(timeIntervalSince1970: 1_791_972_000)
+        let options = Inbox.snoozeOptions(now: wednesday, calendar: calendar)
+        #expect(options.map(\.label) == ["In 1 hour", "This evening", "Tomorrow", "This weekend", "Next week"])
+        #expect(calendar.component(.weekday, from: options[3].at) == 7) // Saturday
+        #expect(calendar.component(.weekday, from: options[4].at) == 2) // Monday
+        #expect(calendar.component(.hour, from: options[2].at) == 9)
+        // Saturday evening: no "this evening" (too close), no weekend.
+        let saturday = Date(timeIntervalSince1970: 1_792_260_000 + 7 * 3600)
+        #expect(!Inbox.snoozeOptions(now: saturday, calendar: calendar).map(\.label).contains("This weekend"))
+    }
+}
+
+@Suite struct ReplyLayoutTests {
+    @Test func foldsWorkAndKeepsAnswerAndCards() {
+        let messages = [
+            AssistantMessage(content: [.thinking("plan", redacted: false), .text("Let me check."), .toolCall(.init(id: "a", name: "bash", arguments: ["command": "ls -la\nmore"]))], timestamp: 0),
+            AssistantMessage(content: [.toolCall(.init(id: "ui", name: "render_ui", arguments: ["code": "root = Card([])"])), .text("Here it is.")], timestamp: 0)
+        ]
+        let layout = ReplyLayout(messages: messages, streaming: false)
+        #expect(layout.steps.map(\.id) == ["0:0", "0:1", "0:2"])
+        #expect(layout.shown.map(\.id) == ["1:0", "1:1"])
+        #expect(!layout.active)
+        #expect(layout.counts(results: [:], startedAt: 0, now: 0) == "1 tool · 1 thought")
+        #expect(ReplyLayout.summarize(["command": "ls -la\nmore"]) == "ls -la")
+        #expect(ReplyLayout.activity("github__create_pr") == "Using github")
+        #expect(ReplyLayout.activity("vm_exec") == "Running on the VM")
+    }
+
+    @Test func liveStatusFollowsTheRunningTool() {
+        let message = AssistantMessage(content: [.thinking("**Plan**: run the tests", redacted: false), .toolCall(.init(id: "t", name: "vm_exec", arguments: ["command": "npm test"]))], timestamp: 0)
+        let layout = ReplyLayout(messages: [message], streaming: true)
+        #expect(layout.active)
+        let status = layout.status(results: [:], startedAt: 0, endedAt: nil, now: 5_000)
+        #expect(status.title == "Running on the VM")
+        #expect(status.detail == "npm test")
+        let thinking = ReplyLayout(messages: [AssistantMessage(content: [.thinking("one\n**two** _x_", redacted: false)], timestamp: 0)], streaming: true)
+        #expect(thinking.status(results: [:], startedAt: 0, endedAt: nil, now: 0).detail == "two x")
+        let done = ReplyLayout(messages: [message, AssistantMessage(content: [.text("ok")], timestamp: 0)], streaming: false)
+        #expect(done.status(results: [:], startedAt: 0, endedAt: 36_000, now: 99_000).title == "Worked for 36s")
+    }
+
+    @Test func memoryEdits() {
+        let write = AssistantMessage(content: [.toolCall(.init(id: "m", name: "write_file", arguments: ["path": "/workspace/MEMORY.md"]))], timestamp: 0)
+        #expect(ReplyLayout(messages: [write], streaming: false).touchedMemory)
+        let read = AssistantMessage(content: [.toolCall(.init(id: "m", name: "bash", arguments: ["command": "cat MEMORY.md"]))], timestamp: 0)
+        #expect(!ReplyLayout(messages: [read], streaming: false).touchedMemory)
+    }
+}
