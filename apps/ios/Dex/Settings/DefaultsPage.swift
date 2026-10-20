@@ -32,7 +32,9 @@ struct DefaultsPage: View {
                             Spacer()
                             Image(systemName: "chevron.up.chevron.down").font(.footnote).foregroundStyle(.secondary)
                         }
+                        .contentShape(.rect)
                     }
+                    .buttonStyle(.plain)
                     .accessibilityIdentifier("defaults.model")
                 } header: {
                     Text("Model")

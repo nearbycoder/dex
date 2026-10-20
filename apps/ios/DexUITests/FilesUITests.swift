@@ -102,8 +102,10 @@ final class FilesUITests: DexUITestCase {
         openFiles()
         let row = element("file.MEMORY.md")
         row.swipeLeft()
-        app.buttons["Delete"].firstMatch.tap()
-        element("files.confirmDelete").tap()
+        // A long swipe runs the action at once (iPad); a short one shows the button.
+        let confirm = element("files.confirmDelete")
+        if !confirm.waitForExistence(timeout: 2) { app.buttons["Delete"].firstMatch.tap() }
+        confirm.tap()
         XCTAssertTrue(row.waitForNonExistence(timeout: 5))
     }
 
