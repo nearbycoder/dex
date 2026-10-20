@@ -8,3 +8,6 @@ captures/
 .externalNativeBuild/
 .cxx/
 /app/release/
+
+# Recorded locally with ./gradlew :app:recordRoborazziDebug
+app/src/test/screenshots/

@@ -68,7 +68,7 @@ private data class TabItem(val tab: Tab, val label: String, val icon: ImageVecto
 fun AppShell(graph: AppGraph, links: LinkInbox) {
     val navigator = rememberNavigator()
     val state by graph.repository.state.collectAsStateWithLifecycle()
-    val adaptive = currentWindowAdaptiveInfo()
+    val adaptive = currentWindowAdaptiveInfo(supportLargeAndXLargeWidth = true)
     val sizeClass = adaptive.windowSizeClass
     // Two panes from medium widths up (small tablets, unfolded foldables), split at a hinge when there is one.
     val directive = remember(adaptive) { calculatePaneScaffoldDirectiveWithTwoPanesOnMediumWidth(adaptive) }

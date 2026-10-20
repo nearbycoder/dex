@@ -1,6 +1,5 @@
 package dev.trydex.android.ui.openui
 
-import android.util.Base64
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -282,7 +281,7 @@ fun imageModel(src: String?, server: String?): Any? {
     if (clean.startsWith("data:image/")) {
         val comma = clean.indexOf(',')
         if (comma < 0 || !clean.substring(0, comma).endsWith(";base64")) return null
-        return runCatching { Base64.decode(clean.substring(comma + 1), Base64.DEFAULT) }.getOrNull()
+        return runCatching { java.util.Base64.getMimeDecoder().decode(clean.substring(comma + 1)) }.getOrNull()
     }
     if (clean.startsWith("/") && !clean.startsWith("//")) return server?.let { runCatching { URI(it).resolve(clean).toString() }.getOrNull() }
     val uri = runCatching { URI(clean) }.getOrNull() ?: return null

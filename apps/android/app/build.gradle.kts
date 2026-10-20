@@ -176,3 +176,11 @@ dependencies {
     androidTestImplementation(libs.okhttp.mockwebserver)
     androidTestImplementation(project(":core:fake"))
 }
+
+// Robolectric reflects into JDK internals that changed after Java 21, so unit tests run on a 21 launcher whatever
+// JDK runs Gradle.
+tasks.withType<Test>().configureEach {
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) })
+    jvmArgs("--add-opens=java.base/java.io=ALL-UNNAMED", "--add-opens=java.base/java.lang=ALL-UNNAMED", "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED")
+    maxHeapSize = "4g"
+}

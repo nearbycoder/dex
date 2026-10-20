@@ -230,7 +230,7 @@ fun tooltipValue(value: Double): String {
         scaled /= 1000
         index++
     }
-    val text = BigDecimal(floor(scaled * 10) / 10).setScale(1, RoundingMode.DOWN).toPlainString() + suffixes[index]
+    val text = BigDecimal.valueOf(floor(scaled * 10) / 10).setScale(1, RoundingMode.DOWN).toPlainString() + suffixes[index]
     return if (value < 0) "-$text" else text
 }
 
