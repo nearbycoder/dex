@@ -60,6 +60,7 @@ struct SignedInView: View {
         Group {
             if let client {
                 MainView()
+                    .chatNotifications()
                     .environment(client)
                     .environment(router)
                     .focusedSceneValue(router)

@@ -80,7 +80,9 @@ extension MockAgent {
         register("moveQueued") { [unowned self] args, _ in
             guard let id = args.string(0), let item = args.string(1), let to = args.value(2).int,
                   let from = self.queues[id]?.firstIndex(where: { $0.id == item }), let message = self.queues[id]?.remove(at: from) else { return .null }
-            self.queues[id]?.insert(message, at: min(max(0, to), self.queues[id]?.count ?? 0))
+            var queue = self.queues[id] ?? []
+            queue.insert(message, at: min(max(0, to), queue.count))
+            self.queues[id] = queue
             self.publishQueue(id)
             return .null
         }
@@ -143,8 +145,8 @@ extension MockAgent {
             return .null
         }
         register("transcriptImage") { _, _ in
-            // A 2×2 green PNG.
-            ["data": "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGNk4P/PwMDAxMDAwMDAAAANHQEDK+mmyAAAAABJRU5ErkJggg==", "mimeType": "image/png"]
+            // A 160×100 PNG of a desktop: a menu bar and two windows.
+            ["data": "iVBORw0KGgoAAAANSUhEUgAAAKAAAABkCAIAAACO1KzYAAAA80lEQVR42u3dsQ2AIBRFUcahtLBkFAZxHIZwOkJBbU1i8HuSO8E7A7yU86HAJRMAFmABFmABFmA9gM/aFDjAgAVYgAVYgAVYgAELsAALsHYH7n38J8CAAQMGDBgwYMCAAQMGDBgwYMCAgwCX+3o/wIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGLDWAwwYMGDAgAEDBgxYgAUYMGDAgOWcUoABC7AAC7AAC7AAA7YCYAEWYAEWYAEWYMACrC80AfLe5gcMT/8QAAAAAElFTkSuQmCC", "mimeType": "image/png"]
         }
         register("storeChatSecret") { args, _ in .string(args.string(1) ?? "secret") }
         register("listArtifacts") { [unowned self] args, _ in try JSONValue(encoding: self.artifacts[args.string(0) ?? ""] ?? []) }
@@ -323,6 +325,13 @@ extension MockAgent {
                 guard live() else { return }
             }
         }
+        if lower.contains("hold") {
+            // Runs until it's stopped or steered (about ten minutes at most).
+            for _ in 0..<6000 {
+                try? await Task.sleep(for: .milliseconds(100))
+                guard live() else { return }
+            }
+        }
 
         let step = Self.scriptedStep(for: lower, prompt: prompt, sessionId: id)
         let toolName = step?.name
@@ -366,7 +375,7 @@ extension MockAgent {
         if lower.contains("retry") {
             // The model call fails once and is retried.
             events(id, [["type": "auto_retry_start", "attempt": 1, "maxAttempts": 3, "delayMs": 2000, "at": .number(Double.nowMs + 2000), "errorMessage": "429 Too Many Requests"]])
-            await pause(40)
+            try? await Task.sleep(for: .seconds(3))
             guard live() else { return }
             events(id, [["type": "auto_retry_end", "success": true, "attempt": 1]])
         }
