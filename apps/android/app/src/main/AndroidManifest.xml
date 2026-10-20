@@ -27,12 +27,11 @@
             android:resizeableActivity="true"
             android:supportsPictureInPicture="true"
             android:windowSoftInputMode="adjustResize">
-            <!-- Free-form and desktop windows open at a comfortable size and can't shrink below a phone. -->
+            <!-- Free-form and desktop windows open at a comfortable size. No minimum: picture-in-picture, flip cover
+                 screens, and small split-screen windows are all smaller than a phone. -->
             <layout
                 android:defaultHeight="800dp"
-                android:defaultWidth="1180dp"
-                android:minHeight="420dp"
-                android:minWidth="320dp" />
+                android:defaultWidth="1180dp" />
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

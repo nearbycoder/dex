@@ -136,6 +136,8 @@ class DexRepository(
             scope.launch { syncModels() },
         )
         scope.launch { renewIfDue() }
+        // Signed in with the app open: connect now (otherwise the next setVisible does).
+        if (visible.value) agent.start()
     }
 
     private suspend fun onStatus(status: ConnectionStatus) {
