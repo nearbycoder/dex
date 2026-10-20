@@ -31,6 +31,7 @@ When you add or change functionality:
 ## Security
 
 - Every sign-in check goes through `activeViewer` (src/server/active-session.ts): cookie signature plus the agent's revocation time ("Sign out everywhere"). Use it for any new authenticated route; don't read the cookie directly.
+- Native apps sign in with the PKCE handoff in src/server/native-auth.ts (`/auth/native/start`, `finish`, `token`, `refresh`) and then send the ordinary session token as `Cookie: dex_session=…` with no `Origin`, so every route that uses `activeViewer` works for them unchanged. Keep new authenticated routes usable that way: don't require an `Origin` header except on form posts from Dex's own pages.
 - Anything lasting or destructive that a chat can trigger must be an `admin` operation (it then needs the user's confirmation). Persistence counts: recurring schedules, settings, agent and project edits, MCP servers.
 - Keep the Content Security Policy in src/server.ts strict; add an origin only when a feature truly needs it.
 - Worker → agent RPC: a Durable Object keeps running its old code until it restarts, so a method added in the same deploy may not exist yet on a live instance (calls throw). Callers must tolerate that (feature-detect, or ship the agent method a deploy before its caller); `activeViewer` fails closed, so don't rename `isSessionCurrent`.

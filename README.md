@@ -262,8 +262,9 @@ cd ../.. && npm run deploy                    # checks operations, builds, and d
   - GitHub OAuth, for allowlisted logins only and state-checked.
   - The owner password: compared by HMAC, limited to 10 attempts a minute per IP, same-origin posts only.
   - Dev login is off unless `DEV_LOGIN` is set.
+  - The native apps sign in through the same page, in a system browser sheet, with a PKCE handoff (`/auth/native/*`, [server/native-auth.ts](apps/web/src/server/native-auth.ts)): you confirm with a tap, the app gets a sealed one-time code at `dex://auth/callback` that expires in 2 minutes, and only the app holding the matching verifier can trade it for a session token.
 - **Sessions:**
-  - Signed, HttpOnly, SameSite=Lax, Secure cookies, valid for 30 days.
+  - Signed, HttpOnly, SameSite=Lax, Secure cookies, valid for 30 days. The native apps keep the same token in the Keychain (iOS) or encrypted storage (Android), send it as that cookie, and renew it with `POST /auth/native/refresh`.
   - Sign out everywhere revokes every session; every sign-in check rejects older ones and closes their sockets.
   - Each user's agent accepts requests only from the same origin, with a current session for that user.
 - **Stored secrets:** API keys, tokens, MCP headers and env values, and saved and chat secrets are AES-GCM encrypted. Nothing secret is synced to the browser or returned by an operation.
