@@ -2225,6 +2225,8 @@ export class DexAgent extends Agent<Env, DexState> {
       }).pipe(Effect.catchTag("GitHubTokenError", (error) => Effect.succeed({ ok: false as const, error: error.message })))
     )
     if (!result.ok) return result
+    // Reconnecting replaces the old OAuth token: revoke it so it doesn't count toward GitHub's ten tokens per user.
+    await this.revokeOAuthToken(value)
     const upsert = `INSERT INTO dex_secrets (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value`
     this.ctx.storage.sql.exec(upsert, "github_token", result.sealed)
     this.ctx.storage.sql.exec(upsert, "github_identity", JSON.stringify(result.identity))
@@ -2234,29 +2236,37 @@ export class DexAgent extends Agent<Env, DexState> {
     return { ok: true, login: result.identity.login }
   }
 
+  /**
+   * Revokes the saved token at GitHub if it came from "Connect with GitHub" (a pasted token is the user's to manage),
+   * unless it is `keep`.
+   */
+  private async revokeOAuthToken(keep?: string) {
+    const sealed = this.secret("github_token")
+    if (!sealed || this.secret("github_via") !== "oauth") return
+    await this.runtime
+      .runPromise(
+        Effect.gen(function*() {
+          const { github } = yield* AppConfig
+          const token = yield* (yield* Keys).decrypt(sealed)
+          if (Option.isNone(github) || token === keep) return
+          const basic = btoa(`${github.value.clientId}:${Redacted.value(github.value.clientSecret)}`)
+          yield* Effect.promise(() =>
+            fetch(`https://api.github.com/applications/${github.value.clientId}/token`, {
+              method: "DELETE",
+              headers: { authorization: `Basic ${basic}`, accept: "application/vnd.github+json", "user-agent": "dex", "content-type": "application/json" },
+              body: JSON.stringify({ access_token: token }),
+              signal: AbortSignal.timeout(10_000)
+            })
+          )
+        })
+      )
+      .catch(() => undefined)
+  }
+
   @callable()
   async disconnectGitHub() {
     // An OAuth token is revoked at GitHub too, so it stops working everywhere (VMs included), not just in Dex.
-    const sealed = this.secret("github_token")
-    if (sealed && this.secret("github_via") === "oauth") {
-      await this.runtime
-        .runPromise(
-          Effect.gen(function*() {
-            const { github } = yield* AppConfig
-            const token = yield* (yield* Keys).decrypt(sealed)
-            if (Option.isNone(github)) return
-            const basic = btoa(`${github.value.clientId}:${Redacted.value(github.value.clientSecret)}`)
-            yield* Effect.promise(() =>
-              fetch(`https://api.github.com/applications/${github.value.clientId}/token`, {
-                method: "DELETE",
-                headers: { authorization: `Basic ${basic}`, accept: "application/vnd.github+json", "user-agent": "dex", "content-type": "application/json" },
-                body: JSON.stringify({ access_token: token })
-              })
-            )
-          })
-        )
-        .catch(() => undefined)
-    }
+    await this.revokeOAuthToken()
     this.ctx.storage.sql.exec(`DELETE FROM dex_secrets WHERE name IN ('github_token', 'github_identity', 'github_via', 'github_expired')`)
     this.refreshGitHubStatus()
   }

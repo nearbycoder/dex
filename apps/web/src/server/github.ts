@@ -27,7 +27,9 @@ export class GitHubOAuth extends Context.Service<GitHubOAuth, {
   authorizeUrl(options: { state: string; redirectUri: string; scope?: string }): Effect.Effect<string, OAuthError>
   /** Exchange the callback's code for an access token. */
   exchange(options: { code: string; redirectUri: string }): Effect.Effect<string, OAuthError>
-  /** Exchange the callback's code and read the signed-in user. */
+  /** Revoke one access token at GitHub (only that token; the user's other tokens for Dex keep working). */
+  revoke(accessToken: string): Effect.Effect<void>
+  /** Exchange the callback's code, read the signed-in user, and revoke the token (sign-in needs it only once). */
   complete(options: { code: string; redirectUri: string }): Effect.Effect<GitHubUser, OAuthError>
 }>()("dex/server/GitHubOAuth") {
   static readonly layer = Layer.effect(
@@ -76,17 +78,34 @@ export class GitHubOAuth extends Context.Service<GitHubOAuth, {
         return token.access_token
       })
 
+      const revoke = (accessToken: string) =>
+        config.pipe(
+          Effect.flatMap(({ clientId, clientSecret }) =>
+            HttpClientRequest.delete(`https://api.github.com/applications/${clientId}/token`).pipe(
+              HttpClientRequest.basicAuth(clientId, clientSecret),
+              HttpClientRequest.bodyJsonUnsafe({ access_token: accessToken }),
+              client.execute
+            )
+          ),
+          Effect.timeout("10 seconds"),
+          Effect.ignore
+        )
+
+      // GitHub keeps at most ten tokens per user and scope set for an app and revokes older ones past that. Sign-in
+      // and Settings' GitHub connection share this app (and a sign-in token can carry every scope the user granted
+      // it), so a sign-in token left alive would eventually cost the connection its token.
       const complete = Effect.fn("GitHubOAuth.complete")(function*({ code, redirectUri }: { code: string; redirectUri: string }) {
         const accessToken = yield* exchange({ code, redirectUri })
         return yield* client.get("https://api.github.com/user", {
           headers: { authorization: `Bearer ${accessToken}` }
         }).pipe(
           Effect.flatMap(HttpClientResponse.schemaBodyJson(GitHubUser)),
-          Effect.mapError((cause) => new OAuthError({ reason: "profile_failed", message: String(cause) }))
+          Effect.mapError((cause) => new OAuthError({ reason: "profile_failed", message: String(cause) })),
+          Effect.ensuring(revoke(accessToken))
         )
       })
 
-      return GitHubOAuth.of({ enabled: Option.isSome(github), authorizeUrl, exchange, complete })
+      return GitHubOAuth.of({ enabled: Option.isSome(github), authorizeUrl, exchange, revoke, complete })
     })
   ).pipe(Layer.provide(FetchHttpClient.layer))
 }
