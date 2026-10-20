@@ -135,6 +135,8 @@ fun AppShell(graph: AppGraph, links: LinkInbox) {
                             }
                         },
                         label = { Text(item.label) },
+                        // Each item takes the suite's form: a bar item, or a rail item (icon beside its label when expanded).
+                        navigationSuiteType = suiteType,
                         modifier = Modifier.testTag("tab-${item.tab.name}"),
                     )
                 }

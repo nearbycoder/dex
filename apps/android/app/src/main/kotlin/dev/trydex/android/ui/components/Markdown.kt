@@ -331,6 +331,8 @@ private fun ListBlock(node: Node, context: MarkdownContext, depth: Int) {
                         var child = item.firstChild
                         while (child != null) {
                             when (child) {
+                                // The checkbox is drawn beside the item already.
+                                is TaskListItemMarker -> Unit
                                 is BulletList, is OrderedList -> ListBlock(child, context, depth + 1)
                                 is Paragraph -> InlineText(child, context, context.style)
                                 else -> Block(child, context)
