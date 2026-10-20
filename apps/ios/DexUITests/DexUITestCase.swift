@@ -15,6 +15,12 @@ class DexUITestCase: XCTestCase {
         app.launch()
     }
 
+    /// Hardware keyboard events from XCUITest (`typeKey`) reach the app. They don't on the foldable (iPhone Duo)
+    /// simulator: even plain keys into a focused field are lost there, while software-keyboard typing works.
+    var hardwareKeysReachApp: Bool {
+        ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] != "iPhone19,4"
+    }
+
     /// The device is iPad-sized (or a wide window): the sidebar shows.
     var isRegularWidth: Bool { app.windows.firstMatch.frame.width >= 700 }
 

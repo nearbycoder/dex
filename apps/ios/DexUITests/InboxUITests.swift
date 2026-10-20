@@ -151,9 +151,13 @@ final class InboxUITests: ChatTestCase {
     }
 
     func testNewChatShortcut() throws {
+        guard hardwareKeysReachApp else { throw XCTSkip("The foldable simulator doesn't deliver XCUITest's hardware key events (checked: typed keys never arrive).") }
         launch()
         XCTAssertTrue(row("s-welcome").waitForExistence(timeout: 10))
         row("s-welcome").tap()
+        // Key commands aren't delivered while the chat is still sliding in.
+        XCTAssertTrue(app.descendants(matching: .any)["chat.transcript"].waitForExistence(timeout: 10))
+        sleep(1)
         app.typeKey("n", modifierFlags: .command)
         XCTAssertTrue(app.descendants(matching: .any)["newchat.heading"].waitForExistence(timeout: 5), "⌘N starts a new chat")
     }
