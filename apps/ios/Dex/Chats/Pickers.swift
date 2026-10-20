@@ -92,9 +92,25 @@ struct ModelPickerSheet: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     let model: String
     let onSelect: (String) -> Void
+    /// Set by editors that pick a thinking level here too (agents, defaults); the composer has its own button.
+    var thinking: ThinkingLevel? = nil
+    var onThinking: ((ThinkingLevel) -> Void)? = nil
     @State private var only = "all"
     @State private var search = ""
     @State private var checking = false
+
+    init(model: String, onSelect: @escaping (String) -> Void) {
+        self.model = model
+        self.onSelect = onSelect
+    }
+
+    /// The sheet with the thinking level as well: `onChange` gets a new model (thinking clamped to it) or a new level.
+    init(model: String, thinking: ThinkingLevel, onChange: @escaping (_ model: String?, _ thinking: ThinkingLevel?) -> Void) {
+        self.model = model
+        self.thinking = thinking
+        self.onSelect = { onChange($0, nil) }
+        self.onThinking = { onChange(nil, $0) }
+    }
 
     var body: some View {
         let connected = client.state?.connectedProviders ?? [:]
@@ -102,6 +118,15 @@ struct ModelPickerSheet: View {
         let providers = ModelCatalog.providers.sorted { (connected[$0.id] == true ? 0 : 1) < (connected[$1.id] == true ? 0 : 1) }
         NavigationStack {
             List {
+                if let thinking, let onThinking, let current = client.catalog.model(model), current.supportedThinkingLevels.count > 1 {
+                    Section("Thinking") {
+                        Picker("Thinking", selection: Binding(get: { current.clampThinking(thinking) }, set: { onThinking($0) })) {
+                            ForEach(current.supportedThinkingLevels, id: \.self) { Text(ThinkingLevels.label($0)).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+                        .accessibilityIdentifier("model.thinking")
+                    }
+                }
                 Section {
                     Picker("Subscription", selection: $only) {
                         Text("All \(client.catalog.models.count)").tag("all")

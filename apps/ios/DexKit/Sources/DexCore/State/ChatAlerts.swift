@@ -75,38 +75,17 @@ public enum UserText {
     }
 }
 
-/// A skill on skills.sh (the web's `DirectorySkill`).
-public struct DirectorySkill: Codable, Sendable, Hashable, Identifiable {
-    /// `owner/repo/skill`.
-    public var id: String
-    public var source: String
-    public var skillId: String
-    public var name: String
-    public var installs: Int
-
-    public init(id: String, source: String, skillId: String, name: String, installs: Int) {
-        self.id = id; self.source = source; self.skillId = skillId; self.name = name; self.installs = installs
-    }
-
-    enum CodingKeys: String, CodingKey { case id, source, skillId, name, installs }
-    public init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decode(String.self, forKey: .id)
-        source = c.value(.source, default: "")
-        skillId = c.value(.skillId, default: "")
-        name = c.value(.name, default: "")
-        installs = c.value(.installs, default: 0)
-    }
-
+/// The slash menu's skill lookups (DirectorySkill itself is in API/Library.swift).
+public extension DirectorySkill {
     /// "1.2M", "34K", "980".
-    public static func formatInstalls(_ count: Int) -> String {
+    static func formatInstalls(_ count: Int) -> String {
         if count >= 1_000_000 { return String(format: "%.1fM", Double(count) / 1_000_000) }
         if count >= 1_000 { return String(format: count >= 10_000 ? "%.0fK" : "%.1fK", Double(count) / 1_000) }
         return String(count)
     }
 
     /// The slash menu: your skills matching `query` (names starting with it first), at most six.
-    public static func installed(_ skills: [SkillInfo], matching query: String) -> [SkillInfo] {
+    static func installed(_ skills: [SkillInfo], matching query: String) -> [SkillInfo] {
         let q = query.lowercased()
         return skills.filter { q.isEmpty || $0.id.contains(q) }
             .sorted { a, b in
@@ -117,13 +96,13 @@ public struct DirectorySkill: Codable, Sendable, Hashable, Identifiable {
     }
 
     /// skills.sh results you don't have yet, at most five.
-    public static func notInstalled(_ results: [DirectorySkill], have skills: [SkillInfo]) -> [DirectorySkill] {
+    static func notInstalled(_ results: [DirectorySkill], have skills: [SkillInfo]) -> [DirectorySkill] {
         let have = Set(skills.map { "\($0.source ?? "")/\($0.path?.split(separator: "/").last.map(String.init) ?? $0.id)" })
         return Array(results.filter { !have.contains($0.id) }.prefix(5))
     }
 
     /// What follows a `/` at the start of a message while the skill's name is still being typed.
-    public static func slashQuery(_ text: String) -> String? {
+    static func slashQuery(_ text: String) -> String? {
         guard let match = text.wholeMatch(of: /\/([a-zA-Z0-9-]*)/) else { return nil }
         return String(match.1)
     }

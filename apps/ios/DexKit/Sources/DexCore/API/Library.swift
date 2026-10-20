@@ -286,6 +286,16 @@ public struct DirectorySkill: Codable, Sendable, Hashable, Identifiable {
     public init(id: String? = nil, source: String, skillId: String, name: String? = nil, installs: Int = 0) {
         self.id = id ?? "\(source)/\(skillId)"; self.source = source; self.skillId = skillId; self.name = name ?? skillId; self.installs = installs
     }
+
+    enum CodingKeys: String, CodingKey { case id, source, skillId, name, installs }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        source = c.value(.source, default: "")
+        skillId = c.value(.skillId, default: "")
+        id = c.value(.id, default: "\(source)/\(skillId)")
+        name = c.value(.name, default: skillId)
+        installs = c.value(.installs, default: 0)
+    }
 }
 
 /// What installing a skill would add, read from its repo first.
