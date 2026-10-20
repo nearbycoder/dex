@@ -11,6 +11,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -86,6 +87,13 @@ class AgentConnection(
 
     private val _messages = MutableSharedFlow<ServerMessage>(extraBufferCapacity = 256, onBufferOverflow = BufferOverflow.SUSPEND)
     val messages: SharedFlow<ServerMessage> = _messages.asSharedFlow()
+
+    /** Messages in the order they arrived (a snapshot must reach listeners before the events after it). */
+    private val inbox = Channel<ServerMessage>(Channel.UNLIMITED)
+
+    init {
+        scope.launch { for (message in inbox) _messages.emit(message) }
+    }
 
     private class Pending(val method: String, val reply: CompletableDeferred<JsonElement?>, @Volatile var sent: Boolean)
 
@@ -211,7 +219,7 @@ class AgentConnection(
             else -> {
                 if (json["type"].str?.startsWith("dex.") != true) return
                 val message = runCatching { ServerMessage.parse(json) }.getOrNull() ?: return
-                scope.launch { _messages.emit(message) }
+                inbox.trySend(message)
             }
         }
     }
