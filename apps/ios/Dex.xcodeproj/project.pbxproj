@@ -325,6 +325,9 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = dev.trydex.DexUITests;
 				SDKROOT = iphoneos;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = Dex;
 			};
@@ -452,6 +455,9 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = dev.trydex.DexUITests;
 				SDKROOT = iphoneos;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
+				SWIFT_STRICT_CONCURRENCY = minimal;
+				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = Dex;
 			};

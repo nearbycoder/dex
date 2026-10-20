@@ -1,3 +1,4 @@
+import Foundation
 import DexCore
 import Testing
 @testable import Dex

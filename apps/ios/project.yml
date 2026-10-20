@@ -76,6 +76,10 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: dev.trydex.DexUITests
         GENERATE_INFOPLIST_FILE: "YES"
         TEST_TARGET_NAME: Dex
+        # XCTest's classes aren't main-actor isolated; UI tests use Swift 5 mode, nonisolated by default.
+        SWIFT_VERSION: "5.0"
+        SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
+        SWIFT_STRICT_CONCURRENCY: minimal
 schemes:
   Dex:
     build:
