@@ -7,7 +7,7 @@ Dex is a personal agent harness: a Durable Object agent (`apps/web/src/agent/dex
 A monorepo. Each app lives in `apps/<name>` with its own build and deploy, and none depends on another's deploy:
 
 - `apps/web`: the web app, the Worker, and the agent. Its own `package.json` (`@dex/web`), `wrangler.jsonc`, and `npm run deploy`. Paths below are relative to it unless they start with `apps/`.
-- `apps/ios`, `apps/android` (planned): native apps with their own tooling (Xcode, Gradle) and release process. They talk to the same agent over its WebSocket and HTTP API; keep the wire protocol (`apps/web/src/shared/protocol.ts`) backward compatible, and move it to `packages/` once a second app needs it.
+- `apps/ios` (Swift/SwiftUI, XcodeGen; see apps/ios/README.md), `apps/android` (planned): native apps with their own tooling (Xcode, Gradle) and release process. They talk to the same agent over its WebSocket and HTTP API; keep the wire protocol (`apps/web/src/shared/protocol.ts`) backward compatible, and move it to `packages/` once a second app needs it.
 - `packages/*` (none yet): code shared between apps, as npm workspaces.
 - Root: the npm workspace (`package.json`, one lockfile; `overrides` must live here), README, LICENSE, `docs/` (README media), `assets/` (brand).
 
@@ -31,6 +31,7 @@ When you add or change functionality:
 ## Security
 
 - Every sign-in check goes through `activeViewer` (src/server/active-session.ts): cookie signature plus the agent's revocation time ("Sign out everywhere"). Use it for any new authenticated route; don't read the cookie directly.
+- Native apps sign in with the PKCE handoff in src/server/native-auth.ts (`/auth/native/start`, `finish`, `token`, `refresh`) and then send the ordinary session token as `Cookie: dex_session=…` with no `Origin`, so every route that uses `activeViewer` works for them unchanged. Keep new authenticated routes usable that way: don't require an `Origin` header except on form posts from Dex's own pages.
 - Anything lasting or destructive that a chat can trigger must be an `admin` operation (it then needs the user's confirmation). Persistence counts: recurring schedules, settings, agent and project edits, MCP servers.
 - Keep the Content Security Policy in src/server.ts strict; add an origin only when a feature truly needs it.
 - Worker → agent RPC: a Durable Object keeps running its old code until it restarts, so a method added in the same deploy may not exist yet on a live instance (calls throw). Callers must tolerate that (feature-detect, or ship the agent method a deploy before its caller); `activeViewer` fails closed, so don't rename `isSessionCurrent`.
