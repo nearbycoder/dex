@@ -33,6 +33,9 @@ final class ChatUITests: ChatTestCase {
 
     func element(_ id: String) -> XCUIElement { app.descendants(matching: .any)[id].firstMatch }
 
+    /// The model list: a sheet on iPhone, a popover on iPad.
+    var modelSheet: XCUIElement { app.popovers.firstMatch.exists ? app.popovers.firstMatch : element("model.sheet") }
+
     func type(_ text: String) {
         let box = field
         XCTAssertTrue(box.waitForExistence(timeout: 10))
@@ -108,6 +111,7 @@ final class ChatUITests: ChatTestCase {
         element("chat.tool.web_search").tap()
         XCTAssertTrue(element("tool.search.results").waitForExistence(timeout: 5), "search results are listed")
         element("chat.tool.web_search").tap()
+        XCTAssertTrue(wait(element("tool.search.results"), "exists == false", timeout: 5))
         app.buttons.matching(identifier: "chat.tool.bash").firstMatch.tap()
         XCTAssertTrue(text(containing: "/dev/sda1").waitForExistence(timeout: 5), "bash output shows")
         snapshot("activity-steps")
@@ -130,7 +134,9 @@ final class ChatUITests: ChatTestCase {
         XCTAssertTrue(element("chat.retry").exists, "a failed reply offers Retry")
         snapshot("reply-error")
         element("chat.retry").tap()
-        XCTAssertTrue(wait(app.descendants(matching: .any).matching(identifier: "chat.error"), "count >= 2", timeout: 20), "Retry sent the message again")
+        let sent = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'This ends in an error'"))
+        XCTAssertTrue(wait(sent, "count >= 2", timeout: 20), "Retry sent the message again")
+        XCTAssertTrue(element("chat.error").waitForExistence(timeout: 20))
 
         send("Please retry once")
         XCTAssertTrue(element("chat.retrying").waitForExistence(timeout: 15), "an automatic retry shows")
@@ -205,7 +211,7 @@ final class ChatUITests: ChatTestCase {
         XCTAssertTrue(element("model.sheet").waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["model.cline-pass/deepseek-v4-pro"].waitForExistence(timeout: 5))
         snapshot("model-sheet")
-        let search = app.searchFields.firstMatch
+        let search = modelSheet.searchFields.firstMatch
         search.tap()
         search.typeText("longcat")
         XCTAssertTrue(text(containing: "Free").waitForExistence(timeout: 5), "free models are marked")
@@ -226,10 +232,15 @@ final class ChatUITests: ChatTestCase {
         app.buttons["composer.model"].tap()
         let refresh = app.buttons["model.refresh"]
         XCTAssertTrue(element("model.sheet").waitForExistence(timeout: 5))
-        for _ in 0..<4 where !(refresh.exists && refresh.isHittable) { element("model.sheet").swipeUp() }
+        // With nothing matching, the footer (and its refresh button) is in view.
+        let search = modelSheet.searchFields.firstMatch
+        search.tap()
+        search.typeText("zzz")
+        XCTAssertTrue(text(containing: "No model matches").waitForExistence(timeout: 5))
         XCTAssertTrue(refresh.waitForExistence(timeout: 3))
         refresh.tap()
-        app.buttons["model.done"].tap()
+        // A sheet has Done; a popover (iPad) closes when you tap outside it.
+        if app.buttons["model.done"].exists { app.buttons["model.done"].tap() } else { app.otherElements["PopoverDismissRegion"].tap() }
         XCTAssertFalse(element("notice").waitForExistence(timeout: 2), "no error")
     }
 
@@ -399,6 +410,11 @@ final class ChatUITests: ChatTestCase {
         }
         let transcript = element("chat.transcript")
         XCTAssertFalse(app.buttons["chat.scrollToBottom"].exists, "pinned to the latest message")
+        // The latest reply sits above the composer, not under it.
+        sleep(1)
+        let lastCopy = app.buttons.matching(identifier: "chat.reply.copy").allElementsBoundByIndex.last
+        XCTAssertNotNil(lastCopy)
+        XCTAssertLessThanOrEqual(lastCopy?.frame.maxY ?? .infinity, field.frame.minY, "the latest reply is above the message box")
         transcript.swipeDown(velocity: .fast)
         transcript.swipeDown(velocity: .fast)
         let down = app.buttons["chat.scrollToBottom"]

@@ -52,11 +52,12 @@ final class InboxUITests: ChatTestCase {
         let chat = row("s-chart")
         XCTAssertTrue(chat.waitForExistence(timeout: 10))
         chat.swipeRight()
-        app.buttons["Settle"].firstMatch.tap()
+        // A long swipe (iPad) settles it outright; a short one shows the button.
+        if app.buttons["Settle"].waitForExistence(timeout: 2) { app.buttons["Settle"].firstMatch.tap() }
         expectCount("inbox.settled", 2)
         expand("inbox.settled", showing: "s-chart")
         row("s-chart").swipeRight()
-        app.buttons["Inbox"].firstMatch.tap()
+        if app.buttons["Inbox"].waitForExistence(timeout: 2) { app.buttons["Inbox"].firstMatch.tap() }
         expectCount("inbox.settled", 1)
     }
 

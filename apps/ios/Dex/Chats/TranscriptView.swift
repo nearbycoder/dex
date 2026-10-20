@@ -15,11 +15,16 @@ struct TranscriptView: View {
     @State private var interacting = false
     /// Just tapped: growth from a tap (opening an activity row) stays where you tapped.
     @State private var tapped = false
+    /// The latest scroll geometry, for finishing a jump to the bottom.
+    @State private var metrics = Metrics(content: 0, container: 0, distance: 0, bottom: 0)
 
     private struct Metrics: Equatable {
         var content: CGFloat
         var container: CGFloat
+        /// How far the content is above the bottom.
         var distance: CGFloat
+        /// The position (`scrollTo(y:)`) that shows the bottom.
+        var bottom: CGFloat
     }
 
     var body: some View {
@@ -83,13 +88,26 @@ struct TranscriptView: View {
         .accessibilityIdentifier("chat.transcript")
         .onScrollPhaseChange { _, phase in interacting = phase == .interacting || phase == .decelerating || phase == .tracking }
         .onScrollGeometryChange(for: Metrics.self) { geometry in
-            Metrics(content: geometry.contentSize.height, container: geometry.containerSize.height,
-                    distance: max(0, geometry.contentSize.height - geometry.visibleRect.maxY))
+            // What's left below the part you can read. The container is that readable height (between the bars and
+            // the composer or keyboard); the offset starts at minus the top inset.
+            let top = geometry.contentInsets.top
+            let readableEnd = geometry.contentOffset.y + top + geometry.containerSize.height
+            // `scrollTo(y:)` puts that point at the top of the readable area (offset = y − top inset).
+            let bottom = geometry.contentSize.height - geometry.containerSize.height
+            return Metrics(content: geometry.contentSize.height, container: geometry.containerSize.height,
+                           distance: max(0, geometry.contentSize.height - readableEnd), bottom: bottom)
         } action: { old, new in
+            metrics = new
             atBottom = new.distance < 120
             // Only scrolling up yourself lets go; reaching the bottom again takes it back.
             if new.distance < 80 { pinned = true }
             else if interacting, new.distance > old.distance + 1 { pinned = false }
+            // The anchor above doesn't hold when the transcript starts shorter than the screen (its padding comes and
+            // goes as the top inset): follow explicitly. A point position changes with the geometry, so it always
+            // scrolls (an unchanged edge position wouldn't).
+            if pinned, !tapped, !interacting, new.distance > 1, new.bottom > 0, new != old {
+                position.scrollTo(y: new.bottom)
+            }
         }
         .task(id: tapped) {
             guard tapped else { return }
@@ -129,7 +147,12 @@ struct TranscriptView: View {
         // Once you've scrolled, the position is yours and this takes it back; while following, the size-change
         // anchor already keeps the bottom in view.
         pinned = true
-        withAnimation(.smooth) { position.scrollTo(edge: .bottom) }
+        withAnimation(.smooth) {
+            position.scrollTo(edge: .bottom)
+        } completion: {
+            // The animation aims at the bottom as it was when it began; a reply may have grown since.
+            if pinned, metrics.distance > 1, metrics.bottom > 0 { position.scrollTo(y: metrics.bottom) }
+        }
     }
 
     static func isAssistant(_ item: DisplayItem) -> Bool { if case .assistant = item { true } else { false } }

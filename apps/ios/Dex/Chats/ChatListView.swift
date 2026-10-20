@@ -10,6 +10,8 @@ struct ChatListView: View {
     @Environment(Router.self) private var router
     @State private var filter = ""
     @State private var now = Date.now
+    /// The list has the keyboard (after you pick a chat in it), so ↑/↓ move through it.
+    @FocusState private var listFocused: Bool
     @AppStorage("dex.inbox.snoozedOpen") private var snoozedOpen = false
     @AppStorage("dex.inbox.settledOpen") private var settledOpen = false
 
@@ -92,6 +94,12 @@ struct ChatListView: View {
                 }
                 .accessibilityIdentifier("chats.new")
             }
+        }
+        .focusable()
+        .focusEffectDisabled()
+        .focused($listFocused)
+        .onChange(of: router.chatSelection) { _, selection in
+            if case .chat = selection { listFocused = true }
         }
         .onKeyPress(keys: [.upArrow, .downArrow], phases: .down) { press in
             let order = groups.inbox + (showSnoozed ? groups.snoozed : []) + (showSettled ? groups.settled : [])
