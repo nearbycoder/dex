@@ -20,7 +20,8 @@ public struct ReplyLayout: Sendable, Equatable {
     /// A change to MEMORY.md, which is never tucked away.
     public let touchedMemory: Bool
 
-    public init(messages: [AssistantMessage], streaming: Bool) {
+    /// `running`: the chat's run is still on this reply (also between steps, when nothing streams).
+    public init(messages: [AssistantMessage], streaming: Bool, running: Bool = false) {
         var blocks: [Step] = []
         for (m, message) in messages.enumerated() {
             for (index, block) in message.content.enumerated() {
@@ -32,7 +33,7 @@ public struct ReplyLayout: Sendable, Equatable {
         steps = work.filter { !Self.isUI($0.block) }
         shown = work.filter { Self.isUI($0.block) } + blocks.dropFirst(lastWork + 1)
         let hasAnswer = shown.contains { if case .text(let text) = $0.block { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } else { false } }
-        active = streaming && !hasAnswer
+        active = (streaming || running) && !hasAnswer
         errors = messages.filter { $0.stopReason == "error" }.map { $0.errorMessage ?? "The model returned an error." }
         touchedMemory = blocks.contains { step in
             guard case .toolCall(let call) = step.block else { return false }

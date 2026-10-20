@@ -37,9 +37,7 @@ private struct MarkdownBlock: View {
                 .padding(.top, heading.level <= 2 ? 6 : 2)
                 .accessibilityAddTraits(.isHeader)
         case let paragraph as Paragraph:
-            SwiftUI.Text(Inline.attributed(paragraph.inlineChildren))
-                .font(font)
-                .fixedSize(horizontal: false, vertical: true)
+            ParagraphView(paragraph: paragraph, font: font)
         case let code as CodeBlock:
             CodeBlockView(code: code.code.hasSuffix("\n") ? String(code.code.dropLast()) : code.code, language: code.language)
         case let list as UnorderedList:
@@ -74,6 +72,71 @@ private struct MarkdownBlock: View {
         case 3: .headline
         default: .subheadline.bold()
         }
+    }
+}
+
+/// Shows links to media (videos, audio, images) as players in a Markdown paragraph. Set by the chat; without it,
+/// links stay links.
+struct MarkdownMedia {
+    /// Whether a link is media this resolver can show.
+    let accepts: (String) -> Bool
+    /// The player for a link and its label (nil when the label is just the link).
+    let view: (_ url: String, _ title: String?) -> AnyView
+}
+
+extension EnvironmentValues {
+    @Entry var markdownMedia: MarkdownMedia? = nil
+}
+
+/// A paragraph, followed by players for the media it links (the paragraph's text is left out when it's only links).
+private struct ParagraphView: View {
+    @Environment(\.markdownMedia) private var media
+    let paragraph: Paragraph
+    let font: Font
+
+    var body: some View {
+        let links = media.map { media in Self.links(in: paragraph).filter { media.accepts($0.url) } } ?? []
+        VStack(alignment: .leading, spacing: 8) {
+            if links.isEmpty || !Self.onlyLinks(paragraph, links: links) {
+                SwiftUI.Text(Inline.attributed(paragraph.inlineChildren))
+                    .font(font)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let media {
+                ForEach(Array(links.enumerated()), id: \.offset) { _, link in
+                    media.view(link.url, link.title)
+                }
+            }
+        }
+    }
+
+    /// Links, images, and bare URLs in a paragraph, in order, once each.
+    static func links(in paragraph: Paragraph) -> [(url: String, title: String?)] {
+        var found: [(url: String, title: String?)] = []
+        func add(_ url: String, _ title: String?) {
+            if !found.contains(where: { $0.url == url }) { found.append((url, title?.isEmpty == false && title != url ? title : nil)) }
+        }
+        func walk(_ markup: Markup) {
+            if let link = markup as? Markdown.Link, let destination = link.destination { add(destination, link.plainText); return }
+            if let image = markup as? Markdown.Image, let source = image.source { add(source, image.plainText); return }
+            if let text = markup as? Markdown.Text {
+                for match in text.string.matches(of: /https?:\/\/[^\s)<>"'\]]+/) { add(String(match.0).trimmingCharacters(in: CharacterSet(charactersIn: ".,;:!?")), nil) }
+                return
+            }
+            for child in markup.children { walk(child) }
+        }
+        walk(paragraph)
+        return found
+    }
+
+    /// Whether the paragraph says nothing besides these links (then only their players show).
+    static func onlyLinks(_ paragraph: Paragraph, links: [(url: String, title: String?)]) -> Bool {
+        var rest = paragraph.plainText
+        for link in links {
+            rest = rest.replacingOccurrences(of: link.url, with: "")
+            if let title = link.title { rest = rest.replacingOccurrences(of: title, with: "") }
+        }
+        return rest.trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters)).isEmpty
     }
 }
 
