@@ -129,7 +129,8 @@ final class OpenUIUITests: DexUITestCase {
             app.staticTexts["Plan a weekend in Lisbon"].firstMatch.tap()
             XCTAssertTrue(app.staticTexts["Saturday"].waitForExistence(timeout: 10))
         } else {
-            app.navigationBars.buttons.firstMatch.tap()
+            let back = app.buttons["BackButton"].firstMatch
+            if back.exists { back.tap() } else { app.navigationBars.buttons.firstMatch.tap() }
             XCTAssertTrue(app.staticTexts["Plan a weekend in Lisbon"].waitForExistence(timeout: 10))
         }
         let row = app.staticTexts["Notification preferences"].firstMatch
