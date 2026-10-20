@@ -1,0 +1,4416 @@
+{
+ "example1": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "CardHeader",
+      "props": {
+       "title": "Paris",
+       "subtitle": "The City of Light · France's Eternal Capital"
+      },
+      "partial": false,
+      "hasDynamicProps": false,
+      "statementId": "header"
+     },
+     {
+      "type": "element",
+      "typeName": "TextContent",
+      "props": {
+       "text": "Paris is one of the world's most visited cities — a timeless blend of iconic landmarks, world-class cuisine, art, and romance [1]. In 2026 the city is buzzing with new energy: the **Grand Palais** has reopened after a €466M renovation, and you can now **swim in the Seine** for the first time in over a century [2]."
+      },
+      "partial": false,
+      "hasDynamicProps": false,
+      "statementId": "intro"
+     },
+     {
+      "type": "element",
+      "typeName": "ContextCardBlock",
+      "props": {
+       "items": [
+        {
+         "type": "element",
+         "typeName": "ContextCardItem",
+         "props": {
+          "id": "art-museums",
+          "title": "Art & Museums",
+          "body": "143 museums including the Louvre & newly reopened Grand Palais.",
+          "bgColor": "gray",
+          "bgImageSrc": "https://cdn.britannica.com/03/121003-050-2544BD4E/Interior-Louvre-Museum-Paris.jpg"
+         },
+         "partial": false,
+         "hasDynamicProps": false,
+         "statementId": "h1"
+        },
+        {
+         "type": "element",
+         "typeName": "ContextCardItem",
+         "props": {
+          "id": "gastronomy",
+          "title": "Gastronomy",
+          "body": "9,000+ restaurants, 130+ Michelin stars, and the world's best baguettes.",
+          "bgColor": "gray"
+         },
+         "partial": false,
+         "hasDynamicProps": false,
+         "statementId": "h2"
+        },
+        {
+         "type": "element",
+         "typeName": "ContextCardItem",
+         "props": {
+          "id": "fashion-capital",
+          "title": "Fashion Capital",
+          "body": "Home to Chanel, Dior, Louis Vuitton & Hermès — the global luxury hub.",
+          "bgColor": "gray",
+          "bgImageSrc": "https://thumbs.dreamstime.com/z/dior-storefront-facade-chanel-store-lvmh-s-french-designer-modehouse-christian-adjacent-to-luxury-fashion-beauty-brand-327161553.jpg"
+         },
+         "partial": false,
+         "hasDynamicProps": false,
+         "statementId": "h3"
+        }
+       ],
+       "layout": "grid",
+       "responsive": true,
+       "action": {
+        "steps": [
+         {
+          "type": "continue_conversation",
+          "message": "Tell me more about this aspect of Paris"
+         }
+        ]
+       }
+      },
+      "partial": false,
+      "hasDynamicProps": true,
+      "statementId": "highlights"
+     },
+     {
+      "type": "element",
+      "typeName": "InlineHeader",
+      "props": {
+       "heading": "Paris by the Numbers",
+       "description": "Key visitor statistics"
+      },
+      "partial": false,
+      "hasDynamicProps": false,
+      "statementId": "statsHeader"
+     },
+     {
+      "type": "element",
+      "typeName": "OverviewCardBlock",
+      "props": {
+       "items": [
+        {
+         "type": "element",
+         "typeName": "OverviewCardItem",
+         "props": {
+          "id": "annual-visitors",
+          "top": {
+           "type": "element",
+           "typeName": "IconText",
+           "props": {
+            "icon": {
+             "type": "element",
+             "typeName": "Icon",
+             "props": {
+              "name": "users",
+              "category": "people"
+             },
+             "partial": false,
+             "hasDynamicProps": false,
+             "statementId": "ov1icon"
+            },
+            "iconVariant": "neutral",
+            "iconSize": "m",
+            "title": "Annual Visitors",
+            "subtitle": "2024 arrivals",
+            "bold": false,
+            "layout": "vertical"
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "ov1top"
+          },
+          "bottom": {
+           "type": "element",
+           "typeName": "MetricIndicatorInline",
+           "props": {
+            "value": "48.7M",
+            "subtext": "tourists",
+            "trend": {
+             "direction": "up",
+             "value": 2.5
+            }
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "ov1metric"
+          }
+         },
+         "partial": false,
+         "hasDynamicProps": false,
+         "statementId": "ov1"
+        },
+        {
+         "type": "element",
+         "typeName": "OverviewCardItem",
+         "props": {
+          "id": "museums-monuments",
+          "top": {
+           "type": "element",
+           "typeName": "IconText",
+           "props": {
+            "icon": {
+             "type": "element",
+             "typeName": "Icon",
+             "props": {
+              "name": "landmark",
+              "category": "buildings"
+             },
+             "partial": false,
+             "hasDynamicProps": false,
+             "statementId": "ov2icon"
+            },
+            "iconVariant": "neutral",
+            "iconSize": "m",
+            "title": "Museums & Monuments",
+            "subtitle": "Cultural sites",
+            "bold": false,
+            "layout": "vertical"
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "ov2top"
+          },
+          "bottom": {
+           "type": "element",
+           "typeName": "MetricIndicatorInline",
+           "props": {
+            "value": "2,370+",
+            "subtext": "across the city"
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "ov2metric"
+          }
+         },
+         "partial": false,
+         "hasDynamicProps": false,
+         "statementId": "ov2"
+        },
+        {
+         "type": "element",
+         "typeName": "OverviewCardItem",
+         "props": {
+          "id": "tourism-revenue",
+          "top": {
+           "type": "element",
+           "typeName": "IconText",
+           "props": {
+            "icon": {
+             "type": "element",
+             "typeName": "Icon",
+             "props": {
+              "name": "circle-dollar-sign",
+              "category": "finance"
+             },
+             "partial": false,
+             "hasDynamicProps": false,
+             "statementId": "ov3icon"
+            },
+            "iconVariant": "neutral",
+            "iconSize": "m",
+            "title": "Tourism Revenue",
+            "subtitle": "2024 estimate",
+            "bold": false,
+            "layout": "vertical"
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "ov3top"
+          },
+          "bottom": {
+           "type": "element",
+           "typeName": "MetricIndicatorInline",
+           "props": {
+            "value": "€23.4B",
+            "subtext": "generated"
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "ov3metric"
+          }
+         },
+         "partial": false,
+         "hasDynamicProps": false,
+         "statementId": "ov3"
+        }
+       ],
+       "layout": "grid",
+       "responsive": true
+      },
+      "partial": false,
+      "hasDynamicProps": false,
+      "statementId": "statsCards"
+     },
+     {
+      "type": "element",
+      "typeName": "SectionBlock",
+      "props": {
+       "sections": [
+        {
+         "type": "element",
+         "typeName": "SectionItem",
+         "props": {
+          "value": "landmarks",
+          "trigger": "Iconic Landmarks",
+          "content": [
+           {
+            "type": "element",
+            "typeName": "VisualCardBlock",
+            "props": {
+             "items": [
+              {
+               "type": "element",
+               "typeName": "VisualCardItem",
+               "props": {
+                "body": {
+                 "type": "element",
+                 "typeName": "BoldText",
+                 "props": {
+                  "variant": "text",
+                  "value": "Eiffel Tower",
+                  "subtext": "Open daily 9am–midnight",
+                  "subtextVariant": "text",
+                  "size": "sm"
+                 },
+                 "partial": false,
+                 "hasDynamicProps": false,
+                 "statementId": "lm1body"
+                },
+                "id": "eiffel-tower",
+                "bgImageSrc": "https://c8.alamy.com/comp/RYEB13/aerial-view-of-the-eiffel-tower-with-the-park-champ-de-mars-and-the-river-seine-paris-france-RYEB13.jpg",
+                "tag": {
+                 "type": "element",
+                 "typeName": "Tag",
+                 "props": {
+                  "text": "Must-See",
+                  "icon": {
+                   "type": "element",
+                   "typeName": "Icon",
+                   "props": {
+                    "name": "star",
+                    "category": "shapes"
+                   },
+                   "partial": false,
+                   "hasDynamicProps": false,
+                   "statementId": "lm1tagIcon"
+                  },
+                  "size": "sm",
+                  "variant": "info"
+                 },
+                 "partial": false,
+                 "hasDynamicProps": false,
+                 "statementId": "lm1tag"
+                },
+                "bgImageAlt": "Aerial view of the Eiffel Tower"
+               },
+               "partial": false,
+               "hasDynamicProps": false,
+               "statementId": "lm1"
+              },
+              {
+               "type": "element",
+               "typeName": "VisualCardItem",
+               "props": {
+                "body": {
+                 "type": "element",
+                 "typeName": "BoldText",
+                 "props": {
+                  "variant": "text",
+                  "value": "The Louvre",
+                  "subtext": "World's largest art museum",
+                  "subtextVariant": "text",
+                  "size": "sm"
+                 },
+                 "partial": false,
+                 "hasDynamicProps": false,
+                 "statementId": "lm2body"
+                },
+                "id": "the-louvre",
+                "bgImageSrc": "https://images.fineartamerica.com/images/artworkimages/mediumlarge/3/1-exterior-of-musee-du-louvre-museum-paris-france-bernard-jaubert.jpg",
+                "tag": {
+                 "type": "element",
+                 "typeName": "Tag",
+                 "props": {
+                  "text": "8.9M visits/yr",
+                  "icon": {
+                   "type": "element",
+                   "typeName": "Icon",
+                   "props": {
+                    "name": "trending-up",
+                    "category": "charts"
+                   },
+                   "partial": false,
+                   "hasDynamicProps": false,
+                   "statementId": "lm2tagIcon"
+                  },
+                  "size": "sm",
+                  "variant": "success"
+                 },
+                 "partial": false,
+                 "hasDynamicProps": false,
+                 "statementId": "lm2tag"
+                },
+                "bgImageAlt": "Exterior of the Louvre museum"
+               },
+               "partial": false,
+               "hasDynamicProps": false,
+               "statementId": "lm2"
+              },
+              {
+               "type": "element",
+               "typeName": "VisualCardItem",
+               "props": {
+                "body": {
+                 "type": "element",
+                 "typeName": "BoldText",
+                 "props": {
+                  "variant": "text",
+                  "value": "Notre-Dame",
+                  "subtext": "Fully restored cathedral",
+                  "subtextVariant": "text",
+                  "size": "sm"
+                 },
+                 "partial": false,
+                 "hasDynamicProps": false,
+                 "statementId": "lm3body"
+                },
+                "id": "notre-dame",
+                "bgImageSrc": "https://cdn.britannica.com/29/255529-050-63A22A3C/notre-dame-de-paris-cathedral-paris-france.jpg",
+                "tag": {
+                 "type": "element",
+                 "typeName": "Tag",
+                 "props": {
+                  "text": "Reopened 2024",
+                  "icon": {
+                   "type": "element",
+                   "typeName": "Icon",
+                   "props": {
+                    "name": "hammer",
+                    "category": "tools"
+                   },
+                   "partial": false,
+                   "hasDynamicProps": false,
+                   "statementId": "lm3tagIcon"
+                  },
+                  "size": "sm",
+                  "variant": "warning"
+                 },
+                 "partial": false,
+                 "hasDynamicProps": false,
+                 "statementId": "lm3tag"
+                },
+                "bgImageAlt": "Notre-Dame cathedral facade"
+               },
+               "partial": false,
+               "hasDynamicProps": false,
+               "statementId": "lm3"
+              },
+              {
+               "type": "element",
+               "typeName": "VisualCardItem",
+               "props": {
+                "body": {
+                 "type": "element",
+                 "typeName": "BoldText",
+                 "props": {
+                  "variant": "text",
+                  "value": "Palace of Versailles",
+                  "subtext": "Royal gardens & grand halls",
+                  "subtextVariant": "text",
+                  "size": "sm"
+                 },
+                 "partial": false,
+                 "hasDynamicProps": false,
+                 "statementId": "lm4body"
+                },
+                "id": "versailles",
+                "bgImageSrc": "https://cdn.britannica.com/76/130076-050-31128A3D/Latona-Fountain-Balthazard-Marsy-Gaspard-Andre-Le.jpg",
+                "tag": {
+                 "type": "element",
+                 "typeName": "Tag",
+                 "props": {
+                  "text": "Day Trip",
+                  "icon": {
+                   "type": "element",
+                   "typeName": "Icon",
+                   "props": {
+                    "name": "train-front",
+                    "category": "travel"
+                   },
+                   "partial": false,
+                   "hasDynamicProps": false,
+                   "statementId": "lm4tagIcon"
+                  },
+                  "size": "sm",
+                  "variant": "neutral"
+                 },
+                 "partial": false,
+                 "hasDynamicProps": false,
+                 "statementId": "lm4tag"
+                },
+                "bgImageAlt": "Latona Fountain at Versailles"
+               },
+               "partial": false,
+               "hasDynamicProps": false,
+               "statementId": "lm4"
+              }
+             ],
+             "layout": "carousel",
+             "responsive": true,
+             "action": {
+              "steps": [
+               {
+                "type": "continue_conversation",
+                "message": "Tell me more about this Paris landmark"
+               }
+              ]
+             }
+            },
+            "partial": false,
+            "hasDynamicProps": true,
+            "statementId": "landmarksCarousel"
+           }
+          ]
+         },
+         "partial": false,
+         "hasDynamicProps": true,
+         "statementId": "secLandmarks"
+        },
+        {
+         "type": "element",
+         "typeName": "SectionItem",
+         "props": {
+          "value": "food",
+          "trigger": "Food & Drink",
+          "content": [
+           {
+            "type": "element",
+            "typeName": "ContextCardBlock",
+            "props": {
+             "items": [
+              {
+               "type": "element",
+               "typeName": "ContextCardItem",
+               "props": {
+                "id": "bistros",
+                "title": "Bistros",
+                "body": "Classic French fare — try Les Arlots for confit beef cheeks.",
+                "bgColor": "gray",
+                "bgImageSrc": "https://everydayparisian.com/wp-content/uploads/2023/01/IMG_0221-768x1024.webp"
+               },
+               "partial": false,
+               "hasDynamicProps": false,
+               "statementId": "f1"
+              },
+              {
+               "type": "element",
+               "typeName": "ContextCardItem",
+               "props": {
+                "id": "fine-dining",
+                "title": "Fine Dining",
+                "body": "Septime leads a new wave of creative Michelin-starred cuisine.",
+                "bgColor": "gray",
+                "bgImageSrc": "https://production-data.worldofmouth.app/images/72b2e6db-97ea-49c4-aa5d-3b7c8121c812.jpg"
+               },
+               "partial": false,
+               "hasDynamicProps": false,
+               "statementId": "f2"
+              },
+              {
+               "type": "element",
+               "typeName": "ContextCardItem",
+               "props": {
+                "id": "bakeries",
+                "title": "Bakeries",
+                "body": "Shinya Pain for sourdough. Grand Prix-winning baguettes citywide.",
+                "bgColor": "gray",
+                "bgImageSrc": "https://www.davidlebovitz.com/wp-content/uploads/2018/09/Le-petit-grain-paris-bakery-boulangerie-patisserie-pastry-shop-8-640x895.jpg"
+               },
+               "partial": false,
+               "hasDynamicProps": false,
+               "statementId": "f3"
+              }
+             ],
+             "layout": "grid",
+             "responsive": true,
+             "action": {
+              "steps": [
+               {
+                "type": "continue_conversation",
+                "message": "Tell me more about eating and drinking in Paris"
+               }
+              ]
+             }
+            },
+            "partial": false,
+            "hasDynamicProps": true,
+            "statementId": "foodCards"
+           }
+          ]
+         },
+         "partial": false,
+         "hasDynamicProps": true,
+         "statementId": "secFood"
+        },
+        {
+         "type": "element",
+         "typeName": "SectionItem",
+         "props": {
+          "value": "when",
+          "trigger": "Best Time to Visit",
+          "content": [
+           {
+            "type": "element",
+            "typeName": "Tabs",
+            "props": {
+             "items": [
+              {
+               "type": "element",
+               "typeName": "TabItem",
+               "props": {
+                "value": "spring",
+                "trigger": "Spring",
+                "content": [
+                 {
+                  "type": "element",
+                  "typeName": "ListBlock",
+                  "props": {
+                   "items": [
+                    {
+                     "type": "element",
+                     "typeName": "ListItem",
+                     "props": {
+                      "title": "Cherry blossoms at Parc de Sceaux",
+                      "subtitle": "March – May",
+                      "image": null,
+                      "actionLabel": null,
+                      "action": {
+                       "steps": [
+                        {
+                         "type": "continue_conversation",
+                         "message": "Tell me about cherry blossom season in Paris"
+                        }
+                       ]
+                      }
+                     },
+                     "partial": false,
+                     "hasDynamicProps": true,
+                     "statementId": "sp1"
+                    },
+                    {
+                     "type": "element",
+                     "typeName": "ListItem",
+                     "props": {
+                      "title": "Picnics along the Seine & in city parks",
+                      "subtitle": "Warm, lively atmosphere",
+                      "image": null,
+                      "actionLabel": null,
+                      "action": {
+                       "steps": [
+                        {
+                         "type": "continue_conversation",
+                         "message": "Where are the best picnic spots in Paris?"
+                        }
+                       ]
+                      }
+                     },
+                     "partial": false,
+                     "hasDynamicProps": true,
+                     "statementId": "sp2"
+                    },
+                    {
+                     "type": "element",
+                     "typeName": "ListItem",
+                     "props": {
+                      "title": "Fewer crowds than summer",
+                      "subtitle": "Ideal for sightseeing",
+                      "image": null,
+                      "actionLabel": null,
+                      "action": {
+                       "steps": [
+                        {
+                         "type": "continue_conversation",
+                         "message": "How busy is Paris in spring?"
+                        }
+                       ]
+                      }
+                     },
+                     "partial": false,
+                     "hasDynamicProps": true,
+                     "statementId": "sp3"
+                    }
+                   ],
+                   "variant": "number"
+                  },
+                  "partial": false,
+                  "hasDynamicProps": true,
+                  "statementId": "springList"
+                 }
+                ]
+               },
+               "partial": false,
+               "hasDynamicProps": true,
+               "statementId": "tabSpring"
+              },
+              {
+               "type": "element",
+               "typeName": "TabItem",
+               "props": {
+                "value": "summer",
+                "trigger": "Summer",
+                "content": [
+                 {
+                  "type": "element",
+                  "typeName": "ListBlock",
+                  "props": {
+                   "items": [
+                    {
+                     "type": "element",
+                     "typeName": "ListItem",
+                     "props": {
+                      "title": "Swim in the Seine — open July & August 2026",
+                      "subtitle": "First time in 102 years",
+                      "image": null,
+                      "actionLabel": null,
+                      "action": {
+                       "steps": [
+                        {
+                         "type": "continue_conversation",
+                         "message": "Tell me about swimming in the Seine"
+                        }
+                       ]
+                      }
+                     },
+                     "partial": false,
+                     "hasDynamicProps": true,
+                     "statementId": "su1"
+                    },
+                    {
+                     "type": "element",
+                     "typeName": "ListItem",
+                     "props": {
+                      "title": "Open-air cinema at Parc de la Villette",
+                      "subtitle": "Free films under the stars",
+                      "image": null,
+                      "actionLabel": null,
+                      "action": {
+                       "steps": [
+                        {
+                         "type": "continue_conversation",
+                         "message": "Tell me about the open-air cinema at Parc de la Villette"
+                        }
+                       ]
+                      }
+                     },
+                     "partial": false,
+                     "hasDynamicProps": true,
+                     "statementId": "su2"
+                    },
+                    {
+                     "type": "element",
+                     "typeName": "ListItem",
+                     "props": {
+                      "title": "Bastille Day celebrations on July 14",
+                      "subtitle": "Fireworks at the Eiffel Tower",
+                      "image": null,
+                      "actionLabel": null,
+                      "action": {
+                       "steps": [
+                        {
+                         "type": "continue_conversation",
+                         "message": "What happens in Paris on Bastille Day?"
+                        }
+                       ]
+                      }
+                     },
+                     "partial": false,
+                     "hasDynamicProps": true,
+                     "statementId": "su3"
+                    }
+                   ],
+                   "variant": "number"
+                  },
+                  "partial": false,
+                  "hasDynamicProps": true,
+                  "statementId": "summerList"
+                 }
+                ]
+               },
+               "partial": false,
+               "hasDynamicProps": true,
+               "statementId": "tabSummer"
+              }
+             ]
+            },
+            "partial": false,
+            "hasDynamicProps": true,
+            "statementId": "whenTabs"
+           }
+          ]
+         },
+         "partial": false,
+         "hasDynamicProps": true,
+         "statementId": "secWhen"
+        }
+       ],
+       "isFoldable": false
+      },
+      "partial": false,
+      "hasDynamicProps": true,
+      "statementId": "sectionsBlock"
+     },
+     {
+      "type": "element",
+      "typeName": "Buttons",
+      "props": {
+       "buttons": [
+        {
+         "type": "element",
+         "typeName": "Button",
+         "props": {
+          "label": "Plan a Trip to Paris",
+          "action": {
+           "steps": [
+            {
+             "type": "continue_conversation",
+             "message": "Help me plan a trip to Paris"
+            }
+           ]
+          },
+          "variant": "primary"
+         },
+         "partial": false,
+         "hasDynamicProps": true,
+         "statementId": "btn1"
+        },
+        {
+         "type": "element",
+         "typeName": "Button",
+         "props": {
+          "label": "Best Hotels in Paris",
+          "action": {
+           "steps": [
+            {
+             "type": "continue_conversation",
+             "message": "Show me the best hotels in Paris"
+            }
+           ]
+          },
+          "variant": "secondary"
+         },
+         "partial": false,
+         "hasDynamicProps": true,
+         "statementId": "btn2"
+        },
+        {
+         "type": "element",
+         "typeName": "Button",
+         "props": {
+          "label": "Build a Paris Itinerary",
+          "action": {
+           "steps": [
+            {
+             "type": "continue_conversation",
+             "message": "Build a 5-day Paris itinerary for me"
+            }
+           ]
+          },
+          "variant": "secondary"
+         },
+         "partial": false,
+         "hasDynamicProps": true,
+         "statementId": "btn3"
+        }
+       ],
+       "direction": "row"
+      },
+      "partial": false,
+      "hasDynamicProps": true,
+      "statementId": "actionBtns"
+     }
+    ],
+    "sources": [
+     {
+      "title": "Paris Travel Guide 2025",
+      "sourceName": "Travel and Tour World",
+      "url": "https://www.travelandtourworld.com/news/article/from-iconic-landmarks-to-hidden-gems-the-ultimate-paris-travel-guide-for-2025-you-need-to-read-now/"
+     },
+     {
+      "title": "Best Things to Do in Paris 2026",
+      "sourceName": "Time Out Paris",
+      "url": "http://www.timeout.fr/paris/en/for-tourists"
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": true,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "example2": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "CardHeader",
+      "props": {
+       "title": "Analytics Dashboard",
+       "subtitle": "April 2026 · Business Performance Overview"
+      },
+      "partial": false,
+      "hasDynamicProps": false,
+      "statementId": "pageHeader"
+     },
+     {
+      "type": "element",
+      "typeName": "SnippetCardBlock",
+      "props": {
+       "items": [
+        {
+         "type": "element",
+         "typeName": "SnippetCardItem",
+         "props": {
+          "id": "total-revenue",
+          "lhs": {
+           "type": "element",
+           "typeName": "IconText",
+           "props": {
+            "icon": {
+             "type": "element",
+             "typeName": "Icon",
+             "props": {
+              "name": "circle-dollar-sign",
+              "category": "finance"
+             },
+             "partial": false,
+             "hasDynamicProps": false,
+             "statementId": "kpi1icon"
+            },
+            "iconVariant": "neutral",
+            "iconSize": "m",
+            "title": "Total Revenue",
+            "subtitle": "Month to date",
+            "bold": false,
+            "layout": "horizontal"
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "kpi1lhs"
+          },
+          "rhs": {
+           "type": "element",
+           "typeName": "BoldText",
+           "props": {
+            "variant": "number",
+            "value": "$284,500",
+            "subtext": "+12.4%",
+            "subtextVariant": "metric",
+            "size": "sm"
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "kpi1rhs"
+          }
+         },
+         "partial": false,
+         "hasDynamicProps": false,
+         "statementId": "kpi1"
+        },
+        {
+         "type": "element",
+         "typeName": "SnippetCardItem",
+         "props": {
+          "id": "active-users",
+          "lhs": {
+           "type": "element",
+           "typeName": "IconText",
+           "props": {
+            "icon": {
+             "type": "element",
+             "typeName": "Icon",
+             "props": {
+              "name": "users",
+              "category": "people"
+             },
+             "partial": false,
+             "hasDynamicProps": false,
+             "statementId": "kpi2icon"
+            },
+            "iconVariant": "neutral",
+            "iconSize": "m",
+            "title": "Active Users",
+            "subtitle": "Monthly active users",
+            "bold": false,
+            "layout": "horizontal"
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "kpi2lhs"
+          },
+          "rhs": {
+           "type": "element",
+           "typeName": "BoldText",
+           "props": {
+            "variant": "number",
+            "value": "47,320",
+            "subtext": "+6.8%",
+            "subtextVariant": "metric",
+            "size": "sm"
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "kpi2rhs"
+          }
+         },
+         "partial": false,
+         "hasDynamicProps": false,
+         "statementId": "kpi2"
+        },
+        {
+         "type": "element",
+         "typeName": "SnippetCardItem",
+         "props": {
+          "id": "conversion-rate",
+          "lhs": {
+           "type": "element",
+           "typeName": "IconText",
+           "props": {
+            "icon": {
+             "type": "element",
+             "typeName": "Icon",
+             "props": {
+              "name": "trending-up",
+              "category": "charts"
+             },
+             "partial": false,
+             "hasDynamicProps": false,
+             "statementId": "kpi3icon"
+            },
+            "iconVariant": "neutral",
+            "iconSize": "m",
+            "title": "Conversion Rate",
+            "subtitle": "Avg. this month",
+            "bold": false,
+            "layout": "horizontal"
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "kpi3lhs"
+          },
+          "rhs": {
+           "type": "element",
+           "typeName": "BoldText",
+           "props": {
+            "variant": "number",
+            "value": "5.7%",
+            "subtext": "+0.9%",
+            "subtextVariant": "metric",
+            "size": "sm"
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "kpi3rhs"
+          }
+         },
+         "partial": false,
+         "hasDynamicProps": false,
+         "statementId": "kpi3"
+        },
+        {
+         "type": "element",
+         "typeName": "SnippetCardItem",
+         "props": {
+          "id": "churn-rate",
+          "lhs": {
+           "type": "element",
+           "typeName": "IconText",
+           "props": {
+            "icon": {
+             "type": "element",
+             "typeName": "Icon",
+             "props": {
+              "name": "user-minus",
+              "category": "people"
+             },
+             "partial": false,
+             "hasDynamicProps": false,
+             "statementId": "kpi4icon"
+            },
+            "iconVariant": "neutral",
+            "iconSize": "m",
+            "title": "Churn Rate",
+            "subtitle": "Monthly customer churn",
+            "bold": false,
+            "layout": "horizontal"
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "kpi4lhs"
+          },
+          "rhs": {
+           "type": "element",
+           "typeName": "BoldText",
+           "props": {
+            "variant": "number",
+            "value": "2.1%",
+            "subtext": "-0.4%",
+            "subtextVariant": "metric",
+            "size": "sm"
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "kpi4rhs"
+          }
+         },
+         "partial": false,
+         "hasDynamicProps": false,
+         "statementId": "kpi4"
+        }
+       ],
+       "layout": "grid",
+       "responsive": true
+      },
+      "partial": false,
+      "hasDynamicProps": false,
+      "statementId": "kpiBlock"
+     },
+     {
+      "type": "element",
+      "typeName": "SectionBlock",
+      "props": {
+       "sections": [
+        {
+         "type": "element",
+         "typeName": "SectionItem",
+         "props": {
+          "value": "users",
+          "trigger": "User Activity",
+          "content": [
+           {
+            "type": "element",
+            "typeName": "Tabs",
+            "props": {
+             "items": [
+              {
+               "type": "element",
+               "typeName": "TabItem",
+               "props": {
+                "value": "growth",
+                "trigger": "User Growth",
+                "content": [
+                 {
+                  "type": "element",
+                  "typeName": "LineChart",
+                  "props": {
+                   "labels": [
+                    "May",
+                    "Jun",
+                    "Jul",
+                    "Aug",
+                    "Sep",
+                    "Oct",
+                    "Nov",
+                    "Dec",
+                    "Jan",
+                    "Feb",
+                    "Mar",
+                    "Apr"
+                   ],
+                   "series": [
+                    {
+                     "type": "element",
+                     "typeName": "Series",
+                     "props": {
+                      "category": "DAU",
+                      "values": [
+                       5.1,
+                       5.4,
+                       5.8,
+                       6.2,
+                       6.7,
+                       7.1,
+                       7.6,
+                       8,
+                       8.4,
+                       8.9,
+                       9.3,
+                       9.8
+                      ]
+                     },
+                     "partial": false,
+                     "hasDynamicProps": false,
+                     "statementId": "dauSeries"
+                    },
+                    {
+                     "type": "element",
+                     "typeName": "Series",
+                     "props": {
+                      "category": "MAU",
+                      "values": [
+                       28.4,
+                       30.1,
+                       31.8,
+                       33.5,
+                       35.2,
+                       37.1,
+                       38.8,
+                       40.4,
+                       42.1,
+                       43.9,
+                       45.6,
+                       47.3
+                      ]
+                     },
+                     "partial": false,
+                     "hasDynamicProps": false,
+                     "statementId": "mauSeries"
+                    }
+                   ],
+                   "variant": "natural",
+                   "xLabel": "Month",
+                   "yLabel": "Users (k)"
+                  },
+                  "partial": false,
+                  "hasDynamicProps": false,
+                  "statementId": "growthChart"
+                 }
+                ]
+               },
+               "partial": false,
+               "hasDynamicProps": false,
+               "statementId": "tabGrowth"
+              },
+              {
+               "type": "element",
+               "typeName": "TabItem",
+               "props": {
+                "value": "retention",
+                "trigger": "Cohort Retention",
+                "content": [
+                 {
+                  "type": "element",
+                  "typeName": "LineChart",
+                  "props": {
+                   "labels": [
+                    "Month 0",
+                    "Month 1",
+                    "Month 2",
+                    "Month 3",
+                    "Month 4",
+                    "Month 5",
+                    "Month 6"
+                   ],
+                   "series": [
+                    {
+                     "type": "element",
+                     "typeName": "Series",
+                     "props": {
+                      "category": "Jan Cohort",
+                      "values": [
+                       100,
+                       80,
+                       70,
+                       62,
+                       56,
+                       51,
+                       47
+                      ]
+                     },
+                     "partial": false,
+                     "hasDynamicProps": false,
+                     "statementId": "cohortJan"
+                    },
+                    {
+                     "type": "element",
+                     "typeName": "Series",
+                     "props": {
+                      "category": "Feb Cohort",
+                      "values": [
+                       100,
+                       83,
+                       73,
+                       65,
+                       59,
+                       54,
+                       50
+                      ]
+                     },
+                     "partial": false,
+                     "hasDynamicProps": false,
+                     "statementId": "cohortFeb"
+                    },
+                    {
+                     "type": "element",
+                     "typeName": "Series",
+                     "props": {
+                      "category": "Mar Cohort",
+                      "values": [
+                       100,
+                       86,
+                       76,
+                       68,
+                       62,
+                       0,
+                       0
+                      ]
+                     },
+                     "partial": false,
+                     "hasDynamicProps": false,
+                     "statementId": "cohortMar"
+                    }
+                   ],
+                   "variant": "natural",
+                   "xLabel": "Month Since Signup",
+                   "yLabel": "Retention (%)"
+                  },
+                  "partial": false,
+                  "hasDynamicProps": false,
+                  "statementId": "retentionChart"
+                 }
+                ]
+               },
+               "partial": false,
+               "hasDynamicProps": false,
+               "statementId": "tabRetention"
+              }
+             ]
+            },
+            "partial": false,
+            "hasDynamicProps": false,
+            "statementId": "userTabs"
+           }
+          ]
+         },
+         "partial": false,
+         "hasDynamicProps": false,
+         "statementId": "secUsers"
+        },
+        {
+         "type": "element",
+         "typeName": "SectionItem",
+         "props": {
+          "value": "channels",
+          "trigger": "Acquisition Channels",
+          "content": [
+           {
+            "type": "element",
+            "typeName": "Tabs",
+            "props": {
+             "items": [
+              {
+               "type": "element",
+               "typeName": "TabItem",
+               "props": {
+                "value": "channel-bar",
+                "trigger": "Revenue by Channel",
+                "content": [
+                 {
+                  "type": "element",
+                  "typeName": "HorizontalBarChart",
+                  "props": {
+                   "labels": [
+                    "Organic Search",
+                    "Paid Ads",
+                    "Referral Program",
+                    "Partner Network",
+                    "Direct / Brand",
+                    "Email Campaigns"
+                   ],
+                   "series": [
+                    {
+                     "type": "element",
+                     "typeName": "Series",
+                     "props": {
+                      "category": "Revenue ($k)",
+                      "values": [
+                       82.4,
+                       68.1,
+                       54.6,
+                       38.2,
+                       26.8,
+                       14.4
+                      ]
+                     },
+                     "partial": false,
+                     "hasDynamicProps": false,
+                     "statementId": "channelSeries"
+                    }
+                   ],
+                   "variant": "grouped",
+                   "xLabel": "Revenue ($k)",
+                   "yLabel": "Channel"
+                  },
+                  "partial": false,
+                  "hasDynamicProps": false,
+                  "statementId": "channelBarChart"
+                 }
+                ]
+               },
+               "partial": false,
+               "hasDynamicProps": false,
+               "statementId": "tabChannelBar"
+              },
+              {
+               "type": "element",
+               "typeName": "TabItem",
+               "props": {
+                "value": "channel-table",
+                "trigger": "Full Breakdown",
+                "content": [
+                 {
+                  "type": "element",
+                  "typeName": "Table",
+                  "props": {
+                   "columns": [
+                    {
+                     "type": "element",
+                     "typeName": "Col",
+                     "props": {
+                      "label": "Channel",
+                      "data": [
+                       "Organic Search",
+                       "Paid Ads",
+                       "Referral Program",
+                       "Partner Network",
+                       "Direct / Brand",
+                       "Email Campaigns"
+                      ],
+                      "type": "string"
+                     },
+                     "partial": false,
+                     "hasDynamicProps": false,
+                     "statementId": "colChannel"
+                    },
+                    {
+                     "type": "element",
+                     "typeName": "Col",
+                     "props": {
+                      "label": "Leads",
+                      "data": [
+                       4210,
+                       3180,
+                       2050,
+                       1120,
+                       1290,
+                       820
+                      ],
+                      "type": "number"
+                     },
+                     "partial": false,
+                     "hasDynamicProps": false,
+                     "statementId": "colLeads"
+                    },
+                    {
+                     "type": "element",
+                     "typeName": "Col",
+                     "props": {
+                      "label": "Conv. Rate",
+                      "data": [
+                       "6.4%",
+                       "5.1%",
+                       "9.4%",
+                       "11.8%",
+                       "5.8%",
+                       "8.1%"
+                      ],
+                      "type": "string"
+                     },
+                     "partial": false,
+                     "hasDynamicProps": false,
+                     "statementId": "colConv"
+                    },
+                    {
+                     "type": "element",
+                     "typeName": "Col",
+                     "props": {
+                      "label": "CAC ($)",
+                      "data": [
+                       188,
+                       395,
+                       132,
+                       109,
+                       218,
+                       154
+                      ],
+                      "type": "number"
+                     },
+                     "partial": false,
+                     "hasDynamicProps": false,
+                     "statementId": "colCac"
+                    },
+                    {
+                     "type": "element",
+                     "typeName": "Col",
+                     "props": {
+                      "label": "Revenue ($k)",
+                      "data": [
+                       82.4,
+                       68.1,
+                       54.6,
+                       38.2,
+                       26.8,
+                       14.4
+                      ],
+                      "type": "number"
+                     },
+                     "partial": false,
+                     "hasDynamicProps": false,
+                     "statementId": "colRevenue"
+                    },
+                    {
+                     "type": "element",
+                     "typeName": "Col",
+                     "props": {
+                      "label": "Status",
+                      "data": [
+                       "Scaling",
+                       "Optimizing",
+                       "Scaling",
+                       "Growing",
+                       "Stable",
+                       "Stable"
+                      ],
+                      "type": "string"
+                     },
+                     "partial": false,
+                     "hasDynamicProps": false,
+                     "statementId": "colStatus"
+                    }
+                   ]
+                  },
+                  "partial": false,
+                  "hasDynamicProps": false,
+                  "statementId": "channelTable"
+                 }
+                ]
+               },
+               "partial": false,
+               "hasDynamicProps": false,
+               "statementId": "tabChannelTable"
+              }
+             ]
+            },
+            "partial": false,
+            "hasDynamicProps": false,
+            "statementId": "channelTabs"
+           }
+          ]
+         },
+         "partial": false,
+         "hasDynamicProps": false,
+         "statementId": "secChannels"
+        }
+       ],
+       "isFoldable": false
+      },
+      "partial": false,
+      "hasDynamicProps": false,
+      "statementId": "sections"
+     },
+     {
+      "type": "element",
+      "typeName": "InlineHeader",
+      "props": {
+       "heading": "Support Health & Marketing ROI",
+       "description": "Click a card to explore deeper insights"
+      },
+      "partial": false,
+      "hasDynamicProps": false,
+      "statementId": "deepDiveHeader"
+     },
+     {
+      "type": "element",
+      "typeName": "CompositeCardBlock",
+      "props": {
+       "items": [
+        {
+         "type": "element",
+         "typeName": "CompositeCardItem",
+         "props": {
+          "id": "support-health",
+          "header": {
+           "type": "element",
+           "typeName": "IconText",
+           "props": {
+            "icon": {
+             "type": "element",
+             "typeName": "Icon",
+             "props": {
+              "name": "headphones",
+              "category": "communication"
+             },
+             "partial": false,
+             "hasDynamicProps": false,
+             "statementId": "supportIcon"
+            },
+            "iconVariant": "neutral",
+            "iconSize": "m",
+            "title": "Support Health",
+            "subtitle": "Ticket volume & resolution trends",
+            "bold": false,
+            "layout": "horizontal"
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "supportHeader"
+          },
+          "body": [
+           {
+            "type": "element",
+            "typeName": "MetricIndicatorInline",
+            "props": {
+             "value": "94.2% CSAT",
+             "subtext": "Customer Satisfaction Score",
+             "trend": {
+              "direction": "up",
+              "value": 2.1
+             }
+            },
+            "partial": false,
+            "hasDynamicProps": false,
+            "statementId": "supportMetric"
+           },
+           {
+            "type": "element",
+            "typeName": "BarChart",
+            "props": {
+             "labels": [
+              "Jan",
+              "Feb",
+              "Mar",
+              "Apr"
+             ],
+             "series": [
+              {
+               "type": "element",
+               "typeName": "Series",
+               "props": {
+                "category": "Opened",
+                "values": [
+                 341,
+                 327,
+                 308,
+                 289
+                ]
+               },
+               "partial": false,
+               "hasDynamicProps": false,
+               "statementId": "openSeries"
+              },
+              {
+               "type": "element",
+               "typeName": "Series",
+               "props": {
+                "category": "Resolved",
+                "values": [
+                 319,
+                 318,
+                 301,
+                 283
+                ]
+               },
+               "partial": false,
+               "hasDynamicProps": false,
+               "statementId": "resolvedSeries"
+              }
+             ],
+             "variant": "grouped",
+             "xLabel": "Month",
+             "yLabel": "Tickets"
+            },
+            "partial": false,
+            "hasDynamicProps": false,
+            "statementId": "supportChart"
+           },
+           {
+            "type": "element",
+            "typeName": "EntityList",
+            "props": {
+             "rows": [
+              {
+               "left": "Avg. Resolution Time",
+               "right": "4h 12m",
+               "rightVariant": "text"
+              },
+              {
+               "left": "First Contact Resolution",
+               "right": "78.4%",
+               "rightVariant": "number"
+              },
+              {
+               "left": "Escalation Rate",
+               "right": "6.2%",
+               "rightVariant": "number"
+              }
+             ],
+             "size": "small"
+            },
+            "partial": false,
+            "hasDynamicProps": false,
+            "statementId": "supportList"
+           }
+          ]
+         },
+         "partial": false,
+         "hasDynamicProps": false,
+         "statementId": "cardSupport"
+        },
+        {
+         "type": "element",
+         "typeName": "CompositeCardItem",
+         "props": {
+          "id": "marketing-roi",
+          "header": {
+           "type": "element",
+           "typeName": "IconText",
+           "props": {
+            "icon": {
+             "type": "element",
+             "typeName": "Icon",
+             "props": {
+              "name": "megaphone",
+              "category": "communication"
+             },
+             "partial": false,
+             "hasDynamicProps": false,
+             "statementId": "marketingIcon"
+            },
+            "iconVariant": "neutral",
+            "iconSize": "m",
+            "title": "Marketing ROI",
+            "subtitle": "Spend vs. pipeline generated",
+            "bold": false,
+            "layout": "horizontal"
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "marketingHeader"
+          },
+          "body": [
+           {
+            "type": "element",
+            "typeName": "MetricIndicatorInline",
+            "props": {
+             "value": "3.8x Blended ROI",
+             "subtext": "Return on Ad Spend",
+             "trend": {
+              "direction": "up",
+              "value": 0.4
+             }
+            },
+            "partial": false,
+            "hasDynamicProps": false,
+            "statementId": "marketingMetric"
+           },
+           {
+            "type": "element",
+            "typeName": "AreaChart",
+            "props": {
+             "labels": [
+              "Jan",
+              "Feb",
+              "Mar",
+              "Apr"
+             ],
+             "series": [
+              {
+               "type": "element",
+               "typeName": "Series",
+               "props": {
+                "category": "Ad Spend",
+                "values": [
+                 44,
+                 46.8,
+                 49.2,
+                 51.6
+                ]
+               },
+               "partial": false,
+               "hasDynamicProps": false,
+               "statementId": "spendSeries"
+              },
+              {
+               "type": "element",
+               "typeName": "Series",
+               "props": {
+                "category": "Pipeline Generated",
+                "values": [
+                 158.2,
+                 171.5,
+                 184.9,
+                 196.1
+                ]
+               },
+               "partial": false,
+               "hasDynamicProps": false,
+               "statementId": "pipelineSeries"
+              }
+             ],
+             "variant": "natural",
+             "xLabel": "Month",
+             "yLabel": "Value ($k)"
+            },
+            "partial": false,
+            "hasDynamicProps": false,
+            "statementId": "marketingChart"
+           },
+           {
+            "type": "element",
+            "typeName": "EntityList",
+            "props": {
+             "rows": [
+              {
+               "left": "Total Ad Spend (Apr)",
+               "right": "$51,600",
+               "rightVariant": "number"
+              },
+              {
+               "left": "Cost per Lead",
+               "right": "$48.20",
+               "rightVariant": "number"
+              },
+              {
+               "left": "Top Channel",
+               "right": "Organic Search",
+               "rightVariant": "text"
+              }
+             ],
+             "size": "small"
+            },
+            "partial": false,
+            "hasDynamicProps": false,
+            "statementId": "marketingList"
+           }
+          ]
+         },
+         "partial": false,
+         "hasDynamicProps": false,
+         "statementId": "cardMarketing"
+        }
+       ],
+       "layout": "grid",
+       "responsive": true,
+       "action": {
+        "steps": [
+         {
+          "type": "continue_conversation",
+          "message": "Explore this deep-dive area in more detail"
+         }
+        ]
+       }
+      },
+      "partial": false,
+      "hasDynamicProps": true,
+      "statementId": "compositeCards"
+     },
+     {
+      "type": "element",
+      "typeName": "Buttons",
+      "props": {
+       "buttons": [
+        {
+         "type": "element",
+         "typeName": "Button",
+         "props": {
+          "label": "Break Down by Channel",
+          "action": {
+           "steps": [
+            {
+             "type": "continue_conversation",
+             "message": "Break down this month's revenue by acquisition channel"
+            }
+           ]
+          },
+          "variant": "primary"
+         },
+         "partial": false,
+         "hasDynamicProps": true,
+         "statementId": "btnChannels"
+        },
+        {
+         "type": "element",
+         "typeName": "Button",
+         "props": {
+          "label": "Forecast Next Quarter",
+          "action": {
+           "steps": [
+            {
+             "type": "continue_conversation",
+             "message": "Forecast revenue and active users for next quarter"
+            }
+           ]
+          },
+          "variant": "secondary"
+         },
+         "partial": false,
+         "hasDynamicProps": true,
+         "statementId": "btnForecast"
+        }
+       ],
+       "direction": "row"
+      },
+      "partial": false,
+      "hasDynamicProps": true,
+      "statementId": "actionButtons"
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": true,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "example3": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "CardHeader",
+      "props": {
+       "title": "Plan Your Trip",
+       "subtitle": "A few ideas to spark inspiration — then tell me your preferences"
+      },
+      "partial": false,
+      "hasDynamicProps": false,
+      "statementId": "header"
+     },
+     {
+      "type": "element",
+      "typeName": "TextContent",
+      "props": {
+       "text": "Tap a style to jump straight in, or fill the quick form below for a tailored plan."
+      },
+      "partial": false,
+      "hasDynamicProps": false,
+      "statementId": "intro"
+     },
+     {
+      "type": "element",
+      "typeName": "VisualCardBlock",
+      "props": {
+       "items": [
+        {
+         "type": "element",
+         "typeName": "VisualCardItem",
+         "props": {
+          "body": {
+           "type": "element",
+           "typeName": "BoldText",
+           "props": {
+            "variant": "text",
+            "value": "Tropical Beach Escape",
+            "subtext": "Overwater villas & snorkeling",
+            "subtextVariant": "text",
+            "size": "sm"
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "insp1body"
+          },
+          "id": "inspo-beach",
+          "bgImageSrc": "https://www.travelandleisure.com/thmb/cuAB7XMQ6s_Gji-no956KNopT7M=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/TAL-maldives-TROPVACAY0325-1b5047d5931d4850b47d082966f9f563.jpg",
+          "tag": {
+           "type": "element",
+           "typeName": "Tag",
+           "props": {
+            "text": "Relaxation",
+            "icon": {
+             "type": "element",
+             "typeName": "Icon",
+             "props": {
+              "name": "umbrella",
+              "category": "travel"
+             },
+             "partial": false,
+             "hasDynamicProps": false,
+             "statementId": "insp1icon"
+            },
+            "size": "sm",
+            "variant": "info"
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "insp1tag"
+          },
+          "bgImageAlt": "Maldives overwater villas"
+         },
+         "partial": false,
+         "hasDynamicProps": false,
+         "statementId": "insp1"
+        },
+        {
+         "type": "element",
+         "typeName": "VisualCardItem",
+         "props": {
+          "body": {
+           "type": "element",
+           "typeName": "BoldText",
+           "props": {
+            "variant": "text",
+            "value": "Mountain Adventure",
+            "subtext": "Trekking & epic views",
+            "subtextVariant": "text",
+            "size": "sm"
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "insp2body"
+          },
+          "id": "inspo-mountain",
+          "bgImageSrc": "https://www.salkantaytrekmachu.com/img/adventure-travel-peru-032.jpg",
+          "tag": {
+           "type": "element",
+           "typeName": "Tag",
+           "props": {
+            "text": "Active",
+            "icon": {
+             "type": "element",
+             "typeName": "Icon",
+             "props": {
+              "name": "mountain",
+              "category": "nature"
+             },
+             "partial": false,
+             "hasDynamicProps": false,
+             "statementId": "insp2icon"
+            },
+            "size": "sm",
+            "variant": "warning"
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "insp2tag"
+          },
+          "bgImageAlt": "Trekking in the Peruvian Andes"
+         },
+         "partial": false,
+         "hasDynamicProps": false,
+         "statementId": "insp2"
+        }
+       ],
+       "layout": "grid",
+       "responsive": true,
+       "action": {
+        "steps": [
+         {
+          "type": "continue_conversation",
+          "message": "Plan me a trip in this style with destinations, itinerary, and costs"
+         }
+        ]
+       }
+      },
+      "partial": false,
+      "hasDynamicProps": true,
+      "statementId": "inspoCards"
+     },
+     {
+      "type": "element",
+      "typeName": "Form",
+      "props": {
+       "name": "trip-planner",
+       "buttons": {
+        "type": "element",
+        "typeName": "Buttons",
+        "props": {
+         "buttons": [
+          {
+           "type": "element",
+           "typeName": "Button",
+           "props": {
+            "label": "Plan My Trip",
+            "action": {
+             "steps": [
+              {
+               "type": "continue_conversation",
+               "message": "Help me plan a trip based on my form submission"
+              }
+             ]
+            },
+            "variant": "primary"
+           },
+           "partial": false,
+           "hasDynamicProps": true,
+           "statementId": "btnSubmit"
+          },
+          {
+           "type": "element",
+           "typeName": "Button",
+           "props": {
+            "label": "Just Surprise Me",
+            "action": {
+             "steps": [
+              {
+               "type": "continue_conversation",
+               "message": "Skip the form and surprise me with a destination and itinerary"
+              }
+             ]
+            },
+            "variant": "secondary"
+           },
+           "partial": false,
+           "hasDynamicProps": true,
+           "statementId": "btnSkip"
+          }
+         ],
+         "direction": "row"
+        },
+        "partial": false,
+        "hasDynamicProps": true,
+        "statementId": "formButtons"
+       },
+       "fields": [
+        {
+         "type": "element",
+         "typeName": "FormControl",
+         "props": {
+          "label": "Destination",
+          "input": {
+           "type": "element",
+           "typeName": "Input",
+           "props": {
+            "name": "destination",
+            "placeholder": "e.g. Tokyo, Japan — or leave blank",
+            "type": "text"
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "destinationInput"
+          },
+          "hint": "Leave blank if you'd like suggestions"
+         },
+         "partial": false,
+         "hasDynamicProps": false,
+         "statementId": "fcDestination"
+        },
+        {
+         "type": "element",
+         "typeName": "FormControl",
+         "props": {
+          "label": "Travel Dates",
+          "input": {
+           "type": "element",
+           "typeName": "DatePicker",
+           "props": {
+            "name": "travel-dates",
+            "mode": "range",
+            "rules": {
+             "required": true
+            }
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "datesPicker"
+          },
+          "hint": "Select your start and end dates"
+         },
+         "partial": false,
+         "hasDynamicProps": false,
+         "statementId": "fcDates"
+        },
+        {
+         "type": "element",
+         "typeName": "FormControl",
+         "props": {
+          "label": "Number of Travellers",
+          "input": {
+           "type": "element",
+           "typeName": "Select",
+           "props": {
+            "name": "num-travellers",
+            "items": [
+             {
+              "type": "element",
+              "typeName": "SelectItem",
+              "props": {
+               "value": "1",
+               "label": "1 — Solo"
+              },
+              "partial": false,
+              "hasDynamicProps": false,
+              "statementId": "tr1"
+             },
+             {
+              "type": "element",
+              "typeName": "SelectItem",
+              "props": {
+               "value": "2",
+               "label": "2 — Couple"
+              },
+              "partial": false,
+              "hasDynamicProps": false,
+              "statementId": "tr2"
+             },
+             {
+              "type": "element",
+              "typeName": "SelectItem",
+              "props": {
+               "value": "3-4",
+               "label": "3–4 People"
+              },
+              "partial": false,
+              "hasDynamicProps": false,
+              "statementId": "tr3"
+             },
+             {
+              "type": "element",
+              "typeName": "SelectItem",
+              "props": {
+               "value": "5+",
+               "label": "5+ People"
+              },
+              "partial": false,
+              "hasDynamicProps": false,
+              "statementId": "tr4"
+             }
+            ],
+            "placeholder": "Select number of travellers",
+            "rules": {
+             "required": true
+            }
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "travellersSelect"
+          },
+          "hint": "How many people are travelling?"
+         },
+         "partial": false,
+         "hasDynamicProps": false,
+         "statementId": "fcTravellers"
+        },
+        {
+         "type": "element",
+         "typeName": "FormControl",
+         "props": {
+          "label": "Trip Type",
+          "input": {
+           "type": "element",
+           "typeName": "OptionCards",
+           "props": {
+            "name": "trip-type",
+            "type": "single",
+            "items": [
+             {
+              "type": "element",
+              "typeName": "OptionCard",
+              "props": {
+               "value": "adventure",
+               "title": "Adventure",
+               "subtitle": "Hiking, trekking & outdoor activities",
+               "topContent": {
+                "type": "element",
+                "typeName": "Icon",
+                "props": {
+                 "name": "mountain",
+                 "category": "nature"
+                },
+                "partial": false,
+                "hasDynamicProps": false,
+                "statementId": "oc1icon"
+               }
+              },
+              "partial": false,
+              "hasDynamicProps": false,
+              "statementId": "oc1"
+             },
+             {
+              "type": "element",
+              "typeName": "OptionCard",
+              "props": {
+               "value": "beach",
+               "title": "Beach & Relaxation",
+               "subtitle": "Sun, sand & leisure",
+               "topContent": {
+                "type": "element",
+                "typeName": "Icon",
+                "props": {
+                 "name": "waves",
+                 "category": "nature"
+                },
+                "partial": false,
+                "hasDynamicProps": false,
+                "statementId": "oc2icon"
+               }
+              },
+              "partial": false,
+              "hasDynamicProps": false,
+              "statementId": "oc2"
+             },
+             {
+              "type": "element",
+              "typeName": "OptionCard",
+              "props": {
+               "value": "cultural",
+               "title": "Cultural & Historical",
+               "subtitle": "Museums, heritage & local experiences",
+               "topContent": {
+                "type": "element",
+                "typeName": "Icon",
+                "props": {
+                 "name": "landmark",
+                 "category": "buildings"
+                },
+                "partial": false,
+                "hasDynamicProps": false,
+                "statementId": "oc3icon"
+               }
+              },
+              "partial": false,
+              "hasDynamicProps": false,
+              "statementId": "oc3"
+             },
+             {
+              "type": "element",
+              "typeName": "OptionCard",
+              "props": {
+               "value": "city",
+               "title": "City Break",
+               "subtitle": "Urban exploration & nightlife",
+               "topContent": {
+                "type": "element",
+                "typeName": "Icon",
+                "props": {
+                 "name": "building-2",
+                 "category": "buildings"
+                },
+                "partial": false,
+                "hasDynamicProps": false,
+                "statementId": "oc4icon"
+               }
+              },
+              "partial": false,
+              "hasDynamicProps": false,
+              "statementId": "oc4"
+             }
+            ],
+            "rules": {
+             "required": true
+            }
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "tripTypeCards"
+          },
+          "hint": "What kind of trip are you planning?"
+         },
+         "partial": false,
+         "hasDynamicProps": false,
+         "statementId": "fcTripType"
+        },
+        {
+         "type": "element",
+         "typeName": "FormControl",
+         "props": {
+          "label": "Estimated Budget (per person)",
+          "input": {
+           "type": "element",
+           "typeName": "Slider",
+           "props": {
+            "name": "budget",
+            "variant": "discrete",
+            "min": 500,
+            "max": 10000,
+            "step": 500,
+            "defaultValue": [
+             2500
+            ],
+            "label": "Budget (USD)"
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "budgetSlider"
+          },
+          "hint": "Drag to set your per-person budget in USD"
+         },
+         "partial": false,
+         "hasDynamicProps": false,
+         "statementId": "fcBudget"
+        },
+        {
+         "type": "element",
+         "typeName": "FormControl",
+         "props": {
+          "label": "Accommodation Preference",
+          "input": {
+           "type": "element",
+           "typeName": "Chips",
+           "props": {
+            "name": "accommodation",
+            "type": "multiple",
+            "items": [
+             {
+              "type": "element",
+              "typeName": "ChipItem",
+              "props": {
+               "value": "hotel",
+               "label": "Hotel",
+               "icon": {
+                "type": "element",
+                "typeName": "Icon",
+                "props": {
+                 "name": "building",
+                 "category": "buildings"
+                },
+                "partial": false,
+                "hasDynamicProps": false,
+                "statementId": "ch1icon"
+               }
+              },
+              "partial": false,
+              "hasDynamicProps": false,
+              "statementId": "ch1"
+             },
+             {
+              "type": "element",
+              "typeName": "ChipItem",
+              "props": {
+               "value": "resort",
+               "label": "Resort",
+               "icon": {
+                "type": "element",
+                "typeName": "Icon",
+                "props": {
+                 "name": "umbrella",
+                 "category": "travel"
+                },
+                "partial": false,
+                "hasDynamicProps": false,
+                "statementId": "ch2icon"
+               }
+              },
+              "partial": false,
+              "hasDynamicProps": false,
+              "statementId": "ch2"
+             },
+             {
+              "type": "element",
+              "typeName": "ChipItem",
+              "props": {
+               "value": "airbnb",
+               "label": "Vacation Rental",
+               "icon": {
+                "type": "element",
+                "typeName": "Icon",
+                "props": {
+                 "name": "home",
+                 "category": "home"
+                },
+                "partial": false,
+                "hasDynamicProps": false,
+                "statementId": "ch3icon"
+               }
+              },
+              "partial": false,
+              "hasDynamicProps": false,
+              "statementId": "ch3"
+             },
+             {
+              "type": "element",
+              "typeName": "ChipItem",
+              "props": {
+               "value": "camping",
+               "label": "Camping / Glamping",
+               "icon": {
+                "type": "element",
+                "typeName": "Icon",
+                "props": {
+                 "name": "tent",
+                 "category": "nature"
+                },
+                "partial": false,
+                "hasDynamicProps": false,
+                "statementId": "ch4icon"
+               }
+              },
+              "partial": false,
+              "hasDynamicProps": false,
+              "statementId": "ch4"
+             }
+            ],
+            "rules": {},
+            "defaultValue": [
+             "hotel"
+            ]
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "stayChips"
+          },
+          "hint": "Select all that apply"
+         },
+         "partial": false,
+         "hasDynamicProps": false,
+         "statementId": "fcStay"
+        },
+        {
+         "type": "element",
+         "typeName": "FormControl",
+         "props": {
+          "label": "Special Requests or Notes",
+          "input": {
+           "type": "element",
+           "typeName": "TextArea",
+           "props": {
+            "name": "special-requests",
+            "placeholder": "e.g. vegetarian meals, wheelchair access, honeymoon surprise...",
+            "rows": 4
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "notesArea"
+          },
+          "hint": "Any dietary needs, accessibility requirements, or specific interests?"
+         },
+         "partial": false,
+         "hasDynamicProps": false,
+         "statementId": "fcNotes"
+        }
+       ]
+      },
+      "partial": false,
+      "hasDynamicProps": true,
+      "statementId": "form"
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": true,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "example4": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "CardHeader",
+      "props": {
+       "title": "Retro-Energetic Indian Tracks",
+       "subtitle": "New Hindi releases with 80s/90s dance DNA"
+      },
+      "partial": false,
+      "hasDynamicProps": false,
+      "statementId": "header"
+     },
+     {
+      "type": "element",
+      "typeName": "TextContent",
+      "props": {
+       "text": "These recent tracks channel retro synths and 90s party percussion [1][2]. Tap a poster to explore a track, or use its button to watch the exact official video."
+      },
+      "partial": false,
+      "hasDynamicProps": false,
+      "statementId": "intro"
+     },
+     {
+      "type": "element",
+      "typeName": "VisualCardBlock",
+      "props": {
+       "items": [
+        {
+         "type": "element",
+         "typeName": "VisualCardItem",
+         "props": {
+          "body": {
+           "type": "element",
+           "typeName": "BoldText",
+           "props": {
+            "variant": "text",
+            "value": "Tamma Tamma",
+            "subtext": "Dhurandhar · Ranveer Singh",
+            "subtextVariant": "text",
+            "size": "sm"
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "v1body"
+          },
+          "id": "tamma",
+          "bgImageSrc": "https://i.ytimg.com/vi/PQHeOb0Q9oo/hq720.jpg",
+          "tag": {
+           "type": "element",
+           "typeName": "Tag",
+           "props": {
+            "text": "80s Electro-Disco",
+            "icon": {
+             "type": "element",
+             "typeName": "Icon",
+             "props": {
+              "name": "disc-3",
+              "category": "multimedia"
+             },
+             "partial": false,
+             "hasDynamicProps": false,
+             "statementId": "v1icon"
+            },
+            "size": "sm",
+            "variant": "success"
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "v1tag"
+          },
+          "bgImageAlt": "Tamma Tamma video poster"
+         },
+         "partial": false,
+         "hasDynamicProps": false,
+         "statementId": "v1"
+        },
+        {
+         "type": "element",
+         "typeName": "VisualCardItem",
+         "props": {
+          "body": {
+           "type": "element",
+           "typeName": "BoldText",
+           "props": {
+            "variant": "text",
+            "value": "Sajan Re",
+            "subtext": "Nora Fatehi · Badshah",
+            "subtextVariant": "text",
+            "size": "sm"
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "v2body"
+          },
+          "id": "sajan",
+          "bgImageSrc": "https://i.ytimg.com/vi/mLz-qBiRnl8/hq720.jpg",
+          "tag": {
+           "type": "element",
+           "typeName": "Tag",
+           "props": {
+            "text": "Synthwave Electro",
+            "icon": {
+             "type": "element",
+             "typeName": "Icon",
+             "props": {
+              "name": "music",
+              "category": "multimedia"
+             },
+             "partial": false,
+             "hasDynamicProps": false,
+             "statementId": "v2icon"
+            },
+            "size": "sm",
+            "variant": "info"
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "v2tag"
+          },
+          "bgImageAlt": "Sajan Re video poster"
+         },
+         "partial": false,
+         "hasDynamicProps": false,
+         "statementId": "v2"
+        }
+       ],
+       "layout": "grid",
+       "responsive": true,
+       "action": {
+        "steps": [
+         {
+          "type": "continue_conversation",
+          "message": "Tell me more about this track and its retro influences"
+         }
+        ]
+       }
+      },
+      "partial": false,
+      "hasDynamicProps": true,
+      "statementId": "posters"
+     },
+     {
+      "type": "element",
+      "typeName": "InlineHeader",
+      "props": {
+       "heading": "Watch the Exact Videos",
+       "description": "Each button opens that track's official video"
+      },
+      "partial": false,
+      "hasDynamicProps": false,
+      "statementId": "linksHeader"
+     },
+     {
+      "type": "element",
+      "typeName": "CompositeCardBlock",
+      "props": {
+       "items": [
+        {
+         "type": "element",
+         "typeName": "CompositeCardItem",
+         "props": {
+          "id": "t-tamma",
+          "header": {
+           "type": "element",
+           "typeName": "IconText",
+           "props": {
+            "icon": {
+             "type": "element",
+             "typeName": "Icon",
+             "props": {
+              "name": "disc-3",
+              "category": "multimedia"
+             },
+             "partial": false,
+             "hasDynamicProps": false,
+             "statementId": "t1icon"
+            },
+            "iconVariant": "neutral",
+            "iconSize": "m",
+            "title": "Tamma Tamma",
+            "subtitle": "Bappi Lahiri classic, electro-funk rework",
+            "bold": true,
+            "layout": "horizontal"
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "t1h"
+          },
+          "body": [
+           {
+            "type": "element",
+            "typeName": "Text",
+            "props": {
+             "variant": "text",
+             "value": "Heavy analog synths and brass over a fast disco groove.",
+             "subtext": "Retro Electro-Disco",
+             "subtextVariant": "text",
+             "size": "sm"
+            },
+            "partial": false,
+            "hasDynamicProps": false,
+            "statementId": "t1body"
+           },
+           {
+            "type": "element",
+            "typeName": "TagBlock",
+            "props": {
+             "tags": [
+              "2026 Film Hit",
+              "Peak Party"
+             ]
+            },
+            "partial": false,
+            "hasDynamicProps": false,
+            "statementId": "t1tags"
+           }
+          ],
+          "footer": {
+           "button": {
+            "type": "element",
+            "typeName": "Button",
+            "props": {
+             "label": "Watch on YouTube",
+             "action": {
+              "steps": [
+               {
+                "type": "open_url",
+                "url": "https://www.youtube.com/watch?v=PQHeOb0Q9oo"
+               }
+              ]
+             },
+             "variant": "primary"
+            },
+            "partial": false,
+            "hasDynamicProps": true,
+            "statementId": "t1btn"
+           }
+          }
+         },
+         "partial": false,
+         "hasDynamicProps": true,
+         "statementId": "t1"
+        },
+        {
+         "type": "element",
+         "typeName": "CompositeCardItem",
+         "props": {
+          "id": "t-sajan",
+          "header": {
+           "type": "element",
+           "typeName": "IconText",
+           "props": {
+            "icon": {
+             "type": "element",
+             "typeName": "Icon",
+             "props": {
+              "name": "music",
+              "category": "multimedia"
+             },
+             "partial": false,
+             "hasDynamicProps": false,
+             "statementId": "t2icon"
+            },
+            "iconVariant": "neutral",
+            "iconSize": "m",
+            "title": "Sajan Re",
+            "subtitle": "Nora Fatehi · Badshah · Sanjoy",
+            "bold": true,
+            "layout": "horizontal"
+           },
+           "partial": false,
+           "hasDynamicProps": false,
+           "statementId": "t2h"
+          },
+          "body": [
+           {
+            "type": "element",
+            "typeName": "Text",
+            "props": {
+             "variant": "text",
+             "value": "Synthwave melody hooks over a modern club beat.",
+             "subtext": "Retro-Fusion Electro",
+             "subtextVariant": "text",
+             "size": "sm"
+            },
+            "partial": false,
+            "hasDynamicProps": false,
+            "statementId": "t2body"
+           },
+           {
+            "type": "element",
+            "typeName": "TagBlock",
+            "props": {
+             "tags": [
+              "Club Anthem",
+              "Nora x Badshah"
+             ]
+            },
+            "partial": false,
+            "hasDynamicProps": false,
+            "statementId": "t2tags"
+           }
+          ],
+          "footer": {
+           "button": {
+            "type": "element",
+            "typeName": "Button",
+            "props": {
+             "label": "Watch on YouTube",
+             "action": {
+              "steps": [
+               {
+                "type": "open_url",
+                "url": "https://www.youtube.com/watch?v=COUSCnFazzc"
+               }
+              ]
+             },
+             "variant": "primary"
+            },
+            "partial": false,
+            "hasDynamicProps": true,
+            "statementId": "t2btn"
+           }
+          }
+         },
+         "partial": false,
+         "hasDynamicProps": true,
+         "statementId": "t2"
+        }
+       ],
+       "layout": "grid",
+       "responsive": true
+      },
+      "partial": false,
+      "hasDynamicProps": true,
+      "statementId": "trackCards"
+     }
+    ],
+    "sources": [
+     {
+      "title": "Tamma Tamma (Full Video) - Dhurandhar",
+      "sourceName": "YouTube (T-Series)",
+      "url": "https://www.youtube.com/watch?v=PQHeOb0Q9oo"
+     },
+     {
+      "title": "Sajan Re (Official Music Video)",
+      "sourceName": "YouTube (T-Series)",
+      "url": "https://www.youtube.com/watch?v=COUSCnFazzc"
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": true,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "example5": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "TextContent",
+      "props": {
+       "text": "Top Languages",
+       "size": "large-heavy"
+      },
+      "partial": false,
+      "hasDynamicProps": false,
+      "statementId": "title"
+     },
+     {
+      "type": "element",
+      "typeName": "Table",
+      "props": {
+       "columns": [
+        {
+         "type": "element",
+         "typeName": "Col",
+         "props": {
+          "label": "Language",
+          "data": [
+           "Python",
+           "JavaScript",
+           "Java"
+          ]
+         },
+         "partial": false,
+         "hasDynamicProps": false
+        },
+        {
+         "type": "element",
+         "typeName": "Col",
+         "props": {
+          "label": "Users (M)",
+          "data": [
+           15.7,
+           14.2,
+           12.1
+          ]
+         },
+         "partial": false,
+         "hasDynamicProps": false
+        },
+        {
+         "type": "element",
+         "typeName": "Col",
+         "props": {
+          "label": "Year",
+          "data": [
+           1991,
+           1995,
+           1995
+          ]
+         },
+         "partial": false,
+         "hasDynamicProps": false
+        }
+       ]
+      },
+      "partial": false,
+      "hasDynamicProps": false,
+      "statementId": "tbl"
+     },
+     {
+      "type": "element",
+      "typeName": "FollowUpBlock",
+      "props": {
+       "items": [
+        {
+         "type": "element",
+         "typeName": "FollowUpItem",
+         "props": {
+          "text": "Tell me more about Python"
+         },
+         "partial": false,
+         "hasDynamicProps": false,
+         "statementId": "fu1"
+        },
+        {
+         "type": "element",
+         "typeName": "FollowUpItem",
+         "props": {
+          "text": "Show me a JavaScript comparison"
+         },
+         "partial": false,
+         "hasDynamicProps": false,
+         "statementId": "fu2"
+        }
+       ]
+      },
+      "partial": false,
+      "hasDynamicProps": false,
+      "statementId": "followUps"
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": false,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "minimal": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "TextContent",
+      "props": {
+       "text": "Hello"
+      },
+      "partial": false,
+      "hasDynamicProps": false
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": false,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "forwardRefs": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "CardHeader",
+      "props": {
+       "title": "Title",
+       "subtitle": "Sub"
+      },
+      "partial": false,
+      "hasDynamicProps": false,
+      "statementId": "header"
+     },
+     {
+      "type": "element",
+      "typeName": "TextContent",
+      "props": {
+       "text": "Body **bold**",
+       "size": "small"
+      },
+      "partial": false,
+      "hasDynamicProps": false,
+      "statementId": "body"
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": false,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "fences": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "TextContent",
+      "props": {
+       "text": "x"
+      },
+      "partial": false,
+      "hasDynamicProps": false,
+      "statementId": "t"
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": false,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "comments": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "TextContent",
+      "props": {
+       "text": "a # not a comment",
+       "size": "large"
+      },
+      "partial": false,
+      "hasDynamicProps": false,
+      "statementId": "t"
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": false,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "missingRequired": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "CardHeader",
+      "props": {
+       "title": "ok"
+      },
+      "partial": false,
+      "hasDynamicProps": false
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": false,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "nullRequired": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "TextContent",
+      "props": {
+       "text": "kept"
+      },
+      "partial": false,
+      "hasDynamicProps": false
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": false,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "unknownComponent": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "TextContent",
+      "props": {
+       "text": "y"
+      },
+      "partial": false,
+      "hasDynamicProps": false
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": false,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "typeMismatch": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": []
+   },
+   "partial": false,
+   "hasDynamicProps": false,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "enumMismatch": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "TextContent",
+      "props": {
+       "text": "x"
+      },
+      "partial": false,
+      "hasDynamicProps": false
+     },
+     {
+      "type": "element",
+      "typeName": "Buttons",
+      "props": {
+       "buttons": [
+        {
+         "type": "element",
+         "typeName": "Button",
+         "props": {
+          "label": "Go",
+          "action": {
+           "steps": [
+            {
+             "type": "continue_conversation",
+             "message": "go"
+            }
+           ]
+          }
+         },
+         "partial": false,
+         "hasDynamicProps": true
+        }
+       ]
+      },
+      "partial": false,
+      "hasDynamicProps": true
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": true,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "excessArgs": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "CardHeader",
+      "props": {
+       "title": "a",
+       "subtitle": "b"
+      },
+      "partial": false,
+      "hasDynamicProps": false
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": false,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "unresolved": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "CardHeader",
+      "props": {
+       "title": null
+      },
+      "partial": false,
+      "hasDynamicProps": false,
+      "statementId": "header"
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": false,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "cycle": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "Card",
+      "props": {
+       "children": [
+        {
+         "type": "element",
+         "typeName": "Card",
+         "props": {
+          "children": []
+         },
+         "partial": false,
+         "hasDynamicProps": false,
+         "statementId": "b"
+        }
+       ]
+      },
+      "partial": false,
+      "hasDynamicProps": false,
+      "statementId": "a"
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": false,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "orphaned": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "TextContent",
+      "props": {
+       "text": "a"
+      },
+      "partial": false,
+      "hasDynamicProps": false,
+      "statementId": "a"
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": false,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {
+   "$s": "x"
+  }
+ },
+ "noRoot": {
+  "root": null,
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "fallbackRoot": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "TextContent",
+      "props": {
+       "text": "fallback"
+      },
+      "partial": false,
+      "hasDynamicProps": false
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": false,
+   "statementId": "main"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "notComponent": {
+  "root": null,
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "rootExpression": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "TextContent",
+      "props": {
+       "text": "light"
+      },
+      "partial": false,
+      "hasDynamicProps": true
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": true
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {
+   "$dark": false
+  }
+ },
+ "inlineReserved": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": []
+   },
+   "partial": false,
+   "hasDynamicProps": false,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "unknownFunction": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": []
+   },
+   "partial": false,
+   "hasDynamicProps": false,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "expressions": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "TextContent",
+      "props": {
+       "text": "Sum: 5 eq false false -2 y"
+      },
+      "partial": false,
+      "hasDynamicProps": true
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": true,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {
+   "$a": 4,
+   "$b": "5"
+  }
+ },
+ "multilineTernary": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "TextContent",
+      "props": {
+       "text": "On"
+      },
+      "partial": false,
+      "hasDynamicProps": true,
+      "statementId": "label"
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": true,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {
+   "$on": true
+  }
+ },
+ "numbers": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "TextContent",
+      "props": {
+       "text": "x"
+      },
+      "partial": false,
+      "hasDynamicProps": false
+     },
+     {
+      "type": "element",
+      "typeName": "Table",
+      "props": {
+       "columns": [
+        {
+         "type": "element",
+         "typeName": "Col",
+         "props": {
+          "label": "n",
+          "data": [
+           1,
+           -2,
+           3.5,
+           1000,
+           0.0025,
+           0.1
+          ]
+         },
+         "partial": false,
+         "hasDynamicProps": false
+        }
+       ]
+      },
+      "partial": false,
+      "hasDynamicProps": false
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": false,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "strings": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "TextContent",
+      "props": {
+       "text": "tab\there \"quoted\" é \n newline"
+      },
+      "partial": false,
+      "hasDynamicProps": false
+     },
+     {
+      "type": "element",
+      "typeName": "TextContent",
+      "props": {
+       "text": "single 'quote' \n"
+      },
+      "partial": false,
+      "hasDynamicProps": false
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": false,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "objects": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "EntityList",
+      "props": {
+       "rows": [
+        {
+         "left": "A",
+         "right": "1",
+         "rightVariant": "text"
+        },
+        {
+         "left": "B",
+         "right": "2",
+         "rightVariant": "number"
+        }
+       ],
+       "size": "small",
+       "header": {
+        "left": "K",
+        "right": "V",
+        "rightVariant": "text"
+       }
+      },
+      "partial": false,
+      "hasDynamicProps": false
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": false,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "state": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "TextContent",
+      "props": {
+       "text": "Tab b"
+      },
+      "partial": false,
+      "hasDynamicProps": true
+     },
+     {
+      "type": "element",
+      "typeName": "TextContent",
+      "props": {
+       "text": null
+      },
+      "partial": false,
+      "hasDynamicProps": true
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": true,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {
+   "$tab": "b",
+   "$count": 0,
+   "$items": [
+    "x",
+    "y"
+   ],
+   "$undeclared": null
+  }
+ },
+ "bindings": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "Form",
+      "props": {
+       "name": "f",
+       "buttons": {
+        "type": "element",
+        "typeName": "Buttons",
+        "props": {
+         "buttons": [
+          {
+           "type": "element",
+           "typeName": "Button",
+           "props": {
+            "label": "Send",
+            "action": {
+             "steps": [
+              {
+               "type": "continue_conversation",
+               "message": "Submit"
+              }
+             ]
+            }
+           },
+           "partial": false,
+           "hasDynamicProps": true
+          }
+         ]
+        },
+        "partial": false,
+        "hasDynamicProps": true,
+        "statementId": "buttons"
+       },
+       "fields": [
+        {
+         "type": "element",
+         "typeName": "FormControl",
+         "props": {
+          "label": "Name",
+          "input": {
+           "type": "element",
+           "typeName": "Input",
+           "props": {
+            "name": "name",
+            "placeholder": "Your name",
+            "type": "text",
+            "rules": {
+             "required": true,
+             "minLength": 2
+            },
+            "value": {
+             "__reactive": "assign",
+             "target": "$name",
+             "expr": {
+              "k": "StateRef",
+              "n": "$value"
+             }
+            }
+           },
+           "partial": false,
+           "hasDynamicProps": true
+          }
+         },
+         "partial": false,
+         "hasDynamicProps": true
+        }
+       ]
+      },
+      "partial": false,
+      "hasDynamicProps": true
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": true,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {
+   "$name": "Ada"
+  }
+ },
+ "queries": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "Table",
+      "props": {
+       "columns": [
+        {
+         "type": "element",
+         "typeName": "Col",
+         "props": {
+          "label": "Title",
+          "data": [
+           "First chat",
+           "Second"
+          ]
+         },
+         "partial": false,
+         "hasDynamicProps": true
+        }
+       ]
+      },
+      "partial": false,
+      "hasDynamicProps": true
+     },
+     {
+      "type": "element",
+      "typeName": "TextContent",
+      "props": {
+       "text": "Count 2"
+      },
+      "partial": false,
+      "hasDynamicProps": true
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": true,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [
+   {
+    "statementId": "sessions",
+    "tool": "app_list_sessions",
+    "args": {
+     "limit": 5,
+     "q": "x "
+    },
+    "defaults": {
+     "rows": []
+    },
+    "refresh": 30
+   }
+  ],
+  "state": {
+   "$limit": 5,
+   "$q": null
+  }
+ },
+ "mutations": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "Buttons",
+      "props": {
+       "buttons": [
+        {
+         "type": "element",
+         "typeName": "Button",
+         "props": {
+          "label": "Stop",
+          "action": {
+           "steps": [
+            {
+             "type": "run",
+             "statementId": "stop",
+             "refType": "mutation"
+            },
+            {
+             "type": "set",
+             "target": "$vm",
+             "valueAST": {
+              "k": "Str",
+              "v": ""
+             }
+            },
+            {
+             "type": "continue_conversation",
+             "message": "Stopped it"
+            }
+           ]
+          }
+         },
+         "partial": false,
+         "hasDynamicProps": true
+        }
+       ]
+      },
+      "partial": false,
+      "hasDynamicProps": true
+     },
+     {
+      "type": "element",
+      "typeName": "TextContent",
+      "props": {
+       "text": "idle"
+      },
+      "partial": false,
+      "hasDynamicProps": true
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": true,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {
+   "$vm": "s1"
+  }
+ },
+ "each": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "ListBlock",
+      "props": {
+       "items": [
+        {
+         "type": "element",
+         "typeName": "ListItem",
+         "props": {
+          "title": "a",
+          "subtitle": "n=1",
+          "image": null,
+          "actionLabel": "Pick",
+          "action": {
+           "steps": [
+            {
+             "type": "set",
+             "target": "$sel",
+             "valueAST": {
+              "k": "Str",
+              "v": "a"
+             }
+            }
+           ]
+          }
+         },
+         "partial": false,
+         "hasDynamicProps": true
+        },
+        {
+         "type": "element",
+         "typeName": "ListItem",
+         "props": {
+          "title": "b",
+          "subtitle": "n=2",
+          "image": null,
+          "actionLabel": "Pick",
+          "action": {
+           "steps": [
+            {
+             "type": "set",
+             "target": "$sel",
+             "valueAST": {
+              "k": "Str",
+              "v": "b"
+             }
+            }
+           ]
+          }
+         },
+         "partial": false,
+         "hasDynamicProps": true
+        }
+       ]
+      },
+      "partial": false,
+      "hasDynamicProps": true
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": true,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {
+   "$rows": [
+    {
+     "name": "a",
+     "n": 1
+    },
+    {
+     "name": "b",
+     "n": 2
+    }
+   ],
+   "$sel": null
+  }
+ },
+ "builtins": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "TextContent",
+      "props": {
+       "text": "62132.5631232"
+      },
+      "partial": false,
+      "hasDynamicProps": true
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": true,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "dexFunctions": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "TextContent",
+      "props": {
+       "text": "ago(1700000000000)"
+      },
+      "partial": false,
+      "hasDynamicProps": true
+     },
+     {
+      "type": "element",
+      "typeName": "TextContent",
+      "props": {
+       "text": "2048 bytes"
+      },
+      "partial": false,
+      "hasDynamicProps": true
+     },
+     {
+      "type": "element",
+      "typeName": "TextContent",
+      "props": {
+       "text": "dt(bad)"
+      },
+      "partial": false,
+      "hasDynamicProps": true
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": true,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "dexActions": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "Buttons",
+      "props": {
+       "buttons": [
+        {
+         "type": "element",
+         "typeName": "Button",
+         "props": {
+          "label": "Open",
+          "action": {
+           "steps": [
+            {
+             "type": "custom_action",
+             "name": "OpenChat",
+             "params": {
+              "sessionId": "s1"
+             }
+            }
+           ]
+          }
+         },
+         "partial": false,
+         "hasDynamicProps": true
+        },
+        {
+         "type": "element",
+         "typeName": "Button",
+         "props": {
+          "label": "Copy",
+          "action": {
+           "steps": [
+            {
+             "type": "custom_action",
+             "name": "Copy",
+             "params": {
+              "text": "hi"
+             }
+            }
+           ]
+          }
+         },
+         "partial": false,
+         "hasDynamicProps": true
+        },
+        {
+         "type": "element",
+         "typeName": "Button",
+         "props": {
+          "label": "Bad",
+          "action": {
+           "steps": []
+          }
+         },
+         "partial": false,
+         "hasDynamicProps": true
+        },
+        {
+         "type": "element",
+         "typeName": "Button",
+         "props": {
+          "label": "Url",
+          "action": {
+           "steps": [
+            {
+             "type": "open_url",
+             "url": "https://example.com"
+            }
+           ]
+          }
+         },
+         "partial": false,
+         "hasDynamicProps": true
+        }
+       ]
+      },
+      "partial": false,
+      "hasDynamicProps": true
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": true,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "charts": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "BarChart",
+      "props": {
+       "labels": [
+        "a",
+        "b"
+       ],
+       "series": [
+        {
+         "type": "element",
+         "typeName": "Series",
+         "props": {
+          "category": "x",
+          "values": [
+           1,
+           2
+          ]
+         },
+         "partial": false,
+         "hasDynamicProps": false
+        },
+        {
+         "type": "element",
+         "typeName": "Series",
+         "props": {
+          "category": "y",
+          "values": [
+           3,
+           4
+          ]
+         },
+         "partial": false,
+         "hasDynamicProps": false
+        }
+       ],
+       "variant": "stacked"
+      },
+      "partial": false,
+      "hasDynamicProps": false
+     },
+     {
+      "type": "element",
+      "typeName": "PieChart",
+      "props": {
+       "labels": [
+        "p",
+        "q"
+       ],
+       "values": [
+        60,
+        40
+       ],
+       "variant": "donut"
+      },
+      "partial": false,
+      "hasDynamicProps": false
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": false,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "partialTail": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "TextContent",
+      "props": {
+       "text": "Hello wor"
+      },
+      "partial": true,
+      "hasDynamicProps": false,
+      "statementId": "t"
+     }
+    ]
+   },
+   "partial": true,
+   "hasDynamicProps": false,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "halfStatement": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "CardHeader",
+      "props": {
+       "title": "Report"
+      },
+      "partial": true,
+      "hasDynamicProps": false,
+      "statementId": "header"
+     },
+     {
+      "type": "element",
+      "typeName": "Table",
+      "props": {
+       "columns": [
+        {
+         "type": "element",
+         "typeName": "Col",
+         "props": {
+          "label": "A",
+          "data": [
+           1,
+           2
+          ]
+         },
+         "partial": true,
+         "hasDynamicProps": false
+        }
+       ]
+      },
+      "partial": true,
+      "hasDynamicProps": false,
+      "statementId": "tbl"
+     }
+    ]
+   },
+   "partial": true,
+   "hasDynamicProps": false,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "duplicate": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "TextContent",
+      "props": {
+       "text": "second"
+      },
+      "partial": false,
+      "hasDynamicProps": false,
+      "statementId": "t"
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": false,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "member": {
+  "root": {
+   "type": "element",
+   "typeName": "Card",
+   "props": {
+    "children": [
+     {
+      "type": "element",
+      "typeName": "TextContent",
+      "props": {
+       "text": "v20210"
+      },
+      "partial": false,
+      "hasDynamicProps": true
+     }
+    ]
+   },
+   "partial": false,
+   "hasDynamicProps": true,
+   "statementId": "root"
+  },
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {
+   "$o": {
+    "a": {
+     "b": [
+      10,
+      20
+     ]
+    }
+   }
+  }
+ },
+ "junk": {
+  "root": null,
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ },
+ "empty": {
+  "root": null,
+  "errors": [],
+  "runtimeErrors": [],
+  "queries": [],
+  "state": {}
+ }
+}
