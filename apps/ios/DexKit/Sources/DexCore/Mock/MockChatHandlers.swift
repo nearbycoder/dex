@@ -165,33 +165,9 @@ extension MockAgent {
             self.broadcast(self.artifactsMessage(id), sessionId: id)
             return ["url": .string(artifact.url), "name": .string(name), "kind": .string(artifact.kind), "size": 2048]
         }
-        register("resolvePendingAction") { [unowned self] args, _ in
-            guard let index = self.state.access.pending.firstIndex(where: { $0.id == args.string(0) }) else { throw AgentError.remote("That request is gone.") }
-            self.state.access.pending[index].status = args.value(1).bool == true ? "approved" : "declined"
-            self.publish()
-            return .null
-        }
-        register("searchSkills") { args, _ in
-            let query = (args.string(0) ?? "").lowercased()
-            return try JSONValue(encoding: MockAgent.directorySkills.filter { $0.id.contains(query) })
-        }
-        register("installSkill") { [unowned self] args, _ in
-            guard let source = args.string(0), let skillId = args.string(1) else { throw AgentError.remote("Missing skill") }
-            try? await Task.sleep(for: self.chunkDelay * 6)
-            let skill = SkillInfo(id: skillId, description: "Installed from \(source).", source: source, path: "skills/\(skillId)", auto: true, files: 1, size: 3_000, installedAt: .nowMs, updatedAt: .nowMs)
-            self.state.skills.removeAll { $0.id == skillId }
-            self.state.skills.append(skill)
-            self.publish()
-            return try JSONValue(encoding: skill)
-        }
     }
 
-    /// skills.sh, as the mock knows it.
-    static let directorySkills = [
-        DirectorySkill(id: "vercel-labs/agent-skills/react-best-practices", source: "vercel-labs/agent-skills", skillId: "react-best-practices", name: "react-best-practices", installs: 48_200),
-        DirectorySkill(id: "anthropics/skills/pdf", source: "anthropics/skills", skillId: "pdf", name: "pdf", installs: 12_400),
-        DirectorySkill(id: "anthropics/skills/frontend-design", source: "anthropics/skills", skillId: "frontend-design", name: "frontend-design", installs: 30_100)
-    ]
+    // skills.sh, installs, and pending-action answers are the Library and Settings mocks' (they install later).
 
     public static let toolsChatId = "s-tools"
     public static let mediaChatId = "s-media"

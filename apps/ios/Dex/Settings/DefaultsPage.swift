@@ -131,7 +131,7 @@ struct DefaultsPage: View {
                     if let thinking { patch["defaultThinking"] = .string(thinking) }
                     client.perform { try await client.run("updateSettings", .object(patch)) }
                 }
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.large])
             }
             .onAppear {
                 guard !loaded else { return }

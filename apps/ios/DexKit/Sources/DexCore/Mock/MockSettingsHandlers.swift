@@ -15,9 +15,10 @@ extension MockAgent {
     /// scheduled prompts, and workspace files.
     private func installSettingsFixtures() {
         let now = Double.nowMs
-        state.access.pending = [
+        // Added to (not replacing) the chat fixtures' pending actions.
+        state.access.pending.append(
             PendingAction(id: "pa-1", sessionId: MockData.welcomeId, operation: "app_update_settings", summary: "Change the default model to Kimi K3", createdAt: now - 4 * 60_000, status: "pending")
-        ]
+        )
         state.access.audit.insert(
             AuditEntry(id: 3, at: now - 30 * 60_000, actor: "ui", actorLabel: "Site traffic this week", operation: "app_delete_session", summary: "Delete a chat", ok: false, error: "Chat not found"),
             at: 0

@@ -126,14 +126,14 @@ final class MachineUITests: DexUITestCase {
         showPanel("Ports")
         let field = element("ports.field")
         XCTAssertTrue(field.waitForExistence(timeout: 5))
+        // Type into the focused field (`field.typeText` would tap it again if focus hasn't landed yet).
         field.tap()
-        field.typeText("3000")
+        _ = app.keyboards.firstMatch.waitForExistence(timeout: 5)
+        app.typeText("3000")
+        XCTAssertFalse(app.otherElements["PopoverDismissRegion"].exists, "no popover keyboard in the way of Get URL")
         let expose = element("ports.expose")
-        XCTAssertTrue(waitFor { expose.isEnabled })
+        XCTAssertTrue(waitFor { expose.isEnabled && expose.isHittable })
         expose.tap()
-        // On the iPad simulator (hardware keyboard) the first synthesized tap after typing doesn't reach the button
-        // while the field keeps focus; a second one does.
-        if !element("ports.url").waitForExistence(timeout: 3) { expose.tap() }
         let url = element("ports.url")
         XCTAssertTrue(url.waitForExistence(timeout: 10))
         XCTAssertTrue(url.label.contains("3000-box-1234.boat.dev"))

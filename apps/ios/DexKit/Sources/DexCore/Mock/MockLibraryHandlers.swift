@@ -154,7 +154,9 @@ extension MockAgent {
         DirectorySkill(source: "obra/superpowers", skillId: "test-driven-development", name: "test-driven-development", installs: 7_350),
         DirectorySkill(source: "obra/superpowers", skillId: "code-review", name: "code-review", installs: 12_900),
         DirectorySkill(source: "vercel-labs/agent-skills", skillId: "seo-audit", name: "seo-audit", installs: 1_280),
-        DirectorySkill(source: "mattpocock/skills", skillId: "write-docs", name: "write-docs", installs: 640)
+        DirectorySkill(source: "mattpocock/skills", skillId: "write-docs", name: "write-docs", installs: 640),
+        // The chat's slash menu looks this one up (ChatUITests).
+        DirectorySkill(source: "vercel-labs/agent-skills", skillId: "react-best-practices", name: "react-best-practices", installs: 48_200)
     ]
 
     private static func mockPreview(_ skill: DirectorySkill) -> SkillPreview {
