@@ -37,8 +37,9 @@ import org.robolectric.annotation.GraphicsMode
 import org.robolectric.shadows.ShadowLooper
 
 /**
- * Screens at each form factor, for checking styling and adaptive layouts: a phone, a flip phone's cover screen, a
- * book foldable open, a tablet in landscape, and a desktop window. Record with `./gradlew :app:recordRoborazziDebug`.
+ * Screens at each form factor, in light and dark, for checking styling and adaptive layouts: a phone, a flip phone's
+ * cover screen, a book foldable open, a tablet in landscape, and a desktop window. Record with
+ * `./gradlew :app:recordRoborazziDebug`.
  */
 @RunWith(ParameterizedRobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -47,12 +48,14 @@ class ScreenshotTest(private val device: String, private val qualifiers: String)
         @JvmStatic
         @ParameterizedRobolectricTestRunner.Parameters(name = "{0}")
         fun devices() = listOf(
-            arrayOf("phone", "w411dp-h891dp-port-xxhdpi"),
-            arrayOf("flip-cover", "w340dp-h380dp-port-xhdpi"),
-            arrayOf("fold-open", "w674dp-h841dp-port-xhdpi"),
-            arrayOf("tablet", "w1280dp-h800dp-land-xhdpi"),
-            arrayOf("desktop", "w1600dp-h1000dp-land-mdpi"),
-        )
+            Triple("phone", "w411dp-h891dp-port", "xxhdpi"),
+            Triple("flip-cover", "w340dp-h380dp-port", "xhdpi"),
+            Triple("fold-open", "w674dp-h841dp-port", "xhdpi"),
+            Triple("tablet", "w1280dp-h800dp-land", "xhdpi"),
+            Triple("desktop", "w1600dp-h1000dp-land", "mdpi"),
+        ).flatMap { (name, screen, density) ->
+            listOf(arrayOf(name, "$screen-notnight-$density"), arrayOf("$name-dark", "$screen-night-$density"))
+        }
     }
 
     @get:Rule val rule = createComposeRule()
