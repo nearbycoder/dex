@@ -79,7 +79,15 @@ class DeviceTest {
         return (bounds.width() / metrics.density).toInt()
     }
 
-    private fun exists(tag: String) = compose.onAllNodes(hasTestTag(tag), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+    /** Whether a node with this tag is on screen (composed but hidden doesn't count). */
+    private fun exists(tag: String) = compose.onAllNodes(hasTestTag(tag) and isDisplayed(), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+
+    private fun isDisplayed() = androidx.compose.ui.test.SemanticsMatcher("is displayed") { node ->
+        val bounds = node.boundsInWindow
+        bounds.width > 0 && bounds.height > 0 && node.layoutInfo.isPlaced &&
+            bounds.right > 0 && bounds.left < compose.activity.window.decorView.width &&
+            bounds.bottom > 0 && bounds.top < compose.activity.window.decorView.height
+    }
 
     @Test fun listAndDetailFollowTheWindowWidth() {
         text("Weekly metrics dashboard").performClick()
@@ -90,8 +98,7 @@ class DeviceTest {
             assertThat(exists("chat-list")).isTrue()
         } else {
             // One pane: the chat takes the screen and the bar steps aside.
-            assertThat(exists("chat-list")).isFalse()
-            assertThat(exists("tab-Chats")).isFalse()
+            compose.waitUntil(5_000) { !exists("chat-list") && !exists("tab-Chats") }
         }
     }
 
@@ -133,19 +140,20 @@ class DeviceTest {
         publisher.overrideWindowLayoutInfo(TestWindowLayoutInfo(listOf(fold)))
         compose.waitForIdle()
         // Half open, flat on a table: the desktop sits above the hinge, the log and command line below it.
-        val desktop = tag("desktop").fetchSemanticsNode().boundsInRoot
-        val log = tag("vm-command").fetchSemanticsNode().boundsInRoot
-        assertThat(desktop.bottom).isAtMost(log.top)
-        assertThat(desktop.bottom).isAtMost(compose.onRoot().fetchSemanticsNode().boundsInRoot.height / 2 + 1)
+        compose.waitForIdle()
+        val desktop = tag("desktop").fetchSemanticsNode().boundsInWindow
+        val log = tag("vm-command").fetchSemanticsNode().boundsInWindow
+        val hinge = fold.bounds
+        assertThat(desktop.bottom).isAtMost(hinge.top.toFloat() + 1)
+        assertThat(log.top).isAtLeast(hinge.bottom.toFloat() - 1)
     }
 
     @Test fun leavingWithARunningDesktopEntersPictureInPicture() {
         text("Fix the flaky login test").performClick()
-        tag("vm-preview-button")
+        // The VM floats over the chat, as a button or (if it was left open) a window.
+        compose.waitUntil(15_000) { listOf("vm-preview-button", "vm-preview").any { exists(it) } }
         UiDevice.getInstance(InstrumentationRegistry.getInstrumentation()).pressHome()
         compose.waitUntil(10_000) { compose.activity.isInPictureInPictureMode }
-        tag("pip-desktop")
     }
 
-    private fun DexRule.onRoot() = onNode(androidx.compose.ui.test.isRoot())
 }

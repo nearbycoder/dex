@@ -50,6 +50,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -107,8 +108,15 @@ fun MessageList(
     val scope = rememberCoroutineScope()
     val atBottom by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset < 80 } }
     val lastUser = items.lastOrNull { it is DisplayItem.User }?.id to pending.size
-    // Sending something always brings you to the bottom.
-    LaunchedEffect(lastUser) { listState.scrollToItem(0) }
+    // Sending something always brings you to the bottom (it opens there already). A frame later, so it never lands
+    // in the middle of a layout pass.
+    var seen by remember { mutableStateOf(lastUser) }
+    LaunchedEffect(lastUser) {
+        if (lastUser == seen) return@LaunchedEffect
+        seen = lastUser
+        withFrameNanos { }
+        listState.scrollToItem(0)
+    }
 
     Box(modifier) {
         LazyColumn(

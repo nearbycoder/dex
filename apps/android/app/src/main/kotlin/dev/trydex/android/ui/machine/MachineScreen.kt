@@ -79,6 +79,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
@@ -246,7 +248,9 @@ fun MachineScreen(key: String, beside: Boolean = false) {
                     val mode = DesktopMode.saved(prefs.desktopMode)
                     val desktop = rememberDesktopUrl(key, mode, vm.running)
                     val activity = rememberVmActivity(key)
-                    val tabletop = currentWindowAdaptiveInfo().windowPosture.isTabletop
+                    val posture = currentWindowAdaptiveInfo().windowPosture
+                    val tabletop = posture.isTabletop
+                    val hinge = posture.hingeList.firstOrNull()?.bounds
                     val header: @Composable ColumnScope.() -> Unit = {
                         TitleRow(vm, label!!)
                         Banners(vm, error, busy) { act("setup") { repository.api.vmRerunSetup(key) } }
@@ -261,10 +265,11 @@ fun MachineScreen(key: String, beside: Boolean = false) {
                     BoxWithConstraints(Modifier.fillMaxSize()) {
                         when {
                             // Half-folded: the desktop above the fold, the log and command line below it.
-                            tabletop -> Column(Modifier.fillMaxSize()) {
-                                desktopPanel(Modifier.weight(1f).fillMaxWidth().padding(8.dp), false)
-                                activityPanel(Modifier.weight(1f).fillMaxWidth().padding(8.dp))
-                            }
+                            tabletop -> TabletopSplit(
+                                hinge,
+                                top = { desktopPanel(it, false) },
+                                bottom = { activityPanel(it) },
+                            )
                             maxWidth >= 840.dp && !beside -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                                 header()
                                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.height(560.dp)) {
@@ -284,6 +289,24 @@ fun MachineScreen(key: String, beside: Boolean = false) {
                     }
                 }
             }
+        }
+    }
+}
+
+/** Half folded on a table: [top] fills the screen above the hinge, [bottom] the part below it. */
+@Composable
+private fun TabletopSplit(hinge: androidx.compose.ui.geometry.Rect?, top: @Composable (Modifier) -> Unit, bottom: @Composable (Modifier) -> Unit) {
+    var origin by remember { mutableStateOf<Float?>(null) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    BoxWithConstraints(Modifier.fillMaxSize().onGloballyPositioned { origin = it.positionInWindow().y }) {
+        val total = constraints.maxHeight.toFloat()
+        val start = origin
+        val above = if (hinge != null && start != null) (hinge.top - start).coerceIn(0f, total) else total / 2
+        val below = if (hinge != null && start != null) (hinge.bottom - start).coerceIn(above, total) else above
+        Column(Modifier.fillMaxSize()) {
+            top(Modifier.height(with(density) { above.toDp() }).fillMaxWidth().padding(8.dp))
+            Spacer(Modifier.height(with(density) { (below - above).toDp() }))
+            bottom(Modifier.weight(1f).fillMaxWidth().padding(8.dp))
         }
     }
 }
@@ -429,7 +452,12 @@ private fun DesktopPanel(vm: VmInfo, mode: DesktopMode, desktop: DesktopUrl, mod
 private fun ActivityPanel(vm: VmInfo, items: List<VmActivity>?, connected: Boolean, running: Boolean, modifier: Modifier, onRun: (String) -> Unit) {
     var command by rememberSaveable(vm.key) { mutableStateOf("") }
     val list = rememberLazyListState()
-    LaunchedEffect(items?.size) { if (!items.isNullOrEmpty()) list.scrollToItem(items.lastIndex) }
+    // The newest at the bottom, in view; a frame later, so it never lands in the middle of a layout pass.
+    LaunchedEffect(items?.size) {
+        if (items.isNullOrEmpty()) return@LaunchedEffect
+        androidx.compose.runtime.withFrameNanos { }
+        list.scrollToItem(items.lastIndex)
+    }
     Panel("Activity", Icons.Outlined.Terminal, modifier) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
