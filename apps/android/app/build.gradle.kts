@@ -53,6 +53,31 @@ android {
     }
 }
 
+/** Copies what the app shares with the web from apps/web (model maker logos), so it's never duplicated. */
+abstract class SyncWebAssets : DefaultTask() {
+    @get:InputDirectory abstract val models: DirectoryProperty
+    @get:OutputDirectory abstract val output: DirectoryProperty
+
+    @TaskAction
+    fun sync() {
+        val out = output.get().asFile
+        out.deleteRecursively()
+        val target = out.resolve("models").apply { mkdirs() }
+        models.get().asFile.listFiles { file -> file.extension == "svg" }?.forEach { it.copyTo(target.resolve(it.name)) }
+    }
+}
+
+val syncWebAssets = tasks.register<SyncWebAssets>("syncWebAssets") {
+    models.set(rootProject.layout.projectDirectory.dir("../web/public/models"))
+    output.set(layout.buildDirectory.dir("generated/webAssets"))
+}
+
+androidComponents {
+    onVariants { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(syncWebAssets, SyncWebAssets::output)
+    }
+}
+
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
@@ -117,6 +142,8 @@ dependencies {
     implementation(libs.commonmark.autolink)
     implementation(libs.commonmark.task.list)
 
+    // The demo (Settings → sign-in screen) runs against an in-process fake Dex; never in a release build.
+    debugImplementation(project(":core:fake"))
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 
@@ -134,6 +161,7 @@ dependencies {
     testImplementation(libs.androidx.test.ext.junit)
     testImplementation(libs.androidx.window.testing)
     testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(project(":core:fake"))
 
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
@@ -146,4 +174,5 @@ dependencies {
     androidTestImplementation(libs.androidx.window.testing)
     androidTestImplementation(libs.truth)
     androidTestImplementation(libs.okhttp.mockwebserver)
+    androidTestImplementation(project(":core:fake"))
 }
