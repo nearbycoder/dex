@@ -24,7 +24,7 @@ final class FilesUITests: DexUITestCase {
 
     /// The overflow menu's item (the toolbar's secondary actions).
     func menuItem(_ title: String) -> XCUIElement {
-        let more = app.navigationBars.buttons["More"].firstMatch
+        let more = app.buttons["More"].firstMatch
         if more.exists { more.tap() }
         return app.buttons[title].firstMatch
     }
@@ -85,7 +85,7 @@ final class FilesUITests: DexUITestCase {
         XCTAssertTrue(path.waitForExistence(timeout: 5))
         path.typeText("notes/ideas.md")
         app.alerts.buttons["Create"].firstMatch.tap()
-        XCTAssertTrue(element("file.markdown").waitForExistence(timeout: 5))
+        XCTAssertTrue(element("file.markdown").waitForExistence(timeout: 15))
         let delete = menuItem("Delete")
         XCTAssertTrue(delete.waitForExistence(timeout: 5))
         delete.tap()

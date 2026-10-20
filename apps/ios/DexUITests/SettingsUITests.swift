@@ -19,6 +19,12 @@ final class SettingsUITests: DexUITestCase {
 
     func element(_ id: String) -> XCUIElement { app.descendants(matching: .any)[id].firstMatch }
 
+    /// The navigation back button (in the bar, or the foldable's side toolbar).
+    func goBack() {
+        let back = app.buttons["BackButton"].firstMatch
+        if back.exists { back.tap() } else { app.navigationBars.buttons.element(boundBy: 0).tap() }
+    }
+
     /// Any element whose label contains `fragment` (rows combine their texts into one label).
     func text(_ fragment: String) -> XCUIElement {
         app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", fragment)).firstMatch
@@ -41,7 +47,22 @@ final class SettingsUITests: DexUITestCase {
         XCTAssertTrue(toggle.waitForExistence(timeout: 5), "No switch \(id)")
         // The switch itself, not its label (iOS 26 rows).
         let knob = toggle.switches.firstMatch
+        let before = isOn(id)
         (knob.exists ? knob : toggle).tap()
+        // The foldable's side toolbar can swallow a tap on the knob: try the switch's own end of the row.
+        let permissionAlert = XCUIApplication(bundleIdentifier: "com.apple.springboard").alerts.firstMatch
+        if isOn(id) == before, !waitForChange(id, from: before), !permissionAlert.exists {
+            toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+        }
+    }
+
+    private func waitForChange(_ id: String, from value: Bool) -> Bool {
+        let deadline = Date.now.addingTimeInterval(2)
+        while Date.now < deadline {
+            if isOn(id) != value { return true }
+            usleep(200_000)
+        }
+        return false
     }
 
     func isOn(_ id: String) -> Bool {
@@ -58,7 +79,7 @@ final class SettingsUITests: DexUITestCase {
             openSettings(page)
             XCTAssertTrue(app.navigationBars.element(boundBy: app.navigationBars.count - 1).waitForExistence(timeout: 5))
             snapshot("settings-\(page)")
-            if !isRegularWidth { app.navigationBars.buttons.element(boundBy: 0).tap() }
+            if !isRegularWidth { goBack() }
         }
     }
 
@@ -129,6 +150,8 @@ final class SettingsUITests: DexUITestCase {
         let model = element("defaults.model")
         XCTAssertTrue(model.waitForExistence(timeout: 5))
         model.tap()
+        let search = app.searchFields.firstMatch
+        if search.waitForExistence(timeout: 5) { search.tap(); search.typeText("Kimi") }
         let kimi = element("model.cline-pass/kimi-k3")
         XCTAssertTrue(kimi.waitForExistence(timeout: 5))
         kimi.tap()
@@ -209,10 +232,10 @@ final class SettingsUITests: DexUITestCase {
 
         // Shown once: the page only lists the token.
         let row = element("token.Laptop")
-        XCTAssertTrue(row.waitForExistence(timeout: 5))
         XCTAssertTrue(element("token.warning").waitForNonExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'dexk.'")).firstMatch.exists)
         reveal(row)
+        XCTAssertTrue(row.waitForExistence(timeout: 5))
         row.swipeLeft()
         let revoke = app.buttons["Revoke"].firstMatch
         if !revoke.waitForExistence(timeout: 3) { row.press(forDuration: 1.2) }
@@ -240,12 +263,20 @@ final class SettingsUITests: DexUITestCase {
         openSettings("notifications")
         let enabled = app.switches["notify.enabled"].firstMatch
         XCTAssertTrue(enabled.waitForExistence(timeout: 5))
-        if !app.switches["notify.kind.scheduled"].exists {
-            flip("notify.enabled")
+        let turnOn = {
+            self.flip("notify.enabled")
             let allow = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons["Allow"]
             if allow.waitForExistence(timeout: 5) { allow.tap() }
         }
-        XCTAssertTrue(app.switches["notify.kind.scheduled"].waitForExistence(timeout: 10))
+        if !isOn("notify.enabled") { turnOn() }
+        // iOS answers the permission request asynchronously.
+        let deadline = Date.now.addingTimeInterval(10)
+        while !isOn("notify.enabled"), Date.now < deadline { usleep(250_000) }
+        XCTAssertTrue(isOn("notify.enabled"))
+        // The kinds show while notifications are on (lower rows appear once scrolled to).
+        let kind = app.switches["notify.kind.scheduled"].firstMatch
+        reveal(kind)
+        XCTAssertTrue(kind.waitForExistence(timeout: 10))
         let wasOn = isOn("notify.kind.scheduled")
         flip("notify.kind.scheduled")
         XCTAssertNotEqual(isOn("notify.kind.scheduled"), wasOn)
@@ -259,6 +290,7 @@ final class SettingsUITests: DexUITestCase {
         XCTAssertFalse(isOn("push.kind.mcp"))
         flip("push.kind.mcp")
         XCTAssertTrue(NSPredicate(format: "value == '1'").evaluate(with: app.switches["push.kind.mcp"].firstMatch) || isOn("push.kind.mcp"))
+        reveal(element("push.test"))
         element("push.test").tap()
         XCTAssertTrue(element("message.error").waitForExistence(timeout: 5), "The device's delivery error comes back from the test")
         let remove = element("push.remove")
