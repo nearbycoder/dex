@@ -27,7 +27,10 @@ public protocol AgentTransportFactory: Sendable {
 /// cookie and no Origin header (the agent route rejects other origins).
 public final class WebSocketTransport: NSObject, AgentTransport, URLSessionWebSocketDelegate, @unchecked Sendable {
     private let request: URLRequest
+    private let server: URL
+    private let token: String
     private let lock = NSLock()
+    private var opened = false
     private var session: URLSession?
     private var task: URLSessionWebSocketTask?
     private var handler: (@Sendable (TransportEvent) -> Void)?
@@ -42,6 +45,8 @@ public final class WebSocketTransport: NSObject, AgentTransport, URLSessionWebSo
         request.setValue("\(DexHTTP.sessionCookie)=\(token)", forHTTPHeaderField: "Cookie")
         request.timeoutInterval = 30
         self.request = request
+        self.server = server
+        self.token = token
     }
 
     public func open(_ handler: @escaping @Sendable (TransportEvent) -> Void) {
@@ -81,6 +86,7 @@ public final class WebSocketTransport: NSObject, AgentTransport, URLSessionWebSo
 
     private func emit(_ event: TransportEvent) {
         let handler = lock.withLock { finished ? nil : self.handler }
+        if case .opened = event { lock.withLock { opened = true } }
         handler?(event)
     }
 
@@ -90,8 +96,19 @@ public final class WebSocketTransport: NSObject, AgentTransport, URLSessionWebSo
             finished = true
             return self.handler
         }
-        handler?(.closed(code: code, reason: reason, httpStatus: httpStatus))
         lock.withLock { session }?.invalidateAndCancel()
+        guard let handler else { return }
+        // URLSession doesn't say why an upgrade was refused, so a socket that never opened asks over HTTP whether the
+        // session still works (`/api/version` answers 401 when it doesn't): that's "sign in again", not "retry".
+        if httpStatus == nil, !lock.withLock({ opened }) {
+            let probe = DexHTTP.request(server.appending(path: "api/version"), token: token)
+            Task {
+                let status = (try? await DexHTTP.session.data(for: probe)).flatMap { ($0.1 as? HTTPURLResponse)?.statusCode }
+                handler(.closed(code: code, reason: reason, httpStatus: status == 401 ? 401 : nil))
+            }
+            return
+        }
+        handler(.closed(code: code, reason: reason, httpStatus: httpStatus))
     }
 
     public func send(_ text: String) {
