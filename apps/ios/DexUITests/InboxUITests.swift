@@ -131,7 +131,7 @@ final class InboxUITests: ChatTestCase {
         box.tap()
         box.typeText("Hold on a moment")
         app.buttons["composer.send"].tap()
-        if !isRegularWidth { app.navigationBars.buttons.firstMatch.tap() }
+        if !isRegularWidth { app.buttons["BackButton"].firstMatch.tap() }
         XCTAssertTrue(wait(row("s-welcome"), "label CONTAINS 'working'"))
         snapshot("inbox-working")
     }

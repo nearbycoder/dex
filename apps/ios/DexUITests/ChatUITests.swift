@@ -108,8 +108,13 @@ final class ChatUITests: ChatTestCase {
         // The screenshot was left out of the transcript and loads by its ref.
         XCTAssertTrue(element("chat.screenshot").waitForExistence(timeout: 10))
         snapshot("activity-open")
-        element("chat.tool.web_search").tap()
-        XCTAssertTrue(element("tool.search.results").waitForExistence(timeout: 5), "search results are listed")
+        let search = element("chat.tool.web_search")
+        // Below the navigation bar (a short screen may have scrolled it under).
+        for _ in 0..<4 where search.frame.minY < 140 { element("chat.transcript").swipeDown() }
+        search.tap()
+        let results = element("tool.search.results")
+        for _ in 0..<4 where !(results.exists && results.isHittable) { element("chat.transcript").swipeUp() }
+        XCTAssertTrue(results.waitForExistence(timeout: 5), "search results are listed")
         element("chat.tool.web_search").tap()
         XCTAssertTrue(wait(element("tool.search.results"), "exists == false", timeout: 5))
         app.buttons.matching(identifier: "chat.tool.bash").firstMatch.tap()
@@ -239,8 +244,16 @@ final class ChatUITests: ChatTestCase {
         XCTAssertTrue(text(containing: "No model matches").waitForExistence(timeout: 5))
         XCTAssertTrue(refresh.waitForExistence(timeout: 3))
         refresh.tap()
-        // A sheet has Done; a popover (iPad) closes when you tap outside it.
-        if app.buttons["model.done"].exists { app.buttons["model.done"].tap() } else { app.otherElements["PopoverDismissRegion"].tap() }
+        sleep(2)
+        XCTAssertTrue(search.exists, "the list stays open while it refreshes")
+        // A popover (iPad) closes when you tap outside it; the sheet swipes away (an active search hides its Done).
+        if app.otherElements["PopoverDismissRegion"].exists {
+            app.otherElements["PopoverDismissRegion"].firstMatch.tap()
+        } else if app.buttons["model.done"].exists {
+            app.buttons["model.done"].tap()
+        } else {
+            element("model.sheet").swipeDown(velocity: .fast)
+        }
         XCTAssertFalse(element("notice").waitForExistence(timeout: 2), "no error")
     }
 
@@ -405,8 +418,11 @@ final class ChatUITests: ChatTestCase {
         // Fill the chat so there's somewhere to scroll.
         for (index, word) in ["One", "Two", "Three", "Four"].enumerated() {
             send("\(word): search for things")
-            let replies = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Two good sources'"))
-            XCTAssertTrue(wait(replies, "count >= \(index + 1)", timeout: 20), "the reply finishes")
+            // Each reply ends with its copy button (older ones may be unloaded on a short screen, so count users').
+            let sent = app.staticTexts.matching(NSPredicate(format: "label CONTAINS ': search for things'"))
+            XCTAssertTrue(wait(sent, "count >= 1", timeout: 10))
+            XCTAssertTrue(wait(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Two good sources'")), "count >= 1", timeout: 20))
+            XCTAssertTrue(wait(app.buttons["composer.stop"], "exists == false", timeout: 20), "the reply finishes")
         }
         let transcript = element("chat.transcript")
         XCTAssertFalse(app.buttons["chat.scrollToBottom"].exists, "pinned to the latest message")
@@ -428,6 +444,8 @@ final class ChatUITests: ChatTestCase {
         openChat("s-welcome")
         let bubble = app.descendants(matching: .any).matching(identifier: "chat.user").firstMatch
         XCTAssertTrue(bubble.waitForExistence(timeout: 10))
+        // On a short screen (the folded Duo) the first message is above the fold.
+        for _ in 0..<4 where !(bubble.isHittable && bubble.frame.minY > 100) { element("chat.transcript").swipeDown() }
         bubble.press(forDuration: 1.0)
         let edit = app.buttons["Edit as New Message"]
         XCTAssertTrue(edit.waitForExistence(timeout: 5))
