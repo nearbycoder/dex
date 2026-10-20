@@ -73,7 +73,14 @@ button{width:100%;margin-top:1rem;padding:.8rem;border:0;border-radius:.75rem;ba
 </style></head><body><main><img src="/favicon.svg" alt="" width="64" height="64"><h1>Sign in to the Dex app?</h1>
 <p>The Dex app on this device will be signed in as <b>@${name}</b>. Only continue if you started this from the app.</p>
 <form method="post" action="${NATIVE_FINISH_PATH}"><button type="submit">Continue as @${name}</button></form></main></body></html>`
-  return new Response(page, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } })
+  return new Response(page, {
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+      // Its own policy (server.ts keeps it): browsers apply form-action to the form's redirect, which goes to dex:.
+      "content-security-policy": "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; form-action 'self' dex:; frame-ancestors 'none'; base-uri 'none'"
+    }
+  })
 }
 
 /** `POST /auth/native/finish` (signed in, same origin): hands the app a sealed code for a fresh session token. */
