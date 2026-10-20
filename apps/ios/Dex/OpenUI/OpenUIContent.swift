@@ -430,7 +430,12 @@ struct OUIImage: View {
         AsyncImage(url: url, transaction: Transaction(animation: .smooth)) { phase in
             switch phase {
             case .success(let image):
-                if fill { image.resizable().scaledToFill() } else { image.resizable().scaledToFit().clipShape(.rect(cornerRadius: 12, style: .continuous)) }
+                if fill {
+                    // Fills whatever frame it's given, without the image's own size widening the layout.
+                    Color.clear.overlay { image.resizable().scaledToFill() }.clipped()
+                } else {
+                    image.resizable().scaledToFit().clipShape(.rect(cornerRadius: 12, style: .continuous))
+                }
             case .failure:
                 placeholder(symbol: "photo.badge.exclamationmark")
             default:

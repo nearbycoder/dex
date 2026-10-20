@@ -355,6 +355,7 @@ struct OUIFollowUpBlock: View {
 struct OUITable: View {
     let node: OpenUINode
     @Environment(OpenUICard.self) private var card
+    @State private var width: CGFloat = 0
 
     private static let pageSize = 10
 
@@ -375,13 +376,12 @@ struct OUITable: View {
             let page = min(card.local[node.local("page")]?.int ?? 0, pages - 1)
             let range = (page * Self.pageSize)..<min(rows, (page + 1) * Self.pageSize)
             VStack(alignment: .trailing, spacing: 8) {
-                // Spread across the card when it fits; otherwise it scrolls sideways inside the card.
-                ViewThatFits(in: .horizontal) {
-                    grid(columns, data: data, rows: range, spread: true)
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        grid(columns, data: data, rows: range, spread: false)
-                    }
+                // Columns as wide as their text (long text wraps at 240 points), spread over the card when there's
+                // room; wider tables scroll sideways inside the card.
+                ScrollView(.horizontal, showsIndicators: false) {
+                    grid(columns, data: data, rows: range, widths: Self.columnWidths(columns, data: data, rows: range, fitting: width))
                 }
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
                 .accessibilityIdentifier("openui.table")
                 if pages > 1 {
                     HStack(spacing: 10) {
@@ -401,54 +401,67 @@ struct OUITable: View {
         }
     }
 
-    private func grid(_ columns: [OpenUINode], data: [[OpenUIValue]], rows: Range<Int>, spread: Bool) -> some View {
-        Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 0) {
-            GridRow {
-                ForEach(Array(columns.enumerated()), id: \.offset) { _, column in
-                    let number = column.string("type") == "number"
+    private static let spacing: CGFloat = 16
+
+    private func grid(_ columns: [OpenUINode], data: [[OpenUIValue]], rows: Range<Int>, widths: [CGFloat]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: Self.spacing) {
+                ForEach(Array(columns.enumerated()), id: \.offset) { index, column in
                     Text(column.string("label") ?? "")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .textCase(.uppercase)
-                        .lineLimit(1)
-                        .fixedSize()
-                        .frame(maxWidth: spread ? .infinity : nil, alignment: number ? .trailing : .leading)
-                        .gridColumnAlignment(number ? .trailing : .leading)
-                        .padding(.vertical, 8)
+                        .lineLimit(2)
+                        .frame(width: widths[index], alignment: column.string("type") == "number" ? .trailing : .leading)
                 }
             }
+            .padding(.vertical, 8)
             ForEach(Array(rows), id: \.self) { row in
-                Divider().gridCellUnsizedAxes(.horizontal)
-                GridRow {
+                Divider()
+                HStack(alignment: .firstTextBaseline, spacing: Self.spacing) {
                     ForEach(Array(columns.enumerated()), id: \.offset) { index, column in
-                        let number = column.string("type") == "number"
-                        cell(row < data[index].count ? data[index][row] : .null, spread: spread)
-                            .frame(maxWidth: spread ? .infinity : nil, alignment: number ? .trailing : .leading)
-                            .padding(.vertical, 8)
+                        cell(row < data[index].count ? data[index][row] : .null)
+                            .frame(width: widths[index], alignment: column.string("type") == "number" ? .trailing : .leading)
                     }
                 }
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.vertical, 8)
             }
         }
     }
 
     @ViewBuilder
-    private func cell(_ value: OpenUIValue, spread: Bool) -> some View {
+    private func cell(_ value: OpenUIValue) -> some View {
         if case .node(let child) = value {
             OpenUINodeView(node: child).fixedSize()
         } else {
-            let text = Text(value.text ?? (value.isNull ? "" : value.json.jsonText)).font(.subheadline).monospacedDigit()
-            if spread {
-                text.fixedSize()
-            } else {
-                text.lineLimit(4).frame(width: min(260, Self.width(of: value)), alignment: .leading).fixedSize(horizontal: false, vertical: true)
-            }
+            Text(Self.text(value)).font(.subheadline).monospacedDigit().lineLimit(4)
         }
     }
 
-    /// About how wide a value's text is on one line (so short cells don't take the wrap width).
-    private static func width(of value: OpenUIValue) -> CGFloat {
-        let text = value.text ?? ""
-        return max(24, (text as NSString).size(withAttributes: [.font: UIFont.preferredFont(forTextStyle: .subheadline)]).width + 2)
+    private static func text(_ value: OpenUIValue) -> String {
+        value.text ?? (value.isNull ? "" : value.json.jsonText)
+    }
+
+    /// Each column's width: its widest text (wrapping at 240 points), spread over `available` when there's room.
+    static func columnWidths(_ columns: [OpenUINode], data: [[OpenUIValue]], rows: Range<Int>, fitting available: CGFloat) -> [CGFloat] {
+        let body = UIFont.preferredFont(forTextStyle: .subheadline)
+        let header = UIFont.systemFont(ofSize: UIFont.preferredFont(forTextStyle: .caption1).pointSize, weight: .semibold)
+        func measure(_ text: String, _ font: UIFont) -> CGFloat { ceil((text as NSString).size(withAttributes: [.font: font]).width) + 6 }
+        var widths = columns.enumerated().map { index, column in
+            let cells = rows.map { row -> CGFloat in
+                guard row < data[index].count else { return 0 }
+                if case .node = data[index][row] { return 90 }
+                return min(240, measure(text(data[index][row]), body))
+            }
+            return max(min(160, measure((column.string("label") ?? "").uppercased(), header)), cells.max() ?? 0, 24)
+        }
+        let total = widths.reduce(0, +) + spacing * CGFloat(max(columns.count - 1, 0))
+        if available > total, !widths.isEmpty {
+            let extra = (available - total) / CGFloat(widths.count)
+            widths = widths.map { $0 + extra }
+        }
+        return widths
     }
 }
 

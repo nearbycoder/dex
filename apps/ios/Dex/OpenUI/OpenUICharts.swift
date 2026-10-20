@@ -65,8 +65,8 @@ struct OUIPalette {
 
 // MARK: Bar, line, area
 
-/// Bar (grouped or stacked, vertical or horizontal), line, and area charts with Swift Charts. Touch and drag to read
-/// the values at a category; long category lists scroll sideways.
+/// Bar (grouped or stacked, vertical or horizontal), line, and area charts with Swift Charts. Tap to read the values
+/// at a category; long category lists scroll sideways.
 struct OUICartesianChart: View {
     let node: OpenUINode
     @Environment(\.colorScheme) private var colorScheme
@@ -158,7 +158,13 @@ struct OUICartesianChart: View {
                 }
             }
         }
-        if horizontal { base.chartYSelection(value: $selected) } else { base.chartXSelection(value: $selected) }
+        // A tap (not a drag, which would fight the chat's scrolling) shows the values at a category.
+        base.chartGesture { proxy in
+            SpatialTapGesture().onEnded { tap in
+                let category: String? = horizontal ? proxy.value(atY: tap.location.y) : proxy.value(atX: tap.location.x)
+                selected = category == selected ? nil : category
+            }
+        }
     }
 }
 

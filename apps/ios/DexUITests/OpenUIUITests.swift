@@ -17,10 +17,19 @@ final class OpenUIUITests: DexUITestCase {
         app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
     }
 
+
+    /// Drags the transcript by about a third of the screen (toward later content, or back up).
+    private func scroll(up: Bool) {
+        let transcript = app.scrollViews["chat.transcript"].firstMatch
+        let low = transcript.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.62))
+        let high = transcript.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+        if up { high.press(forDuration: 0.05, thenDragTo: low) } else { low.press(forDuration: 0.05, thenDragTo: high) }
+    }
+
     /// Scrolls the transcript until the element is on screen.
     private func reveal(_ element: XCUIElement, up: Bool = false) {
         for _ in 0..<12 where !(element.exists && element.isHittable) {
-            if up { app.swipeDown() } else { app.swipeUp() }
+            scroll(up: up)
         }
     }
 
@@ -53,17 +62,22 @@ final class OpenUIUITests: DexUITestCase {
         snapshot("openui-form-errors")
 
         let host = app.textFields["openui.field.host"]
-        host.tap()
-        host.typeText("db.example.com")
+        reveal(host); host.tap()
+        host.typeText("db.example.com\n")
         let user = app.textFields["openui.field.user"]
-        user.tap()
-        user.typeText("analytics")
+        reveal(user); user.tap()
+        user.typeText("analytics\n")
         let password = app.secureTextFields["openui.field.password"]
-        password.tap()
-        password.typeText("hunter2hunter2")
-        app.buttons["openui.field.ssl"].tap()
-        app.buttons["Require"].firstMatch.tap()
+        reveal(password); password.tap()
+        password.typeText("hunter2hunter2\n")
+        let ssl = app.buttons["openui.field.ssl"]
+        reveal(ssl)
+        ssl.tap()
+        let require = app.buttons["Require"].firstMatch
+        XCTAssertTrue(require.waitForExistence(timeout: 5))
+        require.tap()
         reveal(connect)
+        snapshot("openui-form-filled")
         connect.tap()
 
         let sent = text(containing: "[UI action] Connect the database")
@@ -133,14 +147,14 @@ final class OpenUIUITests: DexUITestCase {
         open("s-ui-gallery")
         XCTAssertTrue(app.staticTexts["Component gallery"].waitForExistence(timeout: 10))
         XCTAssertFalse(text(containing: "Unsupported component").exists)
-        reveal(app.staticTexts["Component gallery"], up: true)
+        reveal(app.staticTexts["Every OpenUI component Dex can show"], up: true)
         let charts = ["BarChart", "LineChart", "AreaChart", "RadarChart", "HorizontalBarChart", "PieChart", "RadialChart", "SingleStackedBarChart", "ScatterChart"]
         var seen = Set<String>()
         for shot in 1...14 {
             snapshot("openui-gallery-\(shot)")
             seen.formUnion(charts.filter { element("openui.chart.\($0)").exists })
             if text(containing: "all of them").isHittable { break }
-            app.swipeUp()
+            scroll(up: false)
         }
         XCTAssertEqual(seen, Set(charts))
         XCTAssertFalse(text(containing: "Unsupported component").exists)
