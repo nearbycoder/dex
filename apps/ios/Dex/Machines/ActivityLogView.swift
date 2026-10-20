@@ -102,6 +102,13 @@ struct VmActivityRow: View {
 
     private var isOpen: Bool { open ?? (startsOpen || item.status == "running") }
 
+    /// The output without its trailing line breaks.
+    private var shownOutput: String {
+        var output = item.output
+        while output.last?.isNewline == true { output.removeLast() }
+        return output
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Button {
@@ -129,9 +136,10 @@ struct VmActivityRow: View {
             .accessibilityIdentifier("activity.row")
 
             if isOpen, item.hasOutput {
-                let clipped = item.output.count > Self.inlineLimit
+                let shown = shownOutput
+                let clipped = shown.count > Self.inlineLimit
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(clipped ? "…" + String(item.output.suffix(Self.inlineLimit)) : item.output)
+                    Text(clipped ? "…" + String(shown.suffix(Self.inlineLimit)) : shown)
                         .font(.caption2.monospaced())
                         .foregroundStyle(item.status == "error" ? Color.red : Color.primary.opacity(0.85))
                         .textSelection(.enabled)
@@ -149,6 +157,10 @@ struct VmActivityRow: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
+        // A running entry opens and stays open (the web's ActivityItem).
+        .onChange(of: item.status, initial: true) { _, status in
+            if status == "running" { open = true }
+        }
         .contextMenu {
             Button { UIPasteboard.general.string = item.title } label: { Label(item.isCode ? "Copy Command" : "Copy", systemImage: "doc.on.doc") }
             if item.hasOutput {

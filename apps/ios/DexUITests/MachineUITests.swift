@@ -3,6 +3,11 @@ import XCTest
 
 /// The Machines tab, the Machine page, and the chat's picture-in-picture preview, on the mock agent's VMs.
 final class MachineUITests: DexUITestCase {
+    override func setUp() {
+        super.setUp()
+        XCUIDevice.shared.orientation = .portrait
+    }
+
     private func element(_ id: String) -> XCUIElement {
         app.descendants(matching: .any).matching(identifier: id).firstMatch
     }
@@ -126,6 +131,9 @@ final class MachineUITests: DexUITestCase {
         let expose = element("ports.expose")
         XCTAssertTrue(waitFor { expose.isEnabled })
         expose.tap()
+        // On the iPad simulator (hardware keyboard) the first synthesized tap after typing doesn't reach the button
+        // while the field keeps focus; a second one does.
+        if !element("ports.url").waitForExistence(timeout: 3) { expose.tap() }
         let url = element("ports.url")
         XCTAssertTrue(url.waitForExistence(timeout: 10))
         XCTAssertTrue(url.label.contains("3000-box-1234.boat.dev"))
@@ -177,13 +185,14 @@ final class MachineUITests: DexUITestCase {
 
     func testWideLayoutShowsTheLogBesideTheDesktop() throws {
         guard UIDevice.current.userInterfaceIdiom == .pad else { throw XCTSkip("The wide layout needs an iPad-sized window") }
+        openMachine()
+        XCTAssertTrue(app.segmentedControls["machine.panel"].exists)
+        // Landscape, with the app's sidebar hidden, leaves the Machine page room for the log beside the desktop.
         XCUIDevice.shared.orientation = .landscapeLeft
         defer { XCUIDevice.shared.orientation = .portrait }
-        launch()
-        openTab("Machines")
-        XCTAssertTrue(element("machine.row.s-vm").waitForExistence(timeout: 10))
-        element("machine.row.s-vm").tap()
-        XCTAssertTrue(element("machine.desktop").waitForExistence(timeout: 10))
+        let hide = app.buttons.matching(NSPredicate(format: "label == 'Hide Sidebar'")).firstMatch
+        if hide.waitForExistence(timeout: 3) { hide.tap() }
+        XCTAssertTrue(app.segmentedControls["machine.panel"].waitForNonExistence(timeout: 5))
         // Everything at once: no panel picker.
         XCTAssertTrue(element("machine.command").waitForExistence(timeout: 5))
         XCTAssertTrue(element("inspect.picker").exists)
@@ -222,8 +231,8 @@ final class MachineUITests: DexUITestCase {
         _ = waitFor { window.frame.width <= screen.width / 3 }
         let before = window.frame
         let left = before.minX - screen.minX < screen.maxX - before.maxX
-        element("vmPreview.titleBar").coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5))
-            .press(forDuration: 0.2, thenDragTo: app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: left ? 0.95 : 0.05, dy: 0.3)))
+        let grab = element("vmPreview.titleBar").coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5))
+        grab.press(forDuration: 0.2, thenDragTo: grab.withOffset(CGVector(dx: (left ? 1 : -1) * screen.width * 0.7, dy: -60)))
         XCTAssertTrue(waitFor { abs(window.frame.midX - before.midX) > 100 })
 
         // Resize it larger with the button, then close it back to a button.
