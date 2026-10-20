@@ -40,6 +40,10 @@ import { Route as ApiPushActionRouteImport } from './routes/api.push.action'
 import { Route as AuthGithubCallbackRouteImport } from './routes/auth.github.callback'
 import { Route as AuthGithubConnectRouteImport } from './routes/auth.github.connect'
 import { Route as AuthGithubStartRouteImport } from './routes/auth.github.start'
+import { Route as AuthNativeFinishRouteImport } from './routes/auth.native.finish'
+import { Route as AuthNativeRefreshRouteImport } from './routes/auth.native.refresh'
+import { Route as AuthNativeStartRouteImport } from './routes/auth.native.start'
+import { Route as AuthNativeTokenRouteImport } from './routes/auth.native.token'
 import { Route as AuthGithubConnectCallbackRouteImport } from './routes/auth.github.connect.callback'
 
 const IndexRoute = IndexRouteImport.update({
@@ -196,6 +200,26 @@ const AuthGithubStartRoute = AuthGithubStartRouteImport.update({
   path: '/auth/github/start',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthNativeFinishRoute = AuthNativeFinishRouteImport.update({
+  id: '/auth/native/finish',
+  path: '/auth/native/finish',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthNativeRefreshRoute = AuthNativeRefreshRouteImport.update({
+  id: '/auth/native/refresh',
+  path: '/auth/native/refresh',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthNativeStartRoute = AuthNativeStartRouteImport.update({
+  id: '/auth/native/start',
+  path: '/auth/native/start',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthNativeTokenRoute = AuthNativeTokenRouteImport.update({
+  id: '/auth/native/token',
+  path: '/auth/native/token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthGithubConnectCallbackRoute =
   AuthGithubConnectCallbackRouteImport.update({
     id: '/callback',
@@ -228,6 +252,10 @@ export interface FileRoutesByFullPath {
   '/auth/github/callback': typeof AuthGithubCallbackRoute
   '/auth/github/connect': typeof AuthGithubConnectRouteWithChildren
   '/auth/github/start': typeof AuthGithubStartRoute
+  '/auth/native/finish': typeof AuthNativeFinishRoute
+  '/auth/native/refresh': typeof AuthNativeRefreshRoute
+  '/auth/native/start': typeof AuthNativeStartRoute
+  '/auth/native/token': typeof AuthNativeTokenRoute
   '/agents/': typeof AppAgentsIndexRoute
   '/chat/': typeof AppChatIndexRoute
   '/machine/': typeof AppMachineIndexRoute
@@ -261,6 +289,10 @@ export interface FileRoutesByTo {
   '/auth/github/callback': typeof AuthGithubCallbackRoute
   '/auth/github/connect': typeof AuthGithubConnectRouteWithChildren
   '/auth/github/start': typeof AuthGithubStartRoute
+  '/auth/native/finish': typeof AuthNativeFinishRoute
+  '/auth/native/refresh': typeof AuthNativeRefreshRoute
+  '/auth/native/start': typeof AuthNativeStartRoute
+  '/auth/native/token': typeof AuthNativeTokenRoute
   '/agents': typeof AppAgentsIndexRoute
   '/chat': typeof AppChatIndexRoute
   '/machine': typeof AppMachineIndexRoute
@@ -296,6 +328,10 @@ export interface FileRoutesById {
   '/auth/github/callback': typeof AuthGithubCallbackRoute
   '/auth/github/connect': typeof AuthGithubConnectRouteWithChildren
   '/auth/github/start': typeof AuthGithubStartRoute
+  '/auth/native/finish': typeof AuthNativeFinishRoute
+  '/auth/native/refresh': typeof AuthNativeRefreshRoute
+  '/auth/native/start': typeof AuthNativeStartRoute
+  '/auth/native/token': typeof AuthNativeTokenRoute
   '/_app/agents/': typeof AppAgentsIndexRoute
   '/_app/chat/': typeof AppChatIndexRoute
   '/_app/machine/': typeof AppMachineIndexRoute
@@ -331,6 +367,10 @@ export interface FileRouteTypes {
     | '/auth/github/callback'
     | '/auth/github/connect'
     | '/auth/github/start'
+    | '/auth/native/finish'
+    | '/auth/native/refresh'
+    | '/auth/native/start'
+    | '/auth/native/token'
     | '/agents/'
     | '/chat/'
     | '/machine/'
@@ -364,6 +404,10 @@ export interface FileRouteTypes {
     | '/auth/github/callback'
     | '/auth/github/connect'
     | '/auth/github/start'
+    | '/auth/native/finish'
+    | '/auth/native/refresh'
+    | '/auth/native/start'
+    | '/auth/native/token'
     | '/agents'
     | '/chat'
     | '/machine'
@@ -398,6 +442,10 @@ export interface FileRouteTypes {
     | '/auth/github/callback'
     | '/auth/github/connect'
     | '/auth/github/start'
+    | '/auth/native/finish'
+    | '/auth/native/refresh'
+    | '/auth/native/start'
+    | '/auth/native/token'
     | '/_app/agents/'
     | '/_app/chat/'
     | '/_app/machine/'
@@ -421,6 +469,10 @@ export interface RootRouteChildren {
   AuthGithubCallbackRoute: typeof AuthGithubCallbackRoute
   AuthGithubConnectRoute: typeof AuthGithubConnectRouteWithChildren
   AuthGithubStartRoute: typeof AuthGithubStartRoute
+  AuthNativeFinishRoute: typeof AuthNativeFinishRoute
+  AuthNativeRefreshRoute: typeof AuthNativeRefreshRoute
+  AuthNativeStartRoute: typeof AuthNativeStartRoute
+  AuthNativeTokenRoute: typeof AuthNativeTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -642,6 +694,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthGithubStartRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth/native/finish': {
+      id: '/auth/native/finish'
+      path: '/auth/native/finish'
+      fullPath: '/auth/native/finish'
+      preLoaderRoute: typeof AuthNativeFinishRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/native/refresh': {
+      id: '/auth/native/refresh'
+      path: '/auth/native/refresh'
+      fullPath: '/auth/native/refresh'
+      preLoaderRoute: typeof AuthNativeRefreshRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/native/start': {
+      id: '/auth/native/start'
+      path: '/auth/native/start'
+      fullPath: '/auth/native/start'
+      preLoaderRoute: typeof AuthNativeStartRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/native/token': {
+      id: '/auth/native/token'
+      path: '/auth/native/token'
+      fullPath: '/auth/native/token'
+      preLoaderRoute: typeof AuthNativeTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth/github/connect/callback': {
       id: '/auth/github/connect/callback'
       path: '/callback'
@@ -721,6 +801,10 @@ const rootRouteChildren: RootRouteChildren = {
   AuthGithubCallbackRoute: AuthGithubCallbackRoute,
   AuthGithubConnectRoute: AuthGithubConnectRouteWithChildren,
   AuthGithubStartRoute: AuthGithubStartRoute,
+  AuthNativeFinishRoute: AuthNativeFinishRoute,
+  AuthNativeRefreshRoute: AuthNativeRefreshRoute,
+  AuthNativeStartRoute: AuthNativeStartRoute,
+  AuthNativeTokenRoute: AuthNativeTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

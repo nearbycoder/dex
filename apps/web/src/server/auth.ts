@@ -3,6 +3,7 @@ import { AppConfig } from "./config"
 import { Keys } from "./crypto"
 import { clearCookie, isSecureRequest, readCookie, serializeCookie } from "./cookies"
 import { GitHubOAuth } from "./github"
+import { NATIVE_FINISH_PATH, nativeChallenge } from "./native-auth"
 import { SESSION_COOKIE, SESSION_TTL_SECONDS, Sessions, SessionUser } from "./session"
 
 const STATE_COOKIE = "dex_oauth_state"
@@ -34,7 +35,8 @@ export const authOptions = Effect.gen(function*() {
 const signIn = Effect.fn("auth.signIn")(function*(request: Request, user: SessionUser, extraCookies: ReadonlyArray<string> = []) {
   const token = yield* (yield* Sessions).issue(user)
   const secure = isSecureRequest(request)
-  return redirect("/", [...extraCookies, serializeCookie(SESSION_COOKIE, token, { maxAge: SESSION_TTL_SECONDS, secure })])
+  // Signing in for the native app (native-auth.ts): go on to hand it the session.
+  return redirect(nativeChallenge(request) ? NATIVE_FINISH_PATH : "/", [...extraCookies, serializeCookie(SESSION_COOKIE, token, { maxAge: SESSION_TTL_SECONDS, secure })])
 })
 
 export const startGitHubLogin = Effect.fn("auth.startGitHubLogin")(function*(request: Request) {
