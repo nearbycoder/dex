@@ -5,7 +5,7 @@ import XCTest
 /// through ASWebAuthenticationSession, the server's login page, the native confirmation page, and the dex:// callback.
 final class LiveSignInUITests: XCTestCase {
     func testSignInWithDevLogin() throws {
-        guard let server = ProcessInfo.processInfo.environment["DEX_LIVE_SERVER"] else { throw XCTSkip("Set DEX_LIVE_SERVER to run") }
+        guard let server = ProcessInfo.processInfo.environment["DEX_LIVE_SERVER"], !server.isEmpty else { throw XCTSkip("Set DEX_LIVE_SERVER to run") }
         let app = XCUIApplication()
         app.launchArguments = ["-DexReset"]
         app.launch()

@@ -190,7 +190,7 @@ A monorepo, so the web app and future native apps live side by side and each dep
 apps/
   web/        the app: TanStack Start UI, the Cloudflare Worker, and the DexAgent Durable Object
               (its own package.json, wrangler.jsonc, and `npm run deploy`)
-  ios/        (planned) native iOS app
+  ios/        the native iPhone and iPad app (Swift, SwiftUI; see apps/ios/README.md)
   android/    (planned) native Android app
 packages/     (planned) code shared between apps, e.g. the wire protocol
 assets/       brand assets (the app icon source)
