@@ -13,8 +13,8 @@ struct TranscriptView: View {
     @State private var pinned = true
     @State private var atBottom = true
     @State private var interacting = false
-    /// When content was last tapped: growth from a tap (opening an activity row) stays where you tapped.
-    @State private var tappedAt = Date.distantPast
+    /// Just tapped: growth from a tap (opening an activity row) stays where you tapped.
+    @State private var tapped = false
 
     private struct Metrics: Equatable {
         var content: CGFloat
@@ -72,37 +72,36 @@ struct TranscriptView: View {
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 16)
             .padding(.vertical, 16)
-            .simultaneousGesture(TapGesture().onEnded { tappedAt = .now })
+            .simultaneousGesture(TapGesture().onEnded { tapped = true })
         }
         .scrollPosition($position)
         .defaultScrollAnchor(.bottom)
+        // While following, the bottom stays put as content grows (streaming, new messages, media sizing itself) and as
+        // the keyboard comes and goes; otherwise what you're reading does.
+        .defaultScrollAnchor(pinned && !tapped ? .bottom : .top, for: .sizeChanges)
         .scrollDismissesKeyboard(.interactively)
+        .accessibilityIdentifier("chat.transcript")
         .onScrollPhaseChange { _, phase in interacting = phase == .interacting || phase == .decelerating || phase == .tracking }
         .onScrollGeometryChange(for: Metrics.self) { geometry in
             Metrics(content: geometry.contentSize.height, container: geometry.containerSize.height,
-                    distance: geometry.contentSize.height + geometry.contentInsets.bottom - geometry.visibleRect.maxY)
+                    distance: max(0, geometry.contentSize.height - geometry.visibleRect.maxY))
         } action: { old, new in
             atBottom = new.distance < 120
+            // Only scrolling up yourself lets go; reaching the bottom again takes it back.
             if new.distance < 80 { pinned = true }
             else if interacting, new.distance > old.distance + 1 { pinned = false }
-            let grew = new.content != old.content || new.container != old.container
-            guard grew, !interacting else { return }
-            if Date.now.timeIntervalSince(tappedAt) < 1 {
-                pinned = new.distance < 80
-            } else if pinned, new.distance > 1 {
-                position.scrollTo(edge: .bottom)
-            }
+        }
+        .task(id: tapped) {
+            guard tapped else { return }
+            try? await Task.sleep(for: .seconds(1))
+            tapped = false
         }
         // Sending a message always brings you to the bottom.
-        .onChange(of: "\(lastUser?.id ?? ""):\(feed.pending.count)") {
-            pinned = true
-            withAnimation(.smooth) { position.scrollTo(edge: .bottom) }
-        }
+        .onChange(of: "\(lastUser?.id ?? ""):\(feed.pending.count)") { toBottom() }
         .overlay(alignment: .bottom) {
             if !atBottom {
                 Button {
-                    pinned = true
-                    withAnimation(.smooth) { position.scrollTo(edge: .bottom) }
+                    toBottom()
                 } label: {
                     Image(systemName: "arrow.down")
                         .font(.body.weight(.semibold))
@@ -124,7 +123,13 @@ struct TranscriptView: View {
             }
         }
         .animation(.smooth, value: atBottom)
-        .accessibilityIdentifier("chat.transcript")
+    }
+
+    private func toBottom() {
+        // Once you've scrolled, the position is yours and this takes it back; while following, the size-change
+        // anchor already keeps the bottom in view.
+        pinned = true
+        withAnimation(.smooth) { position.scrollTo(edge: .bottom) }
     }
 
     static func isAssistant(_ item: DisplayItem) -> Bool { if case .assistant = item { true } else { false } }

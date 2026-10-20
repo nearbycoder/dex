@@ -103,48 +103,52 @@ struct ChatToolbar: ToolbarContent {
             }
         }
         if let session {
-            if let vm = client.state?.vm(session.id), client.state?.vmConfigured == true {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        router.openMachine(session.id)
-                    } label: {
-                        Label {
-                            Text(vm.setup.status == "running" ? "Setting up" : "Machine")
-                        } icon: {
-                            Image(systemName: "desktopcomputer")
-                                .overlay(alignment: .topTrailing) { StatusDot(kind: StatusDot.vm(vm), size: 7).offset(x: 4, y: -3) }
+            // iPad and an unfolded foldable: the machine, mute, and settle as buttons. On iPhone they're in the menu
+            // (iOS folds several buttons beside a title menu into an overflow menu anyway).
+            if sizeClass != .compact {
+                if let vm = client.state?.vm(session.id), client.state?.vmConfigured == true {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            router.openMachine(session.id)
+                        } label: {
+                            Label {
+                                Text(vm.setup.status == "running" ? "Setting up" : "Machine")
+                            } icon: {
+                                Image(systemName: "desktopcomputer")
+                                    .overlay(alignment: .topTrailing) { StatusDot(kind: StatusDot.vm(vm), size: 7).offset(x: 4, y: -3) }
+                            }
                         }
+                        .accessibilityLabel(vm.setup.status == "running" ? "Machine, setting up" : "Machine, \(vm.status)")
+                        .accessibilityHint("Watch or take over this chat's VM")
+                        .accessibilityIdentifier("chat.machine")
                     }
-                    .accessibilityLabel(vm.setup.status == "running" ? "Machine, setting up" : "Machine, \(vm.status)")
-                    .accessibilityHint("Watch or take over this chat's VM")
-                    .accessibilityIdentifier("chat.machine")
                 }
-            }
-            if sizeClass != .compact, showsMute {
+                if showsMute {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            client.perform { try await feed.setMuted(!session.muted) }
+                        } label: {
+                            Label(session.muted ? "Unmute" : "Mute", systemImage: session.muted ? "bell.slash.fill" : "bell")
+                        }
+                        .tint(session.muted ? .orange : nil)
+                        .accessibilityLabel(session.muted ? "Notifications muted for this chat" : "Mute notifications for this chat")
+                        .accessibilityIdentifier("chat.mute")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        client.perform { try await feed.setMuted(!session.muted) }
+                        client.perform { try await feed.settle(session.settledAt == nil) }
                     } label: {
-                        Label(session.muted ? "Unmute" : "Mute", systemImage: session.muted ? "bell.slash.fill" : "bell")
+                        Label(session.settledAt == nil ? "Settle" : "Move to Inbox", systemImage: session.settledAt == nil ? "checkmark.circle" : "checkmark.circle.fill")
                     }
-                    .tint(session.muted ? .orange : nil)
-                    .accessibilityLabel(session.muted ? "Notifications muted for this chat" : "Mute notifications for this chat")
-                    .accessibilityIdentifier("chat.mute")
+                    .tint(session.settledAt == nil ? nil : .green)
+                    .accessibilityLabel(session.settledAt == nil ? "Settle: done for now" : "Settled. Move it back to the inbox")
+                    .accessibilityIdentifier("chat.settle")
+                    .sensoryFeedback(.success, trigger: session.settledAt != nil) { _, new in new }
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    client.perform { try await feed.settle(session.settledAt == nil) }
-                } label: {
-                    Label(session.settledAt == nil ? "Settle" : "Move to Inbox", systemImage: session.settledAt == nil ? "checkmark.circle" : "checkmark.circle.fill")
-                }
-                .tint(session.settledAt == nil ? nil : .green)
-                .accessibilityLabel(session.settledAt == nil ? "Settle: done for now" : "Settled. Move it back to the inbox")
-                .accessibilityIdentifier("chat.settle")
-                .sensoryFeedback(.success, trigger: session.settledAt != nil) { _, new in new }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                ChatMenu(feed: feed, session: session, includeMute: sizeClass == .compact || !showsMute)
+                ChatMenu(feed: feed, session: session, includeMute: sizeClass == .compact || !showsMute, compact: sizeClass == .compact)
             }
         }
     }
@@ -223,17 +227,28 @@ struct ChatMenu: View {
     let feed: ChatFeed
     let session: SessionMeta
     var includeMute = true
+    /// iPhone: the menu also holds the machine and Settle.
+    var compact = false
     @State private var confirmDelete = false
 
     var body: some View {
         let place = Inbox.place(of: session)
         Menu {
-            Button { TitleNaming.shared.regenerate(session.id, client: client) } label: { Label("Regenerate Title", systemImage: "sparkles") }
+            if compact, let vm = client.state?.vm(session.id), client.state?.vmConfigured == true {
+                Button { router.openMachine(session.id) } label: {
+                    Label { Text("Machine"); Text(vm.setup.status == "running" ? "Setting up" : vm.status.capitalized) } icon: { Image(systemName: "desktopcomputer") }
+                }
+                .accessibilityIdentifier("chat.menu.machine")
+                Divider()
+            }
             if place == .settled {
                 Button { client.perform { try await feed.settle(false) } } label: { Label("Move to Inbox", systemImage: "tray.and.arrow.up") }
+                    .accessibilityIdentifier("chat.menu.settle")
             } else {
                 Button { client.perform { try await feed.settle(true) } } label: { Label("Settle", systemImage: "checkmark.circle") }
+                    .accessibilityIdentifier("chat.menu.settle")
             }
+            Button { TitleNaming.shared.regenerate(session.id, client: client) } label: { Label("Regenerate Title", systemImage: "sparkles") }
             if place == .snoozed, let until = session.snoozedUntil {
                 Button { client.perform { try await feed.snooze(until: nil) } } label: {
                     Label("Unsnooze (\(Inbox.snoozedLabel(until)))", systemImage: "alarm.waves.left.and.right")
@@ -257,7 +272,11 @@ struct ChatMenu: View {
             Button(role: .destructive) { confirmDelete = true } label: { Label("Delete Chat", systemImage: "trash") }
                 .accessibilityIdentifier("chat.menu.delete")
         } label: {
-            Label("More", systemImage: "ellipsis")
+            if compact, session.settledAt != nil {
+                Label("More (settled)", systemImage: "checkmark.circle.fill")
+            } else {
+                Label("More", systemImage: "ellipsis")
+            }
         }
         .accessibilityIdentifier("chat.menu")
         .confirmationDialog("Delete “\(session.title)”?", isPresented: $confirmDelete, titleVisibility: .visible) {

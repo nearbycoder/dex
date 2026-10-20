@@ -76,7 +76,8 @@ final class ChatUITests: ChatTestCase {
         app.buttons["composer.send"].tap()
 
         XCTAssertTrue(element("chat.transcript").waitForExistence(timeout: 15))
-        XCTAssertTrue(text(containing: "short answer to").waitForExistence(timeout: 20), "the reply streams in")
+        // "Research…" asks for a search: the scripted reply runs web_search, then answers.
+        XCTAssertTrue(text(containing: "Two good sources").waitForExistence(timeout: 20), "the reply streams in")
         XCTAssertTrue(element("chat.activity").exists, "the reply's work is folded into the activity row")
         XCTAssertTrue(wait(element("chat.activity"), "label BEGINSWITH 'Worked for'"))
         if isRegularWidth {
@@ -303,7 +304,7 @@ final class ChatUITests: ChatTestCase {
         XCTAssertTrue(wait(app.descendants(matching: .any).matching(identifier: "media.video"), "count >= 2", timeout: 15), "the saved copy replaces the link")
         // The image opens full screen.
         let image = app.buttons.matching(identifier: "media.image").firstMatch
-        for _ in 0..<4 where !(image.exists && image.isHittable) { element("chat.transcript").swipeDown() }
+        for _ in 0..<6 where !(image.exists && image.frame.minY > 130) { element("chat.transcript").swipeDown() }
         image.tap()
         XCTAssertTrue(app.buttons["media.viewer.done"].waitForExistence(timeout: 5))
         snapshot("media-viewer")
@@ -317,7 +318,7 @@ final class ChatUITests: ChatTestCase {
         var title = titleButton("Plan a weekend")
         XCTAssertTrue(title.waitForExistence(timeout: 10))
         title.tap()
-        app.buttons["chat.rename"].tap()
+        app.buttons["Rename"].tap()
         let box = app.alerts.textFields.firstMatch
         XCTAssertTrue(box.waitForExistence(timeout: 5))
         box.tap()
@@ -327,19 +328,30 @@ final class ChatUITests: ChatTestCase {
         XCTAssertTrue(title.waitForExistence(timeout: 10), "the new title shows")
 
         title.tap()
-        app.buttons["chat.regenerate"].tap()
+        app.buttons["Regenerate Title"].tap()
         XCTAssertTrue(titleButton("Regenerated").waitForExistence(timeout: 10))
         snapshot("header")
     }
 
     func testHeaderSettleSnoozeAndMute() {
         openChat("s-welcome")
-        let settle = app.buttons["chat.settle"]
-        XCTAssertTrue(settle.waitForExistence(timeout: 10))
-        settle.tap()
-        XCTAssertTrue(wait(settle, "label CONTAINS 'Settled'"))
-        settle.tap()
-        XCTAssertTrue(wait(settle, "label CONTAINS 'Settle: done'"))
+        let menu = app.buttons["chat.menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 10))
+        if isRegularWidth {
+            let settle = app.buttons["chat.settle"]
+            settle.tap()
+            XCTAssertTrue(wait(settle, "label CONTAINS 'Settled'"))
+            settle.tap()
+            XCTAssertTrue(wait(settle, "label CONTAINS 'Settle: done'"))
+        } else {
+            // On iPhone, Settle is in the menu, and the menu shows a check while the chat is settled.
+            menu.tap()
+            app.buttons["Settle"].tap()
+            XCTAssertTrue(wait(menu, "label CONTAINS 'settled'"))
+            menu.tap()
+            app.buttons["Move to Inbox"].tap()
+            XCTAssertTrue(wait(menu, "label == 'More'"))
+        }
 
         app.buttons["chat.menu"].tap()
         app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Tomorrow'")).firstMatch.tap()
@@ -363,8 +375,15 @@ final class ChatUITests: ChatTestCase {
     func testMachineButtonOpensMachines() {
         openChat("s-vm")
         let machine = app.buttons["chat.machine"]
-        XCTAssertTrue(machine.waitForExistence(timeout: 10))
-        machine.tap()
+        if isRegularWidth {
+            XCTAssertTrue(machine.waitForExistence(timeout: 10))
+            machine.tap()
+        } else {
+            // On iPhone it's in the chat's menu.
+            XCTAssertTrue(app.buttons["chat.menu"].waitForExistence(timeout: 10))
+            app.buttons["chat.menu"].tap()
+            app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Machine'")).firstMatch.tap()
+        }
         XCTAssertTrue(wait(app.buttons["Machines"].firstMatch, "isSelected == true", timeout: 5), "the Machines tab opens")
     }
 
