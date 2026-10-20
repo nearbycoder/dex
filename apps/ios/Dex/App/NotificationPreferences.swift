@@ -14,7 +14,7 @@ final class NotificationPreferences {
     static let shared = NotificationPreferences()
 
     /// What iOS allows (asked for when you turn notifications on).
-    private(set) var authorization: UNAuthorizationStatus = .notDetermined
+    var authorization: UNAuthorizationStatus = .notDetermined
 
     private let defaults: UserDefaults
     private static let enabledKey = "dex.notify.enabled"
