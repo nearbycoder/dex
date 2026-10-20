@@ -267,7 +267,7 @@ struct AgentEditor: View {
                 }
                 if let thinking { draft.wrappedValue.thinking = thinking }
             }
-            .presentationDetents([.medium, .large])
+            .presentationDetents([.large])
         }
         .confirmationDialog("Delete “\(value.name)”?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete Agent", role: .destructive) {

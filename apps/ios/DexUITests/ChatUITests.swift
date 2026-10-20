@@ -126,7 +126,13 @@ final class ChatUITests: ChatTestCase {
         openChat("s-welcome")
         send("Take a screenshot")
         XCTAssertTrue(text(containing: "the desktop right now").waitForExistence(timeout: 20))
-        app.descendants(matching: .any).matching(identifier: "chat.activity").allElementsBoundByIndex.last?.tap()
+        // On a short screen (the folded foldable) the new reply's row can sit under the top bar: bring it into view.
+        let row = app.descendants(matching: .any).matching(identifier: "chat.activity").allElementsBoundByIndex.last!
+        for _ in 0..<4 where row.frame.minY < 140 || !row.isHittable {
+            element("chat.transcript").coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+                .press(forDuration: 0.05, thenDragTo: element("chat.transcript").coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7)))
+        }
+        row.tap()
         XCTAssertTrue(element("chat.screenshot").waitForExistence(timeout: 10))
 
         send("Make the deploy fail")

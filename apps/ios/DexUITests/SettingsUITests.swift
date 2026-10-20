@@ -217,6 +217,8 @@ final class SettingsUITests: DexUITestCase {
         launch()
         openSettings("access")
         XCTAssertTrue(element("access.endpoint").waitForExistence(timeout: 5))
+        // Pending actions sit above it: on a short screen it's further down.
+        reveal(element("access.newToken"))
         element("access.newToken").tap()
         let label = app.textFields["token.label"]
         XCTAssertTrue(label.waitForExistence(timeout: 5))
@@ -248,6 +250,7 @@ final class SettingsUITests: DexUITestCase {
         launch()
         openSettings("access")
         let confirm = element("pending.confirm.pa-1")
+        reveal(confirm)
         XCTAssertTrue(confirm.waitForExistence(timeout: 5))
         snapshot("access-pending")
         confirm.tap()

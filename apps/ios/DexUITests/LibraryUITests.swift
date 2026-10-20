@@ -91,7 +91,9 @@ final class LibraryUITests: DexUITestCase {
         let window = app.windows.firstMatch.frame
         if !(row.waitForExistence(timeout: 4) && row.frame.minY > window.minY + 80 && row.frame.maxY < window.maxY - 90) { reveal(row) }
         let before = row.value as? String
-        row.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+        // The switch itself when it's exposed (aiming by position misses on the foldable's cover screen).
+        let knob = row.switches.firstMatch
+        if knob.exists, knob.isHittable { knob.tap() } else { row.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap() }
         // A tap that lands mid-animation can miss: try once more if nothing changed.
         if let before, !row.waitForValue(before == "1" ? "0" : "1", timeout: 3) {
             row.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
@@ -134,6 +136,12 @@ final class LibraryUITests: DexUITestCase {
 
         // Model sheet.
         tap("agent.model")
+        // Look it up, as on a short screen it can be below the sheet's fold (rows load as they scroll in).
+        let modelSearch = app.searchFields["Search models"].firstMatch
+        if modelSearch.waitForExistence(timeout: 5), !app.buttons["model.cline-pass/kimi-k3"].exists {
+            modelSearch.tap()
+            app.typeText("Kimi K3")
+        }
         XCTAssertTrue(app.buttons["model.cline-pass/kimi-k3"].waitForExistence(timeout: 5))
         app.buttons["model.cline-pass/kimi-k3"].tap()
         tap("agent.save")
@@ -363,7 +371,8 @@ final class LibraryUITests: DexUITestCase {
         tap("mcp.save")
         // Saved (the sheet closes only when the server accepted both headers).
         XCTAssertTrue(app.navigationBars["Edit Exa Search"].waitForNonExistence(timeout: 10))
-        XCTAssertTrue(element("mcp.remove").waitForExistence(timeout: 10))
+        // Remove sits at the bottom of the page: on a short screen it loads once scrolled to.
+        XCTAssertTrue(reveal(element("mcp.remove")).exists)
 
         tap("mcp.remove")
         app.buttons["Remove Server"].firstMatch.tap()

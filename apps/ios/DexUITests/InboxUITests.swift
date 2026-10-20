@@ -36,10 +36,11 @@ final class InboxUITests: ChatTestCase {
     func testGroupsAndRows() {
         launch()
         XCTAssertTrue(row("s-welcome").waitForExistence(timeout: 10))
+        // Before scrolling: on a short screen the top rows leave the (lazy) list once the groups are scrolled to.
+        XCTAssertTrue(row("s-vm").label.contains("PR Author"), "a project chat shows its project and agent: \(row("s-vm").label)")
         reveal(header("inbox.settled"))
         XCTAssertTrue(header("inbox.snoozed").exists)
         XCTAssertTrue(header("inbox.settled").exists)
-        XCTAssertTrue(row("s-vm").label.contains("PR Author"), "a project chat shows its project and agent: \(row("s-vm").label)")
         snapshot("inbox")
         expand("inbox.snoozed", showing: "s-snoozed")
         XCTAssertTrue(row("s-snoozed").label.contains("until"), "a snoozed chat says when it wakes")
@@ -144,15 +145,19 @@ final class InboxUITests: ChatTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["chat.transcript"].waitForExistence(timeout: 10))
         row("s-welcome").tap()
         app.typeKey(.downArrow, modifierFlags: [])
-        XCTAssertTrue(titleButton("Fix the flaky test").waitForExistence(timeout: 5), "↓ opens the next chat")
+        XCTAssertTrue(titleButton("Fix the flaky test").waitForExistence(timeout: 10), "↓ opens the next chat")
         app.typeKey(.upArrow, modifierFlags: [])
-        XCTAssertTrue(titleButton("Plan a weekend").waitForExistence(timeout: 5), "↑ goes back")
+        XCTAssertTrue(titleButton("Plan a weekend").waitForExistence(timeout: 10), "↑ goes back")
     }
 
     func testNewChatShortcut() throws {
+        guard hardwareKeysReachApp else { throw XCTSkip("The foldable simulator doesn't deliver XCUITest's hardware key events (checked: typed keys never arrive).") }
         launch()
         XCTAssertTrue(row("s-welcome").waitForExistence(timeout: 10))
         row("s-welcome").tap()
+        // Key commands aren't delivered while the chat is still sliding in.
+        XCTAssertTrue(app.descendants(matching: .any)["chat.transcript"].waitForExistence(timeout: 10))
+        sleep(1)
         app.typeKey("n", modifierFlags: .command)
         XCTAssertTrue(app.descendants(matching: .any)["newchat.heading"].waitForExistence(timeout: 5), "⌘N starts a new chat")
     }

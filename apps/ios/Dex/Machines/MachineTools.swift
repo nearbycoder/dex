@@ -338,7 +338,10 @@ struct PortsView: View {
                 .foregroundStyle(.secondary)
             HStack(spacing: 10) {
                 TextField("3000", text: $port)
-                    .keyboardType(.numberPad)
+                    // iPad shows a number pad as a popover that eats the next tap (on Get URL); its full keyboard's
+                    // numbers have Return, which submits.
+                    .keyboardType(UIDevice.current.userInterfaceIdiom == .pad ? .numbersAndPunctuation : .numberPad)
+                    .submitLabel(.go)
                     .font(.body.monospacedDigit())
                     .focused($focused)
                     .padding(.horizontal, 12)
