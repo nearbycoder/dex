@@ -3,6 +3,12 @@ import XCTest
 /// Library: agents, projects (with the repo picker), skills (with skills.sh), and MCP servers (with search, checks,
 /// and OAuth), on iPhone (the Library tab) and iPad (each page in the sidebar, list beside detail).
 final class LibraryUITests: DexUITestCase {
+    override func setUp() {
+        super.setUp()
+        // Upright, so swipes and taps by coordinate land where they're aimed (the foldable can start sideways).
+        XCUIDevice.shared.orientation = .portrait
+    }
+
     // MARK: Helpers
 
     /// Opens a Library page: the Library tab's row on compact width, the sidebar item on regular.
@@ -25,8 +31,8 @@ final class LibraryUITests: DexUITestCase {
             let row = app.buttons["library.\(id)"].firstMatch
             // Back to the Library tab's root if something is still open in it.
             var pops = 0
-            while !row.waitForExistence(timeout: 2), pops < 4, app.navigationBars.buttons["BackButton"].exists {
-                app.navigationBars.buttons["BackButton"].firstMatch.tap()
+            while !row.waitForExistence(timeout: 2), pops < 4, app.buttons["BackButton"].exists {
+                app.buttons["BackButton"].firstMatch.tap()
                 pops += 1
             }
             XCTAssertTrue(row.waitForExistence(timeout: 10))
@@ -51,7 +57,15 @@ final class LibraryUITests: DexUITestCase {
         while !(element.exists && element.isHittable) && tries < 18 {
             // The frontmost scrolling page: a sheet's, when one is up (it comes later in the hierarchy).
             let scroller = app.collectionViews.allElementsBoundByIndex.last { $0.isHittable } ?? app.windows.firstMatch
-            if (tries < 8) == up { scroller.swipeUp(velocity: .slow) } else { scroller.swipeDown(velocity: .slow) }
+            let down = (tries < 8) == up
+            if app.keyboards.firstMatch.exists {
+                // The keyboard covers the page's middle: drag above it.
+                let high = scroller.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12))
+                let low = scroller.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.42))
+                if down { low.press(forDuration: 0.01, thenDragTo: high, withVelocity: .slow, thenHoldForDuration: 0.1) } else {
+                    high.press(forDuration: 0.01, thenDragTo: low, withVelocity: .slow, thenHoldForDuration: 0.1)
+                }
+            } else if down { scroller.swipeUp(velocity: .slow) } else { scroller.swipeDown(velocity: .slow) }
             tries += 1
         }
         XCTAssertTrue(element.exists, "missing \(element)", file: file, line: line)
@@ -131,7 +145,7 @@ final class LibraryUITests: DexUITestCase {
         XCTAssertTrue(chip.waitForExistence(timeout: 5))
         XCTAssertTrue(chip.isSelected)
         // iPhone: the new chat is pushed over the chat list, without the tab bar.
-        if !isRegularWidth { app.navigationBars.buttons["BackButton"].firstMatch.tap() }
+        if !isRegularWidth { app.buttons["BackButton"].firstMatch.tap() }
         snapshot("library-agent-chat")
 
         // Delete it from the list.
@@ -264,10 +278,10 @@ final class LibraryUITests: DexUITestCase {
         // The installed skill: Auto (off from install), edit, remove.
         if !isRegularWidth {
             // Leave the search field, then the search page.
-            for name in ["Close", "Cancel"] where !app.navigationBars.buttons["BackButton"].exists && app.navigationBars.buttons[name].exists {
-                app.navigationBars.buttons[name].firstMatch.tap()
+            for name in ["Close", "Cancel"] where !app.buttons["BackButton"].exists && app.buttons[name].exists {
+                app.buttons[name].firstMatch.tap()
             }
-            app.navigationBars.buttons["BackButton"].firstMatch.tap()
+            app.buttons["BackButton"].firstMatch.tap()
         }
         tap("skill.row.pdf")
         let auto = element("skill.auto")
@@ -369,7 +383,7 @@ final class LibraryUITests: DexUITestCase {
         snapshot("library-mcp-oauth")
 
         // Default-on from the list's swipe action.
-        if !isRegularWidth { app.navigationBars.buttons["BackButton"].firstMatch.tap() }
+        if !isRegularWidth { app.buttons["BackButton"].firstMatch.tap() }
         let linear = element("mcp.row.m-linear")
         XCTAssertTrue(linear.waitForExistence(timeout: 5))
         linear.swipeRight()
