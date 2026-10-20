@@ -42,6 +42,7 @@ import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -241,5 +242,28 @@ class DexApi(private val rpc: AgentRpc) {
     companion object {
         /** A draft's JSON (the agent validates and normalizes it). */
         fun <T> draft(serializer: KSerializer<T>, value: T): JsonObject = DexJson.encodeToJsonElement(serializer, value) as JsonObject
+
+        /**
+         * A project as `saveProject` takes it: no id when new (blank), no timestamps, and explicit nulls, since a left-out
+         * `image` keeps the saved picture and null clears it.
+         */
+        fun projectDraft(project: ProjectProfile): JsonObject {
+            val json = draft(ProjectProfile.serializer(), project).toMutableMap()
+            json.remove("createdAt")
+            json.remove("updatedAt")
+            if (project.id.isEmpty()) json.remove("id")
+            json["image"] = project.image?.let(::JsonPrimitive) ?: JsonNull
+            json["vmSize"] = project.vmSize?.let(::JsonPrimitive) ?: JsonNull
+            return JsonObject(json)
+        }
+
+        /** An agent as `saveAgent` takes it: no id when new (blank), no timestamps. */
+        fun agentDraft(agent: AgentProfile): JsonObject {
+            val json = draft(AgentProfile.serializer(), agent).toMutableMap()
+            json.remove("createdAt")
+            json.remove("updatedAt")
+            if (agent.id.isEmpty()) json.remove("id")
+            return JsonObject(json)
+        }
     }
 }

@@ -6,9 +6,13 @@ import dev.trydex.core.client.AgentConnection
 import dev.trydex.core.client.ConnectionStatus
 import dev.trydex.core.client.DexApi
 import dev.trydex.core.client.asRpc
+import dev.trydex.core.model.AgentProfile
 import dev.trydex.core.model.ClientMessages
 import dev.trydex.core.model.DisplayItem
+import dev.trydex.core.model.ProjectProfile
+import dev.trydex.core.model.ProjectRepo
 import dev.trydex.core.model.ServerMessage
+import dev.trydex.core.model.ThinkingLevel
 import dev.trydex.core.model.ToolCallBlock
 import dev.trydex.core.model.TranscriptReducer
 import dev.trydex.core.model.TranscriptState
@@ -23,6 +27,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.JsonObject
 import okhttp3.OkHttpClient
 import org.junit.After
 import org.junit.Test
@@ -90,6 +95,36 @@ class FakeDexTest {
         assertThat(queues.last { it.items.isNotEmpty() }.items.single().text).isEqualTo("And IVF?")
         val error = runCatching { api.snooze("chat-research", 1L) }.exceptionOrNull()
         assertThat(error!!.message).isEqualTo("Pick a time in the next year.")
+        connection.stop()
+    }
+
+    @Test fun savesProjectsAndAgents() = runBlocking {
+        val url = fake.start()
+        val connection = AgentConnection(OkHttpClient(), url, FakeData.USER_ID, { fake.token }, scope)
+        val api = DexApi(connection.asRpc())
+        connection.start()
+        withTimeout(5_000) { connection.status.first { it == ConnectionStatus.Connected } }
+
+        // A new project gets an id from its name; owner/repo becomes a clone URL.
+        val created = api.saveProject(DexApi.projectDraft(ProjectProfile(id = "", name = "My App", repos = listOf(ProjectRepo("octocat/app")), image = "data:image/png;base64,AAAA")))
+        assertThat(created.id).startsWith("my-app-")
+        assertThat(created.repos.single().url).isEqualTo("https://github.com/octocat/app.git")
+        // No picture clears it; leaving the field out keeps it.
+        assertThat(api.saveProject(DexApi.projectDraft(created.copy(image = null))).image).isNull()
+        api.saveProject(DexApi.projectDraft(created))
+        val kept = DexApi.projectDraft(created.copy(description = "Changed")).toMutableMap().apply { remove("image") }
+        assertThat(api.saveProject(JsonObject(kept)).image).isEqualTo("data:image/png;base64,AAAA")
+        assertThat(runCatching { api.saveProject(DexApi.projectDraft(ProjectProfile(id = "", name = " "))) }.exceptionOrNull()!!.message).isEqualTo("Give the project a name.")
+
+        // Deleting a project keeps its chats, without the project.
+        api.deleteProject("dex-web")
+        withTimeout(5_000) { while (connection.state.value!!.project("dex-web") != null) kotlinx.coroutines.delay(10) }
+        assertThat(connection.state.value!!.sessions.none { it.projectId == "dex-web" }).isTrue()
+
+        val agent = api.saveAgent(DexApi.agentDraft(AgentProfile(id = "", name = "Triage", thinking = ThinkingLevel.High, mcpServers = listOf("github"))))
+        assertThat(agent.id).startsWith("triage-")
+        assertThat(agent.thinking).isEqualTo(ThinkingLevel.High)
+        assertThat(api.searchGitHubRepos("", "acme").map { it.fullName }).containsExactly("acme/api")
         connection.stop()
     }
 

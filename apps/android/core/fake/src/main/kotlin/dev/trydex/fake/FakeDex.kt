@@ -449,7 +449,11 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
             update { s -> s.copy(agents = if (previous == null) s.agents + agent else s.agents.map { if (it.id == id) agent else it }) }
             encode(AgentProfile.serializer(), agent)
         }
-        "deleteAgent" -> { update { s -> s.copy(agents = s.agents.filter { it.id != args.s(0) }) }; null }
+        "deleteAgent" -> {
+            // Its chats keep running as plain chats.
+            update { s -> s.copy(agents = s.agents.filter { it.id != args.s(0) }, sessions = s.sessions.map { if (it.agentId == args.s(0)) it.copy(agentId = null) else it }) }
+            null
+        }
         "saveProject" -> {
             val draft = args.o(0)
             val name = draft["name"].str?.trim()?.take(60).orEmpty()
@@ -457,14 +461,24 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
             val id = draft["id"].str ?: (name.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').take(32).ifEmpty { "project" } + "-" + UUID.randomUUID().toString().take(6))
             val previous = state.projects.firstOrNull { it.id == id }
             val project = DexJson.decodeFromJsonElement(ProjectProfile.serializer(), JsonObject(draft + mapOf("id" to JsonPrimitive(id), "name" to JsonPrimitive(name)))).let { p ->
-                p.copy(repos = p.repos.map { r -> r.copy(url = if (r.url.matches(Regex("^[\\w.-]+/[\\w.-]+$"))) "https://github.com/${r.url}.git" else r.url) }, createdAt = previous?.createdAt ?: clock(), updatedAt = clock())
+                p.copy(
+                    repos = p.repos.map { r -> r.copy(url = if (r.url.matches(Regex("^[\\w.-]+/[\\w.-]+$"))) "https://github.com/${r.url}.git" else r.url) },
+                    // Left out, the picture stays as it was; null clears it.
+                    image = if ("image" in draft) p.image else previous?.image,
+                    createdAt = previous?.createdAt ?: clock(),
+                    updatedAt = clock(),
+                )
             }
             update { s -> s.copy(projects = if (previous == null) s.projects + project else s.projects.map { if (it.id == id) project else it }) }
             encode(ProjectProfile.serializer(), project)
         }
-        "deleteProject" -> { update { s -> s.copy(projects = s.projects.filter { it.id != args.s(0) }) }; null }
+        "deleteProject" -> {
+            // Its chats stay, without the project.
+            update { s -> s.copy(projects = s.projects.filter { it.id != args.s(0) }, sessions = s.sessions.map { if (it.projectId == args.s(0)) it.copy(projectId = null) else it }) }
+            null
+        }
         "projectImageCandidates" -> JsonArray(listOf(encode(ProjectImageCandidate.serializer(), ProjectImageCandidate("public/favicon.png", "data:image/png;base64," + FakeAssets.CHART_PNG))))
-        "searchGitHubRepos" -> JsonArray(repos(args.s(0)).map { encode(GitHubRepo.serializer(), it) })
+        "searchGitHubRepos" -> JsonArray(repos(args.s(0)).filter { repo -> args.getOrNull(1).str?.let { repo.owner.equals(it, ignoreCase = true) } ?: true }.map { encode(GitHubRepo.serializer(), it) })
         "listGitHubBranches" -> JsonArray(listOf("main", "develop", "fix/flaky-login", "feat/android").map { JsonPrimitive(it) })
         "githubRepoAccess" -> encode(GitHubAccess.serializer(), GitHubAccess(true, FakeData.LOGIN, "oauth", listOf(GitHubOrg("acme")), "https://github.com/settings/connections/applications/x"))
         "saveMcpServer" -> {
