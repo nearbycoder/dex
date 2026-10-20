@@ -1,0 +1,2263 @@
+{
+ "steps": [
+  {
+   "events": [
+    {
+     "type": "snapshot",
+     "entries": [
+      {
+       "id": 1,
+       "conversationId": 1,
+       "kind": "pi.system",
+       "model": []
+      },
+      {
+       "id": 2,
+       "conversationId": 1,
+       "kind": "pi.user",
+       "model": [
+        {
+         "role": "user",
+         "content": "Summarize the repo",
+         "timestamp": 1792447640000
+        }
+       ]
+      },
+      {
+       "id": 3,
+       "conversationId": 1,
+       "kind": "pi.assistant",
+       "model": [
+        {
+         "role": "assistant",
+         "content": [
+          {
+           "type": "thinking",
+           "thinking": "Let me look.\n**Plan**: read files"
+          },
+          {
+           "type": "toolCall",
+           "id": "call_1",
+           "name": "bash",
+           "arguments": {
+            "command": "ls -la\npwd"
+           }
+          }
+         ],
+         "api": "openai-completions",
+         "provider": "clinepass",
+         "model": "glm-5.3",
+         "usage": {
+          "input": 10,
+          "output": 5,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 15,
+          "cost": {
+           "input": 0,
+           "output": 0,
+           "cacheRead": 0,
+           "cacheWrite": 0,
+           "total": 0
+          }
+         },
+         "stopReason": "toolUse",
+         "timestamp": 1792447650000,
+         "durationMs": 2000
+        }
+       ]
+      },
+      {
+       "id": 4,
+       "conversationId": 1,
+       "kind": "pi.toolResult",
+       "model": [
+        {
+         "role": "toolResult",
+         "toolCallId": "call_1",
+         "toolName": "bash",
+         "content": [
+          {
+           "type": "text",
+           "text": "README.md\nsrc"
+          }
+         ],
+         "isError": false,
+         "timestamp": 1792447655000
+        }
+       ]
+      },
+      {
+       "id": 5,
+       "conversationId": 1,
+       "kind": "pi.assistant",
+       "model": [
+        {
+         "role": "assistant",
+         "content": [
+          {
+           "type": "text",
+           "text": "It has a README and src."
+          }
+         ],
+         "api": "openai-completions",
+         "provider": "clinepass",
+         "model": "glm-5.3",
+         "usage": {
+          "input": 10,
+          "output": 5,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 15,
+          "cost": {
+           "input": 0,
+           "output": 0,
+           "cacheRead": 0,
+           "cacheWrite": 0,
+           "total": 0
+          }
+         },
+         "stopReason": "stop",
+         "timestamp": 1792447656000,
+         "durationMs": 1500
+        }
+       ]
+      },
+      {
+       "id": 6,
+       "conversationId": 1,
+       "kind": "pi.compaction",
+       "model": [
+        {
+         "role": "user",
+         "content": "Summary of earlier messages",
+         "timestamp": 1792447660000
+        }
+       ]
+      },
+      {
+       "id": 7,
+       "conversationId": 1,
+       "kind": "pi.user",
+       "model": [
+        {
+         "role": "user",
+         "content": [
+          {
+           "type": "text",
+           "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?"
+          },
+          {
+           "type": "image",
+           "data": "",
+           "mimeType": "image/png",
+           "ref": "7:0:1"
+          }
+         ],
+         "timestamp": 1792447670000
+        }
+       ]
+      }
+     ],
+     "tools": [],
+     "nestedTools": [],
+     "compactions": [],
+     "inbox": [],
+     "agent": {},
+     "usage": {}
+    }
+   ],
+   "state": {
+    "entries": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "streaming": null,
+    "tools": {},
+    "running": false,
+    "queued": 0,
+    "retry": null,
+    "error": null,
+    "loaded": true
+   },
+   "items": [
+    {
+     "kind": "user",
+     "id": "2:0",
+     "text": "Summarize the repo",
+     "images": 0
+    },
+    {
+     "kind": "assistant",
+     "id": "3:0",
+     "streaming": false,
+     "endedAt": 1792447657500,
+     "messages": 2,
+     "blocks": [
+      "thinking",
+      "toolCall",
+      "text"
+     ]
+    },
+    {
+     "kind": "divider",
+     "id": "6",
+     "label": "Earlier messages summarized"
+    },
+    {
+     "kind": "user",
+     "id": "6:0",
+     "text": "Summary of earlier messages",
+     "images": 0
+    },
+    {
+     "kind": "user",
+     "id": "7:0",
+     "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?",
+     "images": 1
+    }
+   ],
+   "results": [
+    "call_1"
+   ]
+  },
+  {
+   "events": [
+    {
+     "type": "run_start",
+     "inputs": [
+      9
+     ]
+    },
+    {
+     "type": "inbox_update",
+     "items": [
+      {
+       "id": 9,
+       "mode": "followUp"
+      }
+     ]
+    }
+   ],
+   "state": {
+    "entries": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "streaming": null,
+    "tools": {},
+    "running": true,
+    "queued": 1,
+    "retry": null,
+    "error": null,
+    "loaded": true
+   },
+   "items": [
+    {
+     "kind": "user",
+     "id": "2:0",
+     "text": "Summarize the repo",
+     "images": 0
+    },
+    {
+     "kind": "assistant",
+     "id": "3:0",
+     "streaming": false,
+     "endedAt": 1792447657500,
+     "messages": 2,
+     "blocks": [
+      "thinking",
+      "toolCall",
+      "text"
+     ]
+    },
+    {
+     "kind": "divider",
+     "id": "6",
+     "label": "Earlier messages summarized"
+    },
+    {
+     "kind": "user",
+     "id": "6:0",
+     "text": "Summary of earlier messages",
+     "images": 0
+    },
+    {
+     "kind": "user",
+     "id": "7:0",
+     "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?",
+     "images": 1
+    }
+   ],
+   "results": [
+    "call_1"
+   ]
+  },
+  {
+   "events": [
+    {
+     "type": "message_start",
+     "message": {
+      "role": "assistant",
+      "content": [],
+      "api": "openai-completions",
+      "provider": "clinepass",
+      "model": "glm-5.3",
+      "usage": {
+       "input": 10,
+       "output": 5,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "totalTokens": 15,
+       "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+       }
+      },
+      "stopReason": "pending",
+      "timestamp": 1792447680000
+     }
+    }
+   ],
+   "state": {
+    "entries": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "streaming": {
+     "role": "assistant",
+     "content": [],
+     "api": "openai-completions",
+     "provider": "clinepass",
+     "model": "glm-5.3",
+     "usage": {
+      "input": 10,
+      "output": 5,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "totalTokens": 15,
+      "cost": {
+       "input": 0,
+       "output": 0,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "total": 0
+      }
+     },
+     "stopReason": "pending",
+     "timestamp": 1792447680000
+    },
+    "tools": {},
+    "running": true,
+    "queued": 1,
+    "retry": null,
+    "error": null,
+    "loaded": true
+   },
+   "items": [
+    {
+     "kind": "user",
+     "id": "2:0",
+     "text": "Summarize the repo",
+     "images": 0
+    },
+    {
+     "kind": "assistant",
+     "id": "3:0",
+     "streaming": false,
+     "endedAt": 1792447657500,
+     "messages": 2,
+     "blocks": [
+      "thinking",
+      "toolCall",
+      "text"
+     ]
+    },
+    {
+     "kind": "divider",
+     "id": "6",
+     "label": "Earlier messages summarized"
+    },
+    {
+     "kind": "user",
+     "id": "6:0",
+     "text": "Summary of earlier messages",
+     "images": 0
+    },
+    {
+     "kind": "user",
+     "id": "7:0",
+     "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?",
+     "images": 1
+    },
+    {
+     "kind": "assistant",
+     "id": "streaming",
+     "streaming": true,
+     "endedAt": null,
+     "messages": 1,
+     "blocks": []
+    }
+   ],
+   "results": [
+    "call_1"
+   ]
+  },
+  {
+   "events": [
+    {
+     "type": "message_update",
+     "usage": {
+      "input": 10,
+      "output": 5,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "totalTokens": 15,
+      "cost": {
+       "input": 0,
+       "output": 0,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "total": 0
+      }
+     },
+     "changes": [
+      {
+       "type": "thinking_start",
+       "contentIndex": 0,
+       "block": {
+        "type": "thinking",
+        "thinking": ""
+       }
+      },
+      {
+       "type": "thinking_delta",
+       "contentIndex": 0,
+       "delta": "Checking "
+      },
+      {
+       "type": "thinking_delta",
+       "contentIndex": 0,
+       "delta": "the tests"
+      }
+     ]
+    }
+   ],
+   "state": {
+    "entries": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "streaming": {
+     "role": "assistant",
+     "content": [
+      {
+       "type": "thinking",
+       "thinking": "Checking the tests"
+      }
+     ],
+     "api": "openai-completions",
+     "provider": "clinepass",
+     "model": "glm-5.3",
+     "usage": {
+      "input": 10,
+      "output": 5,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "totalTokens": 15,
+      "cost": {
+       "input": 0,
+       "output": 0,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "total": 0
+      }
+     },
+     "stopReason": "pending",
+     "timestamp": 1792447680000
+    },
+    "tools": {},
+    "running": true,
+    "queued": 1,
+    "retry": null,
+    "error": null,
+    "loaded": true
+   },
+   "items": [
+    {
+     "kind": "user",
+     "id": "2:0",
+     "text": "Summarize the repo",
+     "images": 0
+    },
+    {
+     "kind": "assistant",
+     "id": "3:0",
+     "streaming": false,
+     "endedAt": 1792447657500,
+     "messages": 2,
+     "blocks": [
+      "thinking",
+      "toolCall",
+      "text"
+     ]
+    },
+    {
+     "kind": "divider",
+     "id": "6",
+     "label": "Earlier messages summarized"
+    },
+    {
+     "kind": "user",
+     "id": "6:0",
+     "text": "Summary of earlier messages",
+     "images": 0
+    },
+    {
+     "kind": "user",
+     "id": "7:0",
+     "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?",
+     "images": 1
+    },
+    {
+     "kind": "assistant",
+     "id": "streaming",
+     "streaming": true,
+     "endedAt": null,
+     "messages": 1,
+     "blocks": [
+      "thinking"
+     ]
+    }
+   ],
+   "results": [
+    "call_1"
+   ]
+  },
+  {
+   "events": [
+    {
+     "type": "message_update",
+     "usage": {
+      "input": 10,
+      "output": 5,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "totalTokens": 15,
+      "cost": {
+       "input": 0,
+       "output": 0,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "total": 0
+      }
+     },
+     "changes": [
+      {
+       "type": "toolcall_start",
+       "contentIndex": 1,
+       "block": {
+        "type": "toolCall",
+        "id": "call_2",
+        "name": "vm_exec",
+        "arguments": {}
+       }
+      },
+      {
+       "type": "toolcall_delta",
+       "contentIndex": 1,
+       "path": [
+        "command"
+       ],
+       "delta": "npm "
+      },
+      {
+       "type": "toolcall_delta",
+       "contentIndex": 1,
+       "path": [
+        "command"
+       ],
+       "delta": "test"
+      },
+      {
+       "type": "toolcall_delta",
+       "contentIndex": 1,
+       "path": [
+        "options",
+        "env",
+        "CI"
+       ],
+       "delta": "1"
+      }
+     ]
+    }
+   ],
+   "state": {
+    "entries": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7
+    ],
+    "streaming": {
+     "role": "assistant",
+     "content": [
+      {
+       "type": "thinking",
+       "thinking": "Checking the tests"
+      },
+      {
+       "type": "toolCall",
+       "id": "call_2",
+       "name": "vm_exec",
+       "arguments": {
+        "command": "npm test",
+        "options": {
+         "env": {
+          "CI": "1"
+         }
+        }
+       }
+      }
+     ],
+     "api": "openai-completions",
+     "provider": "clinepass",
+     "model": "glm-5.3",
+     "usage": {
+      "input": 10,
+      "output": 5,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "totalTokens": 15,
+      "cost": {
+       "input": 0,
+       "output": 0,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "total": 0
+      }
+     },
+     "stopReason": "pending",
+     "timestamp": 1792447680000
+    },
+    "tools": {},
+    "running": true,
+    "queued": 1,
+    "retry": null,
+    "error": null,
+    "loaded": true
+   },
+   "items": [
+    {
+     "kind": "user",
+     "id": "2:0",
+     "text": "Summarize the repo",
+     "images": 0
+    },
+    {
+     "kind": "assistant",
+     "id": "3:0",
+     "streaming": false,
+     "endedAt": 1792447657500,
+     "messages": 2,
+     "blocks": [
+      "thinking",
+      "toolCall",
+      "text"
+     ]
+    },
+    {
+     "kind": "divider",
+     "id": "6",
+     "label": "Earlier messages summarized"
+    },
+    {
+     "kind": "user",
+     "id": "6:0",
+     "text": "Summary of earlier messages",
+     "images": 0
+    },
+    {
+     "kind": "user",
+     "id": "7:0",
+     "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?",
+     "images": 1
+    },
+    {
+     "kind": "assistant",
+     "id": "streaming",
+     "streaming": true,
+     "endedAt": null,
+     "messages": 1,
+     "blocks": [
+      "thinking",
+      "toolCall"
+     ]
+    }
+   ],
+   "results": [
+    "call_1"
+   ]
+  },
+  {
+   "events": [
+    {
+     "type": "message_end",
+     "entry": {
+      "id": 8,
+      "conversationId": 1,
+      "kind": "pi.assistant",
+      "model": [
+       {
+        "role": "assistant",
+        "content": [
+         {
+          "type": "thinking",
+          "thinking": "Checking the tests"
+         },
+         {
+          "type": "toolCall",
+          "id": "call_2",
+          "name": "vm_exec",
+          "arguments": {
+           "command": "npm test"
+          }
+         }
+        ],
+        "api": "openai-completions",
+        "provider": "clinepass",
+        "model": "glm-5.3",
+        "usage": {
+         "input": 10,
+         "output": 5,
+         "cacheRead": 0,
+         "cacheWrite": 0,
+         "totalTokens": 15,
+         "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+         }
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1792447680000,
+        "durationMs": 4000
+       }
+      ]
+     }
+    }
+   ],
+   "state": {
+    "entries": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8
+    ],
+    "streaming": null,
+    "tools": {},
+    "running": true,
+    "queued": 1,
+    "retry": null,
+    "error": null,
+    "loaded": true
+   },
+   "items": [
+    {
+     "kind": "user",
+     "id": "2:0",
+     "text": "Summarize the repo",
+     "images": 0
+    },
+    {
+     "kind": "assistant",
+     "id": "3:0",
+     "streaming": false,
+     "endedAt": 1792447657500,
+     "messages": 2,
+     "blocks": [
+      "thinking",
+      "toolCall",
+      "text"
+     ]
+    },
+    {
+     "kind": "divider",
+     "id": "6",
+     "label": "Earlier messages summarized"
+    },
+    {
+     "kind": "user",
+     "id": "6:0",
+     "text": "Summary of earlier messages",
+     "images": 0
+    },
+    {
+     "kind": "user",
+     "id": "7:0",
+     "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?",
+     "images": 1
+    },
+    {
+     "kind": "assistant",
+     "id": "8:0",
+     "streaming": false,
+     "endedAt": 1792447684000,
+     "messages": 1,
+     "blocks": [
+      "thinking",
+      "toolCall"
+     ]
+    }
+   ],
+   "results": [
+    "call_1"
+   ]
+  },
+  {
+   "events": [
+    {
+     "type": "tool_execution_start",
+     "toolCallId": "call_2",
+     "toolName": "vm_exec",
+     "args": {
+      "command": "npm test"
+     }
+    },
+    {
+     "type": "tool_execution_start",
+     "toolCallId": "call_2/1",
+     "toolName": "inner",
+     "parentToolCallId": "call_2",
+     "args": {}
+    }
+   ],
+   "state": {
+    "entries": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8
+    ],
+    "streaming": null,
+    "tools": {
+     "call_2": {
+      "callId": "call_2",
+      "name": "vm_exec",
+      "status": "running",
+      "output": "",
+      "args": {
+       "command": "npm test"
+      }
+     }
+    },
+    "running": true,
+    "queued": 1,
+    "retry": null,
+    "error": null,
+    "loaded": true
+   },
+   "items": [
+    {
+     "kind": "user",
+     "id": "2:0",
+     "text": "Summarize the repo",
+     "images": 0
+    },
+    {
+     "kind": "assistant",
+     "id": "3:0",
+     "streaming": false,
+     "endedAt": 1792447657500,
+     "messages": 2,
+     "blocks": [
+      "thinking",
+      "toolCall",
+      "text"
+     ]
+    },
+    {
+     "kind": "divider",
+     "id": "6",
+     "label": "Earlier messages summarized"
+    },
+    {
+     "kind": "user",
+     "id": "6:0",
+     "text": "Summary of earlier messages",
+     "images": 0
+    },
+    {
+     "kind": "user",
+     "id": "7:0",
+     "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?",
+     "images": 1
+    },
+    {
+     "kind": "assistant",
+     "id": "8:0",
+     "streaming": false,
+     "endedAt": 1792447684000,
+     "messages": 1,
+     "blocks": [
+      "thinking",
+      "toolCall"
+     ]
+    }
+   ],
+   "results": [
+    "call_1"
+   ]
+  },
+  {
+   "events": [
+    {
+     "type": "tool_execution_update",
+     "toolCallId": "call_2",
+     "toolName": "vm_exec",
+     "output": {
+      "append": "PASS a\n"
+     }
+    },
+    {
+     "type": "tool_execution_update",
+     "toolCallId": "call_2",
+     "toolName": "vm_exec",
+     "output": {
+      "trimStart": 2,
+      "append": "PASS b\n"
+     },
+     "details": {
+      "pid": 4
+     }
+    }
+   ],
+   "state": {
+    "entries": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8
+    ],
+    "streaming": null,
+    "tools": {
+     "call_2": {
+      "callId": "call_2",
+      "name": "vm_exec",
+      "status": "running",
+      "output": "SS a\nPASS b\n",
+      "args": {
+       "command": "npm test"
+      },
+      "details": {
+       "pid": 4
+      }
+     }
+    },
+    "running": true,
+    "queued": 1,
+    "retry": null,
+    "error": null,
+    "loaded": true
+   },
+   "items": [
+    {
+     "kind": "user",
+     "id": "2:0",
+     "text": "Summarize the repo",
+     "images": 0
+    },
+    {
+     "kind": "assistant",
+     "id": "3:0",
+     "streaming": false,
+     "endedAt": 1792447657500,
+     "messages": 2,
+     "blocks": [
+      "thinking",
+      "toolCall",
+      "text"
+     ]
+    },
+    {
+     "kind": "divider",
+     "id": "6",
+     "label": "Earlier messages summarized"
+    },
+    {
+     "kind": "user",
+     "id": "6:0",
+     "text": "Summary of earlier messages",
+     "images": 0
+    },
+    {
+     "kind": "user",
+     "id": "7:0",
+     "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?",
+     "images": 1
+    },
+    {
+     "kind": "assistant",
+     "id": "8:0",
+     "streaming": false,
+     "endedAt": 1792447684000,
+     "messages": 1,
+     "blocks": [
+      "thinking",
+      "toolCall"
+     ]
+    }
+   ],
+   "results": [
+    "call_1"
+   ]
+  },
+  {
+   "events": [
+    {
+     "type": "tool_execution_update",
+     "toolCallId": "call_2",
+     "toolName": "vm_exec",
+     "output": {
+      "set": "all passed\n"
+     }
+    },
+    {
+     "type": "auto_retry_start",
+     "attempt": 1,
+     "at": 1792447715000,
+     "errorMessage": "429 rate limited"
+    }
+   ],
+   "state": {
+    "entries": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8
+    ],
+    "streaming": null,
+    "tools": {
+     "call_2": {
+      "callId": "call_2",
+      "name": "vm_exec",
+      "status": "running",
+      "output": "all passed\n",
+      "args": {
+       "command": "npm test"
+      },
+      "details": {
+       "pid": 4
+      }
+     }
+    },
+    "running": true,
+    "queued": 1,
+    "retry": {
+     "at": 1792447715000,
+     "error": "429 rate limited"
+    },
+    "error": null,
+    "loaded": true
+   },
+   "items": [
+    {
+     "kind": "user",
+     "id": "2:0",
+     "text": "Summarize the repo",
+     "images": 0
+    },
+    {
+     "kind": "assistant",
+     "id": "3:0",
+     "streaming": false,
+     "endedAt": 1792447657500,
+     "messages": 2,
+     "blocks": [
+      "thinking",
+      "toolCall",
+      "text"
+     ]
+    },
+    {
+     "kind": "divider",
+     "id": "6",
+     "label": "Earlier messages summarized"
+    },
+    {
+     "kind": "user",
+     "id": "6:0",
+     "text": "Summary of earlier messages",
+     "images": 0
+    },
+    {
+     "kind": "user",
+     "id": "7:0",
+     "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?",
+     "images": 1
+    },
+    {
+     "kind": "assistant",
+     "id": "8:0",
+     "streaming": false,
+     "endedAt": 1792447684000,
+     "messages": 1,
+     "blocks": [
+      "thinking",
+      "toolCall"
+     ]
+    }
+   ],
+   "results": [
+    "call_1"
+   ]
+  },
+  {
+   "events": [
+    {
+     "type": "tool_execution_end",
+     "toolCallId": "call_2",
+     "toolName": "vm_exec",
+     "entry": {
+      "id": 9,
+      "conversationId": 1,
+      "kind": "pi.toolResult",
+      "model": [
+       {
+        "role": "toolResult",
+        "toolCallId": "call_2",
+        "toolName": "vm_exec",
+        "content": [
+         {
+          "type": "text",
+          "text": "all passed"
+         }
+        ],
+        "isError": false,
+        "timestamp": 1792447690000
+       }
+      ]
+     }
+    },
+    {
+     "type": "auto_retry_end",
+     "attempt": 1
+    }
+   ],
+   "state": {
+    "entries": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9
+    ],
+    "streaming": null,
+    "tools": {
+     "call_2": {
+      "callId": "call_2",
+      "name": "vm_exec",
+      "status": "done",
+      "output": "all passed\n",
+      "args": {
+       "command": "npm test"
+      },
+      "details": {
+       "pid": 4
+      }
+     }
+    },
+    "running": true,
+    "queued": 1,
+    "retry": null,
+    "error": null,
+    "loaded": true
+   },
+   "items": [
+    {
+     "kind": "user",
+     "id": "2:0",
+     "text": "Summarize the repo",
+     "images": 0
+    },
+    {
+     "kind": "assistant",
+     "id": "3:0",
+     "streaming": false,
+     "endedAt": 1792447657500,
+     "messages": 2,
+     "blocks": [
+      "thinking",
+      "toolCall",
+      "text"
+     ]
+    },
+    {
+     "kind": "divider",
+     "id": "6",
+     "label": "Earlier messages summarized"
+    },
+    {
+     "kind": "user",
+     "id": "6:0",
+     "text": "Summary of earlier messages",
+     "images": 0
+    },
+    {
+     "kind": "user",
+     "id": "7:0",
+     "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?",
+     "images": 1
+    },
+    {
+     "kind": "assistant",
+     "id": "8:0",
+     "streaming": false,
+     "endedAt": 1792447690000,
+     "messages": 1,
+     "blocks": [
+      "thinking",
+      "toolCall"
+     ]
+    }
+   ],
+   "results": [
+    "call_1",
+    "call_2"
+   ]
+  },
+  {
+   "events": [
+    {
+     "type": "message_start",
+     "message": {
+      "role": "user",
+      "content": "ignored",
+      "timestamp": 1792447710000
+     }
+    },
+    {
+     "type": "message_start",
+     "message": {
+      "role": "assistant",
+      "content": [],
+      "api": "openai-completions",
+      "provider": "clinepass",
+      "model": "glm-5.3",
+      "usage": {
+       "input": 10,
+       "output": 5,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "totalTokens": 15,
+       "cost": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "total": 0
+       }
+      },
+      "stopReason": "pending",
+      "timestamp": 1792447695000
+     }
+    },
+    {
+     "type": "message_update",
+     "usage": {
+      "input": 10,
+      "output": 5,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "totalTokens": 15,
+      "cost": {
+       "input": 0,
+       "output": 0,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "total": 0
+      }
+     },
+     "changes": [
+      {
+       "type": "text_start",
+       "contentIndex": 0,
+       "block": {
+        "type": "text",
+        "text": ""
+       }
+      },
+      {
+       "type": "text_delta",
+       "contentIndex": 0,
+       "delta": "All tests "
+      },
+      {
+       "type": "text_delta",
+       "contentIndex": 0,
+       "delta": "pass."
+      },
+      {
+       "type": "text_delta",
+       "contentIndex": 3,
+       "delta": "lost"
+      }
+     ]
+    }
+   ],
+   "state": {
+    "entries": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9
+    ],
+    "streaming": {
+     "role": "assistant",
+     "content": [
+      {
+       "type": "text",
+       "text": "All tests pass."
+      }
+     ],
+     "api": "openai-completions",
+     "provider": "clinepass",
+     "model": "glm-5.3",
+     "usage": {
+      "input": 10,
+      "output": 5,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "totalTokens": 15,
+      "cost": {
+       "input": 0,
+       "output": 0,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "total": 0
+      }
+     },
+     "stopReason": "pending",
+     "timestamp": 1792447695000
+    },
+    "tools": {
+     "call_2": {
+      "callId": "call_2",
+      "name": "vm_exec",
+      "status": "done",
+      "output": "all passed\n",
+      "args": {
+       "command": "npm test"
+      },
+      "details": {
+       "pid": 4
+      }
+     }
+    },
+    "running": true,
+    "queued": 1,
+    "retry": null,
+    "error": null,
+    "loaded": true
+   },
+   "items": [
+    {
+     "kind": "user",
+     "id": "2:0",
+     "text": "Summarize the repo",
+     "images": 0
+    },
+    {
+     "kind": "assistant",
+     "id": "3:0",
+     "streaming": false,
+     "endedAt": 1792447657500,
+     "messages": 2,
+     "blocks": [
+      "thinking",
+      "toolCall",
+      "text"
+     ]
+    },
+    {
+     "kind": "divider",
+     "id": "6",
+     "label": "Earlier messages summarized"
+    },
+    {
+     "kind": "user",
+     "id": "6:0",
+     "text": "Summary of earlier messages",
+     "images": 0
+    },
+    {
+     "kind": "user",
+     "id": "7:0",
+     "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?",
+     "images": 1
+    },
+    {
+     "kind": "assistant",
+     "id": "8:0",
+     "streaming": true,
+     "endedAt": 1792447690000,
+     "messages": 2,
+     "blocks": [
+      "thinking",
+      "toolCall",
+      "text"
+     ]
+    }
+   ],
+   "results": [
+    "call_1",
+    "call_2"
+   ]
+  },
+  {
+   "events": [
+    {
+     "type": "entry_appended",
+     "entry": {
+      "id": 9,
+      "conversationId": 1,
+      "kind": "pi.toolResult",
+      "model": [
+       {
+        "role": "toolResult",
+        "toolCallId": "dup",
+        "toolName": "x",
+        "content": [],
+        "timestamp": 1792447710000
+       }
+      ]
+     }
+    },
+    {
+     "type": "turn_end"
+    },
+    {
+     "type": "usage_changed",
+     "usage": {}
+    }
+   ],
+   "state": {
+    "entries": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9
+    ],
+    "streaming": {
+     "role": "assistant",
+     "content": [
+      {
+       "type": "text",
+       "text": "All tests pass."
+      }
+     ],
+     "api": "openai-completions",
+     "provider": "clinepass",
+     "model": "glm-5.3",
+     "usage": {
+      "input": 10,
+      "output": 5,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "totalTokens": 15,
+      "cost": {
+       "input": 0,
+       "output": 0,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "total": 0
+      }
+     },
+     "stopReason": "pending",
+     "timestamp": 1792447695000
+    },
+    "tools": {
+     "call_2": {
+      "callId": "call_2",
+      "name": "vm_exec",
+      "status": "done",
+      "output": "all passed\n",
+      "args": {
+       "command": "npm test"
+      },
+      "details": {
+       "pid": 4
+      }
+     }
+    },
+    "running": true,
+    "queued": 1,
+    "retry": null,
+    "error": null,
+    "loaded": true
+   },
+   "items": [
+    {
+     "kind": "user",
+     "id": "2:0",
+     "text": "Summarize the repo",
+     "images": 0
+    },
+    {
+     "kind": "assistant",
+     "id": "3:0",
+     "streaming": false,
+     "endedAt": 1792447657500,
+     "messages": 2,
+     "blocks": [
+      "thinking",
+      "toolCall",
+      "text"
+     ]
+    },
+    {
+     "kind": "divider",
+     "id": "6",
+     "label": "Earlier messages summarized"
+    },
+    {
+     "kind": "user",
+     "id": "6:0",
+     "text": "Summary of earlier messages",
+     "images": 0
+    },
+    {
+     "kind": "user",
+     "id": "7:0",
+     "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?",
+     "images": 1
+    },
+    {
+     "kind": "assistant",
+     "id": "8:0",
+     "streaming": true,
+     "endedAt": 1792447690000,
+     "messages": 2,
+     "blocks": [
+      "thinking",
+      "toolCall",
+      "text"
+     ]
+    }
+   ],
+   "results": [
+    "call_1",
+    "call_2"
+   ]
+  },
+  {
+   "events": [
+    {
+     "type": "message_update",
+     "usage": {
+      "input": 10,
+      "output": 5,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "totalTokens": 15,
+      "cost": {
+       "input": 0,
+       "output": 0,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "total": 0
+      }
+     },
+     "changes": [
+      {
+       "type": "message",
+       "message": {
+        "role": "assistant",
+        "content": [
+         {
+          "type": "text",
+          "text": "All tests pass. Done."
+         }
+        ],
+        "api": "openai-completions",
+        "provider": "clinepass",
+        "model": "glm-5.3",
+        "usage": {
+         "input": 10,
+         "output": 5,
+         "cacheRead": 0,
+         "cacheWrite": 0,
+         "totalTokens": 15,
+         "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+         }
+        },
+        "stopReason": "pending",
+        "timestamp": 1792447695000
+       }
+      }
+     ]
+    }
+   ],
+   "state": {
+    "entries": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9
+    ],
+    "streaming": {
+     "role": "assistant",
+     "content": [
+      {
+       "type": "text",
+       "text": "All tests pass. Done."
+      }
+     ],
+     "api": "openai-completions",
+     "provider": "clinepass",
+     "model": "glm-5.3",
+     "usage": {
+      "input": 10,
+      "output": 5,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "totalTokens": 15,
+      "cost": {
+       "input": 0,
+       "output": 0,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "total": 0
+      }
+     },
+     "stopReason": "pending",
+     "timestamp": 1792447695000
+    },
+    "tools": {
+     "call_2": {
+      "callId": "call_2",
+      "name": "vm_exec",
+      "status": "done",
+      "output": "all passed\n",
+      "args": {
+       "command": "npm test"
+      },
+      "details": {
+       "pid": 4
+      }
+     }
+    },
+    "running": true,
+    "queued": 1,
+    "retry": null,
+    "error": null,
+    "loaded": true
+   },
+   "items": [
+    {
+     "kind": "user",
+     "id": "2:0",
+     "text": "Summarize the repo",
+     "images": 0
+    },
+    {
+     "kind": "assistant",
+     "id": "3:0",
+     "streaming": false,
+     "endedAt": 1792447657500,
+     "messages": 2,
+     "blocks": [
+      "thinking",
+      "toolCall",
+      "text"
+     ]
+    },
+    {
+     "kind": "divider",
+     "id": "6",
+     "label": "Earlier messages summarized"
+    },
+    {
+     "kind": "user",
+     "id": "6:0",
+     "text": "Summary of earlier messages",
+     "images": 0
+    },
+    {
+     "kind": "user",
+     "id": "7:0",
+     "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?",
+     "images": 1
+    },
+    {
+     "kind": "assistant",
+     "id": "8:0",
+     "streaming": true,
+     "endedAt": 1792447690000,
+     "messages": 2,
+     "blocks": [
+      "thinking",
+      "toolCall",
+      "text"
+     ]
+    }
+   ],
+   "results": [
+    "call_1",
+    "call_2"
+   ]
+  },
+  {
+   "events": [
+    {
+     "type": "message_end",
+     "entry": {
+      "id": 10,
+      "conversationId": 1,
+      "kind": "pi.assistant",
+      "model": [
+       {
+        "role": "assistant",
+        "content": [
+         {
+          "type": "text",
+          "text": "All tests pass. Done."
+         }
+        ],
+        "api": "openai-completions",
+        "provider": "clinepass",
+        "model": "glm-5.3",
+        "usage": {
+         "input": 10,
+         "output": 5,
+         "cacheRead": 0,
+         "cacheWrite": 0,
+         "totalTokens": 15,
+         "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+         }
+        },
+        "stopReason": "stop",
+        "timestamp": 1792447695000,
+        "durationMs": 3000
+       }
+      ]
+     }
+    },
+    {
+     "type": "task_failed",
+     "taskId": 3,
+     "kind": "x",
+     "message": "Something broke"
+    }
+   ],
+   "state": {
+    "entries": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10
+    ],
+    "streaming": null,
+    "tools": {
+     "call_2": {
+      "callId": "call_2",
+      "name": "vm_exec",
+      "status": "done",
+      "output": "all passed\n",
+      "args": {
+       "command": "npm test"
+      },
+      "details": {
+       "pid": 4
+      }
+     }
+    },
+    "running": true,
+    "queued": 1,
+    "retry": null,
+    "error": "Something broke",
+    "loaded": true
+   },
+   "items": [
+    {
+     "kind": "user",
+     "id": "2:0",
+     "text": "Summarize the repo",
+     "images": 0
+    },
+    {
+     "kind": "assistant",
+     "id": "3:0",
+     "streaming": false,
+     "endedAt": 1792447657500,
+     "messages": 2,
+     "blocks": [
+      "thinking",
+      "toolCall",
+      "text"
+     ]
+    },
+    {
+     "kind": "divider",
+     "id": "6",
+     "label": "Earlier messages summarized"
+    },
+    {
+     "kind": "user",
+     "id": "6:0",
+     "text": "Summary of earlier messages",
+     "images": 0
+    },
+    {
+     "kind": "user",
+     "id": "7:0",
+     "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?",
+     "images": 1
+    },
+    {
+     "kind": "assistant",
+     "id": "8:0",
+     "streaming": false,
+     "endedAt": 1792447698000,
+     "messages": 2,
+     "blocks": [
+      "thinking",
+      "toolCall",
+      "text"
+     ]
+    }
+   ],
+   "results": [
+    "call_1",
+    "call_2"
+   ]
+  },
+  {
+   "events": [
+    {
+     "type": "run_end",
+     "inputs": [
+      9
+     ]
+    },
+    {
+     "type": "inbox_update",
+     "items": []
+    }
+   ],
+   "state": {
+    "entries": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10
+    ],
+    "streaming": null,
+    "tools": {},
+    "running": false,
+    "queued": 0,
+    "retry": null,
+    "error": "Something broke",
+    "loaded": true
+   },
+   "items": [
+    {
+     "kind": "user",
+     "id": "2:0",
+     "text": "Summarize the repo",
+     "images": 0
+    },
+    {
+     "kind": "assistant",
+     "id": "3:0",
+     "streaming": false,
+     "endedAt": 1792447657500,
+     "messages": 2,
+     "blocks": [
+      "thinking",
+      "toolCall",
+      "text"
+     ]
+    },
+    {
+     "kind": "divider",
+     "id": "6",
+     "label": "Earlier messages summarized"
+    },
+    {
+     "kind": "user",
+     "id": "6:0",
+     "text": "Summary of earlier messages",
+     "images": 0
+    },
+    {
+     "kind": "user",
+     "id": "7:0",
+     "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?",
+     "images": 1
+    },
+    {
+     "kind": "assistant",
+     "id": "8:0",
+     "streaming": false,
+     "endedAt": 1792447698000,
+     "messages": 2,
+     "blocks": [
+      "thinking",
+      "toolCall",
+      "text"
+     ]
+    }
+   ],
+   "results": [
+    "call_1",
+    "call_2"
+   ]
+  }
+ ],
+ "midRun": {
+  "snapshot": {
+   "type": "snapshot",
+   "entries": [
+    {
+     "id": 1,
+     "conversationId": 1,
+     "kind": "pi.system",
+     "model": []
+    },
+    {
+     "id": 2,
+     "conversationId": 1,
+     "kind": "pi.user",
+     "model": [
+      {
+       "role": "user",
+       "content": "Summarize the repo",
+       "timestamp": 1792447640000
+      }
+     ]
+    },
+    {
+     "id": 3,
+     "conversationId": 1,
+     "kind": "pi.assistant",
+     "model": [
+      {
+       "role": "assistant",
+       "content": [
+        {
+         "type": "thinking",
+         "thinking": "Let me look.\n**Plan**: read files"
+        },
+        {
+         "type": "toolCall",
+         "id": "call_1",
+         "name": "bash",
+         "arguments": {
+          "command": "ls -la\npwd"
+         }
+        }
+       ],
+       "api": "openai-completions",
+       "provider": "clinepass",
+       "model": "glm-5.3",
+       "usage": {
+        "input": 10,
+        "output": 5,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 15,
+        "cost": {
+         "input": 0,
+         "output": 0,
+         "cacheRead": 0,
+         "cacheWrite": 0,
+         "total": 0
+        }
+       },
+       "stopReason": "toolUse",
+       "timestamp": 1792447650000,
+       "durationMs": 2000
+      }
+     ]
+    },
+    {
+     "id": 4,
+     "conversationId": 1,
+     "kind": "pi.toolResult",
+     "model": [
+      {
+       "role": "toolResult",
+       "toolCallId": "call_1",
+       "toolName": "bash",
+       "content": [
+        {
+         "type": "text",
+         "text": "README.md\nsrc"
+        }
+       ],
+       "isError": false,
+       "timestamp": 1792447655000
+      }
+     ]
+    },
+    {
+     "id": 5,
+     "conversationId": 1,
+     "kind": "pi.assistant",
+     "model": [
+      {
+       "role": "assistant",
+       "content": [
+        {
+         "type": "text",
+         "text": "It has a README and src."
+        }
+       ],
+       "api": "openai-completions",
+       "provider": "clinepass",
+       "model": "glm-5.3",
+       "usage": {
+        "input": 10,
+        "output": 5,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 15,
+        "cost": {
+         "input": 0,
+         "output": 0,
+         "cacheRead": 0,
+         "cacheWrite": 0,
+         "total": 0
+        }
+       },
+       "stopReason": "stop",
+       "timestamp": 1792447656000,
+       "durationMs": 1500
+      }
+     ]
+    },
+    {
+     "id": 6,
+     "conversationId": 1,
+     "kind": "pi.compaction",
+     "model": [
+      {
+       "role": "user",
+       "content": "Summary of earlier messages",
+       "timestamp": 1792447660000
+      }
+     ]
+    },
+    {
+     "id": 7,
+     "conversationId": 1,
+     "kind": "pi.user",
+     "model": [
+      {
+       "role": "user",
+       "content": [
+        {
+         "type": "text",
+         "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?"
+        },
+        {
+         "type": "image",
+         "data": "",
+         "mimeType": "image/png",
+         "ref": "7:0:1"
+        }
+       ],
+       "timestamp": 1792447670000
+      }
+     ]
+    }
+   ],
+   "tools": [
+    {
+     "callId": "c",
+     "name": "bash",
+     "status": "running",
+     "output": "out"
+    }
+   ],
+   "nestedTools": [],
+   "compactions": [],
+   "inbox": [
+    {
+     "id": 1,
+     "mode": "steer"
+    }
+   ],
+   "agent": {},
+   "usage": {},
+   "run": {
+    "inputs": [
+     1
+    ]
+   },
+   "generation": {
+    "attempt": 1,
+    "message": {
+     "role": "assistant",
+     "content": [
+      {
+       "type": "text",
+       "text": "partial"
+      }
+     ],
+     "api": "openai-completions",
+     "provider": "clinepass",
+     "model": "glm-5.3",
+     "usage": {
+      "input": 10,
+      "output": 5,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "totalTokens": 15,
+      "cost": {
+       "input": 0,
+       "output": 0,
+       "cacheRead": 0,
+       "cacheWrite": 0,
+       "total": 0
+      }
+     },
+     "stopReason": "stop",
+     "timestamp": 1792447650000
+    },
+    "retry": {
+     "at": 1792447710000,
+     "error": "busy"
+    }
+   }
+  },
+  "running": true,
+  "streaming": {
+   "role": "assistant",
+   "content": [
+    {
+     "type": "text",
+     "text": "partial"
+    }
+   ],
+   "api": "openai-completions",
+   "provider": "clinepass",
+   "model": "glm-5.3",
+   "usage": {
+    "input": 10,
+    "output": 5,
+    "cacheRead": 0,
+    "cacheWrite": 0,
+    "totalTokens": 15,
+    "cost": {
+     "input": 0,
+     "output": 0,
+     "cacheRead": 0,
+     "cacheWrite": 0,
+     "total": 0
+    }
+   },
+   "stopReason": "stop",
+   "timestamp": 1792447650000
+  },
+  "retry": {
+   "at": 1792447710000,
+   "error": "busy"
+  },
+  "tools": {
+   "c": {
+    "callId": "c",
+    "name": "bash",
+    "status": "running",
+    "output": "out"
+   }
+  },
+  "queued": 1
+ }
+}

@@ -1,0 +1,200 @@
+{
+ "activity": [
+  {
+   "name": "bash",
+   "text": "Running a command"
+  },
+  {
+   "name": "read_file",
+   "text": "Reading a file"
+  },
+  {
+   "name": "web_search",
+   "text": "Searching the web"
+  },
+  {
+   "name": "vm_exec",
+   "text": "Running on the VM"
+  },
+  {
+   "name": "vm_screenshot",
+   "text": "Looking at the VM's screen"
+  },
+  {
+   "name": "share_media",
+   "text": "Sharing a file from the VM"
+  },
+  {
+   "name": "app_call",
+   "text": "Managing Dex"
+  },
+  {
+   "name": "use_skill",
+   "text": "Reading a skill"
+  },
+  {
+   "name": "github__create_issue",
+   "text": "Using github"
+  },
+  {
+   "name": "custom_tool",
+   "text": "Using custom_tool"
+  },
+  {
+   "name": "render_ui",
+   "text": "Using render_ui"
+  }
+ ],
+ "summarize": [
+  {
+   "args": {},
+   "text": "{}"
+  },
+  {
+   "args": {
+    "command": "npm test\n--watch"
+   },
+   "text": "npm test"
+  },
+  {
+   "args": {
+    "path": "/workspace/notes.md"
+   },
+   "text": "/workspace/notes.md"
+  },
+  {
+   "args": {
+    "query": "",
+    "url": "https://example.com"
+   },
+   "text": "https://example.com"
+  },
+  {
+   "args": {
+    "prompt": "hi"
+   },
+   "text": "hi"
+  },
+  {
+   "args": {
+    "name": "deploy",
+    "id": "x"
+   },
+   "text": "deploy"
+  },
+  {
+   "args": {
+    "operation": "app_list_sessions"
+   },
+   "text": "app_list_sessions"
+  },
+  {
+   "args": {
+    "count": 3,
+    "deep": {
+     "a": [
+      1,
+      2
+     ]
+    }
+   },
+   "text": "{\"count\":3,\"deep\":{\"a\":[1,2]}}"
+  },
+  {
+   "args": "not an object",
+   "text": ""
+  },
+  {
+   "args": null,
+   "text": ""
+  },
+  {
+   "args": {
+    "long": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   "text": "{\"long\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  }
+ ],
+ "invoked": [
+  {
+   "text": "/review this",
+   "skill": "review"
+  },
+  {
+   "text": "  /deploy",
+   "skill": "deploy"
+  },
+  {
+   "text": "/Deploy now",
+   "skill": null
+  },
+  {
+   "text": "/a-b-c",
+   "skill": "a-b-c"
+  },
+  {
+   "text": "/x",
+   "skill": "x"
+  },
+  {
+   "text": "no /skill",
+   "skill": null
+  },
+  {
+   "text": "/bad_name x",
+   "skill": null
+  },
+  {
+   "text": "/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "skill": null
+  },
+  {
+   "text": "/ok\nnext",
+   "skill": "ok"
+  }
+ ],
+ "slug": [
+  {
+   "text": "Release Notes!",
+   "slug": "release-notes"
+  },
+  {
+   "text": "  --Hello__World--  ",
+   "slug": "hello-world"
+  },
+  {
+   "text": "ÄÖÜ ok",
+   "slug": "ok"
+  },
+  {
+   "text": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "slug": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  {
+   "text": "",
+   "slug": ""
+  }
+ ],
+ "uiNotes": [
+  {
+   "input": "plain message",
+   "notes": [],
+   "text": "plain message"
+  },
+  {
+   "input": "[Done in this chat's UI since my last message]\n- Ran app_stop_vm\n- Saved a filter\n\nWhat changed?",
+   "notes": [
+    "Ran app_stop_vm",
+    "Saved a filter"
+   ],
+   "text": "What changed?"
+  },
+  {
+   "input": "[Done in this chat's UI since my last message]\n- Only notes",
+   "notes": [
+    "Only notes"
+   ],
+   "text": ""
+  }
+ ]
+}

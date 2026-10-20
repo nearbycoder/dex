@@ -1,0 +1,219 @@
+{
+ "sources": [
+  {
+   "url": "/api/media/user-x/0b4f2c3e-1111-2222-3333-444455556666.mp4",
+   "source": {
+    "kind": "own",
+    "url": "/api/media/user-x/0b4f2c3e-1111-2222-3333-444455556666.mp4",
+    "media": "video"
+   }
+  },
+  {
+   "url": "/api/media/user-x/a.png",
+   "source": {
+    "kind": "own",
+    "url": "/api/media/user-x/a.png",
+    "media": "image"
+   }
+  },
+  {
+   "url": "/api/media/user-x/a.txt",
+   "source": null
+  },
+  {
+   "url": "https://abc-def-3000.on.boat.dev/out/demo.mp4?_token=secret",
+   "source": {
+    "kind": "vm",
+    "url": "https://abc-def-3000.on.boat.dev/out/demo.mp4?_token=secret",
+    "media": "video"
+   }
+  },
+  {
+   "url": "https://abc-3000.on.boat.dev/shot.PNG",
+   "source": {
+    "kind": "vm",
+    "url": "https://abc-3000.on.boat.dev/shot.PNG",
+    "media": "image"
+   }
+  },
+  {
+   "url": "https://abc-3000.on.boat.dev/page.html",
+   "source": null
+  },
+  {
+   "url": "http://abc-3000.on.boat.dev/demo.mp4",
+   "source": null
+  },
+  {
+   "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+   "source": {
+    "kind": "youtube",
+    "id": "dQw4w9WgXcQ",
+    "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+   }
+  },
+  {
+   "url": "https://m.youtube.com/watch?v=dQw4w9WgXcQ&t=10",
+   "source": {
+    "kind": "youtube",
+    "id": "dQw4w9WgXcQ",
+    "url": "https://m.youtube.com/watch?v=dQw4w9WgXcQ&t=10"
+   }
+  },
+  {
+   "url": "https://youtu.be/dQw4w9WgXcQ",
+   "source": {
+    "kind": "youtube",
+    "id": "dQw4w9WgXcQ",
+    "url": "https://youtu.be/dQw4w9WgXcQ"
+   }
+  },
+  {
+   "url": "https://youtube.com/shorts/dQw4w9WgXcQ",
+   "source": {
+    "kind": "youtube",
+    "id": "dQw4w9WgXcQ",
+    "url": "https://youtube.com/shorts/dQw4w9WgXcQ"
+   }
+  },
+  {
+   "url": "https://youtube.com/embed/abc",
+   "source": null
+  },
+  {
+   "url": "https://vimeo.com/123456789",
+   "source": {
+    "kind": "vimeo",
+    "id": "123456789",
+    "url": "https://vimeo.com/123456789"
+   }
+  },
+  {
+   "url": "https://player.vimeo.com/video/76979871/",
+   "source": {
+    "kind": "vimeo",
+    "id": "76979871",
+    "url": "https://player.vimeo.com/video/76979871/"
+   }
+  },
+  {
+   "url": "https://vimeo.com/channels/staff",
+   "source": null
+  },
+  {
+   "url": "https://example.com/clip.webm",
+   "source": {
+    "kind": "file",
+    "url": "https://example.com/clip.webm"
+   }
+  },
+  {
+   "url": "https://example.com/clip.MOV?x=1",
+   "source": {
+    "kind": "file",
+    "url": "https://example.com/clip.MOV?x=1"
+   }
+  },
+  {
+   "url": "http://example.com/clip.mp4",
+   "source": null
+  },
+  {
+   "url": "https://example.com/page",
+   "source": null
+  },
+  {
+   "url": "not a url",
+   "source": null
+  },
+  {
+   "url": "mailto:a@b.c",
+   "source": null
+  }
+ ],
+ "vmLinks": [
+  {
+   "text": "See https://abc-3000.on.boat.dev/a.mp4 and https://abc-3000.on.boat.dev/a.mp4?_token=1 and (https://xyz-8080.on.boat.dev/img/b.png).",
+   "links": [
+    "https://abc-3000.on.boat.dev/a.mp4",
+    "https://xyz-8080.on.boat.dev/img/b.png"
+   ]
+  },
+  {
+   "text": "Nothing here https://example.com/a.mp4",
+   "links": []
+  }
+ ],
+ "repos": [
+  {
+   "input": "owner/repo",
+   "url": "https://github.com/owner/repo.git",
+   "label": "owner/repo",
+   "dir": "repo",
+   "fullName": "owner/repo"
+  },
+  {
+   "input": "github.com/owner/repo.git",
+   "url": "https://github.com/owner/repo.git",
+   "label": "owner/repo",
+   "dir": "repo",
+   "fullName": "owner/repo"
+  },
+  {
+   "input": "https://github.com/owner/repo",
+   "url": "https://github.com/owner/repo",
+   "label": "owner/repo",
+   "dir": "repo",
+   "fullName": "owner/repo"
+  },
+  {
+   "input": "https://github.com/owner/repo.git/",
+   "url": "https://github.com/owner/repo.git",
+   "label": "owner/repo",
+   "dir": "repo",
+   "fullName": "owner/repo"
+  },
+  {
+   "input": "https://gitlab.com/team/app.git",
+   "url": "https://gitlab.com/team/app.git",
+   "label": "gitlab.com/team/app",
+   "dir": "app",
+   "fullName": null
+  },
+  {
+   "input": "https://user:pw@github.com/a/b",
+   "url": null,
+   "label": "a/b",
+   "dir": "b",
+   "fullName": null
+  },
+  {
+   "input": "http://github.com/a/b",
+   "url": null,
+   "label": "a/b",
+   "dir": "b",
+   "fullName": null
+  },
+  {
+   "input": "https://github.com/onlyowner",
+   "url": null,
+   "label": "github.com/onlyowner",
+   "dir": "onlyowner",
+   "fullName": null
+  },
+  {
+   "input": "nonsense",
+   "url": null,
+   "label": "nonsense",
+   "dir": "nonsense",
+   "fullName": null
+  },
+  {
+   "input": " owner/repo/ ",
+   "url": "https://github.com/owner/repo.git",
+   "label": "owner/repo",
+   "dir": "repo",
+   "fullName": "owner/repo"
+  }
+ ]
+}
