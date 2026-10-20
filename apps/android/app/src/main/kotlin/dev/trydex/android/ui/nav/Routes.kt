@@ -97,6 +97,7 @@ fun routesFor(link: String): List<Route>? {
         "usage" -> listOf(SettingsHome, Usage)
         "files" -> listOf(LibraryHome, Workspace)
         "access" -> listOf(SettingsHome, Access)
+        "notifications" -> listOf(SettingsHome, NotificationSettings)
         else -> null
     }
 }
