@@ -1,0 +1,13 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.kotlin/
+captures/
+.externalNativeBuild/
+.cxx/
+/app/release/
+
+# Recorded locally with ./gradlew :app:recordRoborazziDebug
+app/src/test/screenshots/

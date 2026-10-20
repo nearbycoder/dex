@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:icon="@drawable/ic_shortcut_chat"
+        android:shortcutId="new_chat"
+        android:shortcutShortLabel="@string/shortcut_new_chat">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="dex://app/chat"
+            android:targetClass="dev.trydex.android.MainActivity"
+            android:targetPackage="dev.trydex.android" />
+    </shortcut>
+    <shortcut
+        android:icon="@drawable/ic_shortcut_machine"
+        android:shortcutId="machines"
+        android:shortcutLongLabel="@string/shortcut_machines"
+        android:shortcutShortLabel="@string/shortcut_machines_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="dex://app/machine"
+            android:targetClass="dev.trydex.android.MainActivity"
+            android:targetPackage="dev.trydex.android" />
+    </shortcut>
+    <shortcut
+        android:icon="@drawable/ic_shortcut_usage"
+        android:shortcutId="usage"
+        android:shortcutShortLabel="@string/shortcut_usage">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="dex://app/usage"
+            android:targetClass="dev.trydex.android.MainActivity"
+            android:targetPackage="dev.trydex.android" />
+    </shortcut>
+</shortcuts>

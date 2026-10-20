@@ -1,0 +1,742 @@
+{
+ "zone": "America/Chicago",
+ "snooze": [
+  {
+   "now": 1792415700000,
+   "options": [
+    {
+     "label": "In 1 hour",
+     "at": 1792419300000,
+     "until": "until 9:15 AM"
+    },
+    {
+     "label": "This evening",
+     "at": 1792450800000,
+     "until": "until 6:00 PM"
+    },
+    {
+     "label": "Tomorrow",
+     "at": 1792504800000,
+     "until": "until Tue 9:00 AM"
+    },
+    {
+     "label": "This weekend",
+     "at": 1792850400000,
+     "until": "until Sat 9:00 AM"
+    },
+    {
+     "label": "Next week",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    }
+   ]
+  },
+  {
+   "now": 1792444500000,
+   "options": [
+    {
+     "label": "In 1 hour",
+     "at": 1792448100000,
+     "until": "until 5:15 PM"
+    },
+    {
+     "label": "This evening",
+     "at": 1792450800000,
+     "until": "until 6:00 PM"
+    },
+    {
+     "label": "Tomorrow",
+     "at": 1792504800000,
+     "until": "until Tue 9:00 AM"
+    },
+    {
+     "label": "This weekend",
+     "at": 1792850400000,
+     "until": "until Sat 9:00 AM"
+    },
+    {
+     "label": "Next week",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    }
+   ]
+  },
+  {
+   "now": 1792448100000,
+   "options": [
+    {
+     "label": "In 1 hour",
+     "at": 1792451700000,
+     "until": "until 6:15 PM"
+    },
+    {
+     "label": "Tomorrow",
+     "at": 1792504800000,
+     "until": "until Tue 9:00 AM"
+    },
+    {
+     "label": "This weekend",
+     "at": 1792850400000,
+     "until": "until Sat 9:00 AM"
+    },
+    {
+     "label": "Next week",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    }
+   ]
+  },
+  {
+   "now": 1792466100000,
+   "options": [
+    {
+     "label": "In 1 hour",
+     "at": 1792469700000,
+     "until": "until 11:15 PM"
+    },
+    {
+     "label": "Tomorrow",
+     "at": 1792504800000,
+     "until": "until Tue 9:00 AM"
+    },
+    {
+     "label": "This weekend",
+     "at": 1792850400000,
+     "until": "until Sat 9:00 AM"
+    },
+    {
+     "label": "Next week",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    }
+   ]
+  },
+  {
+   "now": 1792502100000,
+   "options": [
+    {
+     "label": "In 1 hour",
+     "at": 1792505700000,
+     "until": "until 9:15 AM"
+    },
+    {
+     "label": "This evening",
+     "at": 1792537200000,
+     "until": "until 6:00 PM"
+    },
+    {
+     "label": "Tomorrow",
+     "at": 1792591200000,
+     "until": "until Wed 9:00 AM"
+    },
+    {
+     "label": "This weekend",
+     "at": 1792850400000,
+     "until": "until Sat 9:00 AM"
+    },
+    {
+     "label": "Next week",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    }
+   ]
+  },
+  {
+   "now": 1792530900000,
+   "options": [
+    {
+     "label": "In 1 hour",
+     "at": 1792534500000,
+     "until": "until 5:15 PM"
+    },
+    {
+     "label": "This evening",
+     "at": 1792537200000,
+     "until": "until 6:00 PM"
+    },
+    {
+     "label": "Tomorrow",
+     "at": 1792591200000,
+     "until": "until Wed 9:00 AM"
+    },
+    {
+     "label": "This weekend",
+     "at": 1792850400000,
+     "until": "until Sat 9:00 AM"
+    },
+    {
+     "label": "Next week",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    }
+   ]
+  },
+  {
+   "now": 1792534500000,
+   "options": [
+    {
+     "label": "In 1 hour",
+     "at": 1792538100000,
+     "until": "until 6:15 PM"
+    },
+    {
+     "label": "Tomorrow",
+     "at": 1792591200000,
+     "until": "until Wed 9:00 AM"
+    },
+    {
+     "label": "This weekend",
+     "at": 1792850400000,
+     "until": "until Sat 9:00 AM"
+    },
+    {
+     "label": "Next week",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    }
+   ]
+  },
+  {
+   "now": 1792552500000,
+   "options": [
+    {
+     "label": "In 1 hour",
+     "at": 1792556100000,
+     "until": "until 11:15 PM"
+    },
+    {
+     "label": "Tomorrow",
+     "at": 1792591200000,
+     "until": "until Wed 9:00 AM"
+    },
+    {
+     "label": "This weekend",
+     "at": 1792850400000,
+     "until": "until Sat 9:00 AM"
+    },
+    {
+     "label": "Next week",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    }
+   ]
+  },
+  {
+   "now": 1792588500000,
+   "options": [
+    {
+     "label": "In 1 hour",
+     "at": 1792592100000,
+     "until": "until 9:15 AM"
+    },
+    {
+     "label": "This evening",
+     "at": 1792623600000,
+     "until": "until 6:00 PM"
+    },
+    {
+     "label": "Tomorrow",
+     "at": 1792677600000,
+     "until": "until Thu 9:00 AM"
+    },
+    {
+     "label": "This weekend",
+     "at": 1792850400000,
+     "until": "until Sat 9:00 AM"
+    },
+    {
+     "label": "Next week",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    }
+   ]
+  },
+  {
+   "now": 1792617300000,
+   "options": [
+    {
+     "label": "In 1 hour",
+     "at": 1792620900000,
+     "until": "until 5:15 PM"
+    },
+    {
+     "label": "This evening",
+     "at": 1792623600000,
+     "until": "until 6:00 PM"
+    },
+    {
+     "label": "Tomorrow",
+     "at": 1792677600000,
+     "until": "until Thu 9:00 AM"
+    },
+    {
+     "label": "This weekend",
+     "at": 1792850400000,
+     "until": "until Sat 9:00 AM"
+    },
+    {
+     "label": "Next week",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    }
+   ]
+  },
+  {
+   "now": 1792620900000,
+   "options": [
+    {
+     "label": "In 1 hour",
+     "at": 1792624500000,
+     "until": "until 6:15 PM"
+    },
+    {
+     "label": "Tomorrow",
+     "at": 1792677600000,
+     "until": "until Thu 9:00 AM"
+    },
+    {
+     "label": "This weekend",
+     "at": 1792850400000,
+     "until": "until Sat 9:00 AM"
+    },
+    {
+     "label": "Next week",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    }
+   ]
+  },
+  {
+   "now": 1792638900000,
+   "options": [
+    {
+     "label": "In 1 hour",
+     "at": 1792642500000,
+     "until": "until 11:15 PM"
+    },
+    {
+     "label": "Tomorrow",
+     "at": 1792677600000,
+     "until": "until Thu 9:00 AM"
+    },
+    {
+     "label": "This weekend",
+     "at": 1792850400000,
+     "until": "until Sat 9:00 AM"
+    },
+    {
+     "label": "Next week",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    }
+   ]
+  },
+  {
+   "now": 1792674900000,
+   "options": [
+    {
+     "label": "In 1 hour",
+     "at": 1792678500000,
+     "until": "until 9:15 AM"
+    },
+    {
+     "label": "This evening",
+     "at": 1792710000000,
+     "until": "until 6:00 PM"
+    },
+    {
+     "label": "Tomorrow",
+     "at": 1792764000000,
+     "until": "until Fri 9:00 AM"
+    },
+    {
+     "label": "This weekend",
+     "at": 1792850400000,
+     "until": "until Sat 9:00 AM"
+    },
+    {
+     "label": "Next week",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    }
+   ]
+  },
+  {
+   "now": 1792703700000,
+   "options": [
+    {
+     "label": "In 1 hour",
+     "at": 1792707300000,
+     "until": "until 5:15 PM"
+    },
+    {
+     "label": "This evening",
+     "at": 1792710000000,
+     "until": "until 6:00 PM"
+    },
+    {
+     "label": "Tomorrow",
+     "at": 1792764000000,
+     "until": "until Fri 9:00 AM"
+    },
+    {
+     "label": "This weekend",
+     "at": 1792850400000,
+     "until": "until Sat 9:00 AM"
+    },
+    {
+     "label": "Next week",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    }
+   ]
+  },
+  {
+   "now": 1792707300000,
+   "options": [
+    {
+     "label": "In 1 hour",
+     "at": 1792710900000,
+     "until": "until 6:15 PM"
+    },
+    {
+     "label": "Tomorrow",
+     "at": 1792764000000,
+     "until": "until Fri 9:00 AM"
+    },
+    {
+     "label": "This weekend",
+     "at": 1792850400000,
+     "until": "until Sat 9:00 AM"
+    },
+    {
+     "label": "Next week",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    }
+   ]
+  },
+  {
+   "now": 1792725300000,
+   "options": [
+    {
+     "label": "In 1 hour",
+     "at": 1792728900000,
+     "until": "until 11:15 PM"
+    },
+    {
+     "label": "Tomorrow",
+     "at": 1792764000000,
+     "until": "until Fri 9:00 AM"
+    },
+    {
+     "label": "This weekend",
+     "at": 1792850400000,
+     "until": "until Sat 9:00 AM"
+    },
+    {
+     "label": "Next week",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    }
+   ]
+  },
+  {
+   "now": 1792761300000,
+   "options": [
+    {
+     "label": "In 1 hour",
+     "at": 1792764900000,
+     "until": "until 9:15 AM"
+    },
+    {
+     "label": "This evening",
+     "at": 1792796400000,
+     "until": "until 6:00 PM"
+    },
+    {
+     "label": "Tomorrow",
+     "at": 1792850400000,
+     "until": "until Sat 9:00 AM"
+    },
+    {
+     "label": "Next week",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    }
+   ]
+  },
+  {
+   "now": 1792790100000,
+   "options": [
+    {
+     "label": "In 1 hour",
+     "at": 1792793700000,
+     "until": "until 5:15 PM"
+    },
+    {
+     "label": "This evening",
+     "at": 1792796400000,
+     "until": "until 6:00 PM"
+    },
+    {
+     "label": "Tomorrow",
+     "at": 1792850400000,
+     "until": "until Sat 9:00 AM"
+    },
+    {
+     "label": "Next week",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    }
+   ]
+  },
+  {
+   "now": 1792793700000,
+   "options": [
+    {
+     "label": "In 1 hour",
+     "at": 1792797300000,
+     "until": "until 6:15 PM"
+    },
+    {
+     "label": "Tomorrow",
+     "at": 1792850400000,
+     "until": "until Sat 9:00 AM"
+    },
+    {
+     "label": "Next week",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    }
+   ]
+  },
+  {
+   "now": 1792811700000,
+   "options": [
+    {
+     "label": "In 1 hour",
+     "at": 1792815300000,
+     "until": "until 11:15 PM"
+    },
+    {
+     "label": "Tomorrow",
+     "at": 1792850400000,
+     "until": "until Sat 9:00 AM"
+    },
+    {
+     "label": "Next week",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    }
+   ]
+  },
+  {
+   "now": 1792847700000,
+   "options": [
+    {
+     "label": "In 1 hour",
+     "at": 1792851300000,
+     "until": "until 9:15 AM"
+    },
+    {
+     "label": "This evening",
+     "at": 1792882800000,
+     "until": "until 6:00 PM"
+    },
+    {
+     "label": "Tomorrow",
+     "at": 1792936800000,
+     "until": "until Sun 9:00 AM"
+    },
+    {
+     "label": "Next week",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    }
+   ]
+  },
+  {
+   "now": 1792876500000,
+   "options": [
+    {
+     "label": "In 1 hour",
+     "at": 1792880100000,
+     "until": "until 5:15 PM"
+    },
+    {
+     "label": "This evening",
+     "at": 1792882800000,
+     "until": "until 6:00 PM"
+    },
+    {
+     "label": "Tomorrow",
+     "at": 1792936800000,
+     "until": "until Sun 9:00 AM"
+    },
+    {
+     "label": "Next week",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    }
+   ]
+  },
+  {
+   "now": 1792880100000,
+   "options": [
+    {
+     "label": "In 1 hour",
+     "at": 1792883700000,
+     "until": "until 6:15 PM"
+    },
+    {
+     "label": "Tomorrow",
+     "at": 1792936800000,
+     "until": "until Sun 9:00 AM"
+    },
+    {
+     "label": "Next week",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    }
+   ]
+  },
+  {
+   "now": 1792898100000,
+   "options": [
+    {
+     "label": "In 1 hour",
+     "at": 1792901700000,
+     "until": "until 11:15 PM"
+    },
+    {
+     "label": "Tomorrow",
+     "at": 1792936800000,
+     "until": "until Sun 9:00 AM"
+    },
+    {
+     "label": "Next week",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    }
+   ]
+  },
+  {
+   "now": 1792934100000,
+   "options": [
+    {
+     "label": "In 1 hour",
+     "at": 1792937700000,
+     "until": "until 9:15 AM"
+    },
+    {
+     "label": "This evening",
+     "at": 1792969200000,
+     "until": "until 6:00 PM"
+    },
+    {
+     "label": "Tomorrow",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    },
+    {
+     "label": "Next week",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    }
+   ]
+  },
+  {
+   "now": 1792962900000,
+   "options": [
+    {
+     "label": "In 1 hour",
+     "at": 1792966500000,
+     "until": "until 5:15 PM"
+    },
+    {
+     "label": "This evening",
+     "at": 1792969200000,
+     "until": "until 6:00 PM"
+    },
+    {
+     "label": "Tomorrow",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    },
+    {
+     "label": "Next week",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    }
+   ]
+  },
+  {
+   "now": 1792966500000,
+   "options": [
+    {
+     "label": "In 1 hour",
+     "at": 1792970100000,
+     "until": "until 6:15 PM"
+    },
+    {
+     "label": "Tomorrow",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    },
+    {
+     "label": "Next week",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    }
+   ]
+  },
+  {
+   "now": 1792984500000,
+   "options": [
+    {
+     "label": "In 1 hour",
+     "at": 1792988100000,
+     "until": "until 11:15 PM"
+    },
+    {
+     "label": "Tomorrow",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    },
+    {
+     "label": "Next week",
+     "at": 1793023200000,
+     "until": "until Mon 9:00 AM"
+    }
+   ]
+  }
+ ],
+ "states": [
+  {
+   "snoozedUntil": 1792447711000,
+   "settledAt": null,
+   "state": "snoozed"
+  },
+  {
+   "snoozedUntil": 1792447709000,
+   "settledAt": 1792447705000,
+   "state": "settled"
+  },
+  {
+   "snoozedUntil": null,
+   "settledAt": 1792447705000,
+   "state": "settled"
+  },
+  {
+   "snoozedUntil": null,
+   "settledAt": null,
+   "state": "inbox"
+  },
+  {
+   "snoozedUntil": 1792447711000,
+   "settledAt": 1792447710000,
+   "state": "snoozed"
+  }
+ ]
+}
