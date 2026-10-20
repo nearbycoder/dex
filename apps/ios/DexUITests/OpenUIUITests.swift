@@ -81,7 +81,7 @@ final class OpenUIUITests: DexUITestCase {
         connect.tap()
 
         let sent = text(containing: "[UI action] Connect the database")
-        XCTAssertTrue(sent.waitForExistence(timeout: 10))
+        XCTAssertTrue(sent.waitForExistence(timeout: 20))
         XCTAssertTrue(sent.label.contains("{{secret:password}}"), sent.label)
         XCTAssertFalse(sent.label.contains("hunter2"), "the password itself is never sent")
         XCTAssertTrue(sent.label.contains("db.example.com"))

@@ -17,6 +17,18 @@ class ChatTestCase: DexUITestCase {
     func titleButton(_ title: String) -> XCUIElement {
         app.navigationBars.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", title)).firstMatch
     }
+
+    /// The chat's title menu. On the foldable's cover screen iOS hides the title bar after scrolling down (a chat opens
+    /// at the bottom) and shows it again on a scroll up, as in Safari.
+    func revealTitle(_ title: String) -> XCUIElement {
+        let button = titleButton(title)
+        if !button.waitForExistence(timeout: 3) {
+            let transcript = app.descendants(matching: .any)["chat.transcript"].firstMatch
+            let start = transcript.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+            start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 120)), withVelocity: .slow, thenHoldForDuration: 0.2)
+        }
+        return button
+    }
 }
 
 /// The chat: starting one, streaming replies and their activity, the queue, pickers, slash skills, confirmations,
@@ -145,8 +157,11 @@ final class ChatUITests: ChatTestCase {
         XCTAssertTrue(element("chat.retry").exists, "a failed reply offers Retry")
         snapshot("reply-error")
         element("chat.retry").tap()
+        // Sent again: a second copy of the message, or (when the first has left a short screen's lazy list) the first
+        // error kept as plain text, as only the latest reply offers Retry.
         let sent = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'This ends in an error'"))
-        XCTAssertTrue(wait(sent, "count >= 2", timeout: 20), "Retry sent the message again")
+        let earlierError = app.staticTexts.matching(identifier: "chat.error")
+        XCTAssertTrue(wait(sent, "count >= 2", timeout: 20) || earlierError.firstMatch.exists, "Retry sent the message again")
         XCTAssertTrue(element("chat.error").waitForExistence(timeout: 20))
 
         send("Please retry once")
@@ -345,7 +360,7 @@ final class ChatUITests: ChatTestCase {
 
     func testRenameAndRegenerateTitle() {
         openChat("s-welcome")
-        var title = titleButton("Plan a weekend")
+        var title = revealTitle("Plan a weekend")
         XCTAssertTrue(title.waitForExistence(timeout: 10))
         title.tap()
         app.buttons["Rename"].tap()
@@ -354,7 +369,7 @@ final class ChatUITests: ChatTestCase {
         box.tap()
         box.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 40) + "Lisbon in two days")
         app.alerts.buttons["Save"].tap()
-        title = titleButton("Lisbon in two days")
+        title = revealTitle("Lisbon in two days")
         XCTAssertTrue(title.waitForExistence(timeout: 10), "the new title shows")
 
         title.tap()

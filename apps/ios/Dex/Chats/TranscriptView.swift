@@ -86,7 +86,13 @@ struct TranscriptView: View {
         .defaultScrollAnchor(pinned && !tapped ? .bottom : .top, for: .sizeChanges)
         .scrollDismissesKeyboard(.interactively)
         .accessibilityIdentifier("chat.transcript")
-        .onScrollPhaseChange { _, phase in interacting = phase == .interacting || phase == .decelerating || phase == .tracking }
+        .onScrollPhaseChange { _, phase in
+            interacting = phase == .interacting || phase == .decelerating || phase == .tracking
+            // Your finger on the transcript lets go of the bottom: nothing follows it while you scroll.
+            if phase == .tracking || phase == .interacting { pinned = false }
+            // Coming to rest at the bottom follows it again.
+            if phase == .idle, metrics.distance < 80 { pinned = true }
+        }
         .onScrollGeometryChange(for: Metrics.self) { geometry in
             // What's left below the part you can read. The container is that readable height (between the bars and
             // the composer or keyboard); the offset starts at minus the top inset.
@@ -99,13 +105,19 @@ struct TranscriptView: View {
         } action: { old, new in
             metrics = new
             atBottom = new.distance < 120
-            // Only scrolling up yourself lets go; reaching the bottom again takes it back.
-            if new.distance < 80 { pinned = true }
-            else if interacting, new.distance > old.distance + 1 { pinned = false }
+            // Content or the readable area changed size (streaming, media sizing itself, the keyboard), or only the
+            // offset moved (you, or the system settling it).
+            let resized = new.content != old.content || new.container != old.container
+            // Reaching the bottom again takes it back.
+            if new.distance < 80, !interacting { pinned = true }
+            // Moving away from the bottom by itself is your drag starting: the scroll phase reports it only after the
+            // first few points, and following until then pulled the transcript back under your finger (it flickered
+            // before it scrolled).
+            if !resized, new.distance > old.distance + 1 { pinned = false }
             // The anchor above doesn't hold when the transcript starts shorter than the screen (its padding comes and
-            // goes as the top inset): follow explicitly. A point position changes with the geometry, so it always
-            // scrolls (an unchanged edge position wouldn't).
-            if pinned, !tapped, !interacting, new.distance > 1, new.bottom > 0, new != old {
+            // goes as the top inset): follow explicitly, but only when something changed size, never against a scroll.
+            // A point position changes with the geometry, so it always scrolls (an unchanged edge position wouldn't).
+            if pinned, resized, !tapped, !interacting, new.distance > 1, new.bottom > 0 {
                 position.scrollTo(y: new.bottom)
             }
         }
