@@ -41,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.text.AnnotatedString
@@ -365,25 +366,38 @@ private fun TableView(node: TableBlock, context: MarkdownContext) {
         }
         section = section.next
     }
+    if (rows.isEmpty()) return
+    val columns = rows.maxOf { it.second.size }
     val shape = RoundedCornerShape(16.dp)
-    Box(
-        Modifier.fillMaxWidth().clip(shape).border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape).horizontalScroll(rememberScrollState()),
-    ) {
-        Column {
-            rows.forEachIndexed { index, (head, cells) ->
-                Row(Modifier.background(if (head) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent)) {
-                    cells.forEach { cell ->
-                        Box(Modifier.widthIn(min = 72.dp, max = 320.dp).padding(horizontal = 12.dp, vertical = 8.dp)) {
-                            val style = if (head) MaterialTheme.typography.labelLarge.copy(color = MaterialTheme.colorScheme.onSurfaceVariant) else MaterialTheme.typography.bodyMedium
-                            InlineText(cell, context, style.copy(textAlign = when (cell.alignment) {
-                                TableCell.Alignment.CENTER -> androidx.compose.ui.text.style.TextAlign.Center
-                                TableCell.Alignment.RIGHT -> androidx.compose.ui.text.style.TextAlign.End
-                                else -> androidx.compose.ui.text.style.TextAlign.Start
-                            }))
-                        }
+    val line = MaterialTheme.colorScheme.outlineVariant
+    val head = MaterialTheme.colorScheme.surfaceContainerHigh
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().clip(shape).border(1.dp, line, shape)) {
+        val width = maxWidth
+        Box(Modifier.horizontalScroll(rememberScrollState())) {
+            TableGrid(
+                rows = rows.size,
+                columns = columns,
+                modifier = Modifier.widthIn(min = width),
+                rowBackground = { r ->
+                    Box(
+                        Modifier.background(if (rows[r].first) head else Color.Transparent).drawBehind {
+                            if (r < rows.lastIndex) drawLine(line, androidx.compose.ui.geometry.Offset(0f, size.height - 0.5f), androidx.compose.ui.geometry.Offset(size.width, size.height - 0.5f), 1f)
+                        },
+                    )
+                },
+            ) { r, c ->
+                val (isHead, cells) = rows[r]
+                val cell = cells.getOrNull(c)
+                Box(Modifier.widthIn(min = 56.dp, max = 320.dp).padding(horizontal = 12.dp, vertical = 8.dp)) {
+                    if (cell != null) {
+                        val style = if (isHead) MaterialTheme.typography.labelLarge.copy(color = MaterialTheme.colorScheme.onSurfaceVariant) else MaterialTheme.typography.bodyMedium
+                        InlineText(cell, context, style.copy(textAlign = when (cell.alignment) {
+                            TableCell.Alignment.CENTER -> androidx.compose.ui.text.style.TextAlign.Center
+                            TableCell.Alignment.RIGHT -> androidx.compose.ui.text.style.TextAlign.End
+                            else -> androidx.compose.ui.text.style.TextAlign.Start
+                        }))
                     }
                 }
-                if (index < rows.lastIndex) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
             }
         }
     }

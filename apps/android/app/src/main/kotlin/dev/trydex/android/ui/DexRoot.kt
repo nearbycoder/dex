@@ -52,6 +52,9 @@ class PipController {
 }
 
 /** Opens a URL in a Custom Tab (sign-ins that need the browser's Dex session) or the browser. */
+/** The app's singletons, for views outside the shell too (the picture-in-picture desktop). */
+val LocalGraph = staticCompositionLocalOf<AppGraph> { error("No AppGraph") }
+
 val LocalOpenInBrowser = staticCompositionLocalOf<(String) -> Unit> { {} }
 val LocalPip = staticCompositionLocalOf { PipController() }
 
@@ -73,6 +76,7 @@ fun DexRoot(
     val haptics = remember(view) { Haptics(view) { graph.preferences.prefs.value.haptics } }
     DexTheme(dynamicColor = prefs.dynamicColor) {
         CompositionLocalProvider(
+            LocalGraph provides graph,
             LocalHaptics provides haptics,
             LocalOpenInBrowser provides openInBrowser,
             LocalPip provides pip,
