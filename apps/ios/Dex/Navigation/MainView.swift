@@ -62,6 +62,7 @@ struct MainView: View {
         .tabViewStyle(.sidebarAdaptable)
         .tabBarMinimizeBehavior(.onScrollDown)
         .onChange(of: compact, initial: true) { _, compact in router.adapt(compact: compact) }
+        .background(TabBarRelayout(trigger: router.tab))
         .overlay(alignment: .top) { NoticeBanner() }
         .overlay { ConnectionOverlay() }
     }
@@ -69,6 +70,49 @@ struct MainView: View {
     /// Chats with something new: busy ones, in the inbox.
     private var inboxBadge: Int {
         client.state?.sessions.filter { $0.busy }.count ?? 0
+    }
+}
+
+/// Works around a layout gap in the sidebar-adaptable tab view on iPad: a page picked from the overlay sidebar
+/// (portrait) keeps the insets it had while the sidebar covered the tab bar, so its own bars end up under the floating
+/// tab bar until the next rotation. Once the sidebar has closed, this has the tab bar controller lay the page out
+/// again by hiding and showing its tab bar in one pass (nothing moves on screen).
+struct TabBarRelayout: UIViewRepresentable {
+    let trigger: AppTab
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ view: UIView, context: Context) {
+        guard context.coordinator.last != trigger else { return }
+        context.coordinator.last = trigger
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak view] in
+            guard let view, view.traitCollection.horizontalSizeClass == .regular,
+                  let controller = Self.tabBarController(from: view.window?.rootViewController), !controller.isTabBarHidden else { return }
+            UIView.performWithoutAnimation {
+                controller.setTabBarHidden(true, animated: false)
+                controller.setTabBarHidden(false, animated: false)
+                controller.view.layoutIfNeeded()
+            }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator {
+        var last: AppTab?
+    }
+
+    private static func tabBarController(from controller: UIViewController?) -> UITabBarController? {
+        guard let controller else { return nil }
+        if let tabs = controller as? UITabBarController { return tabs }
+        for child in controller.children {
+            if let found = tabBarController(from: child) { return found }
+        }
+        return tabBarController(from: controller.presentedViewController)
     }
 }
 

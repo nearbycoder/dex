@@ -50,7 +50,7 @@ final class AppModel {
 
     static let mockCredentials = Credentials(
         server: URL(string: "https://mock.dex.local")!, token: "mock-token",
-        user: Viewer(id: "mock", login: "octocat", name: "The Octocat", avatarUrl: nil), expiresAt: .nowMs + 30 * 86_400_000
+        user: Viewer(id: "mock", login: "octocat", name: "Mona Octocat", avatarUrl: nil), expiresAt: .nowMs + 30 * 86_400_000
     )
 
     var credentials: Credentials? {

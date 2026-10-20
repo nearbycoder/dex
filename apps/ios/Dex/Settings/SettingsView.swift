@@ -7,6 +7,7 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(DexClient.self) private var client
     @Environment(Router.self) private var router
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var confirmSignOut = false
 
     var body: some View {
@@ -56,6 +57,10 @@ struct SettingsView: View {
             }
         }
         .task { await NotificationPreferences.shared.refresh() }
+        // Side by side, the page column always shows a page: Account until you pick another.
+        .onChange(of: sizeClass, initial: true) { _, size in
+            if size == .regular, router.settingsPage == nil { router.settingsPage = .account }
+        }
     }
 
     private var subscriptionsDetail: String? {
