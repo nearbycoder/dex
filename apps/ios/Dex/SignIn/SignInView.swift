@@ -114,6 +114,7 @@ struct SignInView: View {
             return
         }
         working = true
+        focused = false
         error = nil
         model.signInMessage = nil
         defer { working = false }
