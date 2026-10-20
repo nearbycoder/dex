@@ -8,7 +8,7 @@
   <sub><b><a href="https://trydex.dev">trydex.dev</a></b> · <b><a href="docs/media/dex-promo.mp4">▶ Watch the 2-minute tour</a></b> · generative UI, ClinePass and OpenCode Go, a cloud VM per chat you can watch while you chat, GitHub repos, skills, MCP, usage, and the phone app</sub>
 </p>
 
-**Dex** is a personal agent harness. Each user gets an agent in a Cloudflare Durable Object running [Pi Durable](https://developers.cloudflare.com/agents/harnesses/pi/), thinking with models through [ClinePass](https://docs.cline.bot/getting-started/clinepass) or [OpenCode Go](https://opencode.ai/docs/go/), answering with generative UI from [OpenUI](https://www.openui.com/), and doing real work on its own cloud VM from [boat.dev](https://boat.dev). Built with TanStack Start, Effect, and the Cloudflare Agents SDK, and installable on your phone. See it at **[trydex.dev](https://trydex.dev)**, then [deploy your own](#deploy).
+**Dex** is a personal agent harness. Each user gets an agent in a Cloudflare Durable Object running [Pi Durable](https://developers.cloudflare.com/agents/harnesses/pi/), thinking with models through [ClinePass](https://docs.cline.bot/getting-started/clinepass) or [OpenCode Go](https://opencode.ai/docs/go/), answering with generative UI from [OpenUI](https://www.openui.com/), and doing real work on its own cloud VM from [boat.dev](https://boat.dev). Built with TanStack Start, Effect, and the Cloudflare Agents SDK, installable on your phone, and with native apps for iPhone, iPad, and Android. See it at **[trydex.dev](https://trydex.dev)**, then [deploy your own](#deploy).
 
 [Highlights](#highlights) · [Features](#features) · [Repository](#repository) · [Architecture](#architecture) · [Develop](#develop) · [Deploy](#deploy) · [Security](#security) · [Limits](#limits) · [License](#license)
 
@@ -158,6 +158,25 @@
 - **Push notifications** (opt in, per device) for replies, errors, scheduled prompts, machine setup, MCP sign-ins, and snoozed chats coming back. A chat that's open on any device stays quiet, and each chat has a mute bell. Android and desktop notifications carry quick actions; iOS 16.4+ delivers them to the installed app.
 - **Haptics** on every control you tap (buttons, links, menus, switches, tabs) and on swiping the sidebar. iPhone has no Vibration API, so Dex plays the system tap by clicking a hidden `<input type="checkbox" switch>` during the tap (not by laying switches over buttons, which stops lists from scrolling); Android uses `navigator.vibrate`. Fields never zoom the page on focus.
 
+### Native apps for iPhone, iPad, and Android
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/ios-chat.png" alt="The Dex iPhone app: a chat with a table, a code block, and a confirmation card"><br><b>iPhone and iPad.</b> Swift and SwiftUI with Liquid Glass.</td>
+    <td width="50%"><img src="docs/screenshots/android-chat.png" alt="The Dex Android app: a chat with a live chart and table card"><br><b>Android.</b> Kotlin, Jetpack Compose, and Material 3 Expressive.</td>
+  </tr>
+</table>
+
+- **The whole app, natively:** chats with the activity row, generated UI drawn with native controls (cards, tables, charts, forms, live `Query()` data and `Mutation()` buttons), the model and thinking menu, the queue, `/` skills, inbox triage, machines with the live desktop and a picture-in-picture preview, workspace files, projects, agents, skills, MCP servers, secrets, usage, and settings. They talk to the same agent as the web app over its WebSocket and RPC, so there's no server of their own.
+- **iOS** ([apps/ios](apps/ios)): iPhone, the foldable iPhone, and iPad. A Liquid Glass tab bar on compact screens; a sidebar with split views on iPad, an unfolded foldable, or a wide window, keeping your place when you fold, rotate, or resize. Keyboard shortcuts, pointer, and a connection per window on iPad.
+- **Android** ([apps/android](apps/android)): phones, tablets, flips, book foldables (from a Galaxy Z Fold's wide cover screen to its inner screen), ChromeOS, and desktop windows. A bottom bar, rail, or expanded rail by width; panes side by side that split at the hinge; tabletop posture puts the VM desktop above the fold. Dynamic color, predictive back, and real picture-in-picture for the desktop. State survives folding, rotation, and process death.
+- **Sign-in** goes through your Dex's own sign-in page in a system browser sheet, with a PKCE handoff (see [Security](#security)); the session is the same one the web uses, so Sign out everywhere covers the apps too.
+- **Demo mode:** both run on a built-in mock agent for trying every screen without an account (`-DexMock` on iOS, **Try the demo** in Android debug builds).
+- **Tested:** unit tests for the protocol, socket, sign-in, transcript, and OpenUI (checked against the web's own code), plus UI tests on every screen across iPhone, iPad, and the foldable, and Android phone, tablet, foldable, and desktop emulators.
+- **Notifications** are local for now: the apps notify from their own connection, since the server only sends Web Push. Instant push needs APNs and FCM senders on the server.
+
+Neither is in the App Store or Play Store yet: build them from their folders with Xcode or Gradle (each folder's README says how).
+
 ### Chats and external agents can run Dex
 
 - Every app capability is an operation in one registry (`src/agent/operations.ts`):
@@ -184,14 +203,14 @@
 
 ## Repository
 
-A monorepo, so the web app and future native apps live side by side and each deploys on its own:
+A monorepo, so the web app and the native apps live side by side and each builds and ships on its own:
 
 ```
 apps/
   web/        the app: TanStack Start UI, the Cloudflare Worker, and the DexAgent Durable Object
               (its own package.json, wrangler.jsonc, and `npm run deploy`)
-  ios/        the native iPhone and iPad app (Swift, SwiftUI; see apps/ios/README.md)
-  android/    (planned) native Android app
+  ios/        the native iPhone and iPad app (Swift, SwiftUI, XcodeGen; see apps/ios/README.md)
+  android/    the native Android app (Kotlin, Jetpack Compose, Gradle; see apps/android/README.md)
 packages/     (planned) code shared between apps, e.g. the wire protocol
 assets/       brand assets (the app icon source)
 docs/         README screenshots and the promo video
@@ -233,6 +252,13 @@ npm run dev                                             # http://localhost:5173
 ```
 
 Workers AI (web search and fetch) runs remotely even in dev, so run `npx wrangler login` first. After changing `apps/web/src/client/openui/library.tsx`, run `npm run openui:spec -w @dex/web` to regenerate the component spec the agent learns from. See [AGENTS.md](AGENTS.md) for the conventions every change follows (operations, skeletons, security, deploys).
+
+The native apps build with their own tooling and can sign in to this dev server (with `DEV_LOGIN=true`):
+
+```sh
+open apps/ios/Dex.xcodeproj                             # Xcode 27; run the Dex scheme; apps/ios/scripts/test.sh runs the tests
+cd apps/android && ./gradlew :app:installDebug          # Android SDK 37 and a JDK 17+; ./gradlew test runs the tests
+```
 
 ## Deploy
 

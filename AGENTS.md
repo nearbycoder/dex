@@ -7,7 +7,7 @@ Dex is a personal agent harness: a Durable Object agent (`apps/web/src/agent/dex
 A monorepo. Each app lives in `apps/<name>` with its own build and deploy, and none depends on another's deploy:
 
 - `apps/web`: the web app, the Worker, and the agent. Its own `package.json` (`@dex/web`), `wrangler.jsonc`, and `npm run deploy`. Paths below are relative to it unless they start with `apps/`.
-- `apps/ios` (Swift/SwiftUI, XcodeGen; see apps/ios/README.md), `apps/android` (planned): native apps with their own tooling (Xcode, Gradle) and release process. They talk to the same agent over its WebSocket and HTTP API; keep the wire protocol (`apps/web/src/shared/protocol.ts`) backward compatible, and move it to `packages/` once a second app needs it.
+- `apps/ios` (Swift/SwiftUI, XcodeGen; see apps/ios/README.md), `apps/android` (Kotlin/Jetpack Compose, Gradle; see apps/android/README.md): native apps with their own tooling and release process. They talk to the same agent over its WebSocket and HTTP API and sign in with the PKCE handoff in `apps/web/src/server/native-auth.ts`. Keep the wire protocol (`apps/web/src/shared/protocol.ts`) backward compatible: a released app can't update with a deploy. When you change the protocol, OpenUI, or other shared code, update both apps (Android's golden tests in `apps/android/tools/goldens` say what drifted).
 - `packages/*` (none yet): code shared between apps, as npm workspaces.
 - Root: the npm workspace (`package.json`, one lockfile; `overrides` must live here), README, LICENSE, `docs/` (README media), `assets/` (brand).
 

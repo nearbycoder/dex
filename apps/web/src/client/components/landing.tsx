@@ -24,6 +24,7 @@ import {
   ShieldCheck,
   Smartphone,
   Sparkles,
+  TabletSmartphone,
   Workflow
 } from "lucide-react"
 import type { ReactNode } from "react"
@@ -66,6 +67,7 @@ export function Landing() {
         <Showcase />
         <MoreFeatures />
         <Phone />
+        <NativeApps />
         <Tour />
         <Security />
         <BuiltOn />
@@ -160,8 +162,8 @@ function Nav() {
           <a href="#features" className="transition hover:text-zinc-100">
             Features
           </a>
-          <a href="#phone" className="transition hover:text-zinc-100">
-            Phone app
+          <a href="#apps" className="transition hover:text-zinc-100">
+            Mobile apps
           </a>
           <a href="#tour" className="transition hover:text-zinc-100">
             Tour
@@ -183,7 +185,7 @@ function Nav() {
   )
 }
 
-const HERO_POINTS = ["Generative UI", `${MODELS.length} models`, "A cloud VM per chat", "Skills", "Any MCP server", "Works on your phone"]
+const HERO_POINTS = ["Generative UI", `${MODELS.length} models`, "A cloud VM per chat", "Skills", "Any MCP server", "iOS and Android apps"]
 
 function Hero() {
   return (
@@ -468,11 +470,85 @@ function Phone() {
   )
 }
 
+const NATIVE_APPS: ReadonlyArray<{
+  readonly name: string
+  readonly stack: string
+  readonly src: string
+  readonly alt: string
+  readonly folder: string
+  readonly points: ReadonlyArray<string>
+}> = [
+  {
+    name: "iPhone and iPad",
+    stack: "Swift, SwiftUI, and Liquid Glass",
+    src: "/landing/ios-chat.webp",
+    alt: "The Dex iPhone app: a chat with a table, a code block, and a confirmation card, above the Liquid Glass tab bar",
+    folder: "apps/ios",
+    points: [
+      "iPhone, the foldable iPhone, and iPad, with a sidebar and split views when there's room",
+      "Generated cards, tables, charts, and forms drawn with native controls",
+      "The VM's live desktop, with a picture-in-picture preview while you chat",
+      "Keyboard shortcuts, pointer, and multiple windows on iPad"
+    ]
+  },
+  {
+    name: "Android",
+    stack: "Kotlin, Jetpack Compose, and Material 3 Expressive",
+    src: "/landing/android-chat.webp",
+    alt: "The Dex Android app: a chat with a live chart and table card, in Material 3",
+    folder: "apps/android",
+    points: [
+      "Phones, tablets, flips, and book foldables like the Galaxy Z Fold, from the cover screen to the inner one",
+      "Panes split at the hinge, and tabletop posture puts the VM desktop above the fold",
+      "Picture-in-picture for the VM desktop, dynamic color, and predictive back",
+      "ChromeOS and desktop windows, resized freely, with a hardware keyboard"
+    ]
+  }
+]
+
+function NativeApps() {
+  return (
+    <section id="apps" className="scroll-mt-20 border-t border-white/5 px-5 py-24 sm:px-8 sm:py-32">
+      <SectionHeading eyebrow="Native apps" icon={TabletSmartphone} title="Native on iPhone, iPad, and Android.">
+        Two open-source apps made for their platforms, talking to the same agent as the web: every chat, card, machine,
+        and setting, signed in through your own Dex.
+      </SectionHeading>
+      <div className="mx-auto mt-16 grid max-w-5xl gap-6 md:grid-cols-2">
+        {NATIVE_APPS.map(({ name, stack, src, alt, folder, points }) => (
+          <article key={name} className="dex-reveal flex flex-col rounded-2xl border border-zinc-800/80 bg-zinc-900/40 p-6 sm:p-8">
+            <div className="relative mx-auto w-[62%] max-w-[15rem]">
+              <div aria-hidden="true" className="absolute inset-6 -z-10 rounded-full bg-emerald-500/20 blur-3xl" />
+              <PhoneFrame src={src} alt={alt} />
+            </div>
+            <h3 className="mt-8 text-lg font-semibold">{name}</h3>
+            <p className="mt-1 text-sm text-emerald-400">{stack}</p>
+            <ul className="mt-5 flex-1 space-y-3">
+              {points.map((point) => (
+                <li key={point} className="flex gap-2.5 text-sm text-pretty text-zinc-400">
+                  <Check className="mt-0.5 size-4 shrink-0 text-emerald-400" aria-hidden="true" />
+                  {point}
+                </li>
+              ))}
+            </ul>
+            <a
+              href={`${REPO}/tree/main/${folder}`}
+              className="mt-6 inline-flex items-center gap-2 self-start text-sm font-medium text-zinc-200 transition hover:text-white"
+            >
+              <GitHubMark /> Build it from {folder}
+              <ArrowRight className="size-3.5" aria-hidden="true" />
+            </a>
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function Tour() {
   return (
     <section id="tour" className="scroll-mt-20 border-t border-white/5 px-5 py-24 sm:px-8 sm:py-32">
       <SectionHeading eyebrow="The 2-minute tour" icon={Play} title="See it in action.">
-        Generative UI, both subscriptions, a VM you watch while you chat, GitHub, skills, MCP, usage, and the phone app.
+        Generative UI, both subscriptions, a VM you watch while you chat, GitHub, skills, MCP, usage, and the phone apps.
       </SectionHeading>
       <div className="dex-reveal relative mx-auto mt-14 max-w-5xl">
         <div aria-hidden="true" className="absolute inset-x-10 inset-y-6 -z-10 rounded-[3rem] bg-emerald-500/15 blur-3xl" />

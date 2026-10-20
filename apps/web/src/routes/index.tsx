@@ -4,7 +4,7 @@ import { getViewer } from "~/server/viewer"
 
 const TITLE = "Dex: your personal AI agent, with a computer of its own"
 const DESCRIPTION =
-  "An open-source AI agent on Cloudflare: generative UI, ClinePass and OpenCode Go models, a cloud VM per chat you can watch, skills, MCP servers, GitHub, and a phone app."
+  "An open-source AI agent on Cloudflare: generative UI, ClinePass and OpenCode Go models, a cloud VM per chat you can watch, skills, MCP servers, GitHub, and native iOS and Android apps."
 
 /** Signed in: straight to your chats. Otherwise, what Dex is. */
 export const Route = createFileRoute("/")({
