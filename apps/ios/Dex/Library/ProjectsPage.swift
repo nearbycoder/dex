@@ -58,7 +58,6 @@ struct ProjectsList: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { open(.newProject) } label: { Label("New Project", systemImage: "plus") }
-                    .keyboardShortcut("n", modifiers: .command)
                     .accessibilityIdentifier("projects.new")
             }
         }

@@ -14,6 +14,18 @@ extension Router {
         }
     }
 
+    /// What ⌘N makes on the Library page on screen, if one is.
+    var libraryNewItem: (title: String, route: LibraryRoute)? {
+        let page: AppTab? = if tab == .library, case .page(let shown)? = libraryPath.first { shown } else { AppTab.libraryPages.contains(tab) ? tab : nil }
+        return switch page {
+        case .agents: ("New Agent", .newAgent)
+        case .projects: ("New Project", .newProject)
+        case .skills: ("New Skill", .newSkill)
+        case .mcp: ("Add MCP Server", .newMcpServer)
+        default: nil
+        }
+    }
+
     /// Closes a route (and anything opened from it) wherever it's open: after a delete, or cancelling a new item.
     func closeLibrary(_ route: LibraryRoute) {
         for path in libraryPaths {

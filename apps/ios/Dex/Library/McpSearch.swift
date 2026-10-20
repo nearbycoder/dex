@@ -15,6 +15,8 @@ struct McpSearchView: View {
     @State private var error: String?
     @State private var checking: RegistryServer?
     @State private var adding: McpPrefill?
+    /// The server just added, opened once its sheet has gone (navigating under a closing sheet can leave it stuck).
+    @State private var added: String?
 
     var body: some View {
         let q = query.trimmingCharacters(in: .whitespaces)
@@ -77,21 +79,27 @@ struct McpSearchView: View {
             if loading { ToolbarItem(placement: .primaryAction) { ProgressView() } }
         }
         .task(id: "\(source):\(q)") { await search(q) }
-        .sheet(item: $checking) { server in
+        .sheet(item: $checking, onDismiss: openAdded) { server in
             McpCheckSheet(server: server, addedUrls: addedUrls) { id in
+                added = id
                 checking = nil
-                router.open(.mcpServer(id), compact: sizeClass == .compact)
             }
         }
-        .sheet(item: $adding) { prefill in
+        .sheet(item: $adding, onDismiss: openAdded) { prefill in
             NavigationStack {
                 McpServerEditor(existing: nil, prefill: prefill) { id in
+                    added = id
                     adding = nil
-                    router.open(.mcpServer(id), compact: sizeClass == .compact)
                 } onCancel: { adding = nil }
             }
         }
         .accessibilityIdentifier("mcp.searchPage")
+    }
+
+    private func openAdded() {
+        guard let id = added else { return }
+        added = nil
+        router.open(.mcpServer(id), compact: sizeClass == .compact)
     }
 
     private func search(_ q: String) async {

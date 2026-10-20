@@ -47,7 +47,6 @@ struct AgentsList: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { open(.newAgent) } label: { Label("New Agent", systemImage: "plus") }
-                    .keyboardShortcut("n", modifiers: .command)
                     .accessibilityIdentifier("agents.new")
             }
         }

@@ -64,7 +64,7 @@ struct ChatListView: View {
                 } label: {
                     Label("New Chat", systemImage: "square.and.pencil")
                 }
-                .keyboardShortcut("n", modifiers: .command)
+                // ⌘N is the File menu's (DexCommands): a view's shortcut stays live in a hidden tab and would win.
                 .accessibilityIdentifier("chats.new")
             }
         }

@@ -9,6 +9,8 @@ struct McpList: View {
     var selection: Binding<LibraryRoute?>?
     @State private var removing: McpServerInfo?
     @State private var adding: McpPrefill?
+    /// The server just added, opened once its sheet has gone.
+    @State private var added: String?
 
     var body: some View {
         let servers = client.state?.mcp ?? []
@@ -75,15 +77,16 @@ struct McpList: View {
                 } primaryAction: {
                     open(.newMcpServer)
                 }
-                .keyboardShortcut("n", modifiers: .command)
                 .accessibilityIdentifier("mcp.new")
             }
         }
-        .sheet(item: $adding) { prefill in
+        .sheet(item: $adding, onDismiss: {
+            if let id = added { added = nil; open(.mcpServer(id)) }
+        }) { prefill in
             NavigationStack {
                 McpServerEditor(existing: nil, prefill: prefill) { id in
+                    added = id
                     adding = nil
-                    open(.mcpServer(id))
                 } onCancel: { adding = nil }
             }
         }
@@ -200,7 +203,6 @@ struct McpServerDetail: View {
             if server != nil {
                 ToolbarItem(placement: .primaryAction) {
                     Button("Edit") { editing = true }
-                        .keyboardShortcut("e", modifiers: .command)
                         .accessibilityIdentifier("mcp.edit")
                 }
             }
@@ -637,6 +639,10 @@ private struct PairRow: View {
             Divider()
             SecureField("Value", text: $value, prompt: Text(valuePrompt))
                 .font(.callout.monospaced())
+                // An API key, not a password: keeps iOS from offering to save it to Passwords.
+                .textContentType(.oneTimeCode)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
                 .accessibilityIdentifier("\(identifier).value")
         }
     }

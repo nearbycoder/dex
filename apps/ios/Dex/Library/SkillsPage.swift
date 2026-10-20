@@ -56,7 +56,6 @@ struct SkillsList: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { open(.newSkill) } label: { Label("New Skill", systemImage: "plus") }
-                    .keyboardShortcut("n", modifiers: .command)
                     .accessibilityIdentifier("skills.new")
             }
         }
@@ -139,7 +138,6 @@ struct SkillDetailView: View {
             if detail != nil {
                 ToolbarItem(placement: .primaryAction) {
                     Button("Edit") { editing = true }
-                        .keyboardShortcut("e", modifiers: .command)
                         .accessibilityIdentifier("skill.edit")
                 }
             }
@@ -547,7 +545,8 @@ private struct SkillResultRow: View {
                     .accessibilityLabel("\(skill.installs) installs")
                 if installed {
                     Label("Installed", systemImage: "checkmark").labelStyle(.iconOnly).foregroundStyle(.green).accessibilityIdentifier("skill.installed.\(skill.skillId)")
-                } else {
+                } else if !open {
+                    // Open, the preview has its own Install (with the Auto choice).
                     Button { Task { await install() } } label: {
                         if installing { ProgressView().controlSize(.small) } else { Text("Install") }
                     }

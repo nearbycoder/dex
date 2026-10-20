@@ -81,14 +81,7 @@ struct LibraryPageStack: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columns) {
             LibraryPageList(page: page, selection: selection)
-                .navigationSplitViewColumnWidth(min: 300, ideal: 360, max: 440)
-                // With the sidebar hidden, the top tab bar shows Library as one item: the title switches pages.
-                .toolbarTitleMenu {
-                    ForEach(AppTab.libraryPages, id: \.self) { other in
-                        Button { router.open(.page(other), compact: false) } label: { Label(other.title, systemImage: other.symbol) }
-                    }
-                }
-        } detail: {
+                .navigationSplitViewColumnWidth(min: 300, ideal: 360, max: 440)        } detail: {
             NavigationStack(path: inner) {
                 Group {
                     if let open = path.wrappedValue.first {
