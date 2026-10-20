@@ -90,7 +90,7 @@ public indirect enum OpenUIValue: Hashable, Sendable {
     /// `value: $name`: the field reads and writes the variable.
     case binding(target: String, value: JSONValue)
 
-    init(json: JSONValue) {
+    public init(json: JSONValue) {
         switch json {
         case .null: self = .null
         case .bool(let value): self = .bool(value)
@@ -220,7 +220,7 @@ public struct OpenUIActionEvent: Hashable, Sendable {
         self.formName = formName
     }
 
-    init(json: JSONValue) {
+    public init(json: JSONValue) {
         type = json["type"]?.string ?? "continue_conversation"
         params = json["params"]?.object ?? [:]
         humanFriendlyMessage = json["humanFriendlyMessage"]?.string ?? ""
