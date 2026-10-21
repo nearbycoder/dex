@@ -162,8 +162,8 @@
 
 <table>
   <tr>
-    <td width="50%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/ios-chat-dark.png"><img src="docs/screenshots/ios-chat.png" alt="The Dex iPhone app: a chat with a table, a code block, and a confirmation card"></picture><br><b>iPhone and iPad.</b> Swift and SwiftUI with Liquid Glass.</td>
-    <td width="50%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/android-chat-dark.png"><img src="docs/screenshots/android-chat.png" alt="The Dex Android app: a chat with a live chart and table card"></picture><br><b>Android.</b> Kotlin, Jetpack Compose, and Material 3 Expressive.</td>
+    <td width="50%"><img src="docs/screenshots/ios-chat-dark.png" alt="The Dex iPhone app: a chat with a table, a code block, and a confirmation card"><br><b>iPhone and iPad.</b> Swift and SwiftUI with Liquid Glass.</td>
+    <td width="50%"><img src="docs/screenshots/android-chat-dark.png" alt="The Dex Android app: a chat with a live chart and table card"><br><b>Android.</b> Kotlin, Jetpack Compose, and Material 3 Expressive.</td>
   </tr>
 </table>
 
