@@ -23,3 +23,6 @@ export const getViewer = createServerFn().handler(async (): Promise<ViewerResult
   const options = await serverRuntime(env).runPromise(authOptions)
   return { viewer: viewer && { id: viewer.id, login: viewer.login, name: viewer.name, avatarUrl: viewer.avatarUrl }, options }
 })
+
+/** This deployment's origin (e.g. https://trydex.dev), for absolute URLs in link previews. */
+export const getSiteOrigin = createServerFn().handler(async (): Promise<string> => new URL(getRequest().url).origin)
