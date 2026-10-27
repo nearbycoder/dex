@@ -86,6 +86,7 @@ import { loadUiGuideTool, renderUiTool } from "./tools/render-ui"
 import { scheduleTools } from "./tools/schedule-tools"
 import { vmTools } from "./tools/vm-tools"
 import { workspaceTools } from "./tools/workspace-tools"
+import { parseVmFiles, vmFilesCommand, type VmFilesView } from "./vm-files"
 import { verifyGitHubToken, type GitHubIdentity } from "./github-token"
 import { provisionVm, shellQuote } from "./provision"
 import { PushCenter, type SubscriptionInput } from "./push"
@@ -2285,6 +2286,18 @@ export class DexAgent extends Agent<Env, DexState> {
     const result = await vm.peek(peekCommand(view, at, Math.min(2_000, Math.max(1, Math.round(lines)))))
     if (!result) return { running: false, status: vm.current.status, view }
     return { running: true, status: "running", view, ...parsePeek(view, at, result.output) }
+  }
+
+  /** Read-only session file browser. Never wakes a VM or records its file contents in activity. */
+  @callable()
+  async vmFiles(key: string, view: VmFilesView, path = "~/work", offset = 0) {
+    const command = vmFilesCommand(view, path, offset)
+    const vm = this.vmForUser(key)
+    await Promise.all([this.secrets.prepare(key), this.accountSecrets.load()])
+    const result = await vm.peek(command, undefined, { maxOutput: 1_000_000, rawJson: true })
+    if (!result) return { running: false as const, status: vm.current.status }
+    if (result.exitCode !== 0) throw new Error("Could not inspect this VM's files. Try refreshing the VM.")
+    return { running: true as const, data: parseVmFiles(result.output, (value) => this.vmHost.mask(key, value)) }
   }
 
   /**

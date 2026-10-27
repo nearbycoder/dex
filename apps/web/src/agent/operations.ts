@@ -68,6 +68,7 @@ export type OperationHost = Pick<
   | "vmActivity"
   | "vmRun"
   | "vmPeek"
+  | "vmFiles"
   | "vmExposePort"
   | "shareMediaFromVm"
   | "pushUpdate"
@@ -656,6 +657,20 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     covers: ["vmPeek"],
     summarize: (args, state) => `Look at ${args.view}${args.path ? ` ${args.path}` : ""} on the VM of ${quote(chatTitle(state, args.vm_key))}`,
     run: async (host, args) => host.vmPeek(args.vm_key, args.view, args.path, args.lines)
+  }),
+  define({
+    name: "app_vm_files",
+    description: "Browse a running VM's filesystem (directory), inspect UTF-8 source and its version in Git HEAD (file), or list staged, unstaged and untracked Git changes (changes). Defaults to ~/work, including its immediate project repositories. Directory pages contain at most 500 entries; pass next as offset to continue. File previews are limited to 64 KB per side; credential files are hidden and known secrets are masked. Does not start or keep the VM awake.",
+    risk: "read",
+    parameters: Type.Object({
+      vm_key: vmKey,
+      view: Type.Union([Type.Literal("directory"), Type.Literal("file"), Type.Literal("changes")]),
+      path: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
+      offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 1_000_000 }))
+    }),
+    covers: ["vmFiles"],
+    summarize: (args, state) => `Inspect ${args.path ?? "~/work"} on the VM of ${quote(chatTitle(state, args.vm_key))}`,
+    run: async (host, args) => host.vmFiles(args.vm_key, args.view, args.path, args.offset)
   }),
   define({
     name: "app_usage_report",

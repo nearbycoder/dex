@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { Bell, BellOff, Check, CheckCheck, KeyRound, Monitor, Pencil } from "lucide-react"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { Bell, BellOff, Check, CheckCheck, FolderOpen, KeyRound, Monitor, Pencil, X } from "lucide-react"
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Composer } from "~/client/components/composer"
 import { ChatArtifactsContext, type ChatArtifacts } from "~/client/components/media"
 import { MessageList } from "~/client/components/message-list"
@@ -10,7 +10,7 @@ import { ModelPicker } from "~/client/components/model-picker"
 import { AgentAvatar } from "~/client/components/agent-avatar"
 import { SessionMenu, useNaming } from "~/client/components/session-menu"
 import { VmPreview } from "~/client/components/vm-preview"
-import { Bone, ChatSkeleton } from "~/client/components/skeleton"
+import { Bone, ChatSkeleton, VmFilesSkeleton } from "~/client/components/skeleton"
 import { type OpenUIHost, OpenUIHostContext } from "~/client/lib/openui-host"
 import { ChatSecretsContext } from "~/client/lib/chat-secrets"
 import { useDex, useTranscript } from "~/client/lib/dex"
@@ -21,12 +21,20 @@ import { attachmentSummary, type ChatAttachment } from "~/shared/attachments"
 
 export const Route = createFileRoute("/_app/chat/$sessionId")({ component: Chat })
 
+// Trees, Diffs, syntax grammars and themes only load when Files is opened.
+const VmFilesPanel = lazy<typeof import("~/client/components/vm-files")["default"]>(() =>
+  import.meta.env.SSR ? Promise.resolve({ default: () => <></> }) : import("~/client/components/vm-files")
+)
+
 function Chat() {
   const { sessionId } = Route.useParams()
   const { state, stub, connected } = useDex()
   const transcript = useTranscript(sessionId)
   const session = state?.sessions.find((candidate) => candidate.id === sessionId)
   const [editing, setEditing] = useState<string | null>(null)
+  const [filesSession, setFilesSession] = useState<string | null>(null)
+  const filesOpen = filesSession === sessionId
+  const closeFiles = useCallback(() => setFilesSession(null), [])
   const naming = useNaming(sessionId)
   const agent = session?.agentId ? state?.agents.find((candidate) => candidate.id === session.agentId) : undefined
   const project = session?.projectId ? state?.projects.find((candidate) => candidate.id === session.projectId) : undefined
@@ -110,7 +118,8 @@ function Chat() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="relative flex min-h-0 min-w-0 flex-1">
+      <div className={`${filesOpen ? "hidden xl:flex" : "flex"} min-h-0 min-w-0 flex-1 flex-col`}>
       <header className="dex-chrome dex-topbar flex h-12 shrink-0 items-center gap-3 border-b border-zinc-900 px-4">
         <MenuButton />
         {project && (
@@ -156,6 +165,11 @@ function Chat() {
           </form>
         )}
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
+          {session && state?.vmConfigured && (
+            <button type="button" title="Browse this session’s VM files" aria-label="Open VM files" aria-expanded={filesOpen} onClick={() => setFilesSession(filesOpen ? null : sessionId)} className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs hover:bg-zinc-900 ${filesOpen ? "text-emerald-400" : "text-zinc-400 hover:text-zinc-100"}`}>
+              <FolderOpen className="size-4" /><span className="hidden sm:inline">Files</span>
+            </button>
+          )}
           {(() => {
             if (!vm) return null
             return (
@@ -248,6 +262,12 @@ function Chat() {
       </div>
       {/* Watch the VM while reading the chat: a floating button that opens a movable live preview. */}
       {vm && (vm.status === "running" || vm.status === "starting") && <VmPreview key={sessionId} vm={vm} />}
+      </div>
+      {filesOpen && (
+        <Suspense fallback={<aside aria-label="Loading VM files" className="absolute inset-0 z-20 flex min-h-0 flex-col border-l border-zinc-800 bg-zinc-950 xl:relative xl:inset-auto xl:w-[55%] xl:shrink-0"><div className="flex h-12 shrink-0 items-center border-b border-zinc-800 px-3 text-sm">Files<button type="button" onClick={closeFiles} aria-label="Close files" className="ml-auto rounded p-2 text-zinc-400"><X className="size-4" /></button></div><VmFilesSkeleton /></aside>}>
+          <VmFilesPanel key={sessionId} sessionId={sessionId} running={transcript.running} onClose={closeFiles} />
+        </Suspense>
+      )}
     </div>
   )
 }

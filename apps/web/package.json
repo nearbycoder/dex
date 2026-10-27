@@ -10,6 +10,7 @@
     "deploy": "npm run check:ops && npm run build && node scripts/deploy.mjs",
     "check:ops": "node scripts/check-operations.mjs",
     "typecheck": "tsc --noEmit",
+    "test:vm-files": "node --test tests/vm-files.test.ts",
     "cf-typegen": "wrangler types worker-configuration.d.ts --strict-vars=false",
     "openui:spec": "openui generate src/client/openui/library.tsx --spec --out src/shared/openui-spec.json"
   },
@@ -22,6 +23,9 @@
     "@openuidev/react-headless": "^0.18.1",
     "@openuidev/react-lang": "^1.0.1",
     "@openuidev/react-ui": "^0.18.1",
+    "@pierre/diffs": "^1.6.2",
+    "@pierre/theme": "^2.0.0",
+    "@pierre/trees": "^1.0.0-beta.6",
     "@tanstack/react-router": "^1.170.45",
     "@tanstack/react-start": "^1.169.3",
     "agents": "^0.28.1",

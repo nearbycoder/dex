@@ -667,7 +667,7 @@ export class VmManager {
    * mustn't keep the VM from idling or fill the Machine page), and its output is masked like any other. Null when the
    * VM isn't running.
    */
-  async peek(command: string, signal?: AbortSignal): Promise<{ exitCode: number; output: string } | null> {
+  async peek(command: string, signal?: AbortSignal, options?: { maxOutput?: number; rawJson?: boolean }): Promise<{ exitCode: number; output: string } | null> {
     const id = this.sandboxId()
     if (!id || this.info.status !== "running") return null
     let output = ""
@@ -676,13 +676,14 @@ export class VmManager {
         client.exec(id, command, {
           timeoutSeconds: 15,
           onOutput: (stream, chunk) => {
-            if (stream === "stdout" && output.length < 200_000) output += chunk
+            if (stream === "stdout") output += chunk.slice(0, Math.max(0, (options?.maxOutput ?? 200_000) - output.length))
           }
         })
       ),
       signal
     )
-    return { exitCode: result.exitCode ?? -1, output: this.host.mask(this.key, output) }
+    // Structured callers decode first and mask each string, including escaped credentials.
+    return { exitCode: result.exitCode ?? -1, output: options?.rawJson ? output : this.host.mask(this.key, output) }
   }
 
   // ── Work ──────────────────────────────────────────────────────────────────

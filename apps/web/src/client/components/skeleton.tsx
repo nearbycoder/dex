@@ -163,12 +163,29 @@ export function ChatSkeleton() {
   )
 }
 
+/** Session file tree and source viewer: 28px tree rows, 20px numbered source lines. */
+export function VmFilesSkeleton({ treeOnly = false }: { treeOnly?: boolean }) {
+  return (
+    <Status>
+      <div className="min-h-0 flex-1 overflow-hidden p-3">
+        {Array.from({ length: treeOnly ? 10 : 18 }, (_, index) => (
+          <div key={index} className={`flex items-center gap-2 ${treeOnly ? "h-7" : "h-5"}`} style={treeOnly ? { paddingLeft: index % 3 === 0 ? 0 : 12 } : undefined}>
+            <Bone className={treeOnly ? "size-3 shrink-0" : "h-2.5 w-4 shrink-0"} />
+            <div className="min-w-0 flex-1"><LineBone size="xs" width={widthAt(index, [62, 75, 40, 55, 80])} /></div>
+          </div>
+        ))}
+      </div>
+    </Status>
+  )
+}
+
 /** The whole chat page (header, transcript, composer), for when the page itself is still loading. */
 function ChatPageSkeleton() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <HeaderBones>
         <Bone className="h-4 w-44" />
+        <Bone className="ml-auto h-5 w-12" />
       </HeaderBones>
       <ChatSkeleton />
       <ComposerBones />
