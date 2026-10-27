@@ -17,6 +17,7 @@ import { useDex, useTranscript } from "~/client/lib/dex"
 import { MenuButton } from "~/client/lib/mobile-nav"
 import { MODEL_PROVIDERS, providerOf } from "~/shared/models"
 import { connectedProviders } from "~/shared/protocol"
+import { attachmentSummary, type ChatAttachment } from "~/shared/attachments"
 
 export const Route = createFileRoute("/_app/chat/$sessionId")({ component: Chat })
 
@@ -53,13 +54,17 @@ function Chat() {
 
   // Stable, so finished replies (memoized in MessageList) don't re-render when the page does.
   const send = useCallback(
-    (text: string) => {
+    (text: string, attachments: ChatAttachment[] = []) => {
       const trimmed = text.trim()
-      if (!trimmed) return
+      if (!trimmed && attachments.length === 0) return
+      // Shown until the agent records it; a message of only files shows their names.
+      const label = trimmed || `Attached: ${attachmentSummary(attachments)}`
       // A busy chat queues it instead, and the queue panel shows it.
       const willQueue = live.current.running || live.current.queued > 0
-      if (!willQueue) setPending((list) => [...list, { text: trimmed, after: live.current.userCount + list.length, at: Date.now() }])
-      void stub.sendMessage(sessionId, text).catch(() => setPending((list) => list.filter((item) => item.text !== trimmed)))
+      if (!willQueue) setPending((list) => [...list, { text: label, after: live.current.userCount + list.length, at: Date.now() }])
+      void stub
+        .sendMessage(sessionId, trimmed, attachments.length ? attachments : undefined)
+        .catch(() => setPending((list) => list.filter((item) => item.text !== label)))
     },
     [stub, sessionId]
   )

@@ -1,3 +1,4 @@
+import type { AttachedFile } from "./attachments"
 import type { AgentEvent, SnapshotEvent } from "@earendil-works/pi-durable"
 import { Predicate } from "effect"
 import { type AccessState, NO_ACCESS } from "./access"
@@ -239,6 +240,8 @@ export interface QueuedMessage {
   readonly id: string
   readonly text: string
   readonly createdAt: number
+  /** The files sent with it (names and types only). */
+  readonly attachments?: ReadonlyArray<AttachedFile>
 }
 
 export type ServerMessage =

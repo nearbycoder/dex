@@ -12,6 +12,7 @@ import type { AgentProfile } from "~/shared/agents"
 import type { ProjectProfile } from "~/shared/projects"
 import { clampThinking, DEFAULT_MODEL_ID, DEFAULT_THINKING, findModel, type ThinkingLevel, usableModel } from "~/shared/models"
 import { connectedProviders } from "~/shared/protocol"
+import type { ChatAttachment } from "~/shared/attachments"
 
 export const Route = createFileRoute("/_app/chat/")({
   // `?agent=<id>` / `?project=<id>` preselect an agent or project, e.g. from their pages.
@@ -81,11 +82,11 @@ function NewChat() {
     if (preselected && preselected.id !== agentId) pick(preselected)
   }, [agentParam, state?.agents.length])
 
-  const start = async (text: string) => {
+  const start = async (text: string, attachments: ChatAttachment[]) => {
     setError(null)
     try {
       const session = await stub.createSession({ ...choice, agentId, mcpServers, projectId })
-      await stub.sendMessage(session.id, text)
+      await stub.sendMessage(session.id, text, attachments.length ? attachments : undefined)
       await navigate({ to: "/chat/$sessionId", params: { sessionId: session.id } })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))

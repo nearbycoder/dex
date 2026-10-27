@@ -29,13 +29,16 @@ const SUMMARIZED: Readonly<Record<string, string>> = {
 }
 
 type TextPart = { type: "text"; text: string }
+/** An attachment tag with the file's text inside. */
+const ATTACHMENT_BODY = /^(<attachment (?:[a-z]+="[^"]*"\s*)+)>\n[\s\S]*\n<\/attachment>$/
 const isText = (part: unknown): part is TextPart =>
   typeof part === "object" && part !== null && (part as TextPart).type === "text" && typeof (part as TextPart).text === "string"
 
 /**
  * An entry as the browser needs it: screenshots' bytes left out (each keeps its type and gets a `ref` the page loads
  * it by when shown: they sit in collapsed tool steps, and a long VM session carries megabytes), long tool outputs cut
- * to their end, the UI guide summarized, and the system prompt (which the page never shows) left out. Together these
+ * to their end, the UI guide summarized, attached files' text left out (the page shows their names), and the system
+ * prompt (which the page never shows) left out. Together these
  * were most of what opening a chat sent.
  */
 export function slimEntry<E>(entry: E): E {
@@ -51,6 +54,14 @@ export function slimEntry<E>(entry: E): E {
       if (isLargeImage(part)) {
         changed = true
         return { type: "image", mimeType: part.mimeType, data: "", ref: `${String((entry as { id?: unknown }).id)}:${m}:${index}` }
+      }
+      // A file attached to a message: the page shows its name, never its text (see shared/attachments.ts).
+      if ((message as { role?: unknown }).role === "user" && isText(part) && part.text.startsWith("<attachment ")) {
+        const tagOnly = part.text.replace(ATTACHMENT_BODY, "$1 />")
+        if (tagOnly !== part.text) {
+          changed = true
+          return { type: "text", text: tagOnly }
+        }
       }
       if ((message as { role?: unknown }).role === "toolResult" && isText(part)) {
         if (summary) {

@@ -18,6 +18,7 @@ import { Route as AppNotificationsRouteImport } from './routes/_app.notification
 import { Route as AppSecretsRouteImport } from './routes/_app.secrets'
 import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppUsageRouteImport } from './routes/_app.usage'
+import { Route as ApiAttachmentsRouteImport } from './routes/api.attachments'
 import { Route as ApiMcpRouteImport } from './routes/api.mcp'
 import { Route as ApiVersionRouteImport } from './routes/api.version'
 import { Route as AuthDevRouteImport } from './routes/auth.dev'
@@ -89,6 +90,11 @@ const AppUsageRoute = AppUsageRouteImport.update({
   id: '/usage',
   path: '/usage',
   getParentRoute: () => AppRoute,
+} as any)
+const ApiAttachmentsRoute = ApiAttachmentsRouteImport.update({
+  id: '/api/attachments',
+  path: '/api/attachments',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ApiMcpRoute = ApiMcpRouteImport.update({
   id: '/api/mcp',
@@ -236,6 +242,7 @@ export interface FileRoutesByFullPath {
   '/secrets': typeof AppSecretsRoute
   '/settings': typeof AppSettingsRoute
   '/usage': typeof AppUsageRoute
+  '/api/attachments': typeof ApiAttachmentsRoute
   '/api/mcp': typeof ApiMcpRoute
   '/api/version': typeof ApiVersionRoute
   '/auth/dev': typeof AuthDevRoute
@@ -273,6 +280,7 @@ export interface FileRoutesByTo {
   '/secrets': typeof AppSecretsRoute
   '/settings': typeof AppSettingsRoute
   '/usage': typeof AppUsageRoute
+  '/api/attachments': typeof ApiAttachmentsRoute
   '/api/mcp': typeof ApiMcpRoute
   '/api/version': typeof ApiVersionRoute
   '/auth/dev': typeof AuthDevRoute
@@ -312,6 +320,7 @@ export interface FileRoutesById {
   '/_app/secrets': typeof AppSecretsRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/usage': typeof AppUsageRoute
+  '/api/attachments': typeof ApiAttachmentsRoute
   '/api/mcp': typeof ApiMcpRoute
   '/api/version': typeof ApiVersionRoute
   '/auth/dev': typeof AuthDevRoute
@@ -351,6 +360,7 @@ export interface FileRouteTypes {
     | '/secrets'
     | '/settings'
     | '/usage'
+    | '/api/attachments'
     | '/api/mcp'
     | '/api/version'
     | '/auth/dev'
@@ -388,6 +398,7 @@ export interface FileRouteTypes {
     | '/secrets'
     | '/settings'
     | '/usage'
+    | '/api/attachments'
     | '/api/mcp'
     | '/api/version'
     | '/auth/dev'
@@ -426,6 +437,7 @@ export interface FileRouteTypes {
     | '/_app/secrets'
     | '/_app/settings'
     | '/_app/usage'
+    | '/api/attachments'
     | '/api/mcp'
     | '/api/version'
     | '/auth/dev'
@@ -459,6 +471,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
+  ApiAttachmentsRoute: typeof ApiAttachmentsRoute
   ApiMcpRoute: typeof ApiMcpRoute
   ApiVersionRoute: typeof ApiVersionRoute
   AuthDevRoute: typeof AuthDevRoute
@@ -539,6 +552,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/usage'
       preLoaderRoute: typeof AppUsageRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/api/attachments': {
+      id: '/api/attachments'
+      path: '/api/attachments'
+      fullPath: '/api/attachments'
+      preLoaderRoute: typeof ApiAttachmentsRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/mcp': {
       id: '/api/mcp'
@@ -791,6 +811,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
+  ApiAttachmentsRoute: ApiAttachmentsRoute,
   ApiMcpRoute: ApiMcpRoute,
   ApiVersionRoute: ApiVersionRoute,
   AuthDevRoute: AuthDevRoute,

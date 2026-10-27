@@ -49,6 +49,7 @@ import type {
 } from "~/shared/protocol"
 import { connectedProviders, MCP_VM, SHARED_VM } from "~/shared/protocol"
 import { withUiNotes } from "~/shared/ui-notes"
+import { attachmentSummary, type ChatAttachment, splitAttachments } from "~/shared/attachments"
 import { githubFullName, isProjectImage, normalizeRepoUrl, type ProjectDraft, type ProjectImageCandidate, type ProjectProfile, type ProjectRepo, PROJECT_ROOT, repoDirName, repoLabel } from "~/shared/projects"
 import { CLOUDFLARE_RATES, type CloudflareLine, type OpenCodeLimits, type UsageRange, type UsageReport } from "~/shared/usage"
 import { AGENT_COLORS, AGENT_ICONS, type AgentDraft, type AgentProfile, STARTER_AGENTS } from "~/shared/agents"
@@ -61,6 +62,7 @@ import type { McpAuth, McpConnectResult, McpServerDraft, McpServerInfo, McpStatu
 import { BoatClient, BoatKey, checkBoatKey } from "./boat"
 import { CloudflareAnalytics, type CloudflareDay, dayCost, emptyDay } from "./cloudflare-analytics"
 import { datesBetween, UsageLedger, utcDate } from "./usage-ledger"
+import { checkAttachments, messageContent } from "./attachments"
 import { CLINEPASS_PROVIDER_ID, ClinePassClient, clinePassProvider } from "./clinepass"
 import { type ChatGPTCredential, ChatGPTClient, type ChatGPTPending, chatGPTProvider, CHATGPT_REDIRECT_URI, parseChatGPTCallback, startChatGPTSignIn } from "./chatgpt"
 import { catalogChanges, catalogVersion, fetchModelCatalog } from "./model-catalog"
@@ -1058,9 +1060,11 @@ export class DexAgent extends Agent<Env, DexState> {
   }
 
   @callable()
-  async sendMessage(sessionId: string, text: string) {
-    const content = text.trim()
-    if (!content) return
+  async sendMessage(sessionId: string, text: string, attachments?: readonly ChatAttachment[]) {
+    const content = (typeof text === "string" ? text : "").trim()
+    // Checked now, so a message that can't go fails here rather than later in the queue.
+    const files = checkAttachments(attachments)
+    if (!content && files.length === 0) return
     const row = this.ctx.storage.sql.exec<SessionRow>(`SELECT * FROM dex_sessions WHERE id = ?`, sessionId).toArray()[0]
     if (!row) throw new Error("Chat not found")
 
@@ -1072,13 +1076,13 @@ export class DexAgent extends Agent<Env, DexState> {
     this.messageQueue.release(sessionId)
     // A busy chat (or one with messages already waiting) queues it, where it can still be edited or reordered.
     if (!held && ((await this.isBusy(sessionId)) || this.messageQueue.list(sessionId).length > 0)) {
-      this.messageQueue.add(sessionId, content)
+      this.messageQueue.add(sessionId, content, files)
       this.publishQueue(sessionId)
       await this.ensureQueueCheck()
       await this.drainQueue(sessionId)
       return
     }
-    await this.deliver(sessionId, content)
+    await this.deliver(sessionId, content, { attachments: files })
     if (held) this.publishQueue(sessionId)
   }
 
@@ -1087,7 +1091,7 @@ export class DexAgent extends Agent<Env, DexState> {
   }
 
   /** Hands a message to the chat: a new run, or with `steer`, into the run that's going (after its current tool). */
-  private async deliver(sessionId: string, content: string, { steer = false } = {}) {
+  private async deliver(sessionId: string, content: string, { steer = false, attachments = [] as readonly ChatAttachment[] } = {}) {
     const row = this.ctx.storage.sql.exec<SessionRow>(`SELECT * FROM dex_sessions WHERE id = ?`, sessionId).toArray()[0]
     if (!row) return
     // The provider retired this chat's model since its last message: it continues on the default one.
@@ -1098,8 +1102,12 @@ export class DexAgent extends Agent<Env, DexState> {
 
     const session = this.harness.session(sessionId)
     // What you did with this chat's UI since your last message, so the chat isn't working from a stale picture.
-    const receipt = await session.submit(withUiNotes(this.uiCards.takeNotes(sessionId), content), steer ? { whenBusy: "steer" } : undefined)
-    const title = row.title === "New chat" ? content.replace(/\s+/g, " ").slice(0, 60) : row.title
+    const text = withUiNotes(this.uiCards.takeNotes(sessionId), content)
+    // Read again: the chat may have just moved to the default model.
+    const model = this.ctx.storage.sql.exec<{ model: string }>(`SELECT model FROM dex_sessions WHERE id = ?`, sessionId).toArray()[0]?.model ?? row.model
+    const vision = findModel(model)?.input.includes("image") ?? false
+    const receipt = await session.submit(messageContent(text, attachments, vision), steer ? { whenBusy: "steer" } : undefined)
+    const title = row.title === "New chat" ? (content || attachmentSummary(attachments)).replace(/\s+/g, " ").slice(0, 60) : row.title
     this.ctx.storage.sql.exec(`UPDATE dex_sessions SET title = ?, updated_at = ? WHERE id = ?`, title, Date.now(), sessionId)
     // Something new in it: back to the inbox, whether it was settled or snoozed.
     await this.returnToInbox(sessionId)
@@ -1132,7 +1140,7 @@ export class DexAgent extends Agent<Env, DexState> {
       const next = this.messageQueue.next(sessionId)
       if (next === null) return
       this.publishQueue(sessionId)
-      await this.deliver(sessionId, next)
+      await this.deliver(sessionId, next.text, { attachments: next.attachments })
     } finally {
       this.draining.delete(sessionId)
     }
@@ -1198,10 +1206,10 @@ export class DexAgent extends Agent<Env, DexState> {
   /** Sends a queued message now: into the run that's going as a steer (after its current tool), or as the next run. */
   @callable()
   async steerQueued(sessionId: string, id: string) {
-    const text = this.messageQueue.take(sessionId, id)
+    const message = this.messageQueue.take(sessionId, id)
     this.messageQueue.release(sessionId)
     this.publishQueue(sessionId)
-    await this.deliver(sessionId, text, { steer: await this.isBusy(sessionId) })
+    await this.deliver(sessionId, message.text, { steer: await this.isBusy(sessionId), attachments: message.attachments })
   }
 
   @callable()
@@ -2648,8 +2656,11 @@ export class DexAgent extends Agent<Env, DexState> {
         .slice(-limit)
         .map((message) => {
           if (message.role === "user") {
-            const text = typeof message.content === "string" ? message.content : message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n")
-            return { role: "user", at: new Date(message.timestamp).toISOString(), text: text.slice(0, 4_000) }
+            const raw = typeof message.content === "string" ? message.content : message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n")
+            // Attached files by name, not their contents.
+            const { text, files } = splitAttachments(raw)
+            const attached = files.length ? `${text ? "\n" : ""}[Attached: ${files.map((file) => file.name).join(", ")}]` : ""
+            return { role: "user", at: new Date(message.timestamp).toISOString(), text: `${text.slice(0, 4_000)}${attached}` }
           }
           const text = message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("\n")
           const tools = message.content.flatMap((block) => (block.type === "toolCall" ? [block.name] : []))

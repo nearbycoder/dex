@@ -1,4 +1,6 @@
 import type { AssistantMessage, ToolCall, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai"
+// Relative, with .ts: the Android goldens (apps/android/tools/goldens) run this file in Node, which has no ~ alias.
+import { type AttachedFile, splitAttachments } from "../../shared/attachments.ts"
 import type { AgentEvent, EntryRecord, SnapshotEvent } from "@earendil-works/pi-durable"
 import { Predicate } from "effect"
 import type { ChatArtifact } from "~/shared/media"
@@ -171,18 +173,31 @@ export const applyEvent = (state: TranscriptState, event: AgentEvent): Transcrip
 // ── Reading entries ─────────────────────────────────────────────────────────
 
 export type DisplayItem =
-  | { readonly kind: "user"; readonly id: string; readonly text: string; readonly images: number }
+  | {
+      readonly kind: "user"
+      readonly id: string
+      readonly text: string
+      readonly images: number
+      /** Files attached to it (names and types; their text isn't shown). Absent without any. */
+      readonly files?: ReadonlyArray<AttachedFile>
+      /** Its images: `data` inline when small, else `ref` to load it by (see transcriptImage). Absent without any. */
+      readonly imageParts?: ReadonlyArray<{ readonly mimeType: string; readonly data: string; readonly ref?: string }>
+    }
   /** One reply: the assistant messages between two user messages, the last one possibly still streaming. */
   | { readonly kind: "assistant"; readonly id: string; readonly messages: ReadonlyArray<AssistantMessage>; readonly streaming: boolean; readonly endedAt: number | null }
   | { readonly kind: "divider"; readonly id: string; readonly label: string }
 
-const userText = (message: UserMessage) =>
-  typeof message.content === "string"
-    ? { text: message.content, images: 0 }
-    : {
-        text: message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n"),
-        images: message.content.filter((part) => part.type === "image").length
-      }
+const userText = (message: UserMessage) => {
+  if (typeof message.content === "string") {
+    const { text, files } = splitAttachments(message.content)
+    return { text, images: 0, ...(files.length > 0 && { files }) }
+  }
+  const { text, files } = splitAttachments(message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n"))
+  const imageParts = message.content.flatMap((part) =>
+    part.type === "image" ? [{ mimeType: part.mimeType, data: part.data, ...((part as { ref?: string }).ref && { ref: (part as { ref?: string }).ref }) }] : []
+  )
+  return { text, images: imageParts.length, ...(files.length > 0 && { files }), ...(imageParts.length > 0 && { imageParts }) }
+}
 
 export const toolResults = (entries: ReadonlyArray<EntryRecord>) => {
   const results = new Map<string, ToolResultMessage>()

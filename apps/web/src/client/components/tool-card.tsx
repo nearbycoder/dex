@@ -83,11 +83,26 @@ const activities: Record<string, string> = {
   app_call: "Managing Dex"
 }
 
-/** Screenshots fetched this session, by ref, so reopening a step doesn't fetch again. */
+/** Images fetched this session, by ref, so reopening a step or scrolling back doesn't fetch again. */
 const screenshots = new Map<string, string>()
 
-/** A screenshot left out of the chat's transcript (it can be large): fetched when its step is shown. */
-function LazyScreenshot({ chatId, ref_ }: { chatId: string; ref_: string }) {
+/**
+ * An image left out of the chat's transcript (it can be large; see withoutImages): a screenshot in a tool step or a
+ * photo attached to a message, fetched when it's shown.
+ */
+export function TranscriptImage({
+  chatId,
+  ref_,
+  alt = "VM screenshot",
+  className = "block w-full border-t border-zinc-800",
+  placeholderClassName = "flex aspect-video items-center justify-center border-t border-zinc-800 bg-zinc-950 text-zinc-600"
+}: {
+  chatId: string
+  ref_: string
+  alt?: string
+  className?: string
+  placeholderClassName?: string
+}) {
   const { stub } = useDex()
   const key = `${chatId}:${ref_}`
   const [src, setSrc] = useState(() => screenshots.get(key) ?? null)
@@ -110,12 +125,8 @@ function LazyScreenshot({ chatId, ref_ }: { chatId: string; ref_: string }) {
       current = false
     }
   }, [chatId, ref_, key, src, stub])
-  if (src) return <img src={src} alt="VM screenshot" className="block w-full border-t border-zinc-800" />
-  return (
-    <div className="flex aspect-video items-center justify-center border-t border-zinc-800 bg-zinc-950 text-zinc-600">
-      {failed ? "Screenshot unavailable" : <LoaderCircle className="size-4 animate-spin" />}
-    </div>
-  )
+  if (src) return <img src={src} alt={alt} className={className} />
+  return <div className={placeholderClassName}>{failed ? "Image unavailable" : <LoaderCircle className="size-4 animate-spin" />}</div>
 }
 
 export function ToolCard({ call, result, live }: { call: ToolCall; result?: ToolResultMessage; live?: LiveTool }) {
@@ -165,7 +176,7 @@ export function ToolCard({ call, result, live }: { call: ToolCall; result?: Tool
       {images.map((image, index) => {
         const ref = (image as { ref?: string }).ref
         if (image.data) return <img key={index} src={`data:${image.mimeType};base64,${image.data}`} alt="VM screenshot" className="block w-full border-t border-zinc-800" />
-        return ref && chatId ? <LazyScreenshot key={index} chatId={chatId} ref_={ref} /> : null
+        return ref && chatId ? <TranscriptImage key={index} chatId={chatId} ref_={ref} /> : null
       })}
       {showLive && !open && (
         <pre className="scrollbar-thin max-h-48 overflow-auto border-t border-zinc-800 bg-zinc-950 px-3 py-2 font-mono whitespace-pre-wrap text-zinc-300">

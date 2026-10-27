@@ -1,3 +1,4 @@
+import { attachmentSummary } from "~/shared/attachments"
 import { ArrowDown, ArrowUp, Check, ChevronUp, Hourglass, Pause, Pencil, Trash2, Zap } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { useDex } from "~/client/lib/dex"
@@ -87,7 +88,14 @@ function QueueItem({
         <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-[10px] font-medium text-zinc-400 tabular-nums">
           {index + 1}
         </span>
-        <p className="line-clamp-3 min-w-0 flex-1 text-sm whitespace-pre-wrap text-zinc-200 [overflow-wrap:anywhere]">{item.text}</p>
+        <div className="min-w-0 flex-1">
+          {item.text && <p className="line-clamp-3 text-sm whitespace-pre-wrap text-zinc-200 [overflow-wrap:anywhere]">{item.text}</p>}
+          {item.attachments && item.attachments.length > 0 && (
+            <p className="truncate text-xs text-zinc-500" title={item.attachments.map((file) => file.name).join(", ")}>
+              Attached: {attachmentSummary(item.attachments)}
+            </p>
+          )}
+        </div>
       </div>
       <div className="mt-1 flex items-center gap-0.5 pl-7">
         <button
