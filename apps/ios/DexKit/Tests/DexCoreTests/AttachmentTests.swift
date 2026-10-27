@@ -58,7 +58,7 @@ import Testing
         #expect(old.attachments.isEmpty)
         let new = try JSONDecoder().decode(QueuedMessage.self, from: Data(#"{"id":"q","text":"","createdAt":1,"attachments":[{"name":"a.pdf","mimeType":"application/pdf"}]}"#.utf8))
         #expect(new.attachments == [AttachedFile(name: "a.pdf", mimeType: "application/pdf")])
-        let attachment = ChatAttachment(json: try JSONValue.parse(#"{"kind":"text","name":"n.md","mimeType":"text/markdown","text":"# x","truncated":true}"#))
+        let attachment = ChatAttachment(json: try JSONValue.parse(##"{"kind":"text","name":"n.md","mimeType":"text/markdown","text":"# x","truncated":true}"##))
         #expect(attachment.kind == "text")
         #expect(attachment.name == "n.md")
         #expect(attachment.json["truncated"]?.bool == true)

@@ -89,6 +89,7 @@ import dev.trydex.android.ui.components.rememberConfirm
 import dev.trydex.android.ui.nav.Tab
 import dev.trydex.android.ui.nav.WorkspaceFile
 import dev.trydex.android.ui.theme.DexTheme
+import dev.trydex.core.model.WebAudio
 import dev.trydex.core.model.Format
 import dev.trydex.core.model.WorkspaceFileContent
 import kotlinx.coroutines.delay
@@ -341,7 +342,8 @@ fun WorkspaceFileScreen(path: String) {
 
 /**
  * Agent-written HTML, rendered where it can't reach Dex: a WebView whose page has an origin of its own (so Dex's
- * session cookie never goes with it), with no bridge to the app. Links open in the browser.
+ * session cookie never goes with it), with no bridge to the app. Links open in the browser. Sound plays (games
+ * especially): the page gets Dex's audio unlock as its first script (WebAudio), and media needs no extra gesture.
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -360,6 +362,7 @@ fun HtmlPreview(html: String, modifier: Modifier = Modifier) {
                 settings.allowFileAccess = false
                 settings.allowContentAccess = false
                 settings.domStorageEnabled = false
+                settings.mediaPlaybackRequiresUserGesture = false
                 setBackgroundColor(android.graphics.Color.WHITE)
                 webViewClient = object : WebViewClient() {
                     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
@@ -370,7 +373,7 @@ fun HtmlPreview(html: String, modifier: Modifier = Modifier) {
                 }
             }
         },
-        update = { view -> view.loadDataWithBaseURL("https://workspace-preview.invalid/", shown, "text/html", "utf-8", null) },
+        update = { view -> view.loadDataWithBaseURL("https://workspace-preview.invalid/", WebAudio.withAudioUnlock(shown), "text/html", "utf-8", null) },
         onRelease = { it.destroy() },
         modifier = modifier.background(Color.White),
     )

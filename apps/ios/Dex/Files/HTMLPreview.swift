@@ -1,10 +1,12 @@
+import DexCore
 import SwiftUI
 import WebKit
 
 /// An HTML file, rendered live. The agent writes these files, so they're untrusted: the page runs in a web view with
 /// its own throwaway data store and no base URL (an opaque origin), so its scripts run and it can load libraries and
 /// fonts from anywhere, like the web's sandboxed preview, but it never sees Dex's session or this app's storage.
-/// Links it opens go to the browser.
+/// Links it opens go to the browser. Its sound plays on a tap, even with the Ring/Silent switch on silent (WebAudio,
+/// as the web's preview does).
 struct HTMLPreview: UIViewRepresentable {
     let html: String
 
@@ -15,11 +17,13 @@ struct HTMLPreview: UIViewRepresentable {
         configuration.websiteDataStore = .nonPersistent()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+        // The audio unlock's silent <audio> plays in the page, not full screen.
+        configuration.allowsInlineMediaPlayback = true
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.navigationDelegate = context.coordinator
         view.uiDelegate = context.coordinator
         view.isInspectable = true
-        view.loadHTMLString(html, baseURL: nil)
+        view.loadHTMLString(WebAudio.withAudioUnlock(html), baseURL: nil)
         context.coordinator.loaded = html
         return view
     }
@@ -27,7 +31,7 @@ struct HTMLPreview: UIViewRepresentable {
     func updateUIView(_ view: WKWebView, context: Context) {
         guard context.coordinator.loaded != html else { return }
         context.coordinator.loaded = html
-        view.loadHTMLString(html, baseURL: nil)
+        view.loadHTMLString(WebAudio.withAudioUnlock(html), baseURL: nil)
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
