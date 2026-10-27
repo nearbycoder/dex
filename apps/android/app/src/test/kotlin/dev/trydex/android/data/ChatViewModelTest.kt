@@ -42,6 +42,26 @@ class ChatViewModelTest {
         assertThat(harness.fake.calls.map { it.first }).contains("sendMessage")
     }
 
+    @Test fun sendsAttachmentsAndShowsThem() {
+        harness.signIn()
+        await { harness.graph.repository.connected.value }
+        val repository = harness.graph.repository
+        val model = ChatViewModel("chat-research", repository)
+        await { model.transcript.value.loaded }
+        val photo = kotlinx.coroutines.runBlocking { repository.uploadAttachment(byteArrayOf(1, 2), "shot.png", "image/png") }
+        val notes = kotlinx.coroutines.runBlocking { repository.uploadAttachment("# Notes".toByteArray(), "notes.md", "text/markdown") }
+        val before = model.transcript.value.userCount
+        model.send("", listOf(photo, notes))
+        // A message of only files shows their names while it's sent.
+        assertThat(model.pending.value.map { it.text }).containsExactly("Attached: shot.png and 1 more")
+        await { model.transcript.value.userCount > before }
+        val sent = dev.trydex.core.model.displayItems(model.transcript.value).filterIsInstance<dev.trydex.core.model.DisplayItem.User>().last()
+        assertThat(sent.files.map { it.name }).containsExactly("shot.png", "notes.md").inOrder()
+        assertThat(sent.imageParts).hasSize(1)
+        assertThat(sent.text).isEmpty()
+        await { !model.transcript.value.running }
+    }
+
     @Test fun aMessageWhileRunningQueuesInsteadOfPending() {
         harness.signIn()
         await { harness.graph.repository.connected.value }

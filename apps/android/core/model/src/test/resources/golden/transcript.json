@@ -219,7 +219,14 @@
      "kind": "user",
      "id": "7:0",
      "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?",
-     "images": 1
+     "images": 1,
+     "imageParts": [
+      {
+       "mimeType": "image/png",
+       "data": "",
+       "ref": "7:0:1"
+      }
+     ]
     }
    ],
    "results": [
@@ -296,7 +303,14 @@
      "kind": "user",
      "id": "7:0",
      "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?",
-     "images": 1
+     "images": 1,
+     "imageParts": [
+      {
+       "mimeType": "image/png",
+       "data": "",
+       "ref": "7:0:1"
+      }
+     ]
     }
    ],
    "results": [
@@ -406,7 +420,14 @@
      "kind": "user",
      "id": "7:0",
      "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?",
-     "images": 1
+     "images": 1,
+     "imageParts": [
+      {
+       "mimeType": "image/png",
+       "data": "",
+       "ref": "7:0:1"
+      }
+     ]
     },
     {
      "kind": "assistant",
@@ -540,7 +561,14 @@
      "kind": "user",
      "id": "7:0",
      "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?",
-     "images": 1
+     "images": 1,
+     "imageParts": [
+      {
+       "mimeType": "image/png",
+       "data": "",
+       "ref": "7:0:1"
+      }
+     ]
     },
     {
      "kind": "assistant",
@@ -707,7 +735,14 @@
      "kind": "user",
      "id": "7:0",
      "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?",
-     "images": 1
+     "images": 1,
+     "imageParts": [
+      {
+       "mimeType": "image/png",
+       "data": "",
+       "ref": "7:0:1"
+      }
+     ]
     },
     {
      "kind": "assistant",
@@ -828,7 +863,14 @@
      "kind": "user",
      "id": "7:0",
      "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?",
-     "images": 1
+     "images": 1,
+     "imageParts": [
+      {
+       "mimeType": "image/png",
+       "data": "",
+       "ref": "7:0:1"
+      }
+     ]
     },
     {
      "kind": "assistant",
@@ -927,7 +969,14 @@
      "kind": "user",
      "id": "7:0",
      "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?",
-     "images": 1
+     "images": 1,
+     "imageParts": [
+      {
+       "mimeType": "image/png",
+       "data": "",
+       "ref": "7:0:1"
+      }
+     ]
     },
     {
      "kind": "assistant",
@@ -1034,7 +1083,14 @@
      "kind": "user",
      "id": "7:0",
      "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?",
-     "images": 1
+     "images": 1,
+     "imageParts": [
+      {
+       "mimeType": "image/png",
+       "data": "",
+       "ref": "7:0:1"
+      }
+     ]
     },
     {
      "kind": "assistant",
@@ -1138,7 +1194,14 @@
      "kind": "user",
      "id": "7:0",
      "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?",
-     "images": 1
+     "images": 1,
+     "imageParts": [
+      {
+       "mimeType": "image/png",
+       "data": "",
+       "ref": "7:0:1"
+      }
+     ]
     },
     {
      "kind": "assistant",
@@ -1255,7 +1318,14 @@
      "kind": "user",
      "id": "7:0",
      "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?",
-     "images": 1
+     "images": 1,
+     "imageParts": [
+      {
+       "mimeType": "image/png",
+       "data": "",
+       "ref": "7:0:1"
+      }
+     ]
     },
     {
      "kind": "assistant",
@@ -1447,7 +1517,14 @@
      "kind": "user",
      "id": "7:0",
      "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?",
-     "images": 1
+     "images": 1,
+     "imageParts": [
+      {
+       "mimeType": "image/png",
+       "data": "",
+       "ref": "7:0:1"
+      }
+     ]
     },
     {
      "kind": "assistant",
@@ -1588,7 +1665,14 @@
      "kind": "user",
      "id": "7:0",
      "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?",
-     "images": 1
+     "images": 1,
+     "imageParts": [
+      {
+       "mimeType": "image/png",
+       "data": "",
+       "ref": "7:0:1"
+      }
+     ]
     },
     {
      "kind": "assistant",
@@ -1755,7 +1839,14 @@
      "kind": "user",
      "id": "7:0",
      "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?",
-     "images": 1
+     "images": 1,
+     "imageParts": [
+      {
+       "mimeType": "image/png",
+       "data": "",
+       "ref": "7:0:1"
+      }
+     ]
     },
     {
      "kind": "assistant",
@@ -1891,7 +1982,14 @@
      "kind": "user",
      "id": "7:0",
      "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?",
-     "images": 1
+     "images": 1,
+     "imageParts": [
+      {
+       "mimeType": "image/png",
+       "data": "",
+       "ref": "7:0:1"
+      }
+     ]
     },
     {
      "kind": "assistant",
@@ -1979,7 +2077,14 @@
      "kind": "user",
      "id": "7:0",
      "text": "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?",
-     "images": 1
+     "images": 1,
+     "imageParts": [
+      {
+       "mimeType": "image/png",
+       "data": "",
+       "ref": "7:0:1"
+      }
+     ]
     },
     {
      "kind": "assistant",

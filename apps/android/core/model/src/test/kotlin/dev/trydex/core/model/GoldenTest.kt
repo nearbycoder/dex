@@ -177,7 +177,7 @@ class GoldenTest {
             }
             val items = displayItems(state).map { item ->
                 when (item) {
-                    is DisplayItem.User -> listOf("user", item.id, item.text, item.images.toString())
+                    is DisplayItem.User -> item.comparable()
                     is DisplayItem.Divider -> listOf("divider", item.id, item.label)
                     is DisplayItem.Assistant -> listOf(
                         "assistant", item.id, item.streaming.toString(), item.endedAt.toString(), item.messages.size.toString(),
@@ -187,7 +187,7 @@ class GoldenTest {
             }
             val expectedItems = step.items("items").map { item ->
                 when (item["kind"].str) {
-                    "user" -> listOf("user", item["id"].str, item["text"].str, item["images"].long.toString())
+                    "user" -> item.comparableUser()
                     "divider" -> listOf("divider", item["id"].str, item["label"].str)
                     else -> listOf(
                         "assistant", item["id"].str, item["streaming"].bool.toString(), item["endedAt"].long.toString(),
@@ -207,6 +207,35 @@ class GoldenTest {
         assertThat(fromMid.streaming.toComparable()).isEqualTo(mid["streaming"].toComparableMessage())
         assertThat(fromMid.tools.keys).isEqualTo(mid["tools"]!!.jsonObject.keys)
         assertThat(fromMid.tools.getValue("c").output).isEqualTo("out")
+    }
+
+    /** A user item as comparable text: id, text, image count, files, and images (inline data or ref). */
+    private fun DisplayItem.User.comparable() = listOf(
+        "user", id, text, images.toString(),
+        files.joinToString("|") { "${it.name}:${it.mimeType}" },
+        imageParts.joinToString("|") { "${it.mimeType}:${it.data}:${it.ref}" },
+    )
+
+    private fun JsonObject.comparableUser() = listOf(
+        "user", this["id"].str, this["text"].str, this["images"].long.toString(),
+        this["files"]?.jsonArray.orEmpty().joinToString("|") { "${it["name"].str}:${it["mimeType"].str}" },
+        this["imageParts"]?.jsonArray.orEmpty().joinToString("|") { "${it["mimeType"].str}:${it["data"].str}:${it["ref"].str}" },
+    )
+
+    @Test fun attachments() {
+        val golden = golden("attachments.json")
+        for (case in golden.items("split")) {
+            val (text, files) = splitAttachments(case["input"].str!!)
+            assertWithMessage(case["input"].str).that(text).isEqualTo(case["text"].str)
+            assertWithMessage(case["input"].str).that(files)
+                .isEqualTo(case["files"]!!.jsonArray.map { AttachedFile(it["name"].str!!, it["mimeType"].str!!) })
+        }
+        for (case in golden.items("summary")) {
+            assertThat(attachmentSummary(case["names"]!!.jsonArray.map { it.str!! })).isEqualTo(case["text"].str)
+        }
+        val state = TranscriptReducer.fromSnapshot(PiCodec.snapshot(golden["snapshot"]!!.jsonObject))
+        val items = displayItems(state).map { (it as DisplayItem.User).comparable() }
+        assertThat(items).isEqualTo(golden.items("items").map { it.comparableUser() })
     }
 
     private fun ContentBlock.typeName() = when (this) {

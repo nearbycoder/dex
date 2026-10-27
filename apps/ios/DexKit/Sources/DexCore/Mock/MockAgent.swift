@@ -11,6 +11,8 @@ public final class MockAgent {
     /// Each chat's transcript entries.
     public var entries: [String: [EntryRecord]] = [:]
     public var queues: [String: [QueuedMessage]] = [:]
+    /// Queued messages' attachments, by queue item id.
+    var queuedFiles: [String: [ChatAttachment]] = [:]
     public var heldQueues: Set<String> = []
     public var artifacts: [String: [ChatArtifact]] = [:]
     public var running: Set<String> = []

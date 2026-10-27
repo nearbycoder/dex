@@ -9,7 +9,7 @@ struct Composer<Accessory: View>: View {
     var placeholder: String
     var running = false
     var disabled = false
-    let onSend: (String) async throws -> Void
+    let onSend: (String, [ChatAttachment]) async throws -> Void
     var onStop: (() async throws -> Void)? = nil
     /// Shown above the text, inside the box (the new chat's agent and project).
     var header: AnyView? = nil
@@ -20,6 +20,8 @@ struct Composer<Accessory: View>: View {
 
     var body: some View {
         let empty = model.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        // Waits for uploads, and for files that couldn't be attached to be removed, so nothing goes missing unnoticed.
+        let canSend = !disabled && (!empty || !model.readyAttachments.isEmpty) && !model.uploading && model.failedAttachments.isEmpty
         GlassEffectContainer(spacing: 10) {
             VStack(alignment: .leading, spacing: 8) {
                 if skills.isOpen, !disabled {
@@ -31,6 +33,7 @@ struct Composer<Accessory: View>: View {
                 }
                 VStack(alignment: .leading, spacing: 0) {
                     if let header { header.padding(.horizontal, 12).padding(.top, 12) }
+                    AttachmentChips(model: model)
                     TextField(placeholder, text: $model.text, axis: .vertical)
                         .lineLimit(1...8)
                         .focused($focused)
@@ -40,6 +43,7 @@ struct Composer<Accessory: View>: View {
                         .onKeyPress(keys: [.return, .upArrow, .downArrow, .tab, .escape], phases: .down) { press in handle(press) }
                         .accessibilityIdentifier("composer.field")
                     HStack(spacing: 6) {
+                        AttachButton(model: model, disabled: disabled)
                         ScrollView(.horizontal) {
                             HStack(spacing: 6) { accessory }
                         }
@@ -62,7 +66,7 @@ struct Composer<Accessory: View>: View {
                         }
                         .buttonStyle(.glassProminent)
                         .buttonBorderShape(.circle)
-                        .disabled(disabled || empty)
+                        .disabled(!canSend)
                         .keyboardShortcut(.return, modifiers: .command)
                         .accessibilityLabel(running ? "Queue follow-up" : "Send")
                         .accessibilityIdentifier("composer.send")
@@ -100,12 +104,17 @@ struct Composer<Accessory: View>: View {
 
     private func send() {
         let message = model.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !message.isEmpty, !disabled else { return }
+        let drafts = model.attachments
+        let ready = model.readyAttachments
+        guard !disabled, !message.isEmpty || !ready.isEmpty, !model.uploading, model.failedAttachments.isEmpty else { return }
         model.text = ""
+        model.attachments = []
         sent += 1
         Task {
-            do { try await onSend(message) } catch {
+            do { try await onSend(message, ready) } catch {
+                // Back in the box, files included, to try again.
                 if model.text.isEmpty { model.text = message }
+                if model.attachments.isEmpty { model.attachments = drafts }
                 client.notice = error.localizedDescription
             }
         }
@@ -416,7 +425,16 @@ private struct QueueItemRow: View {
                         .font(.caption2.weight(.semibold).monospacedDigit())
                         .frame(width: 20, height: 20)
                         .background(.quaternary, in: .circle)
-                    Text(item.text).font(.subheadline).lineLimit(3).frame(maxWidth: .infinity, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 2) {
+                        if !item.text.isEmpty { Text(item.text).font(.subheadline).lineLimit(3) }
+                        if !item.attachments.isEmpty {
+                            Text("Attached: \(attachmentSummary(item.attachments.map(\.name)))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 HStack(spacing: 2) {
                     icon("arrow.up", "Move up", id: "queue.up.\(index)") { try await feed.moveQueued(item.id, to: index - 1) }.disabled(index == 0)

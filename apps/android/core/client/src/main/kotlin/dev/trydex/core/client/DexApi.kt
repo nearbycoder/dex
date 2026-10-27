@@ -19,6 +19,7 @@ import dev.trydex.core.model.ModelCatalog
 import dev.trydex.core.model.ModelRefresh
 import dev.trydex.core.model.ProjectImageCandidate
 import dev.trydex.core.model.ProjectProfile
+import dev.trydex.core.model.ChatAttachment
 import dev.trydex.core.model.QueuedMessage
 import dev.trydex.core.model.RegistryServer
 import dev.trydex.core.model.SavedArtifact
@@ -84,7 +85,11 @@ class DexApi(private val rpc: AgentRpc) {
         put("projectId", projectId)
     })
 
-    suspend fun sendMessage(sessionId: String, text: String) { raw("sendMessage", sessionId, text) }
+    /** `attachments` as `/api/attachments` returned them (DexUploads); left out when there are none, as the web does. */
+    suspend fun sendMessage(sessionId: String, text: String, attachments: List<ChatAttachment> = emptyList()) {
+        if (attachments.isEmpty()) raw("sendMessage", sessionId, text)
+        else raw("sendMessage", sessionId, text, kotlinx.serialization.json.JsonArray(attachments.map { it.json }))
+    }
     suspend fun renameSession(sessionId: String, title: String) { raw("renameSession", sessionId, title) }
     suspend fun regenerateSessionTitle(sessionId: String): String = typed(String.serializer(), "regenerateSessionTitle", sessionId, timeout = 60_000)
     suspend fun deleteSession(sessionId: String) { raw("deleteSession", sessionId) }

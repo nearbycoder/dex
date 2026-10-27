@@ -5,7 +5,17 @@ public struct QueuedMessage: Codable, Sendable, Hashable, Identifiable {
     public var id: String
     public var text: String
     public var createdAt: Double
-    public init(id: String, text: String, createdAt: Double) { self.id = id; self.text = text; self.createdAt = createdAt }
+    /// The files sent with it (names and types only).
+    public var attachments: [AttachedFile]
+    public init(id: String, text: String, createdAt: Double, attachments: [AttachedFile] = []) {
+        self.id = id; self.text = text; self.createdAt = createdAt; self.attachments = attachments
+    }
+    enum CodingKeys: String, CodingKey { case id, text, createdAt, attachments }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id); text = c.value(.text, default: ""); createdAt = c.value(.createdAt, default: 0)
+        attachments = c.value(.attachments, default: [])
+    }
 }
 
 /// A file a chat put in front of you, stored in Dex and served at /api/media/<key>.

@@ -164,14 +164,14 @@ fun NewChatScreen(route: NewChat) {
         if (projectId != wanted) projects.firstOrNull { it.id == wanted }?.let(::pickProject)
     }
 
-    fun start(text: String) {
+    fun start(text: String, attachments: List<dev.trydex.core.model.ChatAttachment>) {
         if (starting) return
         error = null
         starting = true
         scope.launch {
             runCatching {
                 val session = repository.api.createSession(model, thinking, agentId, mcp, projectId)
-                repository.api.sendMessage(session.id, text)
+                repository.api.sendMessage(session.id, text, attachments)
                 session
             }.onSuccess { session ->
                 app.navigator.replace(Chat(session.id))

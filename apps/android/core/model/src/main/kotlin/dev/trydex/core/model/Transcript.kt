@@ -143,7 +143,17 @@ fun toolResults(entries: List<EntryRecord>): Map<String, ToolResultMessage> = bu
 sealed interface DisplayItem {
     val id: String
 
-    data class User(override val id: String, val text: String, val images: Int) : DisplayItem
+    /**
+     * One of your messages: its text without attachment tags, the files those name, and its images (`data` inline when
+     * small, else a `ref` to load it by).
+     */
+    data class User(
+        override val id: String,
+        val text: String,
+        val images: Int,
+        val files: List<AttachedFile> = emptyList(),
+        val imageParts: List<ImageBlock> = emptyList(),
+    ) : DisplayItem
 
     /** One reply: the assistant messages between two user messages, the last one possibly still streaming. */
     data class Assistant(
@@ -176,7 +186,10 @@ fun displayItems(state: TranscriptState): List<DisplayItem> {
         entry.model.orEmpty().forEachIndexed { index, message ->
             val id = "${entry.id}:$index"
             when (message) {
-                is UserMessage -> items += DisplayItem.User(id, message.text, message.imageCount)
+                is UserMessage -> {
+                    val (text, files) = splitAttachments(message.text)
+                    items += DisplayItem.User(id, text, message.imageCount, files, message.content.filterIsInstance<ImageBlock>())
+                }
                 is AssistantMessage -> addAssistant(id, message, false)
                 is ToolResultMessage -> {
                     val last = items.lastOrNull()

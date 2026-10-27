@@ -1,6 +1,8 @@
 package dev.trydex.fake
 
 import dev.trydex.core.model.AgentProfile
+import dev.trydex.core.model.AttachedFile
+import dev.trydex.core.model.attachmentSummary
 import dev.trydex.core.model.ChatArtifact
 import dev.trydex.core.model.DexJson
 import dev.trydex.core.model.DexState
@@ -51,6 +53,7 @@ import dev.trydex.core.model.WorkspaceFileContent
 import dev.trydex.core.model.Format
 import dev.trydex.core.model.bool
 import dev.trydex.core.model.long
+import dev.trydex.core.model.arr
 import dev.trydex.core.model.obj
 import dev.trydex.core.model.str
 import kotlinx.serialization.KSerializer
@@ -175,6 +178,10 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
                 else json(session())
             }
             path == "/auth/native/refresh" -> if (authorized(request)) json(session()) else json(buildJsonObject { put("error", "Sign in again") }, 401)
+            path == "/api/attachments" -> {
+                if (!authorized(request)) return json(buildJsonObject { put("error", "Sign in again") }, 401)
+                attachment(request.body?.utf8() ?: "")
+            }
             path == "/api/version" -> if (authorized(request)) json(buildJsonObject { put("build", state.build) }) else MockResponse.Builder().code(401).build()
             path.startsWith("/api/media/") -> {
                 if (!authorized(request)) return MockResponse.Builder().code(401).build()
@@ -188,6 +195,21 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
                 MockResponse.Builder().addHeader("content-type", "text/html; charset=utf-8").body(FakeAssets.desktopPage(false)).build()
             else -> MockResponse.Builder().code(404).body("Not found").build()
         }
+    }
+
+    /** A fake `/api/attachments`: images come back as a small PNG, other files as a line of text; .zip is refused. */
+    private fun attachment(multipart: String): MockResponse {
+        val name = Regex("filename=\"([^\"]*)\"").find(multipart)?.groupValues?.get(1) ?: "file"
+        val type = Regex("Content-Type: ([^\\s;]+)").findAll(multipart).lastOrNull()?.groupValues?.get(1) ?: "application/octet-stream"
+        if (name.endsWith(".zip")) return json(buildJsonObject { put("error", "Dex can't read .zip files yet.") }, 415)
+        return json(
+            if (type.startsWith("image/")) buildJsonObject {
+                put("kind", "image"); put("name", name); put("mimeType", "image/png"); put("data", FakeAssets.CHART_PNG)
+            } else buildJsonObject {
+                put("kind", "text"); put("name", name); put("mimeType", type); put("text", "(The contents of $name.)")
+                if (name.endsWith(".pdf")) put("converted", true)
+            }
+        )
     }
 
     private fun session() = buildJsonObject {
@@ -316,7 +338,7 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
         "sendMessage" -> {
             val chat = chats[args.s(0)] ?: error("Chat not found")
             connection.chat = chat.id
-            chat.send(args.s(1).trim())
+            chat.send(args.s(1).trim(), args.getOrNull(2).arr?.mapNotNull { it.obj }.orEmpty())
             null
         }
         "renameSession" -> { updateSession(args.s(0)) { it.copy(title = args.s(1).trim().ifEmpty { "Untitled" }) }; null }
@@ -826,27 +848,36 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
 
         private fun events(vararg events: JsonObject) = toChat(id, buildJsonObject { put("type", "dex.events"); put("sessionId", id); put("events", JsonArray(events.toList())) })
 
-        fun send(text: String) {
-            if (text.isEmpty()) return
+        /** Queued messages' attachments, by queue item id. */
+        private val queuedFiles = mutableMapOf<String, List<JsonObject>>()
+
+        fun send(text: String, attachments: List<JsonObject> = emptyList()) {
+            if (text.isEmpty() && attachments.isEmpty()) return
             val wasHeld = held
             held = false
             if (!wasHeld && (running || queue.isNotEmpty())) {
-                queue += QueuedMessage(UUID.randomUUID().toString().take(8), text, clock())
+                val item = QueuedMessage(
+                    UUID.randomUUID().toString().take(8), text, clock(),
+                    attachments.map { AttachedFile(it["name"].str ?: "file", it["mimeType"].str ?: "application/octet-stream") },
+                )
+                queue += item
+                if (attachments.isNotEmpty()) queuedFiles[item.id] = attachments
                 toChat(id, queueMessage())
                 return
             }
-            deliver(text)
+            deliver(text, attachments)
             if (wasHeld) toChat(id, queueMessage())
         }
 
         /** A message from Dex itself (a confirmation's answer), delivered like one of yours. */
         fun tell(text: String) = send(text)
 
-        private fun deliver(text: String) {
-            val entry = Pi.entry(nextId++, "pi.user", Pi.userMessage(text, clock()))
+        private fun deliver(text: String, attachments: List<JsonObject> = emptyList()) {
+            val entry = Pi.entry(nextId++, "pi.user", Pi.userMessage(text, attachments, clock()))
             entries += entry
             events(buildJsonObject { put("type", "entry_appended"); put("entry", entry) })
-            updateSession(id) { it.copy(title = if (it.title == "New chat") text.replace(Regex("\\s+"), " ").take(60) else it.title, updatedAt = clock(), settledAt = null, snoozedUntil = null) }
+            val title = text.ifEmpty { attachmentSummary(attachments.map { it["name"].str ?: "file" }) }
+            updateSession(id) { it.copy(title = if (it.title == "New chat") title.replace(Regex("\\s+"), " ").take(60) else it.title, updatedAt = clock(), settledAt = null, snoozedUntil = null) }
             run(Scripts.pick(text) { (nextId + 1).toString() })
         }
 
@@ -958,7 +989,7 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
             if (!held && queue.isNotEmpty()) {
                 val next = queue.removeAt(0)
                 toChat(id, queueMessage())
-                deliver(next.text)
+                deliver(next.text, queuedFiles.remove(next.id).orEmpty())
             }
         }
 
@@ -1007,11 +1038,12 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
             queue.remove(item)
             held = false
             toChat(id, queueMessage())
+            val files = queuedFiles.remove(item.id).orEmpty()
             if (running) {
-                val entry = Pi.entry(nextId++, "pi.user", Pi.userMessage(item.text, clock()))
+                val entry = Pi.entry(nextId++, "pi.user", Pi.userMessage(item.text, files, clock()))
                 entries += entry
                 events(buildJsonObject { put("type", "entry_appended"); put("entry", entry) })
-            } else deliver(item.text)
+            } else deliver(item.text, files)
         }
     }
 }

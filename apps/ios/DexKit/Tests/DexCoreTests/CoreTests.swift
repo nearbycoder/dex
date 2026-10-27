@@ -140,7 +140,7 @@ import Testing
         state.entries = MockData.transcript(for: MockData.state().sessions[0])
         let items = state.displayItems
         #expect(items.count == 2)
-        guard case .user(_, let text, _) = items[0], case .assistant(_, let messages, false, let ended) = items[1] else { Issue.record("wrong items"); return }
+        guard case .user(_, let text, _, _, _) = items[0], case .assistant(_, let messages, false, let ended) = items[1] else { Issue.record("wrong items"); return }
         #expect(text.contains("Lisbon"))
         #expect(messages.count == 2)
         #expect(ended != nil)

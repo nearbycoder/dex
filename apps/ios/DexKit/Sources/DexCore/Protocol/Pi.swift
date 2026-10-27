@@ -113,28 +113,43 @@ public struct AssistantMessage: Codable, Sendable, Hashable {
     public var toolCalls: [ContentBlock.ToolCall] { content.compactMap(\.toolCall) }
 }
 
-public struct UserMessage: Codable, Sendable, Hashable {
-    public var text: String
-    public var images: Int
-    public var timestamp: Double
+/// An image in a message: inline `data`, or (when the agent left a large one out) a `ref` to load it by.
+public struct ImagePart: Sendable, Hashable {
+    public var data: String
+    public var mimeType: String
+    public var ref: String?
+    public init(data: String, mimeType: String, ref: String? = nil) { self.data = data; self.mimeType = mimeType; self.ref = ref }
+}
 
-    public init(text: String, images: Int = 0, timestamp: Double = 0) { self.text = text; self.images = images; self.timestamp = timestamp }
+public struct UserMessage: Codable, Sendable, Hashable {
+    /// Its text parts, joined (attachment tags included; see splitAttachments).
+    public var text: String
+    public var imageParts: [ImagePart]
+    public var timestamp: Double
+    public var images: Int { imageParts.count }
+
+    public init(text: String, imageParts: [ImagePart] = [], timestamp: Double = 0) { self.text = text; self.imageParts = imageParts; self.timestamp = timestamp }
 
     enum CodingKeys: String, CodingKey { case role, content, timestamp }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         timestamp = c.value(.timestamp, default: 0)
         if let text = try? c.decode(String.self, forKey: .content) {
-            self.text = text; images = 0
+            self.text = text; imageParts = []
         } else {
             let parts: [ContentBlock] = c.value(.content, default: [])
             text = parts.compactMap { if case .text(let text) = $0 { text } else { nil } }.joined(separator: "\n")
-            images = parts.filter { if case .image = $0 { true } else { false } }.count
+            imageParts = parts.compactMap { if case .image(let data, let mimeType, let ref) = $0 { ImagePart(data: data, mimeType: mimeType, ref: ref) } else { nil } }
         }
     }
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encode("user", forKey: .role); try c.encode(text, forKey: .content); try c.encode(timestamp, forKey: .timestamp)
+        try c.encode("user", forKey: .role); try c.encode(timestamp, forKey: .timestamp)
+        if imageParts.isEmpty {
+            try c.encode(text, forKey: .content)
+        } else {
+            try c.encode([ContentBlock.text(text)] + imageParts.map { ContentBlock.image(data: $0.data, mimeType: $0.mimeType, ref: $0.ref) }, forKey: .content)
+        }
     }
 }
 

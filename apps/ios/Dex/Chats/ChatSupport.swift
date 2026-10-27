@@ -59,6 +59,8 @@ func snoozeTime(_ date: Date) -> String {
 @Observable
 final class ComposerModel {
     var text = ""
+    /// Files attached to the message being written (see Attachments.swift).
+    var attachments: [DraftAttachment] = []
     /// Bumped to put the caret in the box.
     var focusRequest = 0
 

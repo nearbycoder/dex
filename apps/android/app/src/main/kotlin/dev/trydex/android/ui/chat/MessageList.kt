@@ -1,6 +1,14 @@
 package dev.trydex.android.ui.chat
 
 import androidx.compose.animation.AnimatedVisibility
+import dev.trydex.core.model.ImageBlock
+import dev.trydex.core.model.AttachedFile
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.background
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -142,7 +150,7 @@ fun MessageList(
             items(items.reversed(), key = { it.id }) { item ->
                 Centered {
                     when (item) {
-                        is DisplayItem.User -> UserBubble(item.text, item.images)
+                        is DisplayItem.User -> UserBubble(item.text, item.images, files = item.files, imageParts = item.imageParts, sessionId = sessionId)
                         is DisplayItem.Assistant -> AssistantTurn(
                             sessionId, item.messages, item.streaming, active = transcript.running && item === items.last(),
                             endedAt = item.endedAt, results = results, tools = transcript.tools, onSend = onSend,
@@ -189,7 +197,14 @@ private fun ErrorCard(text: String) {
  * rather than as your words.
  */
 @Composable
-fun UserBubble(raw: String, images: Int, sending: Boolean = false) {
+fun UserBubble(
+    raw: String,
+    images: Int,
+    sending: Boolean = false,
+    files: List<AttachedFile> = emptyList(),
+    imageParts: List<ImageBlock> = emptyList(),
+    sessionId: String? = null,
+) {
     val split = UiNotes.split(raw)
     val skill = Skills.invoked(split.text)
     val accent = MaterialTheme.colorScheme.primary
@@ -201,6 +216,7 @@ fun UserBubble(raw: String, images: Int, sending: Boolean = false) {
             modifier = Modifier.weight(0.88f, fill = false).widthIn(max = 560.dp).testTag(if (sending) "pending-message" else "user-message"),
         ) {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                if (imageParts.isNotEmpty() || files.isNotEmpty()) UserAttachments(sessionId, imageParts, files, spaced = split.text.isNotEmpty())
                 if (split.notes.isNotEmpty()) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 6.dp)) {
                         Icon(Icons.Outlined.TouchApp, contentDescription = null, modifier = Modifier.size(14.dp))
@@ -215,14 +231,53 @@ fun UserBubble(raw: String, images: Int, sending: Boolean = false) {
                         append(split.text.substring(at + skill.length + 1))
                     } else append(split.text)
                 }
-                SelectionContainer { Text(text, style = MaterialTheme.typography.bodyLarge) }
-                if (images > 0) Text("+$images image(s)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (split.text.isNotEmpty()) SelectionContainer { Text(text, style = MaterialTheme.typography.bodyLarge) }
+                // Without a chat to load them from, images are only counted.
+                if (images > 0 && sessionId == null) Text("+$images image(s)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (sending) {
                     Row(Modifier.align(Alignment.End).padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         Icon(Icons.Rounded.Schedule, contentDescription = null, modifier = Modifier.size(12.dp))
                         Text("Sending", style = MaterialTheme.typography.labelSmall)
                     }
                 }
+            }
+        }
+    }
+}
+
+/** What was attached to one of your messages: its images as thumbnails, its other files as chips. */
+@Composable
+private fun UserAttachments(sessionId: String?, images: List<ImageBlock>, files: List<AttachedFile>, spaced: Boolean) {
+    // Each image has a tag naming it among the files; the thumbnails stand for those.
+    val others = files.filter { !it.mimeType.startsWith("image/") || it.mimeType == "image/svg+xml" }
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.padding(bottom = if (spaced) 8.dp else 0.dp).testTag("user-attachments"),
+    ) {
+        if (sessionId != null) for (image in images) {
+            val bitmap = rememberTranscriptBitmap(sessionId, image)
+            Box(
+                Modifier.size(96.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                contentAlignment = Alignment.Center,
+            ) {
+                val loaded = bitmap?.getOrNull()
+                when {
+                    loaded != null -> Image(loaded, contentDescription = "Attached image", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                    bitmap == null -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    else -> Text("Image unavailable", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        for (file in others) {
+            Row(
+                Modifier.widthIn(max = 220.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(Icons.Outlined.Description, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(file.name, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }

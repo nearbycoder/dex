@@ -419,7 +419,13 @@ data class ScheduledPrompt(
 )
 
 @Serializable
-data class QueuedMessage(val id: String, val text: String = "", val createdAt: Long = 0)
+data class QueuedMessage(
+    val id: String,
+    val text: String = "",
+    val createdAt: Long = 0,
+    /** The files sent with it (names and types only). */
+    val attachments: List<AttachedFile> = emptyList(),
+)
 
 @Serializable
 data class ChatArtifact(

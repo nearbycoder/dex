@@ -111,7 +111,7 @@ struct NewChatView: View {
                     Text(error).font(.footnote).foregroundStyle(.red).padding(.horizontal, 8).accessibilityIdentifier("newchat.error")
                 }
                 Composer(model: composer, placeholder: agent.map { "Ask \($0.name)…" } ?? "Ask Dex to do anything…", disabled: !client.isConnected,
-                         onSend: { text in try await start(text, model: choice.model, thinking: choice.thinking, servers: servers) },
+                         onSend: { text, attachments in try await start(text, attachments: attachments, model: choice.model, thinking: choice.thinking, servers: servers) },
                          header: (agent != nil || project != nil) ? AnyView(chips(agent: agent, project: project)) : nil) {
                     ModelPickerButton(model: choice.model, thinking: choice.thinking) { newModel, newThinking in
                         if let newModel { model = newModel }
@@ -210,7 +210,7 @@ struct NewChatView: View {
         if !draft.text.isEmpty { composer.fill(draft.text) }
     }
 
-    private func start(_ text: String, model: String, thinking: ThinkingLevel, servers: [String]) async throws {
+    private func start(_ text: String, attachments: [ChatAttachment], model: String, thinking: ThinkingLevel, servers: [String]) async throws {
         error = nil
         var options: [String: JSONValue] = ["model": .string(model), "thinking": .string(thinking), "mcpServers": .array(servers.map(JSONValue.string))]
         if let agentId { options["agentId"] = .string(agentId) }
@@ -220,7 +220,7 @@ struct NewChatView: View {
             let session: SessionMeta = try await client.call("createSession", .object(options))
             let feed = client.chat(session.id)
             router.openChat(session.id)
-            try await feed.send(text)
+            try await feed.send(text, attachments: attachments)
             agentId = nil
             projectId = nil
             self.model = nil

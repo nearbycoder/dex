@@ -42,8 +42,8 @@ struct TranscriptView: View {
                 }
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                     switch item {
-                    case .user(_, let text, let images):
-                        UserBubble(text: text, images: images, onEdit: { composer.fill(text) })
+                    case .user(_, let text, let images, let files, let imageParts):
+                        UserBubble(text: text, images: images, feed: feed, files: files, imageParts: imageParts, onEdit: { composer.fill(text) })
                     case .assistant(_, let messages, let streaming, let endedAt):
                         ReplyView(feed: feed, messages: messages, streaming: streaming, running: transcript.running && index == items.count - 1,
                                   endedAt: endedAt, results: results, tools: transcript.tools,
@@ -168,7 +168,7 @@ struct TranscriptView: View {
     }
 
     static func isAssistant(_ item: DisplayItem) -> Bool { if case .assistant = item { true } else { false } }
-    static func text(_ item: DisplayItem) -> String? { if case .user(_, let text, _) = item { text } else { nil } }
+    static func text(_ item: DisplayItem) -> String? { if case .user(_, let text, _, _, _) = item { text } else { nil } }
 
     private func orphanConfirmations(results: [String: ToolResultMessage]) -> [PendingAction] {
         let shown = Set(results.values.compactMap { $0.details?["confirmation"]?["id"]?.string })
@@ -181,6 +181,9 @@ struct TranscriptView: View {
 struct UserBubble: View {
     let text: String
     let images: Int
+    var feed: ChatFeed? = nil
+    var files: [AttachedFile] = []
+    var imageParts: [ImagePart] = []
     var pending = false
     var onEdit: (() -> Void)? = nil
 
@@ -196,9 +199,15 @@ struct UserBubble: View {
                         .multilineTextAlignment(.trailing)
                 }
                 VStack(alignment: .trailing, spacing: 4) {
-                    Self.styled(split.text)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if images > 0 {
+                    if !files.isEmpty || !imageParts.isEmpty {
+                        UserAttachmentsView(feed: feed, images: imageParts, files: files)
+                    }
+                    if !split.text.isEmpty {
+                        Self.styled(split.text)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    // Without a chat to load them from, images are only counted.
+                    if images > 0, feed == nil {
                         Label("\(images) image\(images == 1 ? "" : "s")", systemImage: "photo").font(.caption).opacity(0.8)
                     }
                     if pending {

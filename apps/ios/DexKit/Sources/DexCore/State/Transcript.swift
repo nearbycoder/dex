@@ -161,14 +161,15 @@ public struct TranscriptState: Sendable, Hashable, Codable {
 
 /// What the chat screen shows, in order.
 public enum DisplayItem: Sendable, Hashable, Identifiable {
-    case user(id: String, text: String, images: Int)
+    /// One of your messages: its text without attachment tags, the files those name, and its images.
+    case user(id: String, text: String, images: Int, files: [AttachedFile] = [], imageParts: [ImagePart] = [])
     /// One reply: the assistant messages between two user messages, the last one possibly still streaming.
     case assistant(id: String, messages: [AssistantMessage], streaming: Bool, endedAt: Double?)
     case divider(id: String, label: String)
 
     public var id: String {
         switch self {
-        case .user(let id, _, _), .assistant(let id, _, _, _), .divider(let id, _): id
+        case .user(let id, _, _, _, _), .assistant(let id, _, _, _), .divider(let id, _): id
         }
     }
 }
@@ -204,7 +205,9 @@ public extension TranscriptState {
             for (index, message) in (entry.model ?? []).enumerated() {
                 let id = "\(entry.id):\(index)"
                 switch message {
-                case .user(let user): items.append(.user(id: id, text: user.text, images: user.images))
+                case .user(let user):
+                    let split = splitAttachments(user.text)
+                    items.append(.user(id: id, text: split.text, images: user.images, files: split.files, imageParts: user.imageParts))
                 case .assistant(let assistant): addAssistant(id, assistant, streaming: false)
                 case .toolResult(let result):
                     if case .assistant(let lastId, let messages, let streaming, let ended) = items.last {

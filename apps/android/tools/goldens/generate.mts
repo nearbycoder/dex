@@ -10,6 +10,7 @@ import { MEDIA_PREFIX, mediaTypeOf, vmMediaLinks, vmMediaSource } from "../../..
 import { githubFullName, normalizeRepoUrl, repoDirName, repoLabel } from "../../../web/src/shared/projects.ts"
 import { formatInstalls, invokedSkill, skillSlug } from "../../../web/src/shared/skills.ts"
 import { splitUiNotes } from "../../../web/src/shared/ui-notes.ts"
+import { attachmentSummary, attachmentTag, splitAttachments } from "../../../web/src/shared/attachments.ts"
 
 const OUT = new URL("../../core/model/src/test/resources/golden/", import.meta.url)
 mkdirSync(OUT, { recursive: true })
@@ -215,6 +216,52 @@ const mid = fromSnapshot(midSnapshot as never)
 write("transcript.json", {
   steps,
   midRun: { snapshot: midSnapshot, running: mid.running, streaming: mid.streaming, retry: mid.retry, tools: mid.tools, queued: mid.queued }
+})
+
+// ── Attachments ──────────────────────────────────────────────────────────────
+
+const pdf = { kind: "text" as const, name: "Q3 report.pdf", mimeType: "application/pdf", converted: true }
+const notes = { kind: "text" as const, name: "notes \"draft\" <1>.md", mimeType: "text/markdown", truncated: true }
+const photo = { kind: "image" as const, name: "IMG_0036.png", mimeType: "image/png" }
+const attachmentCases = [
+  "plain message, no files",
+  `What does this say?\n${attachmentTag(pdf, "# Q3\nRevenue up 12%.")}`,
+  `${attachmentTag(notes, "line one\n\n\n\nline two")}`,
+  `Look at this\n${attachmentTag(photo)}`,
+  `${attachmentTag(photo)}\n${attachmentTag(pdf, "text")}\n\n\n\nAnd these two`,
+  attachmentTag(photo, "(An image the user attached. This chat's model reads text only, so it can't see it.)"),
+  '<attachment name="broken" type="text/plain">no closing tag',
+  "  spaced text with no tags  "
+]
+const attachmentEntries = [
+  { id: 1, conversationId: 1, kind: "pi.user", model: [{ role: "user", content: attachmentCases[1], timestamp: NOW - 30_000 }] },
+  {
+    id: 2,
+    conversationId: 1,
+    kind: "pi.user",
+    model: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Compare these" },
+          { type: "text", text: attachmentTag(photo) },
+          { type: "image", data: "iVBORw0KGgo=", mimeType: "image/png" },
+          { type: "text", text: attachmentTag({ ...photo, name: "big.jpg", mimeType: "image/jpeg" }) },
+          { type: "image", data: "", mimeType: "image/jpeg", ref: "2:0:4" },
+          { type: "text", text: attachmentTag(pdf) }
+        ],
+        timestamp: NOW - 20_000
+      }
+    ]
+  }
+]
+const attachmentSnapshot = { ...snapshot, entries: attachmentEntries }
+const withAttachments = fromSnapshot(attachmentSnapshot as never)
+write("attachments.json", {
+  snapshot: attachmentSnapshot,
+  split: attachmentCases.map((input) => ({ input, ...splitAttachments(input) })),
+  summary: [[], ["a.png"], ["a.png", "b.pdf"], ["a.png", "b.pdf", "c.txt"]].map((names) => ({ names, text: attachmentSummary(names.map((name) => ({ name }))) })),
+  items: displayItems(withAttachments)
 })
 
 console.log("Goldens written to", OUT.pathname)

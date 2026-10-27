@@ -66,7 +66,10 @@ final class AppModel {
             WebSocketTransportFactory(server: credentials.server, userId: credentials.user.id, token: credentials.token)
         }
         let client = DexClient(credentials: credentials, factory: factory, cache: cache)
-        if mockAgent != nil { client.setCatalog(MockData.catalog) }
+        if mockAgent != nil {
+            client.setCatalog(MockData.catalog)
+            client.uploader = { data, name, type in try await MockAgent.upload(data: data, name: name, mimeType: type) }
+        }
         client.connection.onSignedOut = { [weak self] in
             self?.signOut(message: "You were signed out. Sign in again to continue.")
         }

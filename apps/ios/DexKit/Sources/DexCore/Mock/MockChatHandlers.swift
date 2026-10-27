@@ -36,19 +36,23 @@ extension MockAgent {
         }
 
         register("sendMessage") { [unowned self] args, connection in
-            guard let id = args.string(0), let text = args.string(1)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return .null }
+            let files = (args.value(2).array ?? []).map(ChatAttachment.init(json:))
+            guard let id = args.string(0), let text = args.string(1)?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty || !files.isEmpty else { return .null }
             guard let index = self.state.sessions.firstIndex(where: { $0.id == id }) else { throw AgentError.remote("Chat not found") }
             connection.subscribed = id
             if self.running.contains(id) || !(self.queues[id]?.isEmpty ?? true), !self.heldQueues.contains(id) {
-                self.queues[id, default: []].append(QueuedMessage(id: UUID().uuidString, text: text, createdAt: .nowMs))
+                let item = QueuedMessage(id: UUID().uuidString, text: text, createdAt: .nowMs, attachments: files.map { AttachedFile(name: $0.name, mimeType: $0.mimeType) })
+                self.queues[id, default: []].append(item)
+                if !files.isEmpty { self.queuedFiles[item.id] = files }
                 self.publishQueue(id)
                 return .null
             }
             self.heldQueues.remove(id)
-            if self.state.sessions[index].title == "New chat" { self.state.sessions[index].title = String(text.prefix(60)) }
+            let title = text.isEmpty ? attachmentSummary(files.map(\.name)) : text
+            if self.state.sessions[index].title == "New chat" { self.state.sessions[index].title = String(title.prefix(60)) }
             self.state.sessions[index].settledAt = nil
             self.state.sessions[index].snoozedUntil = nil
-            self.deliver(text, to: id)
+            self.deliver(text, files: files, to: id)
             return .null
         }
 
@@ -92,7 +96,7 @@ extension MockAgent {
             self.heldQueues.remove(id)
             self.publishQueue(id)
             if self.running.contains(id) { self.stopRun(id, stopReason: "stop") }
-            self.deliver(message.text, to: id)
+            self.deliver(message.text, files: self.queuedFiles.removeValue(forKey: message.id) ?? [], to: id)
             return .null
         }
         register("configureSession") { [unowned self] args, _ in
@@ -145,8 +149,7 @@ extension MockAgent {
             return .null
         }
         register("transcriptImage") { _, _ in
-            // A 160×100 PNG of a desktop: a menu bar and two windows.
-            ["data": "iVBORw0KGgoAAAANSUhEUgAAAKAAAABkCAIAAACO1KzYAAAA80lEQVR42u3dsQ2AIBRFUcahtLBkFAZxHIZwOkJBbU1i8HuSO8E7A7yU86HAJRMAFmABFmABFmA9gM/aFDjAgAVYgAVYgAVYgAELsAALsHYH7n38J8CAAQMGDBgwYMCAAQMGDBgwYMCAgwCX+3o/wIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGLDWAwwYMGDAgAEDBgxYgAUYMGDAgOWcUoABC7AAC7AAC7AAA7YCYAEWYAEWYAEWYMACrC80AfLe5gcMT/8QAAAAAElFTkSuQmCC", "mimeType": "image/png"]
+            ["data": .string(Self.desktopPNG), "mimeType": "image/png"]
         }
         register("storeChatSecret") { args, _ in .string(args.string(1) ?? "secret") }
         register("listArtifacts") { [unowned self] args, _ in try JSONValue(encoding: self.artifacts[args.string(0) ?? ""] ?? []) }
@@ -263,9 +266,16 @@ extension MockAgent {
         setBusy(id, false)
     }
 
-    /// Plays a reply to `text`: thinking, then (by keyword) a tool step or a generated UI, then text.
-    func deliver(_ text: String, to id: String) {
-        let userEntry = EntryRecord(id: entryId(), kind: "pi.user", model: [.user(UserMessage(text: text, timestamp: .nowMs))])
+    /// Plays a reply to `text`: thinking, then (by keyword) a tool step or a generated UI, then text. Attachments are
+    /// written into the message as the agent writes them (messageContent in apps/web/src/agent/attachments.ts).
+    func deliver(_ text: String, files: [ChatAttachment] = [], to id: String) {
+        let tags = files.map { file -> String in
+            let attributes = "name=\"\(Self.escape(file.name))\" type=\"\(Self.escape(file.mimeType))\""
+            return file.kind == "image" ? "<attachment \(attributes) />" : "<attachment \(attributes)>\n\(file.json["text"]?.string ?? "")\n</attachment>"
+        }
+        let images = files.compactMap { file in file.kind == "image" ? ImagePart(data: file.data ?? "", mimeType: file.mimeType) : nil }
+        let message = UserMessage(text: ([text].filter { !$0.isEmpty } + tags).joined(separator: "\n"), imageParts: images, timestamp: .nowMs)
+        let userEntry = EntryRecord(id: entryId(), kind: "pi.user", model: [.user(message)])
         entries[id, default: []].append(userEntry)
         running.insert(id)
         setBusy(id, true)
@@ -274,6 +284,26 @@ extension MockAgent {
         Task { @MainActor [weak self] in
             await self?.play(reply: text, to: id, run: run)
         }
+    }
+
+    /// A 160×100 PNG of a desktop: a menu bar and two windows.
+    static let desktopPNG = "iVBORw0KGgoAAAANSUhEUgAAAKAAAABkCAIAAACO1KzYAAAA80lEQVR42u3dsQ2AIBRFUcahtLBkFAZxHIZwOkJBbU1i8HuSO8E7A7yU86HAJRMAFmABFmABFmA9gM/aFDjAgAVYgAVYgAVYgAELsAALsHYH7n38J8CAAQMGDBgwYMCAAQMGDBgwYMCAgwCX+3o/wIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGDBgwIABAwYMGLDWAwwYMGDAgAEDBgxYgAUYMGDAgOWcUoABC7AAC7AAC7AAA7YCYAEWYAEWYAEWYMACrC80AfLe5gcMT/8QAAAAAElFTkSuQmCC"
+
+    static func escape(_ value: String) -> String {
+        value.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;")
+    }
+
+    /// The mock's `/api/attachments`: images come back as a small PNG, other files as a line of text; .zip is refused.
+    public static func upload(data: Data, name: String, mimeType: String) async throws -> ChatAttachment {
+        try await Task.sleep(for: .milliseconds(150))
+        if name.lowercased().hasSuffix(".zip") { throw AttachmentError("Dex can't read .zip files yet.", status: 415) }
+        if mimeType.hasPrefix("image/") {
+            return ChatAttachment(json: ["kind": "image", "name": .string(name), "mimeType": "image/png", "data": .string(Self.desktopPNG)])
+        }
+        var json: JSONValue = ["kind": "text", "name": .string(name), "mimeType": .string(mimeType), "text": .string("(The contents of \(name).)")]
+        if name.lowercased().hasSuffix(".pdf") { json["converted"] = .bool(true) }
+        return ChatAttachment(json: json)
     }
 
     private func play(reply prompt: String, to id: String, run: Double) async {
@@ -379,7 +409,7 @@ extension MockAgent {
         if !heldQueues.contains(id), let next = queues[id]?.first {
             queues[id]?.removeFirst()
             publishQueue(id)
-            deliver(next.text, to: id)
+            deliver(next.text, files: queuedFiles.removeValue(forKey: next.id) ?? [], to: id)
         }
     }
 

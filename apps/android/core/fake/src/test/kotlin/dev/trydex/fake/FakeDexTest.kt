@@ -5,6 +5,9 @@ import com.google.common.truth.Truth.assertWithMessage
 import dev.trydex.core.client.AgentConnection
 import dev.trydex.core.client.ConnectionStatus
 import dev.trydex.core.client.DexApi
+import dev.trydex.core.client.DexSession
+import dev.trydex.core.client.DexUploads
+import dev.trydex.core.client.DexUser
 import dev.trydex.core.client.asRpc
 import dev.trydex.core.model.AgentProfile
 import dev.trydex.core.model.ClientMessages
@@ -77,6 +80,36 @@ class FakeDexTest {
         val meta = connection.state.value!!.session(session.id)!!
         assertThat(meta.title).isEqualTo("Make me a dashboard chart")
         assertThat(meta.busy).isFalse()
+        connection.stop()
+    }
+
+    @Test fun sendsAttachments() = runBlocking {
+        val url = fake.start()
+        val connection = AgentConnection(OkHttpClient(), url, FakeData.USER_ID, { fake.token }, scope)
+        val api = DexApi(connection.asRpc())
+        var transcript = TranscriptState.Empty
+        scope.launch { connection.messages.collect { message -> if (message.sessionId != null) transcript = reduce(transcript, message) } }
+        connection.start()
+        withTimeout(5_000) { connection.status.first { it == ConnectionStatus.Connected } }
+        val session = DexSession(url.toString(), fake.token, DexUser(FakeData.USER_ID, FakeData.LOGIN), Long.MAX_VALUE)
+        val photo = DexUploads.upload(OkHttpClient(), session, byteArrayOf(1, 2, 3), "shot.png", "image/png")
+        val report = DexUploads.upload(OkHttpClient(), session, "%PDF".toByteArray(), "report.pdf", "application/pdf")
+        assertThat(photo.kind).isEqualTo("image")
+        assertThat(report.kind).isEqualTo("text")
+        val refused = runCatching { DexUploads.upload(OkHttpClient(), session, byteArrayOf(0), "a.zip", "application/zip") }.exceptionOrNull()
+        assertThat(refused!!.message).isEqualTo("Dex can't read .zip files yet.")
+
+        val chat = api.createSession(null, null, agentId = null, mcpServers = null, projectId = null)
+        connection.send(ClientMessages.subscribe(chat.id))
+        api.sendMessage(chat.id, "", listOf(photo, report))
+        withTimeout(10_000) { while (displayItems(transcript).none { it is DisplayItem.User }) kotlinx.coroutines.delay(20) }
+        val sent = displayItems(transcript).first { it is DisplayItem.User } as DisplayItem.User
+        assertThat(sent.text).isEmpty()
+        assertThat(sent.files.map { it.name }).containsExactly("shot.png", "report.pdf").inOrder()
+        assertThat(sent.imageParts).hasSize(1)
+        assertThat(fake.calls.last { it.first == "sendMessage" }.second).hasSize(3)
+        // A chat named after its files when the message has no text.
+        assertThat(connection.state.value!!.session(chat.id)!!.title).isEqualTo("shot.png and 1 more")
         connection.stop()
     }
 

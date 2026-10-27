@@ -1,6 +1,9 @@
 package dev.trydex.android.data
 
 import dev.trydex.core.client.AgentConnection
+import dev.trydex.core.client.AttachmentException
+import dev.trydex.core.client.DexUploads
+import dev.trydex.core.model.ChatAttachment
 import dev.trydex.core.client.ConnectionStatus
 import dev.trydex.core.client.DexApi
 import dev.trydex.core.client.DexAuth
@@ -189,6 +192,10 @@ class DexRepository(
     }
 
     // ── Lifecycle ────────────────────────────────────────────────────────────
+
+    /** Prepares a file for a chat message (`POST /api/attachments`). The socket notices an ended session on its own. */
+    suspend fun uploadAttachment(bytes: ByteArray, name: String, mimeType: String): ChatAttachment =
+        DexUploads.upload(http, _session.value ?: throw AttachmentException("Sign in again", 401), bytes, name, mimeType)
 
     fun setVisible(shown: Boolean) {
         visible.value = shown

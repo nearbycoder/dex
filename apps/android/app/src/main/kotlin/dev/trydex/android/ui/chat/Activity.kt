@@ -332,9 +332,12 @@ private object ScreenshotCache {
     @Synchronized fun put(key: String, image: ImageBitmap) { cache[key] = image }
 }
 
-/** A VM screenshot: shipped with the step, or loaded when shown (big ones are left out of the transcript). */
+/**
+ * An image from the transcript (a VM screenshot, or a photo attached to a message): shipped inline, or loaded when
+ * shown (big ones are left out of the transcript). Null while loading; a failure or null bitmap if it can't be shown.
+ */
 @Composable
-private fun Screenshot(sessionId: String, image: ImageBlock) {
+internal fun rememberTranscriptBitmap(sessionId: String, image: ImageBlock): Result<ImageBitmap?>? {
     val app = LocalApp.current
     val key = "$sessionId:${image.ref ?: image.data.hashCode()}"
     val bitmap by produceState<Result<ImageBitmap?>?>(initialValue = ScreenshotCache.get(key)?.let { Result.success(it) }, key) {
@@ -345,6 +348,13 @@ private fun Screenshot(sessionId: String, image: ImageBlock) {
             BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()?.also { ScreenshotCache.put(key, it) }
         }
     }
+    return bitmap
+}
+
+/** A VM screenshot: shipped with the step, or loaded when shown (big ones are left out of the transcript). */
+@Composable
+private fun Screenshot(sessionId: String, image: ImageBlock) {
+    val bitmap = rememberTranscriptBitmap(sessionId, image)
     Box(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp).clip(RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
         val loaded = bitmap?.getOrNull()
         when {

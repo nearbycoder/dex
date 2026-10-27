@@ -59,6 +59,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.trydex.android.ui.theme.DexTheme
 import dev.trydex.core.model.QueuedMessage
+import dev.trydex.core.model.attachmentSummary
 import kotlinx.coroutines.launch
 
 /** What the queue's buttons do. */
@@ -165,7 +166,18 @@ private fun QueueRow(item: QueuedMessage, index: Int, count: Int, running: Boole
                 Box(Modifier.size(24.dp).background(MaterialTheme.colorScheme.secondaryContainer, CircleShape), contentAlignment = Alignment.Center) {
                     Text("${index + 1}", style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"), color = MaterialTheme.colorScheme.onSecondaryContainer)
                 }
-                Text(item.text, style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Column(Modifier.weight(1f)) {
+                    if (item.text.isNotEmpty()) Text(item.text, style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    if (item.attachments.isNotEmpty()) {
+                        Text(
+                            "Attached: ${attachmentSummary(item.attachments.map { it.name })}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             }
             Row(Modifier.fillMaxWidth().padding(start = 26.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { act { actions.move(item.id, index - 1) } }, enabled = index > 0) { Icon(Icons.Rounded.ArrowUpward, contentDescription = "Move up", modifier = Modifier.size(20.dp)) }

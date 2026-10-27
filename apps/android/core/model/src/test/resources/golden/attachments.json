@@ -1,0 +1,208 @@
+{
+ "snapshot": {
+  "type": "snapshot",
+  "entries": [
+   {
+    "id": 1,
+    "conversationId": 1,
+    "kind": "pi.user",
+    "model": [
+     {
+      "role": "user",
+      "content": "What does this say?\n<attachment name=\"Q3 report.pdf\" type=\"application/pdf\" converted=\"markdown\">\n# Q3\nRevenue up 12%.\n</attachment>",
+      "timestamp": 1792447680000
+     }
+    ]
+   },
+   {
+    "id": 2,
+    "conversationId": 1,
+    "kind": "pi.user",
+    "model": [
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "text",
+        "text": "Compare these"
+       },
+       {
+        "type": "text",
+        "text": "<attachment name=\"IMG_0036.png\" type=\"image/png\" />"
+       },
+       {
+        "type": "image",
+        "data": "iVBORw0KGgo=",
+        "mimeType": "image/png"
+       },
+       {
+        "type": "text",
+        "text": "<attachment name=\"big.jpg\" type=\"image/jpeg\" />"
+       },
+       {
+        "type": "image",
+        "data": "",
+        "mimeType": "image/jpeg",
+        "ref": "2:0:4"
+       },
+       {
+        "type": "text",
+        "text": "<attachment name=\"Q3 report.pdf\" type=\"application/pdf\" converted=\"markdown\" />"
+       }
+      ],
+      "timestamp": 1792447690000
+     }
+    ]
+   }
+  ],
+  "tools": [],
+  "nestedTools": [],
+  "compactions": [],
+  "inbox": [],
+  "agent": {},
+  "usage": {}
+ },
+ "split": [
+  {
+   "input": "plain message, no files",
+   "text": "plain message, no files",
+   "files": []
+  },
+  {
+   "input": "What does this say?\n<attachment name=\"Q3 report.pdf\" type=\"application/pdf\" converted=\"markdown\">\n# Q3\nRevenue up 12%.\n</attachment>",
+   "text": "What does this say?",
+   "files": [
+    {
+     "name": "Q3 report.pdf",
+     "mimeType": "application/pdf"
+    }
+   ]
+  },
+  {
+   "input": "<attachment name=\"notes &quot;draft&quot; &lt;1&gt;.md\" type=\"text/markdown\" truncated=\"true\">\nline one\n\n\n\nline two\n</attachment>",
+   "text": "",
+   "files": [
+    {
+     "name": "notes \"draft\" <1>.md",
+     "mimeType": "text/markdown"
+    }
+   ]
+  },
+  {
+   "input": "Look at this\n<attachment name=\"IMG_0036.png\" type=\"image/png\" />",
+   "text": "Look at this",
+   "files": [
+    {
+     "name": "IMG_0036.png",
+     "mimeType": "image/png"
+    }
+   ]
+  },
+  {
+   "input": "<attachment name=\"IMG_0036.png\" type=\"image/png\" />\n<attachment name=\"Q3 report.pdf\" type=\"application/pdf\" converted=\"markdown\">\ntext\n</attachment>\n\n\n\nAnd these two",
+   "text": "And these two",
+   "files": [
+    {
+     "name": "IMG_0036.png",
+     "mimeType": "image/png"
+    },
+    {
+     "name": "Q3 report.pdf",
+     "mimeType": "application/pdf"
+    }
+   ]
+  },
+  {
+   "input": "<attachment name=\"IMG_0036.png\" type=\"image/png\">\n(An image the user attached. This chat's model reads text only, so it can't see it.)\n</attachment>",
+   "text": "",
+   "files": [
+    {
+     "name": "IMG_0036.png",
+     "mimeType": "image/png"
+    }
+   ]
+  },
+  {
+   "input": "<attachment name=\"broken\" type=\"text/plain\">no closing tag",
+   "text": "<attachment name=\"broken\" type=\"text/plain\">no closing tag",
+   "files": []
+  },
+  {
+   "input": "  spaced text with no tags  ",
+   "text": "  spaced text with no tags  ",
+   "files": []
+  }
+ ],
+ "summary": [
+  {
+   "names": [],
+   "text": ""
+  },
+  {
+   "names": [
+    "a.png"
+   ],
+   "text": "a.png"
+  },
+  {
+   "names": [
+    "a.png",
+    "b.pdf"
+   ],
+   "text": "a.png and 1 more"
+  },
+  {
+   "names": [
+    "a.png",
+    "b.pdf",
+    "c.txt"
+   ],
+   "text": "a.png and 2 more"
+  }
+ ],
+ "items": [
+  {
+   "kind": "user",
+   "id": "1:0",
+   "text": "What does this say?",
+   "images": 0,
+   "files": [
+    {
+     "name": "Q3 report.pdf",
+     "mimeType": "application/pdf"
+    }
+   ]
+  },
+  {
+   "kind": "user",
+   "id": "2:0",
+   "text": "Compare these",
+   "images": 2,
+   "files": [
+    {
+     "name": "IMG_0036.png",
+     "mimeType": "image/png"
+    },
+    {
+     "name": "big.jpg",
+     "mimeType": "image/jpeg"
+    },
+    {
+     "name": "Q3 report.pdf",
+     "mimeType": "application/pdf"
+    }
+   ],
+   "imageParts": [
+    {
+     "mimeType": "image/png",
+     "data": "iVBORw0KGgo="
+    },
+    {
+     "mimeType": "image/jpeg",
+     "data": "",
+     "ref": "2:0:4"
+    }
+   ]
+  }
+ ]
+}

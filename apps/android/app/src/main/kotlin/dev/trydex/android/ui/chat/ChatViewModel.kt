@@ -1,5 +1,7 @@
 package dev.trydex.android.ui.chat
 
+import dev.trydex.core.model.ChatAttachment
+import dev.trydex.core.model.attachmentSummary
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dev.trydex.android.data.DexRepository
@@ -46,15 +48,17 @@ class ChatViewModel(val sessionId: String, private val repository: DexRepository
     }
 
     /** Sends a message: it shows at once unless it will queue (the queue panel shows it then). */
-    fun send(text: String) {
+    fun send(text: String, attachments: List<ChatAttachment> = emptyList()) {
         val trimmed = text.trim()
-        if (trimmed.isEmpty()) return
+        if (trimmed.isEmpty() && attachments.isEmpty()) return
+        // Shown until the agent records it; a message of only files shows their names.
+        val label = trimmed.ifEmpty { "Attached: ${attachmentSummary(attachments.map { it.name })}" }
         val state = transcript.value
         val willQueue = state.running || state.queue.isNotEmpty()
-        if (!willQueue) _pending.value = Pending.add(_pending.value, trimmed, state.userCount, System.currentTimeMillis())
+        if (!willQueue) _pending.value = Pending.add(_pending.value, label, state.userCount, System.currentTimeMillis())
         viewModelScope.launch {
-            runCatching { repository.api.sendMessage(sessionId, trimmed) }.onFailure { error ->
-                _pending.value = _pending.value.filter { it.text != trimmed }
+            runCatching { repository.api.sendMessage(sessionId, trimmed, attachments) }.onFailure { error ->
+                _pending.value = _pending.value.filter { it.text != label }
                 _errors.tryEmit(error.message ?: "Couldn't send that.")
             }
         }

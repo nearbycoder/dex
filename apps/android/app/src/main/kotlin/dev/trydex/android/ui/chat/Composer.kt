@@ -1,6 +1,21 @@
 package dev.trydex.android.ui.chat
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.content.MediaType
+import androidx.compose.foundation.content.consume
+import androidx.compose.foundation.content.contentReceiver
+import androidx.compose.foundation.content.hasMediaType
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.rounded.AttachFile
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.IconButton
+import dev.trydex.core.model.AttachmentLimits
+import dev.trydex.core.model.ChatAttachment
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -105,7 +120,7 @@ data class Draft(val text: String, val key: Long)
  */
 @Composable
 fun Composer(
-    onSend: (String) -> Unit,
+    onSend: (text: String, attachments: List<ChatAttachment>) -> Unit,
     modifier: Modifier = Modifier,
     onStop: (() -> Unit)? = null,
     running: Boolean = false,
@@ -114,6 +129,7 @@ fun Composer(
     draft: Draft? = null,
     autoFocus: Boolean = false,
     state: TextFieldState = rememberTextFieldState(),
+    attachments: AttachmentDrafts = rememberAttachmentDrafts(),
     header: (@Composable () -> Unit)? = null,
     toolbar: @Composable RowScope.() -> Unit = {},
 ) {
@@ -131,14 +147,24 @@ fun Composer(
         }
     }
     LaunchedEffect(Unit) { if (autoFocus) runCatching { focus.requestFocus() } }
-    val canSend by remember(enabled) { derivedStateOf { enabled && state.text.isNotBlank() } }
+    // Waits for uploads, and for files that couldn't be attached to be removed, so nothing goes missing unnoticed.
+    val canSend by remember(enabled) {
+        derivedStateOf {
+            enabled && (state.text.isNotBlank() || attachments.ready.isNotEmpty()) && !attachments.uploading && attachments.failed.isEmpty()
+        }
+    }
+    val photos = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(AttachmentLimits.FILES)) { attachments.add(it) }
+    val files = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { attachments.add(it) }
+    var attachMenu by remember { mutableStateOf(false) }
 
     fun submit() {
         val value = state.text.toString().trim()
-        if (value.isEmpty() || !enabled) return
+        if (!canSend) return
         haptics.confirm()
+        val ready = attachments.ready
         state.setTextAndPlaceCursorAtEnd("")
-        onSend(value)
+        attachments.clear()
+        onSend(value, ready)
     }
 
     fun pick(name: String) {
@@ -157,6 +183,7 @@ fun Composer(
         ) {
             Column(Modifier.padding(top = 4.dp, bottom = 8.dp)) {
                 if (header != null) Box(Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp)) { header() }
+                AttachmentChips(attachments)
                 BasicTextField(
                     state = state,
                     enabled = enabled,
@@ -168,6 +195,14 @@ fun Composer(
                         .fillMaxWidth()
                         .heightIn(max = 240.dp)
                         .focusRequester(focus)
+                        // A pasted image (or one from the keyboard) attaches; text stays text.
+                        .contentReceiver { content ->
+                            if (!enabled || !content.hasMediaType(MediaType.Image)) return@contentReceiver content
+                            val uris = mutableListOf<android.net.Uri>()
+                            val rest = content.consume { item -> item.uri?.let { uris += it; true } ?: false }
+                            attachments.add(uris)
+                            rest
+                        }
                         .onPreviewKeyEvent { event ->
                             if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                             if (menuOpen && menu.handleKey(event.key, event.isShiftPressed, ::pick) { menuClosed = true }) return@onPreviewKeyEvent true
@@ -188,6 +223,33 @@ fun Composer(
                     },
                 )
                 Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box {
+                        IconButton(
+                            onClick = { haptics.tap(); attachMenu = true },
+                            enabled = enabled && !attachments.full,
+                            modifier = Modifier.padding(end = 2.dp).testTag("attach"),
+                        ) {
+                            Icon(Icons.Rounded.AttachFile, contentDescription = "Attach files")
+                        }
+                        DropdownMenu(expanded = attachMenu, onDismissRequest = { attachMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Photos") },
+                                leadingIcon = { Icon(Icons.Outlined.Image, contentDescription = null) },
+                                onClick = {
+                                    attachMenu = false
+                                    photos.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Files") },
+                                leadingIcon = { Icon(Icons.Outlined.Description, contentDescription = null) },
+                                onClick = {
+                                    attachMenu = false
+                                    files.launch(arrayOf("*/*"))
+                                },
+                            )
+                        }
+                    }
                     val chips = rememberScrollState()
                     Row(
                         Modifier.weight(1f).fadeEdges(chips).horizontalScroll(chips),

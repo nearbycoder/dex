@@ -1,5 +1,8 @@
 package dev.trydex.fake
 
+import dev.trydex.core.model.bool
+import dev.trydex.core.model.get
+import dev.trydex.core.model.str
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -29,6 +32,31 @@ object Pi {
         put("content", text)
         put("timestamp", at)
     }
+
+    /**
+     * A message with attachments, written as the agent writes it (messageContent in apps/web/src/agent/attachments.ts):
+     * the text, then each file in a tag naming it, its text inside, or for an image the image right after.
+     */
+    fun userMessage(text: String, attachments: List<JsonObject>, at: Long) = if (attachments.isEmpty()) userMessage(text, at) else buildJsonObject {
+        put("role", "user")
+        putJsonArray("content") {
+            if (text.isNotEmpty()) add(buildJsonObject { put("type", "text"); put("text", text) })
+            for (file in attachments) {
+                val name = file["name"].str ?: "file"
+                val type = file["mimeType"].str ?: "text/plain"
+                val attributes = "name=\"${escape(name)}\" type=\"${escape(type)}\"" + if (file["converted"].bool == true) " converted=\"markdown\"" else ""
+                if (file["kind"].str == "image") {
+                    add(buildJsonObject { put("type", "text"); put("text", "<attachment $attributes />") })
+                    add(buildJsonObject { put("type", "image"); put("data", file["data"].str ?: ""); put("mimeType", type) })
+                } else {
+                    add(buildJsonObject { put("type", "text"); put("text", "<attachment $attributes>\n${file["text"].str ?: ""}\n</attachment>") })
+                }
+            }
+        }
+        put("timestamp", at)
+    }
+
+    private fun escape(value: String) = value.replace("&", "&amp;").replace("\"", "&quot;").replace("<", "&lt;").replace(">", "&gt;")
 
     fun assistantMessage(content: List<JsonObject>, at: Long, durationMs: Long? = null, stopReason: String = "stop", error: String? = null) = buildJsonObject {
         put("role", "assistant")

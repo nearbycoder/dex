@@ -39,8 +39,8 @@ struct ChatView: View {
                 .environment(\.chatFeed, feed)
                 .environment(\.markdownMedia, ChatMediaView.resolver(server: client.server))
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    ChatComposerArea(feed: feed, session: session, composer: composer) { text in
-                        try await send(text, feed: feed)
+                    ChatComposerArea(feed: feed, session: session, composer: composer) { text, attachments in
+                        try await send(text, attachments: attachments, feed: feed)
                     }
                 }
                 .navigationTitle(session?.title ?? "")
@@ -76,9 +76,9 @@ struct ChatView: View {
         return [client.state?.project(session.projectId)?.name, client.state?.agent(session.agentId)?.name].compactMap { $0 }.joined(separator: " · ")
     }
 
-    private func send(_ text: String, feed: ChatFeed) async throws {
+    private func send(_ text: String, attachments: [ChatAttachment] = [], feed: ChatFeed) async throws {
         Notifications.shared.requestPermissionIfNeeded()
-        try await feed.send(text)
+        try await feed.send(text, attachments: attachments)
     }
 
     /// Sends without waiting (a retry, a message from a card), reporting a failure as the notice.
@@ -297,7 +297,7 @@ struct ChatComposerArea: View {
     let feed: ChatFeed
     let session: SessionMeta?
     let composer: ComposerModel
-    let send: (String) async throws -> Void
+    let send: (String, [ChatAttachment]) async throws -> Void
 
     var body: some View {
         VStack(spacing: 8) {

@@ -27,6 +27,16 @@ public final class DexClient {
     @ObservationIgnored private var saveStateTask: Task<Void, Never>?
     @ObservationIgnored private var fetchingModels = false
 
+    /// Prepares a file for a message; the mock agent puts its own here (tests, the demo). Unset: `POST /api/attachments`.
+    @ObservationIgnored public var uploader: (@Sendable (Data, String, String) async throws -> ChatAttachment)?
+
+    /// Sends a file to be prepared for a message (an image scaled to fit the model, or a file's text).
+    public func uploadAttachment(_ data: Data, name: String, mimeType: String) async throws -> ChatAttachment {
+        if let uploader { return try await uploader(data, name, mimeType) }
+        guard let credentials else { throw AttachmentError("Sign in again", status: 401) }
+        return try await AttachmentUploader.upload(server: credentials.server, token: credentials.token, data: data, name: name, mimeType: mimeType)
+    }
+
     public init(credentials: Credentials?, factory: AgentTransportFactory, cache: LocalCache?) {
         self.credentials = credentials
         self.cache = cache
@@ -250,16 +260,23 @@ public final class ChatFeed {
 
     // MARK: Actions
 
-    /// Sends a message: it runs now, or waits in the queue while the chat is busy.
-    public func send(_ text: String) async throws {
+    /// Sends a message: it runs now, or waits in the queue while the chat is busy. `attachments` are as
+    /// `DexClient.uploadAttachment` returned them; left out of the call when there are none, as the web does.
+    public func send(_ text: String, attachments: [ChatAttachment] = []) async throws {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let client else { return }
+        guard !trimmed.isEmpty || !attachments.isEmpty, let client else { return }
+        // Shown until the agent records it; a message of only files shows their names.
+        let label = trimmed.isEmpty ? "Attached: \(attachmentSummary(attachments.map(\.name)))" : trimmed
         let willQueue = transcript.running || !transcript.queue.isEmpty
-        if !willQueue { pending.append(PendingMessage(text: trimmed, after: userCount + pending.count, at: .now)) }
+        if !willQueue { pending.append(PendingMessage(text: label, after: userCount + pending.count, at: .now)) }
         do {
-            try await client.run("sendMessage", .string(sessionId), .string(text))
+            if attachments.isEmpty {
+                try await client.run("sendMessage", .string(sessionId), .string(trimmed))
+            } else {
+                try await client.run("sendMessage", .string(sessionId), .string(trimmed), .array(attachments.map(\.json)))
+            }
         } catch {
-            pending.removeAll { $0.text == trimmed }
+            pending.removeAll { $0.text == label }
             throw error
         }
         Task { [weak self] in
