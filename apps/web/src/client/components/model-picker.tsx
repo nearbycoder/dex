@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router"
 import { Brain, Check, ChevronDown, Eye, RefreshCw, Search, Type } from "lucide-react"
-import { useEffect, useRef, useState } from "react"
+import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import { useDex } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
 import {
@@ -40,7 +41,9 @@ function VisionBadge({ vision }: { vision: boolean }) {
 /** Model menu that shows each model's capabilities: image input, context window, and thinking levels. */
 function ModelMenu(props: { model: string; onSelect: (model: string) => void; disabled?: boolean }) {
   const [open, setOpen] = useState(false)
-  const [upward, setUpward] = useState(true)
+  // Where the menu sits: fixed on the screen and outside the page (in a portal), so no card or scroll area clips it.
+  const [place, setPlace] = useState<{ upward: boolean; style: CSSProperties } | null>(null)
+  const menu = useRef<HTMLDivElement>(null)
   const [query, setQuery] = useState("")
   const [only, setOnly] = useState<ModelProvider | "all">("all")
   const root = useRef<HTMLDivElement>(null)
@@ -59,7 +62,8 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
   useEffect(() => {
     if (!open) return
     const close = (event: PointerEvent) => {
-      if (!root.current?.contains(event.target as Node)) setOpen(false)
+      const target = event.target as Node
+      if (!root.current?.contains(target) && !menu.current?.contains(target)) setOpen(false)
     }
     const escape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setOpen(false)
@@ -72,10 +76,44 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
     }
   }, [open])
 
+  // Opens toward whichever side of the screen has more room, as tall as fits there, and follows the button when the
+  // page scrolls or the window resizes.
+  useLayoutEffect(() => {
+    if (!open) return
+    const MARGIN = 12
+    const GAP = 6
+    const WIDTH = 320
+    const position = () => {
+      const rect = root.current?.getBoundingClientRect()
+      if (!rect) return
+      // Fixed positions are relative to the layout viewport, as getBoundingClientRect is.
+      const height = window.innerHeight
+      const width = window.innerWidth
+      const above = rect.top - GAP - MARGIN
+      const below = height - rect.bottom - GAP - MARGIN
+      const upward = above > below
+      const left = Math.max(MARGIN, Math.min(rect.left, width - Math.min(WIDTH, width - 2 * MARGIN) - MARGIN))
+      setPlace({
+        upward,
+        style: {
+          left,
+          maxHeight: Math.max(160, upward ? above : below),
+          ...(upward ? { bottom: height - rect.top + GAP } : { top: rect.bottom + GAP })
+        }
+      })
+    }
+    position()
+    window.addEventListener("resize", position)
+    window.addEventListener("scroll", position, true)
+    window.visualViewport?.addEventListener("resize", position)
+    return () => {
+      window.removeEventListener("resize", position)
+      window.removeEventListener("scroll", position, true)
+      window.visualViewport?.removeEventListener("resize", position)
+    }
+  }, [open])
+
   const toggle = () => {
-    // Open toward whichever side of the screen has more room.
-    const rect = root.current?.getBoundingClientRect()
-    if (rect) setUpward(rect.top > window.innerHeight - rect.bottom)
     setQuery("")
     setOnly("all")
     setOpen((value) => !value)
@@ -99,13 +137,15 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
         {hasVision(current) && <Eye className="size-3.5 shrink-0 text-emerald-400" />}
         <ChevronDown className="hidden size-3.5 shrink-0 text-zinc-500 sm:block" />
       </button>
-      {open && (
+      {open && place && createPortal(
         <div
-          className={`absolute left-0 z-50 w-80 max-w-[calc(100vw-2rem)] animate-pop overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl shadow-black/50 ${
-            upward ? "bottom-full mb-1.5 origin-bottom-left" : "top-full mt-1.5 origin-top-left"
+          ref={menu}
+          style={place.style}
+          className={`fixed z-50 flex w-80 max-w-[calc(100vw-1.5rem)] animate-pop flex-col overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl shadow-black/50 ${
+            place.upward ? "origin-bottom-left" : "origin-top-left"
           }`}
         >
-          <div className="flex items-center gap-2 border-b border-zinc-900 px-3 py-2">
+          <div className="flex shrink-0 items-center gap-2 border-b border-zinc-900 px-3 py-2">
             <Search className="size-3.5 shrink-0 text-zinc-500" />
             <input
               // Not on phones, where focusing would pop the keyboard over the list.
@@ -118,7 +158,7 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
             />
           </div>
           {/* One subscription at a time, or all of them. */}
-          <div className="scrollbar-none flex gap-1 overflow-x-auto border-b border-zinc-900 px-2 py-1.5">
+          <div className="scrollbar-none flex shrink-0 gap-1 overflow-x-auto border-b border-zinc-900 px-2 py-1.5">
             {(["all", ...providers] as const).map((choice) => (
               <button
                 key={choice}
@@ -137,7 +177,7 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
               </button>
             ))}
           </div>
-          <div className="scrollbar-thin max-h-80 overflow-y-auto overscroll-contain pb-1">
+          <div className="scrollbar-thin max-h-80 min-h-0 flex-1 overflow-y-auto overscroll-contain pb-1">
             {providers.map((provider) => {
               const models = MODELS.filter((model) => model.provider === provider && matches(model))
               if (models.length === 0) return null
@@ -209,7 +249,7 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
               <p className="px-3 py-4 text-center text-xs text-zinc-500">{needle ? `No model matches “${query}”.` : "No models."}</p>
             )}
           </div>
-          <p className="border-t border-zinc-900 px-3 py-2 text-[11px] leading-relaxed text-zinc-500">
+          <p className="shrink-0 border-t border-zinc-900 px-3 py-2 text-[11px] leading-relaxed text-zinc-500">
             Text-only models can't see images or VM screenshots. Pick a <span className="text-emerald-400">Vision</span> model for
             those.
             {state?.models && state.models.updatedAt > 0 && (
@@ -233,7 +273,8 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
               </span>
             )}
           </p>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )
