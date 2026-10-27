@@ -146,9 +146,13 @@ const gpt = { off: "none", minimal: null, low: "low", medium: "medium", high: "h
 const gptNoOff = { ...gpt, off: null } as const
 const gptCompat = { supportsStrictMode: true, supportsOpenAIGrammarTools: true, supportsAdditionalTools: true, supportsToolSearch: true, supportsMidConvoSystemMessages: true }
 
-/** The models ChatGPT plans offer (pi-ai's openai catalog, for the models its ChatGPT plan list names), best first. */
+/**
+ * The models ChatGPT plans offer (pi-ai's openai catalog, for the models its ChatGPT plan list names; GPT-6.1 Terra,
+ * newer than pi-ai's, from models.dev), best first.
+ */
 const CHATGPT: ReadonlyArray<CatalogEntry & { apiId: string }> = [
   { apiId: "gpt-6.1-sol", name: "GPT-6.1 Sol", maker: "openai", input: ["text", "image"], contextWindow: 272_000, maxTokens: 128_000, cost: { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 }, thinkingLevelMap: gptNoOff, compat: gptCompat },
+  { apiId: "gpt-6.1-terra", name: "GPT-6.1 Terra", maker: "openai", input: ["text", "image"], contextWindow: 272_000, maxTokens: 128_000, cost: { input: 1, output: 5, cacheRead: 0.05, cacheWrite: 1.25 }, thinkingLevelMap: gpt, compat: gptCompat },
   { apiId: "gpt-6-sol", name: "GPT-6 Sol", maker: "openai", input: ["text", "image"], contextWindow: 272_000, maxTokens: 128_000, cost: { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 }, thinkingLevelMap: gpt, compat: gptCompat },
   { apiId: "gpt-6-astra", name: "GPT-6 Astra", maker: "openai", input: ["text", "image"], contextWindow: 272_000, maxTokens: 128_000, cost: { input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5 }, thinkingLevelMap: gptNoOff, compat: gptCompat },
   { apiId: "gpt-6-luna", name: "GPT-6 Luna", maker: "openai", input: ["text", "image"], contextWindow: 272_000, maxTokens: 128_000, cost: { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 }, thinkingLevelMap: gpt, compat: gptCompat },

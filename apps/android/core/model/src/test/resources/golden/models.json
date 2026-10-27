@@ -1036,6 +1036,33 @@
    ]
   },
   {
+   "id": "chatgpt/gpt-6.1-terra",
+   "supported": [
+    "off",
+    "low",
+    "medium",
+    "high",
+    "xhigh"
+   ],
+   "clamped": {
+    "off": "off",
+    "minimal": "off",
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+    "xhigh": "xhigh"
+   },
+   "usable": [
+    "cline-pass/glm-5.3",
+    "cline-pass/glm-5.3",
+    "opencode-go/glm-5.3",
+    "chatgpt/gpt-6.1-terra",
+    "chatgpt/gpt-6.1-terra",
+    "chatgpt/gpt-6.1-terra",
+    "chatgpt/gpt-6.1-terra"
+   ]
+  },
+  {
    "id": "chatgpt/gpt-6-sol",
    "supported": [
     "off",
