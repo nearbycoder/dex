@@ -434,26 +434,39 @@ struct EmbeddedPlayer: UIViewRepresentable {
     func updateUIView(_ view: WKWebView, context: Context) {}
 }
 
-/// Safari, in the app (links in replies that aren't Dex's own).
-struct SafariView: UIViewControllerRepresentable {
-    let url: URL
-    func makeUIViewController(context: Context) -> SFSafariViewController { SFSafariViewController(url: url) }
-    func updateUIViewController(_ controller: SFSafariViewController, context: Context) {}
+/// Safari, in the app, over the whole window (links in replies that aren't Dex's own, a VM's exposed port). Never a
+/// sheet: a sheet is a card on iPad and a drawer on iPhone that a game's downward swipes pull closed. Presented from
+/// the window that asked, so each iPad window opens its own.
+enum InAppBrowser {
+    static func open(_ url: URL) {
+        guard url.scheme == "http" || url.scheme == "https", let top = topController() else {
+            UIApplication.shared.open(url)
+            return
+        }
+        let configuration = SFSafariViewController.Configuration()
+        configuration.barCollapsingEnabled = true
+        let safari = SFSafariViewController(url: url, configuration: configuration)
+        safari.modalPresentationStyle = .fullScreen
+        safari.dismissButtonStyle = .done
+        top.present(safari, animated: true)
+    }
+
+    /// The front-most controller of the active window (the one the tap came from).
+    private static func topController() -> UIViewController? {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
+        var top = (scene?.keyWindow ?? scene?.windows.first)?.rootViewController
+        while let presented = top?.presentedViewController, !presented.isBeingDismissed { top = presented }
+        return top
+    }
 }
 
-/// Opens links from a chat: Dex's own (`dex://`) in the app, web pages in Safari over the chat.
+/// Opens links from a chat: Dex's own (`dex://`) in the app, web pages in the in-app browser over the chat.
 @MainActor
 @Observable
 final class LinkOpener {
-    struct Page: Identifiable {
-        let url: URL
-        var id: String { url.absoluteString }
-    }
-
-    var safari: Page?
-
     func open(_ url: URL, router: Router) {
         if router.handle(url) { return }
-        if url.scheme == "http" || url.scheme == "https" { safari = Page(url: url) } else { UIApplication.shared.open(url) }
+        InAppBrowser.open(url)
     }
 }

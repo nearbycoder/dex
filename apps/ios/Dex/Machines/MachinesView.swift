@@ -11,7 +11,7 @@ struct MachinesView: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columns) {
             MachineListView()
-                .navigationSplitViewColumnWidth(min: 300, ideal: 340, max: 420)
+                .listColumn()
         } detail: {
             NavigationStack {
                 if let key = router.machine {
@@ -62,6 +62,7 @@ struct MachineListView: View {
                         }
                         VmDefaultsSection(settings: state.settings)
                     }
+                    .tint(.selectionAccent)
                     .refreshable { await refreshAll() }
                 }
             } else {
@@ -185,12 +186,21 @@ struct MachineRow: View {
                 Text(label.title).font(.body.weight(.medium)).lineLimit(1)
                 Text(label.detail).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
                 TimelineView(.periodic(from: .now, by: 15)) { context in
-                    HStack(spacing: 6) {
+                    let activity = vm.activityText(minutes: minutes, now: context.date.timeIntervalSince1970 * 1000)
+                    let status = HStack(spacing: 6) {
                         StatusDot(kind: StatusDot.vm(vm), size: 7)
                         Text(vm.statusLabel).foregroundStyle(.primary).layoutPriority(1)
                         if let size = vm.size { Text(size).foregroundStyle(.tertiary) }
-                        if let text = vm.activityText(minutes: minutes, now: context.date.timeIntervalSince1970 * 1000) {
-                            Text(text).foregroundStyle(.secondary)
+                    }
+                    // On one line when it fits; on a narrow phone, when it stops or was used goes under the status.
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 6) {
+                            status
+                            if let activity { Text(activity).foregroundStyle(.secondary) }
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            status
+                            if let activity { Text(activity).foregroundStyle(.secondary) }
                         }
                     }
                     .lineLimit(1)

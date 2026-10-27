@@ -128,15 +128,20 @@ struct ModelPickerSheet: View {
                     }
                 }
                 Section {
-                    Picker("Subscription", selection: $only) {
-                        Text("All \(client.catalog.models.count)").tag("all")
-                        ForEach(providers, id: \.id) { provider in
-                            Text("\(provider.name) \(client.catalog.models(of: provider.id).count)").tag(provider.id)
+                    // Capsules that scroll sideways rather than a segmented control, whose names get cut short on a phone.
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            filterChip("all", title: "All", count: client.catalog.models.count)
+                            ForEach(providers, id: \.id) { provider in
+                                filterChip(provider.id, title: provider.name, count: client.catalog.models(of: provider.id).count)
+                            }
                         }
+                        .padding(.horizontal, 16)
                     }
-                    .pickerStyle(.segmented)
+                    .scrollClipDisabled()
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets())
+                    .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("model.tabs")
                 }
                 ForEach(providers, id: \.id) { provider in
@@ -206,6 +211,8 @@ struct ModelPickerSheet: View {
                 }
             }
             .listStyle(.insetGrouped)
+            .listSectionSpacing(.compact)
+            .contentMargins(.top, 4, for: .scrollContent)
             .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search models")
             .navigationTitle("Model")
             .navigationBarTitleDisplayMode(.inline)
@@ -214,6 +221,30 @@ struct ModelPickerSheet: View {
             }
         }
         .accessibilityIdentifier("model.sheet")
+    }
+
+    /// One subscription filter: its name and how many models it has; the chosen one is filled in.
+    private func filterChip(_ id: String, title: String, count: Int) -> some View {
+        let chosen = only == id
+        return Button {
+            only = id
+        } label: {
+            HStack(spacing: 4) {
+                Text(title)
+                Text("\(count)").foregroundStyle(chosen ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.secondary))
+            }
+            .font(.subheadline.weight(.medium))
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .foregroundStyle(chosen ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
+            .background(chosen ? AnyShapeStyle(Color("SelectionAccent")) : AnyShapeStyle(.quaternary), in: .capsule)
+            .contentShape(.capsule)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(chosen ? .isSelected : [])
+        .accessibilityIdentifier("model.tab.\(id)")
     }
 
     private func matches(_ candidate: DexModel) -> Bool {
@@ -245,44 +276,19 @@ struct ModelRow: View {
     }
 }
 
-/// A model's capabilities as small badges.
+/// A model's capabilities as small badges, wrapping onto more rows on a narrow screen (never truncated).
 private struct FlowBadges: View {
     let model: DexModel
 
     var body: some View {
         let levels = model.supportedThinkingLevels
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 4) { badges(levels) }
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 4) { badges(levels).prefix }
-                HStack(spacing: 4) { badges(levels).suffix }
-            }
+        ChipFlowLayout(spacing: 4) {
+            if model.acceptsImages { Badge(text: "Vision", symbol: "eye", color: .green) } else { Badge(text: "Text only", symbol: "textformat", color: .secondary) }
+            Badge(text: "\(Self.tokens(model.contextWindow)) context", color: .secondary)
+            if !levels.isEmpty { Badge(text: levels.contains("off") ? "Thinking optional" : "Always thinks", symbol: "brain", color: .secondary) }
+            if model.isFree { Badge(text: "Free", color: .cyan) }
+            if model.trainsOnData == true { Badge(text: "Trains on prompts", color: .orange) }
         }
-    }
-
-    private func badges(_ levels: [ThinkingLevel]) -> BadgeRows {
-        BadgeRows(model: model, levels: levels)
-    }
-}
-
-private struct BadgeRows: View {
-    let model: DexModel
-    let levels: [ThinkingLevel]
-
-    var body: some View {
-        prefix
-        suffix
-    }
-
-    @ViewBuilder var prefix: some View {
-        if model.acceptsImages { Badge(text: "Vision", symbol: "eye", color: .green) } else { Badge(text: "Text only", symbol: "textformat", color: .secondary) }
-        Badge(text: "\(Self.tokens(model.contextWindow)) context", color: .secondary)
-        if !levels.isEmpty { Badge(text: levels.contains("off") ? "Thinking optional" : "Always thinks", symbol: "brain", color: .secondary) }
-    }
-
-    @ViewBuilder var suffix: some View {
-        if model.isFree { Badge(text: "Free", color: .cyan) }
-        if model.trainsOnData == true { Badge(text: "Trains on prompts", color: .orange) }
     }
 
     static func tokens(_ count: Int) -> String {
@@ -302,6 +308,7 @@ struct Badge: View {
         }
         .font(.caption2.weight(.semibold))
         .lineLimit(1)
+        .fixedSize()
         .padding(.horizontal, 6)
         .padding(.vertical, 2)
         .foregroundStyle(color)

@@ -6,6 +6,8 @@ import SwiftUI
 struct ChatView: View {
     @Environment(DexClient.self) private var client
     @Environment(Router.self) private var router
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     let sessionId: String
     @State private var feed: ChatFeed?
     @State private var composer = ComposerModel()
@@ -22,7 +24,8 @@ struct ChatView: View {
             }
         }
         .environment(links)
-        .sheet(item: $links.safari) { page in SafariView(url: page.url).ignoresSafeArea() }
+        // A phone in landscape is too short for the tab bar and the transcript; going back to the list brings it back.
+        .toolbarVisibility(sizeClass == .compact && verticalSizeClass == .compact ? .hidden : .automatic, for: .tabBar)
         .onAppear {
             if feed == nil { feed = client.chat(sessionId) }
             Notifications.shared.clear(sessionId: sessionId)

@@ -31,6 +31,7 @@ struct UsagePage: View {
                 UsageSkeleton()
             }
         }
+        .listSectionSpacing(.compact)
         .navigationTitle("Usage")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -333,7 +334,7 @@ private struct DailyChart: View {
         .chartLegend(.hidden)
         .chartYAxis {
             AxisMarks(values: .automatic(desiredCount: 3)) { value in
-                AxisGridLine().foregroundStyle(.quaternary)
+                AxisGridLine().foregroundStyle(Color(uiColor: .separator))
                 AxisValueLabel { if let cost = value.as(Double.self) { Text(UsageFormat.usd(cost)) } }
             }
         }

@@ -190,7 +190,7 @@ final class SettingsUITests: DexUITestCase {
         kimi.tap()
         XCTAssertTrue(app.staticTexts["Kimi K3"].waitForExistence(timeout: 5))
 
-        let editor = app.textViews["defaults.instructions"]
+        let editor = element("defaults.instructions")
         XCTAssertTrue(editor.waitForExistence(timeout: 5))
         editor.tap()
         editor.typeText(" Use metric units.")

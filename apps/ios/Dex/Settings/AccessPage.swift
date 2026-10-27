@@ -135,7 +135,11 @@ private struct PendingRow: View {
                 Button {
                     answer(false)
                 } label: {
-                    Label("Decline", systemImage: "xmark").frame(maxWidth: .infinity)
+                    HStack(spacing: 6) {
+                        Image(systemName: "xmark")
+                        Text("Decline")
+                    }
+                    .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.glass)
                 .accessibilityIdentifier("pending.decline.\(action.id)")
@@ -143,6 +147,8 @@ private struct PendingRow: View {
             .disabled(answering != nil)
         }
         .padding(.vertical, 4)
+        // The separator spans the row (a label in the buttons would otherwise set where it starts).
+        .alignmentGuide(.listRowSeparatorLeading) { _ in 0 }
     }
 }
 

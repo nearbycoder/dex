@@ -247,12 +247,14 @@ struct CodeBlockView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(.quaternary.opacity(0.4))
-            ScrollView(.horizontal, showsIndicators: false) {
+            // Long lines scroll sideways: the indicator shows (and flashes when the block appears) so that's clear.
+            ScrollView(.horizontal, showsIndicators: true) {
                 SwiftUI.Text(code)
                     .font(.callout.monospaced())
                     .padding(12)
                     .textSelection(.enabled)
             }
+            .scrollIndicatorsFlash(onAppear: true)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

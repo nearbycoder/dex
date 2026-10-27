@@ -29,12 +29,15 @@ struct ActivityLogView: View {
                         ForEach(feed.items) { item in
                             VmActivityRow(item: item, startsOpen: item.id == feed.items.last?.id) { fullOutput = item }
                                 .id(item.id)
-                            Divider().padding(.leading, 14)
+                            Divider().padding(.horizontal, 16)
                         }
                         Color.clear.frame(height: 1).id("end")
                     }
                 }
-                .defaultScrollAnchor(.bottom)
+                // Opens at the latest entry and follows new ones, but a short log starts at the top, under the picker.
+                .defaultScrollAnchor(.top, for: .alignment)
+                .defaultScrollAnchor(.bottom, for: .initialOffset)
+                .defaultScrollAnchor(.bottom, for: .sizeChanges)
                 .onChange(of: feed.items.count) {
                     withAnimation(.smooth) { proxy.scrollTo("end", anchor: .bottom) }
                 }
@@ -73,7 +76,7 @@ struct ActivityLogView: View {
             .accessibilityLabel("Run")
             .accessibilityIdentifier("machine.command.run")
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 16)
         .padding(.vertical, 10)
     }
 
@@ -155,7 +158,7 @@ struct VmActivityRow: View {
                 .transition(.opacity)
             }
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 16)
         .padding(.vertical, 9)
         // A running entry opens and stays open (the web's ActivityItem).
         .onChange(of: item.status, initial: true) { _, status in

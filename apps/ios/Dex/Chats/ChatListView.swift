@@ -79,6 +79,7 @@ struct ChatListView: View {
             }
         }
         .listStyle(.sidebar)
+        .tint(.selectionAccent)
         .animation(.smooth, value: sessions.map { "\($0.id)\(Inbox.place(of: $0).rawValue)" })
         .searchable(text: $filter, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Search chats")
         .navigationTitle("Chats")

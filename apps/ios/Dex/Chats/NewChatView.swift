@@ -273,7 +273,8 @@ private struct AgentCard: View {
             HStack(alignment: .top, spacing: 10) {
                 AgentAvatar(icon: agent.icon, color: agent.color, size: 32)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(agent.name).font(.subheadline.weight(.semibold)).lineLimit(1)
+                    // Two lines rather than cut short on the narrowest phones (two cards to a row).
+                    Text(agent.name).font(.subheadline.weight(.semibold)).lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     if showsDescription {
                         Text(agent.description.isEmpty ? "Custom agent" : agent.description)
                             .font(.caption)

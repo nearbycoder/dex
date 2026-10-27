@@ -11,7 +11,8 @@ import SwiftUI
 struct VmPreviewOverlay: View {
     let vm: VmInfo
     @AppStorage("dex.vmPreview.open") private var open = false
-    @AppStorage("dex.vmPreview.button") private var buttonSpot = PreviewSpot(right: true, y: 0.82).raw
+    // The button rests just above the composer, at the end of the transcript, where it covers the least.
+    @AppStorage("dex.vmPreview.button") private var buttonSpot = PreviewSpot(right: true, y: 1).raw
     @AppStorage("dex.vmPreview.window") private var windowSpot = PreviewSpot(right: true, y: 0.85).raw
     @AppStorage("dex.vmPreview.width") private var savedWidth: Double = 0
 
@@ -172,7 +173,7 @@ private struct PreviewWindow: View {
     /// The page lays out at this size and is scaled to the window (see DesktopSurface.fixedLayout).
     static let frame = CGSize(width: 960, height: 540)
 
-    private var presets: (small: CGFloat, large: CGFloat) { bounds.compact ? (220, 330) : (300, 480) }
+    private var presets: (small: CGFloat, large: CGFloat) { bounds.compact ? (220, 330) : (260, 480) }
     private var baseWidth: CGFloat { savedWidth > 0 ? savedWidth : presets.small }
     private var pictureWidth: CGFloat { min(max(baseWidth + resize, Self.minWidth), bounds.maxWidth).rounded() }
     private var large: Bool { pictureWidth >= (presets.small + presets.large) / 2 }

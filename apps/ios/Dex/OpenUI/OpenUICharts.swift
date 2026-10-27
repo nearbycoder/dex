@@ -86,11 +86,11 @@ struct OUICartesianChart: View {
                     .chartLegend(position: .top, alignment: .leading)
                     .modifier(OUIAxisLabels(x: horizontal ? node.string("yLabel") : node.string("xLabel"), y: horizontal ? node.string("xLabel") : node.string("yLabel")))
                     .chartYAxis { AxisMarks(position: horizontal ? .automatic : .leading) { _ in
-                        if !horizontal { AxisGridLine().foregroundStyle(.quaternary) }
+                        if !horizontal { AxisGridLine().foregroundStyle(Color(uiColor: .separator)) }
                         AxisValueLabel()
                     } }
                     .chartXAxis { AxisMarks { _ in
-                        if horizontal { AxisGridLine().foregroundStyle(.quaternary) }
+                        if horizontal { AxisGridLine().foregroundStyle(Color(uiColor: .separator)) }
                         AxisValueLabel()
                     } }
                     .modifier(OUIScrollableChart(count: data.categories.count, horizontal: horizontal))

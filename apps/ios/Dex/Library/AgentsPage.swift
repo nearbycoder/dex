@@ -58,6 +58,8 @@ struct AgentsList: View {
         } message: { _ in
             Text("Its chats stay, as plain chats.")
         }
+        // The selected row (iPad): white text on the darker accent, readable in dark mode too.
+        .tint(Color("SelectionAccent"))
         .accessibilityIdentifier("agents.list")
     }
 
@@ -167,7 +169,8 @@ struct AgentEditor: View {
                 TextField("Name", text: draft.name, prompt: Text("PR Reviewer"))
                     .font(.body.weight(.medium))
                     .accessibilityIdentifier("agent.name")
-                TextField("Description", text: draft.description, prompt: Text("Reviews pull requests for bugs"))
+                TextField("Description", text: draft.description, prompt: Text("Reviews pull requests for bugs"), axis: .vertical)
+                    .lineLimit(1...4)
                     .accessibilityIdentifier("agent.description")
             } footer: {
                 if nameMissing { FieldProblem(text: "Give the agent a name.") }

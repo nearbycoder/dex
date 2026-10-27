@@ -12,7 +12,7 @@ struct ChatsView: View {
         @Bindable var router = router
         NavigationSplitView(columnVisibility: $columns) {
             ChatListView()
-                .navigationSplitViewColumnWidth(min: 280, ideal: 320, max: 400)
+                .listColumn()
         } detail: {
             NavigationStack {
                 switch router.chatSelection {

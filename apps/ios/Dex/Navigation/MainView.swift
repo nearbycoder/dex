@@ -6,32 +6,37 @@ struct MainView: View {
     @Environment(DexClient.self) private var client
     @Environment(Router.self) private var router
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
 
-    private var compact: Bool { sizeClass == .compact }
+    /// The tab bar's five tabs, or the sidebar with each Library page. A phone in landscape is short (compact height)
+    /// and keeps its five tabs even where it's wide enough for regular width (Pro Max, Air): swapping the set of tabs
+    /// on every rotation moves you around and makes UIKit rebuild the bar mid-rotation. Only a screen that's both wide
+    /// and tall (iPad, an unfolded foldable, a big iPad window) gets the sidebar.
+    private var compact: Bool { sizeClass == .compact || verticalSizeClass == .compact }
 
     var body: some View {
         @Bindable var router = router
         TabView(selection: $router.tab) {
             Tab(AppTab.chats.title, systemImage: AppTab.chats.symbol, value: AppTab.chats) {
-                ChatsView()
+                ChatsView().tint(.accentColor)
             }
             .badge(inboxBadge)
             .accessibilityIdentifier("tab.chats")
 
             Tab(AppTab.machines.title, systemImage: AppTab.machines.symbol, value: AppTab.machines) {
-                MachinesView()
+                MachinesView().tint(.accentColor)
             }
             .accessibilityIdentifier("tab.machines")
 
             Tab(AppTab.files.title, systemImage: AppTab.files.symbol, value: AppTab.files) {
-                FilesView()
+                FilesView().tint(.accentColor)
             }
             .accessibilityIdentifier("tab.files")
 
             if compact {
                 // Compact width: one Library tab with its pages inside.
                 Tab(AppTab.library.title, systemImage: AppTab.library.symbol, value: AppTab.library) {
-                    LibraryView()
+                    LibraryView().tint(.accentColor)
                 }
                 .accessibilityIdentifier("tab.library")
             } else {
@@ -39,7 +44,7 @@ struct MainView: View {
                 TabSection("Library") {
                     ForEach(AppTab.libraryPages, id: \.self) { page in
                         Tab(page.title, systemImage: page.symbol, value: page) {
-                            LibraryPageStack(page: page)
+                            LibraryPageStack(page: page).tint(.accentColor)
                         }
                         .accessibilityIdentifier("tab.\(page.rawValue)")
                     }
@@ -47,19 +52,21 @@ struct MainView: View {
             }
 
             Tab(AppTab.settings.title, systemImage: AppTab.settings.symbol, value: AppTab.settings) {
-                SettingsView()
+                SettingsView().tint(.accentColor)
             }
             .accessibilityIdentifier("tab.settings")
 
             // iPhone has room for five tabs; the chat list has its own search there.
             if !compact {
                 Tab(value: AppTab.search, role: .search) {
-                    SearchView()
+                    SearchView().tint(.accentColor)
                 }
                 .accessibilityIdentifier("tab.search")
             }
         }
         .tabViewStyle(.sidebarAdaptable)
+        // The sidebar's selected row, readable in dark mode; each tab's content keeps the accent.
+        .tint(compact ? .accentColor : .selectionAccent)
         .tabBarMinimizeBehavior(.onScrollDown)
         .onChange(of: compact, initial: true) { _, compact in router.adapt(compact: compact) }
         .background(TabBarRelayout(trigger: router.tab))

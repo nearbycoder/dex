@@ -129,9 +129,12 @@ final class LibraryUITests: DexUITestCase {
         XCTAssertTrue(app.buttons["agent.save"].waitForLabel(containing: "Save"))
 
         // Edit: the editor stays open on the saved agent.
-        type(" with a budget", into: "agent.description")
+        // A multi-line field puts the cursor where it's tapped: tap its end to add to the text.
+        let field = reveal(element("agent.description"))
+        field.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
+        app.typeText(" with a budget")
         tap("agent.save")
-        XCTAssertTrue(app.textFields["agent.description"].waitForValue("Plans trips with a budget"))
+        XCTAssertTrue(field.waitForValue("Plans trips with a budget"), "description is \(String(describing: field.value))")
         snapshot("library-agent-saved")
 
         // Model sheet.
@@ -395,8 +398,12 @@ final class LibraryUITests: DexUITestCase {
         if !isRegularWidth { app.buttons["BackButton"].firstMatch.tap() }
         let linear = element("mcp.row.m-linear")
         XCTAssertTrue(linear.waitForExistence(timeout: 5))
-        linear.swipeRight()
-        app.buttons["Off for New Chats"].firstMatch.tap()
+        // A slow, partial drag shows the actions (a fast swipe across a narrow iPad list column may not).
+        let start = linear.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.5))
+        start.press(forDuration: 0.05, thenDragTo: linear.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.5)), withVelocity: .slow, thenHoldForDuration: 0.1)
+        let off = app.buttons["Off for New Chats"].firstMatch
+        if !off.waitForExistence(timeout: 3) { linear.swipeRight() }
+        off.tap()
     }
 
     func testMcpValidation() {

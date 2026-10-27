@@ -39,6 +39,7 @@ struct SettingsView: View {
                         .accessibilityIdentifier("settings.signOut")
                 }
             }
+            .tint(.selectionAccent)
             .navigationTitle("Settings")
             .confirmationDialog("Sign out of Dex on this device?", isPresented: $confirmSignOut, titleVisibility: .visible) {
                 Button("Sign Out", role: .destructive) { model.signOut() }
@@ -46,6 +47,7 @@ struct SettingsView: View {
                 Text("Chats keep running on your Dex. Sign in again any time.")
             }
             .accessibilityIdentifier("settings.list")
+            .listColumn()
         } detail: {
             NavigationStack {
                 if let page = router.settingsPage {

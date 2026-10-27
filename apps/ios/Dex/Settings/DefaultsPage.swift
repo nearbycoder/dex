@@ -43,19 +43,15 @@ struct DefaultsPage: View {
                 }
 
                 Section {
-                    TextEditor(text: $instructions)
-                        .frame(minHeight: 140)
-                        .focused($editing)
-                        .overlay(alignment: .topLeading) {
-                            if instructions.isEmpty {
-                                Text("e.g. I'm a TypeScript developer in Chicago. Be concise. Prefer tables for comparisons.")
-                                    .foregroundStyle(.tertiary)
-                                    .padding(.top, 8)
-                                    .padding(.leading, 5)
-                                    .allowsHitTesting(false)
-                            }
-                        }
-                        .accessibilityIdentifier("defaults.instructions")
+                    TextField(
+                        "Custom instructions",
+                        text: $instructions,
+                        prompt: Text("e.g. I'm a TypeScript developer in Chicago. Be concise. Prefer tables for comparisons."),
+                        axis: .vertical
+                    )
+                    .lineLimit(6...14)
+                    .focused($editing)
+                    .accessibilityIdentifier("defaults.instructions")
                     if instructions != state.settings.instructions || saved {
                         HStack {
                             AsyncButton(action: { try await save() }) {
@@ -115,7 +111,8 @@ struct DefaultsPage: View {
                     Text("Things Dex will do later. Ask Dex in any chat to schedule something.")
                 }
             }
-            .navigationTitle("Defaults & Instructions")
+            // Short enough for the large title on the smallest phones; the Settings row says "Defaults & Instructions".
+            .navigationTitle("Defaults")
             .scrollDismissesKeyboard(.interactively)
             .toolbar {
                 if editing {
@@ -146,7 +143,7 @@ struct DefaultsPage: View {
             .task(id: client.isConnected) { await loadSchedules() }
             .refreshable { await loadSchedules() }
         } else {
-            FormSkeleton().navigationTitle("Defaults & Instructions")
+            FormSkeleton().navigationTitle("Defaults")
         }
     }
 

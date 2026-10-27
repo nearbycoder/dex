@@ -6,7 +6,8 @@ import WebKit
 /// its own throwaway data store and no base URL (an opaque origin), so its scripts run and it can load libraries and
 /// fonts from anywhere, like the web's sandboxed preview, but it never sees Dex's session or this app's storage.
 /// Links it opens go to the browser. Its sound plays on a tap, even with the Ring/Silent switch on silent (WebAudio,
-/// as the web's preview does).
+/// as the web's preview does). A page that picks no colors of its own follows the app's light or dark appearance; one
+/// that does keeps the look it was written for.
 struct HTMLPreview: UIViewRepresentable {
     let html: String
 
@@ -23,7 +24,7 @@ struct HTMLPreview: UIViewRepresentable {
         view.navigationDelegate = context.coordinator
         view.uiDelegate = context.coordinator
         view.isInspectable = true
-        view.loadHTMLString(WebAudio.withAudioUnlock(html), baseURL: nil)
+        show(in: view)
         context.coordinator.loaded = html
         return view
     }
@@ -31,7 +32,40 @@ struct HTMLPreview: UIViewRepresentable {
     func updateUIView(_ view: WKWebView, context: Context) {
         guard context.coordinator.loaded != html else { return }
         context.coordinator.loaded = html
-        view.loadHTMLString(WebAudio.withAudioUnlock(html), baseURL: nil)
+        show(in: view)
+    }
+
+    private func show(in view: WKWebView) {
+        let adaptive = Self.followsAppearance(html)
+        // An adaptive page's overscroll matches the app's background; others stay white, as written.
+        view.underPageBackgroundColor = adaptive ? .systemBackground : .white
+        view.loadHTMLString(WebAudio.withAudioUnlock(adaptive ? Self.withColorScheme(html) : html), baseURL: nil)
+    }
+
+    /// Whether the page leaves its colors to the browser: no color scheme, no background, and no text color for the
+    /// whole page (a colored heading is fine; dark body text on a dark background isn't).
+    static func followsAppearance(_ html: String) -> Bool {
+        let page = html.lowercased()
+        let patterns = [
+            #"color-scheme"#,
+            #"background(-color|-image)?\s*:"#,
+            #"\bbgcolor\s*="#,
+            #"(^|[\s,}>])(html|body|:root|\*)[^{}]*\{([^}]*[;\s])?\s*color\s*:"#,
+            #"<body[^>]*\b(text\s*=|style\s*=\s*["'][^"']*\bcolor\s*:)"#,
+        ]
+        return !patterns.contains { page.range(of: $0, options: .regularExpression) != nil }
+    }
+
+    /// `html` with a `color-scheme` meta, so the browser's own colors follow light and dark: right after `<head>`, else
+    /// `<html>`, else the doctype (never before it, which would put the page in quirks mode), else at the very start.
+    static func withColorScheme(_ html: String) -> String {
+        let meta = #"<meta name="color-scheme" content="light dark">"#
+        for pattern in ["<head[^>]*>", "<html[^>]*>", "<!doctype[^>]*>"] {
+            if let range = html.range(of: pattern, options: [.regularExpression, .caseInsensitive]) {
+                return String(html[..<range.upperBound]) + meta + String(html[range.upperBound...])
+            }
+        }
+        return meta + html
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {

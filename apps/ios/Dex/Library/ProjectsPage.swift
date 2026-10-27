@@ -69,6 +69,8 @@ struct ProjectsList: View {
         } message: { _ in
             Text("Its chats and their VMs stay.")
         }
+        // The selected row (iPad): white text on the darker accent, readable in dark mode too.
+        .tint(Color("SelectionAccent"))
         .accessibilityIdentifier("projects.list")
     }
 
@@ -182,7 +184,8 @@ struct ProjectEditor: View {
                 TextField("Name", text: draft.name, prompt: Text("Dex"))
                     .font(.body.weight(.medium))
                     .accessibilityIdentifier("project.name")
-                TextField("Description", text: draft.description, prompt: Text("Agent harness on Cloudflare"))
+                TextField("Description", text: draft.description, prompt: Text("Agent harness on Cloudflare"), axis: .vertical)
+                    .lineLimit(1...4)
                     .accessibilityIdentifier("project.description")
             } footer: {
                 if nameMissing { FieldProblem(text: "Give the project a name.") }

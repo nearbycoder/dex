@@ -7,7 +7,6 @@ import SwiftUI
 struct OpenUICardView: View {
     @Environment(DexClient.self) private var client
     @Environment(Router.self) private var router
-    @Environment(\.openURL) private var openURL
     let feed: ChatFeed
     let call: ContentBlock.ToolCall
     let streaming: Bool
@@ -55,9 +54,9 @@ struct OpenUICardView: View {
                 session.states[cardId] = state
                 Task { try? await client.saveUiState(sessionId: sessionId, card: cardId, state: state) }
             },
-            open: { [router, openURL] destination in
+            open: { [router] destination in
                 switch destination {
-                case .url(let url): openURL(url)
+                case .url(let url): if !router.handle(url) { InAppBrowser.open(url) }
                 case .chat(let id): router.openChat(id)
                 case .file(let path): router.openFile(path)
                 case .machine(let key): router.openMachine(key)

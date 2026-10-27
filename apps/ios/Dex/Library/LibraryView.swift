@@ -21,7 +21,7 @@ struct LibraryView: View {
                                     .background(Self.tint(page).gradient, in: .rect(cornerRadius: 9, style: .continuous))
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(page.title)
-                                    Text(Self.blurb(page)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                    Text(Self.blurb(page)).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                                 }
                                 Spacer(minLength: 0)
                                 if let count = count(page) {
@@ -81,7 +81,8 @@ struct LibraryPageStack: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columns) {
             LibraryPageList(page: page, selection: selection)
-                .navigationSplitViewColumnWidth(min: 300, ideal: 360, max: 440)        } detail: {
+                .listColumn()
+        } detail: {
             NavigationStack(path: inner) {
                 Group {
                     if let open = path.wrappedValue.first {

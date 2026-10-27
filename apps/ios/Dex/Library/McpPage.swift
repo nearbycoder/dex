@@ -98,6 +98,8 @@ struct McpList: View {
         } message: { _ in
             Text("Chats and agents using it lose its tools, and its sign-in is forgotten.")
         }
+        // The selected row (iPad): white text on the darker accent, readable in dark mode too.
+        .tint(Color("SelectionAccent"))
         .accessibilityIdentifier("mcp.list")
     }
 
@@ -297,7 +299,7 @@ struct McpServerDetail: View {
                     .disabled(busy)
                     .accessibilityIdentifier("mcp.reconnect")
                 }
-                Button(role: .destructive) { confirmRemove = true } label: { Label("Remove Server", systemImage: "trash") }
+                Button(role: .destructive) { confirmRemove = true } label: { Label("Remove Server", systemImage: "trash").foregroundStyle(.red) }
                     .accessibilityIdentifier("mcp.remove")
             }
         }

@@ -16,7 +16,8 @@ struct InspectView: View {
             switch self {
             case .files: "Files"
             case .git: "Git"
-            case .ports: "Ports"
+            // The machine page has a Ports panel of its own (for sharing one); these are the ports in use.
+            case .ports: "Listening"
             case .processes: "Processes"
             }
         }
@@ -318,7 +319,6 @@ struct FilePeekSheet: View {
 /// Opens a port on the VM to the web (`vmExposePort`): the URL, to open, copy, or share.
 struct PortsView: View {
     @Environment(DexClient.self) private var client
-    @Environment(\.openURL) private var openURL
     let vm: VmInfo
     @Binding var port: String
     @Binding var exposed: ExposedPort?
@@ -367,7 +367,7 @@ struct PortsView: View {
                         .accessibilityIdentifier("ports.url")
                     HStack(spacing: 8) {
                         Button {
-                            if let url = URL(string: exposed.url) { openURL(url) }
+                            if let url = URL(string: exposed.url) { InAppBrowser.open(url) }
                         } label: { Label("Open", systemImage: "safari") }
                             .accessibilityIdentifier("ports.open")
                         Button {

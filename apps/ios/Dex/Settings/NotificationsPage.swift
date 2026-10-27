@@ -147,13 +147,14 @@ private struct PushDeviceRow: View {
                 .frame(width: 22)
             VStack(alignment: .leading, spacing: 2) {
                 Text(device.label)
-                HStack(spacing: 0) {
-                    Text("\(device.kinds.count)/\(NotifyKinds.all.count) kinds · \(device.lastSentAt.map { "sent \(Format.ago($0))" } ?? "nothing sent yet")")
-                    if device.error != nil { Text(" · last delivery failed").foregroundStyle(.orange) }
+                // A failed delivery gets its own line, so neither is cut short on a narrow phone.
+                Text("\(device.kinds.count)/\(NotifyKinds.all.count) kinds · \(device.lastSentAt.map { "sent \(Format.ago($0))" } ?? "nothing sent yet")")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                if device.error != nil {
+                    Text("Last delivery failed").font(.caption).foregroundStyle(.orange)
                 }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
             }
         }
     }

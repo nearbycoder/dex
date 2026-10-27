@@ -67,6 +67,8 @@ struct SkillsList: View {
         } message: { _ in
             Text("Chats stop using it.")
         }
+        // The selected row (iPad): white text on the darker accent, readable in dark mode too.
+        .tint(Color("SelectionAccent"))
         .accessibilityIdentifier("skills.list")
     }
 

@@ -18,6 +18,7 @@ struct FilesView: View {
     var body: some View {
         NavigationSplitView {
             browser
+                .listColumn()
         } detail: {
             NavigationStack {
                 if let path = router.file {
@@ -104,6 +105,7 @@ struct FilesView: View {
             }
         }
         .listStyle(.sidebar)
+        .tint(.selectionAccent)
         .searchable(text: $search, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Search files")
         .refreshable { await model.refresh(client) }
         .navigationTitle("Files")

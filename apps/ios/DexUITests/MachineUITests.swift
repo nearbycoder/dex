@@ -165,7 +165,7 @@ final class MachineUITests: DexUITestCase {
         XCTAssertTrue(app.staticTexts["Pin the date tests to UTC"].exists)
         picker.buttons["Processes"].tap()
         XCTAssertTrue(app.staticTexts["selkies"].waitForExistence(timeout: 5))
-        picker.buttons["Ports"].tap()
+        picker.buttons["Listening"].tap()
         let getURL = element("inspect.port.3000")
         XCTAssertTrue(getURL.waitForExistence(timeout: 5))
         getURL.tap()

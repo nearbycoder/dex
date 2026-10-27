@@ -48,7 +48,7 @@ struct AccountPage: View {
                     confirmEverywhere = true
                 } label: {
                     HStack {
-                        Label("Sign Out Everywhere", systemImage: "lock.trianglebadge.exclamationmark")
+                        Label("Sign Out Everywhere", systemImage: "lock.trianglebadge.exclamationmark").foregroundStyle(.red)
                         if signingOutEverywhere { Spacer(); ProgressView() }
                     }
                 }

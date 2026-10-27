@@ -2,11 +2,13 @@ import DexCore
 import SwiftUI
 
 /// One VM (the Machine page): its live desktop, activity log, your own commands, ports, and looks inside. On a wide
-/// screen the log runs beside the desktop; otherwise the desktop sits on top with the panels below it.
+/// screen the log runs beside the desktop; on a short, wide one (a phone or an iPad in landscape) the panels sit beside
+/// the desktop; otherwise the desktop sits on top with the panels below it. The desktop always keeps its full width.
 struct MachineDetailView: View {
     @Environment(DexClient.self) private var client
     @Environment(Router.self) private var router
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     let vmKey: String
 
     enum Panel: String, CaseIterable, Identifiable {
@@ -31,12 +33,21 @@ struct MachineDetailView: View {
     @State private var port = ""
     @State private var exposed: PortsView.ExposedPort?
     @State private var busy: String?
-    @State private var width: CGFloat = 0
+    @State private var size: CGSize = .zero
+    /// The software keyboard is up (a command or a port being typed): the desktop gives up its room to the field.
+    @State private var keyboard = false
     @FocusState private var commandFocused: Bool
 
     private var mode: DesktopMode { DesktopMode(saved: modeRaw) }
+    private var width: CGFloat { size.width }
     /// Room for the log beside the desktop.
     private var wide: Bool { width >= 900 }
+    /// Wider than tall (a phone or an iPad in landscape): the panels go beside the desktop, which would otherwise be
+    /// squeezed between the header and the panels.
+    /// Needs room for both: a narrower pane (a big phone in landscape, beside the list) stacks them instead.
+    private var sideBySide: Bool { !wide && width >= 520 && (verticalSizeClass == .compact || (size.height > 0 && width > size.height * 1.1)) }
+    /// The panels' width beside the desktop: the desktop keeps the larger share.
+    private var sideWidth: CGFloat { min(440, max(260, width * 0.42)) }
 
     var body: some View {
         Group {
@@ -53,7 +64,9 @@ struct MachineDetailView: View {
                 MachineSkeleton()
             }
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in keyboard = true }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in keyboard = false }
         .onAppear {
             if feed == nil { feed = MachineFeed(vmKey: vmKey, client: client) }
             feed?.start()
@@ -74,17 +87,35 @@ struct MachineDetailView: View {
                         VStack(alignment: .leading, spacing: 16) {
                             header(vm, label: label)
                             desktopCard(vm)
-                            HStack(alignment: .top, spacing: 16) {
+                            // Side by side when the column has room for both, else one above the other.
+                            let column = width - min(440, max(340, width * 0.34)) - 56
+                            let tools = column >= 680 ? AnyLayout(HStackLayout(alignment: .top, spacing: 16)) : AnyLayout(VStackLayout(spacing: 16))
+                            tools {
                                 card("Inspect", symbol: "magnifyingglass") { inspect(vm) }
                                 card("Open a Port", symbol: "network") { ports(vm) }
-                                    .frame(maxWidth: 360)
+                                    .frame(maxWidth: column >= 680 ? 360 : .infinity)
                             }
                         }
                         .padding([.leading, .vertical], 20)
                     }
+                    .refreshable { await refresh(vm) }
                     card("Activity", symbol: "terminal", padded: false) { activity(vm) }
                         .frame(width: min(440, max(340, width * 0.34)))
                         .padding([.trailing, .vertical], 20)
+                }
+            } else if sideBySide {
+                HStack(alignment: .top, spacing: 0) {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 10) {
+                            header(vm, label: label)
+                            desktopCard(vm)
+                        }
+                        .padding(.leading, 16)
+                        .padding(.vertical, 8)
+                    }
+                    .refreshable { await refresh(vm) }
+                    panels(vm)
+                        .frame(width: sideWidth)
                 }
             } else {
                 VStack(spacing: 0) {
@@ -94,27 +125,18 @@ struct MachineDetailView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
-                    Picker("Panel", selection: $panel) {
-                        ForEach(Panel.allCases) { panel in Text(panel.title).tag(panel) }
-                    }
-                    .pickerStyle(.segmented)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .accessibilityIdentifier("machine.panel")
-                    switch panel {
-                    case .activity:
-                        activity(vm)
-                    case .inspect:
-                        ScrollView { inspect(vm).padding(.horizontal, 16).padding(.bottom, 16) }
-                    case .ports:
-                        ScrollView { ports(vm).padding(.horizontal, 16).padding(.bottom, 16) }
-                    }
+                    // The desktop takes its full width first, so the panels below never squeeze it (except to make
+                    // room for the keyboard while you type).
+                    .layoutPriority(keyboard ? 0 : 1)
+                    panels(vm)
                 }
             }
         }
         .navigationTitle(label.title)
         .navigationSubtitle(statusLine(vm, minutes: minutes))
         .navigationBarTitleDisplayMode(.inline)
+        // A landscape phone has little height to spare: the desktop gets the tab bar's room too.
+        .toolbarVisibility(sizeClass == .compact && verticalSizeClass == .compact ? .hidden : .automatic, for: .tabBar)
         .toolbar { toolbar(vm, label: label) }
         .background(alignment: .topLeading) { shortcuts(vm) }
         .confirmationDialog("Delete the VM of “\(label.title)”?", isPresented: $confirmDelete, titleVisibility: .visible) {
@@ -263,7 +285,10 @@ struct MachineDetailView: View {
         }
     }
 
+    /// The subtitle. On a phone the header right below already shows the status and size, so it says only when the VM
+    /// stops.
     private func statusLine(_ vm: VmInfo, minutes: Int) -> String {
+        if sizeClass == .compact { return vm.isRunning ? vm.idleText(minutes: minutes) : "" }
         var parts = [vm.statusLabel]
         if let size = vm.size { parts.append(size) }
         if vm.isRunning { parts.append(vm.idleText(minutes: minutes)) }
@@ -355,6 +380,30 @@ struct MachineDetailView: View {
 
     // MARK: Panels
 
+    /// The panel picker and the chosen panel (all but the wide layout, which shows every panel at once).
+    @ViewBuilder
+    private func panels(_ vm: VmInfo) -> some View {
+        VStack(spacing: 0) {
+            Picker("Panel", selection: $panel) {
+                ForEach(Panel.allCases) { panel in Text(panel.title).tag(panel) }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .accessibilityIdentifier("machine.panel")
+            switch panel {
+            case .activity:
+                activity(vm)
+            case .inspect:
+                ScrollView { inspect(vm).padding(.horizontal, 16).padding(.bottom, 16) }
+                    .refreshable { await refresh(vm) }
+            case .ports:
+                ScrollView { ports(vm).padding(.horizontal, 16).padding(.bottom, 16) }
+                    .refreshable { await refresh(vm) }
+            }
+        }
+    }
+
     @ViewBuilder
     private func activity(_ vm: VmInfo) -> some View {
         if let feed {
@@ -399,14 +448,13 @@ struct MachineDetailView: View {
                 .disabled(busy != nil)
                 .accessibilityIdentifier("machine.stop")
             }
-            Button {
-                act("refresh") { try await client.vmRefresh(vm.key) }
-            } label: {
-                Label("Refresh", systemImage: "arrow.clockwise")
-            }
-            .keyboardShortcut("r", modifiers: .command)
-            .accessibilityIdentifier("machine.refresh")
             Menu {
+                Button {
+                    act("refresh") { try await client.vmRefresh(vm.key) }
+                } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                .accessibilityIdentifier("machine.refresh")
                 if let session = label.session {
                     Button { router.openChat(session.id) } label: { Label("Open Chat", systemImage: "bubble.left.and.text.bubble.right") }
                 }
@@ -440,9 +488,12 @@ struct MachineDetailView: View {
         }
     }
 
-    /// iPad keyboard shortcuts that aren't on a visible control: ⌘K runs a command, ⇧⌘C takes or gives back control.
+    /// iPad keyboard shortcuts that aren't on a visible control: ⌘K runs a command, ⇧⌘C takes or gives back control, ⌘R
+    /// refreshes.
     private func shortcuts(_ vm: VmInfo) -> some View {
         Group {
+            Button("Refresh") { act("refresh") { try await client.vmRefresh(vm.key) } }
+                .keyboardShortcut("r", modifiers: .command)
             Button("Run a Command") {
                 panel = .activity
                 commandFocused = true
@@ -454,6 +505,11 @@ struct MachineDetailView: View {
         .frame(width: 0, height: 0)
         .opacity(0)
         .accessibilityHidden(true)
+    }
+
+    /// Pull to refresh: the VM's status, now.
+    private func refresh(_ vm: VmInfo) async {
+        do { try await client.vmRefresh(vm.key) } catch { client.notice = error.localizedDescription }
     }
 
     private func act(_ name: String, _ action: @escaping () async throws -> Void) {
