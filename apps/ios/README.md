@@ -60,6 +60,25 @@ UI tests run on the mock agent (`-DexMock -DexReset -DexFast`) and save screensh
 - `DEX_LIVE_SERVER=http://localhost:5173 DEX_LIVE_TOKEN=<session token> swift test --filter LiveServerTests` runs DexCore against it (state, RPC, chats, files, refresh, a forged token).
 - `TEST_RUNNER_DEX_LIVE_SERVER=http://localhost:5173` on the xcodebuild command line runs `LiveSignInUITests`: the whole sign-in through the browser sheet.
 
+## TestFlight
+
+`scripts/testflight.sh` archives a Release build, signs it for the App Store, and uploads it to App Store Connect, where it shows up in TestFlight once processed. Each upload's build number is the UTC time; bump `MARKETING_VERSION` in `project.yml` for a new version.
+
+Once per deployment:
+
+1. Put your team ID in the gitignored `apps/ios/.deploy.vars`: `DEVELOPMENT_TEAM=ABCDE12345` (`project.yml` leaves it empty so anyone can build their own).
+2. In [App Store Connect](https://appstoreconnect.apple.com/apps), add a new iOS app with the bundle ID `dev.trydex.Dex` (the first run of the script registers it if it isn't already). The name must be unique on the App Store.
+3. Either sign in to Xcode (Settings → Accounts) with that team, or create an App Store Connect API key (Users and Access → Integrations, App Manager role) and add `ASC_KEY_ID`, `ASC_ISSUER_ID`, and `ASC_KEY_PATH` to `.deploy.vars`.
+
+Then:
+
+```sh
+apps/ios/scripts/testflight.sh            # archive and upload
+UPLOAD=0 apps/ios/scripts/testflight.sh   # archive and export build/testflight/Dex.ipa only
+```
+
+The app declares that it uses only exempt encryption (`ITSAppUsesNonExemptEncryption`), so builds need no export-compliance answer, and `PrivacyInfo.xcprivacy` lists the required-reason APIs it uses. Internal testers (your team) can install a build as soon as it's processed. External testers need a Beta App Review the first time, and that needs a demo: a Dex address and a sign-in the reviewer can use.
+
 ## Devices
 
 iPhone (SE to Pro Max), the foldable iPhone Duo, and iPad. Compact width gets the Liquid Glass tab bar (Chats, Machines, Files, Library, Settings); regular width (iPad, an unfolded foldable, a wide window) gets the sidebar with each Library page and Search, and split views with the list beside the detail. Each window keeps its own place (`Router`), so folding, unfolding, rotating, or resizing keeps the open chat or page. iPad windows each have their own connection, like browser tabs; keyboard shortcuts are in the menu bar (⌘N, ⌘1–7, ⌘E settle, ⌘. stop).
