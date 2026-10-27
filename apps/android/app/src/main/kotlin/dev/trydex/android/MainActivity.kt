@@ -57,6 +57,7 @@ class MainActivity : ComponentActivity() {
         when {
             data.startsWith("dex://auth/callback") -> signIn.complete(data)
             data.startsWith("dex://app") -> routesFor(data)?.let(links::send)
+            // dex://chatgpt/signed-in only brings Dex back over the browser; Settings already has the address.
         }
     }
 

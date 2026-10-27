@@ -111,6 +111,39 @@ final class SettingsUITests: DexUITestCase {
         XCTAssertFalse(element("opencode.status").exists)
     }
 
+    /// The mock agent opens no page: the address is pasted, as when the app can't listen for the callback.
+    func testChatGPTSignInByPaste() {
+        launch()
+        openSettings("models")
+        let start = element("chatgpt.start")
+        reveal(start)
+        XCTAssertTrue(start.waitForExistence(timeout: 5))
+        start.tap()
+
+        let field = element("chatgpt.callback")
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        reveal(field)
+        field.tap()
+        field.typeText("http://127.0.0.1:1455/auth/callback?state=mock")
+        element("chatgpt.connect").tap()
+        XCTAssertTrue(element("message.error").waitForExistence(timeout: 5), "An address without a code says why")
+
+        field.tap()
+        field.typeText("&code=abc")
+        element("chatgpt.connect").tap()
+        let status = element("chatgpt.status")
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        XCTAssertEqual(status.label, "you@example.com")
+        snapshot("models-chatgpt-connected")
+
+        let disconnect = element("chatgpt.disconnect")
+        reveal(disconnect)
+        disconnect.tap()
+        app.buttons["Disconnect"].firstMatch.tap()
+        XCTAssertTrue(element("chatgpt.start").waitForExistence(timeout: 5))
+        XCTAssertFalse(element("chatgpt.status").exists)
+    }
+
     func testBoatKeyIsKeptWhileVMsRun() {
         launch()
         openSettings("machines")

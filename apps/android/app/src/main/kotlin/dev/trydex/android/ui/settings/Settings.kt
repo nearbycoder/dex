@@ -68,6 +68,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.trydex.android.Demo
+import dev.trydex.android.data.LoopbackCallback
 import dev.trydex.android.data.SignedOutReason
 import dev.trydex.android.ui.LocalApp
 import dev.trydex.android.ui.LocalOpenInBrowser
@@ -92,7 +94,11 @@ import dev.trydex.core.model.ChatGPTSignInStart
 import dev.trydex.core.model.ConnectResult
 import dev.trydex.core.model.ProviderStatus
 import dev.trydex.core.model.ScheduledPrompt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.time.Instant
@@ -364,21 +370,55 @@ fun SecretConnect(
 
 /**
  * ChatGPT: Sign in with ChatGPT, so its models run on the user's Plus or Pro plan (chatgpt-connect.tsx on the web).
- * OpenAI only sends the browser back to a 127.0.0.1 address, which doesn't load; the user pastes that address here.
- * It opens in the full browser rather than a Custom Tab, whose address is harder to copy.
+ * OpenAI only sends the browser back to a 127.0.0.1 address. The app listens there while the sign-in page is open in
+ * a Custom Tab ([LoopbackCallback]), catches the address, and finishes by itself; when it can't listen (the port is
+ * taken), the page opens in the full browser and the user pastes the address that doesn't load.
  */
 @Composable
 private fun ChatGPTConnect(status: ProviderStatus) {
     val app = LocalApp.current
     val api = app.graph.repository.api
     val uriHandler = LocalUriHandler.current
+    val openInBrowser = LocalOpenInBrowser.current
     val scope = rememberCoroutineScope()
     var signIn by remember { mutableStateOf<ChatGPTSignInStart?>(null) }
+    // Whether the app is catching the callback itself (otherwise the user pastes it).
+    var automatic by remember { mutableStateOf(false) }
+    var listening by remember { mutableStateOf<Job?>(null) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
     val callback = rememberTextFieldState()
 
+    fun stopListening() {
+        listening?.cancel()
+        listening = null
+    }
+
+    fun finish(address: String) {
+        busy = true
+        message = null
+        scope.launch {
+            runCatching { api.finishChatGPTSignIn(address) }
+                .onSuccess { result ->
+                    if (result.ok) {
+                        stopListening()
+                        signIn = null
+                        callback.setTextAndPlaceCursorAtEnd("")
+                        message = true to "Signed in. ChatGPT's models are in the model menu."
+                    } else message = false to (result.error ?: "That didn't work.")
+                }
+                .onFailure { message = false to (it.message ?: "That didn't work.") }
+            busy = false
+        }
+    }
+
+    fun caught(address: String) {
+        callback.setTextAndPlaceCursorAtEnd(address)
+        finish(address)
+    }
+
     fun start() {
+        stopListening()
         busy = true
         message = null
         scope.launch {
@@ -386,7 +426,23 @@ private fun ChatGPTConnect(status: ProviderStatus) {
                 .onSuccess { started ->
                     callback.setTextAndPlaceCursorAtEnd("")
                     signIn = started
-                    runCatching { uriHandler.openUri(started.url) }
+                    if (Demo.isDemo(app.graph.repository.session.value?.server)) {
+                        // The demo's fake approves at once: no page to open.
+                        automatic = true
+                        listening = scope.launch {
+                            delay(600)
+                            caught("${started.redirectUri}?code=demo&state=fake")
+                        }
+                        return@onSuccess
+                    }
+                    val loopback = withContext(Dispatchers.IO) { LoopbackCallback.open(started.redirectUri) }
+                    automatic = loopback != null
+                    if (loopback != null) {
+                        listening = scope.launch { loopback.use { it.await() }?.let(::caught) }
+                        openInBrowser(started.url)
+                    } else {
+                        runCatching { uriHandler.openUri(started.url) }
+                    }
                 }
                 .onFailure { message = false to (it.message ?: "That didn't work.") }
             busy = false
@@ -400,6 +456,7 @@ private fun ChatGPTConnect(status: ProviderStatus) {
                 Text(status.keyHint ?: "Signed in", color = DexTheme.colors.success, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                 if (signIn == null) TextButton(onClick = { start() }, enabled = !busy) { Text("Sign in again") }
                 TextButton(onClick = {
+                    stopListening()
                     signIn = null
                     message = null
                     scope.launch { runCatching { api.disconnectChatGPT() }.onFailure { message = false to (it.message ?: "That didn't work.") } }
@@ -420,11 +477,19 @@ private fun ChatGPTConnect(status: ProviderStatus) {
         }
         if (pending != null) {
             Text(
-                "Approve Dex on the ChatGPT page that opened in your browser. It then shows a page that can't be reached, at an address starting with ${pending.redirectUri}. That's expected: copy the whole address and paste it here.",
+                if (automatic) {
+                    "Approve Dex on the ChatGPT page. Dex finishes signing in by itself. If it doesn't, copy the address of the page that can't be reached (it starts with ${pending.redirectUri}) and paste it here."
+                } else {
+                    "Approve Dex on the ChatGPT page that opened in your browser. It then shows a page that can't be reached, at an address starting with ${pending.redirectUri}. That's expected: copy the whole address and paste it here."
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("connect-chatgpt-steps"),
             )
-            TextButton(onClick = { runCatching { uriHandler.openUri(pending.url) } }, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 0.dp)) {
+            TextButton(
+                onClick = { if (automatic) openInBrowser(pending.url) else runCatching { uriHandler.openUri(pending.url) } },
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 0.dp),
+            ) {
                 Text("Open the ChatGPT sign-in page ↗")
             }
             OutlinedTextField(
@@ -437,28 +502,13 @@ private fun ChatGPTConnect(status: ProviderStatus) {
                 modifier = Modifier.fillMaxWidth().testTag("connect-chatgpt-callback"),
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Button(onClick = {
-                    busy = true
-                    message = null
-                    scope.launch {
-                        runCatching { api.finishChatGPTSignIn(callback.text.toString()) }
-                            .onSuccess { result ->
-                                if (result.ok) {
-                                    signIn = null
-                                    callback.setTextAndPlaceCursorAtEnd("")
-                                    message = true to "Signed in. ChatGPT's models are in the model menu."
-                                } else message = false to (result.error ?: "That didn't work.")
-                            }
-                            .onFailure { message = false to (it.message ?: "That didn't work.") }
-                        busy = false
-                    }
-                }, enabled = callback.text.isNotBlank() && !busy, modifier = Modifier.testTag("connect-chatgpt-submit")) {
+                Button(onClick = { finish(callback.text.toString()) }, enabled = callback.text.isNotBlank() && !busy, modifier = Modifier.testTag("connect-chatgpt-submit")) {
                     if (busy) {
                         CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
                         Text("Checking", modifier = Modifier.padding(start = 8.dp))
                     } else Text("Connect")
                 }
-                TextButton(onClick = { signIn = null; message = null }) { Text("Cancel") }
+                TextButton(onClick = { stopListening(); signIn = null; message = null }) { Text("Cancel") }
             }
         }
         message?.let { (ok, text) -> Text(text, style = MaterialTheme.typography.bodySmall, color = if (ok) DexTheme.colors.success else MaterialTheme.colorScheme.error) }

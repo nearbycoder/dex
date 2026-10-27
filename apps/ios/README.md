@@ -46,6 +46,8 @@ The app signs in through the server's own sign-in page in a system browser sheet
 3. The server redirects to `dex://auth/callback?code=…` with a sealed code that expires in 2 minutes; the app trades it, with the verifier, at `POST /auth/native/token` for the ordinary 30-day session token.
 4. The token lives in the Keychain (this device only) and goes with every request as the `dex_session` cookie, so every server check (`activeViewer`, Sign out everywhere) applies unchanged. The app renews it with `POST /auth/native/refresh` when less than a week is left.
 
+Signing in to ChatGPT (Settings → Model Subscriptions) goes the other way: OpenAI sends the browser back only to `http://127.0.0.1:1455/auth/callback`, so while its sign-in sheet is open the app listens on that address itself (`Dex/Settings/ChatGPTSignIn.swift`), takes the callback, and hands it to the agent's `finishChatGPTSignIn`. If the port is taken, the page opens in Safari instead and you paste the address it lands on, as on the web; the paste box stays as a fallback either way.
+
 ## Tests
 
 ```sh

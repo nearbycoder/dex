@@ -29,6 +29,9 @@ object Demo {
         )
     }
 
+    /** Whether [server] is the demo's fake (its sign-ins, like ChatGPT's, finish without a browser). */
+    fun isDemo(server: String?) = server == SERVER
+
     /** After a restart, a demo session needs its fake again. */
     fun resume(graph: AppGraph) {
         if (graph.repository.session.value?.server == SERVER) Thread { ensureRunning() }.start()

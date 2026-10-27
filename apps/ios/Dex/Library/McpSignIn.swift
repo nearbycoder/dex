@@ -30,9 +30,9 @@ enum McpSignIn {
     }
 }
 
-/// One ASWebAuthenticationSession, closed when its task is cancelled.
+/// One ASWebAuthenticationSession, closed when its task is cancelled (MCP and ChatGPT sign-ins).
 @MainActor
-private final class WebSignIn: NSObject, ASWebAuthenticationPresentationContextProviding {
+final class WebSignIn: NSObject, ASWebAuthenticationPresentationContextProviding {
     private var session: ASWebAuthenticationSession?
     private var continuation: CheckedContinuation<Void, Never>?
 

@@ -46,6 +46,14 @@
                 <data android:scheme="dex" android:host="auth" android:path="/callback" />
             </intent-filter>
 
+            <!-- After a ChatGPT sign-in the app caught on 127.0.0.1 (data/LoopbackCallback.kt): back to Dex. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="dex" android:host="chatgpt" android:path="/signed-in" />
+            </intent-filter>
+
             <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
         </activity>
 

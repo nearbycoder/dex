@@ -62,16 +62,21 @@ struct ModelSubscriptionsPage: View {
 }
 
 /// ChatGPT: Sign in with ChatGPT, so its models run on the user's Plus or Pro plan (chatgpt-connect.tsx on the web).
-/// OpenAI only sends the browser back to a 127.0.0.1 address, which doesn't load; the user copies that address from
-/// Safari and pastes it here, and the agent finishes the sign-in.
+/// OpenAI only sends the browser back to a 127.0.0.1 address. The app listens there while the sign-in sheet is open
+/// (ChatGPTSignIn) and finishes on its own; when it can't, the page opens in Safari, lands on an address that doesn't
+/// load, and the user pastes that address here, as on the web.
 struct ChatGPTConnectSection: View {
     @Environment(DexClient.self) private var client
     @Environment(\.openURL) private var openURL
     let status: ClineStatus
 
     @State private var signIn: (url: URL, redirectUri: String)?
+    /// The app couldn't listen for the callback: the page opens in Safari and the address is pasted.
+    @State private var manual = false
+    @State private var capture: Task<Void, Never>?
     @State private var callback = ""
-    @State private var busy = false
+    @State private var starting = false
+    @State private var checking = false
     @State private var message: (tone: InlineMessage.Tone, text: String)?
     @State private var confirmDisconnect = false
 
@@ -87,16 +92,26 @@ struct ChatGPTConnectSection: View {
                     if signIn == nil {
                         Button("Sign In Again") { Task { await start() } }
                             .buttonStyle(.borderless)
-                            .disabled(busy)
+                            .disabled(starting)
                             .accessibilityIdentifier("chatgpt.again")
                     }
                 }
             }
             if let pending = signIn {
-                Text("Approve Dex on the ChatGPT page that opened in Safari. It then shows a page that can't be reached, at an address starting with \(pending.redirectUri). That's expected: copy the whole address and paste it here.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                Button("Open the ChatGPT Sign-In Page") { openURL(pending.url) }
+                if manual {
+                    Text("Approve Dex on the ChatGPT page that opened in Safari. It then shows a page that can't be reached, at an address starting with \(pending.redirectUri). That's expected: copy the whole address and paste it here.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Approve Dex on the ChatGPT page. Dex finishes signing in by itself.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Text("If the page instead lands on an address starting with \(pending.redirectUri) that can't be reached, copy the whole address and paste it here.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                Button("Open the ChatGPT Sign-In Page") { open() }
+                    .disabled(checking)
                     .accessibilityIdentifier("chatgpt.open")
                 HStack(spacing: 10) {
                     Image(systemName: "link").foregroundStyle(.secondary)
@@ -114,15 +129,16 @@ struct ChatGPTConnectSection: View {
                         Task { await finish() }
                     } label: {
                         HStack(spacing: 6) {
-                            if busy { ProgressView().controlSize(.small) }
-                            Text(busy ? "Checking…" : "Connect")
+                            if checking { ProgressView().controlSize(.small) }
+                            Text(checking ? "Checking…" : "Connect")
                         }
                         .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.glassProminent)
-                    .disabled(callback.trimmingCharacters(in: .whitespaces).isEmpty || busy)
+                    .disabled(callback.trimmingCharacters(in: .whitespaces).isEmpty || checking)
                     .accessibilityIdentifier("chatgpt.connect")
                     Button("Cancel") {
+                        capture?.cancel()
                         signIn = nil
                         callback = ""
                         message = nil
@@ -137,13 +153,13 @@ struct ChatGPTConnectSection: View {
                     Task { await start() }
                 } label: {
                     HStack(spacing: 6) {
-                        if busy { ProgressView().controlSize(.small) }
+                        if starting { ProgressView().controlSize(.small) }
                         Text("Sign in with ChatGPT")
                     }
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.glassProminent)
-                .disabled(busy)
+                .disabled(starting)
                 .accessibilityIdentifier("chatgpt.start")
             }
             if let message {
@@ -164,10 +180,10 @@ struct ChatGPTConnectSection: View {
     }
 
     private func start() async {
-        guard !busy else { return }
-        busy = true
+        guard !starting else { return }
+        starting = true
         message = nil
-        defer { busy = false }
+        defer { starting = false }
         do {
             let answer = try await client.run("startChatGPTSignIn")
             guard let raw = answer["url"]?.string, let url = URL(string: raw) else {
@@ -175,22 +191,47 @@ struct ChatGPTConnectSection: View {
                 return
             }
             callback = ""
+            manual = false
             signIn = (url, answer["redirectUri"]?.string ?? "http://127.0.0.1:1455/auth/callback")
-            openURL(url)
+            open()
         } catch {
             message = (.error, error.localizedDescription)
         }
     }
 
+    /// Opens the sign-in page: in the sheet, listening for the callback, or in Safari to paste from.
+    private func open() {
+        guard let pending = signIn else { return }
+        // The mock agent has no page to open: its address is pasted.
+        if LaunchOptions.current.mock { return }
+        if manual { return openURL(pending.url) }
+        capture?.cancel()
+        capture = Task {
+            switch await ChatGPTSignIn.run(pending.url, redirectUri: pending.redirectUri) {
+            case .captured(let address):
+                guard !Task.isCancelled else { return }
+                callback = address
+                await finish()
+            case .closed:
+                break
+            case .unavailable:
+                guard !Task.isCancelled else { return }
+                manual = true
+                openURL(pending.url)
+            }
+        }
+    }
+
     private func finish() async {
         let address = callback.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !address.isEmpty, !busy else { return }
-        busy = true
+        guard !address.isEmpty, !checking else { return }
+        checking = true
         message = nil
-        defer { busy = false }
+        defer { checking = false }
         do {
             let result = ConnectResult.from(try await client.run("finishChatGPTSignIn", .string(address), timeout: 60))
             if result.ok {
+                capture?.cancel()
                 signIn = nil
                 callback = ""
                 message = (.ok, "Signed in. ChatGPT's models are in the model menu.")
@@ -204,6 +245,7 @@ struct ChatGPTConnectSection: View {
 
     private func disconnect() async {
         message = nil
+        capture?.cancel()
         signIn = nil
         do {
             _ = try await client.run("disconnectChatGPT")
