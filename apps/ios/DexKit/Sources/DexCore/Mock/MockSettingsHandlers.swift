@@ -81,6 +81,23 @@ extension MockAgent {
             self.publish()
             return .null
         }
+        register("startChatGPTSignIn") { _, _ in
+            ["url": "https://auth.openai.com/api/accounts/authorize?client_id=dynamic_agent_client&state=mock", "redirectUri": "http://127.0.0.1:1455/auth/callback"]
+        }
+        register("finishChatGPTSignIn") { [unowned self] args, _ in
+            let address = args.string(0) ?? ""
+            guard address.contains("code=") else {
+                return ["ok": false, "error": "That address has no sign-in code. Paste the one the browser landed on after you approved."]
+            }
+            self.state.chatgpt = ClineStatus(connected: true, source: "user", keyHint: "you@example.com", verifiedAt: .nowMs)
+            self.publish()
+            return ["ok": true]
+        }
+        register("disconnectChatGPT") { [unowned self] _, _ in
+            self.state.chatgpt = ClineStatus(connected: false)
+            self.publish()
+            return .null
+        }
         register("connectBoat") { [unowned self] args, _ in
             let key = args.string(0) ?? ""
             if let blocked = self.vmsBlockingKeyChange(), self.state.boat.connected { return ["ok": false, "error": .string(blocked)] }

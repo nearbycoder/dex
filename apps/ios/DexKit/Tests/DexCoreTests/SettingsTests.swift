@@ -44,6 +44,8 @@ import Testing
         let report = try JSONDecoder.dex.decode(UsageReport.self, from: Data(#"{"range":"30d","since":1,"until":2,"cline":{"totalTokens":5},"boat":{},"daily":[]}"#.utf8))
         #expect(report.range == .days30)
         #expect(report.opencode.connected == nil && report.opencode.limits == nil)
+        #expect(report.chatgpt.totalTokens == 0 && report.chatgpt.connected == nil)
+        #expect(report.summary(clineConnected: true).showChatGPT == false)
         #expect(report.cloudflare.configured == false)
     }
 
@@ -65,6 +67,13 @@ import Testing
         #expect(unconnected.showCline) // used in the period
         #expect(unconnected.headline == report.boat.cost)
         #expect(unconnected.headlineLabel == "Variable spend")
+
+        // ChatGPT appears once signed in, last in the fixed order, and adds no plan fee (Dex doesn't know which plan).
+        other.chatgpt = ModelUsage(totalTokens: 1_000, connected: true)
+        let chatgpt = other.summary(clineConnected: false)
+        #expect(chatgpt.showChatGPT)
+        #expect(chatgpt.series == [.cline, .boat, .cloudflare, .chatgpt])
+        #expect(chatgpt.plans == PlanFees.workersPaid)
     }
 
     @Test func formats() {

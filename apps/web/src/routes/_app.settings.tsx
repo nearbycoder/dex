@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { BoatConnect } from "~/client/components/boat-connect"
 import { ClineConnect } from "~/client/components/cline-connect"
 import { OpenCodeConnect } from "~/client/components/opencode-connect"
+import { ChatGPTConnect } from "~/client/components/chatgpt-connect"
 import { GitHubConnect } from "~/client/components/github-connect"
 import { InstallApp } from "~/client/components/install-app"
 import { ModelPicker } from "~/client/components/model-picker"
@@ -58,8 +59,12 @@ function SettingsPage() {
         <ClineConnect />
       </Section>
 
-      <Section title="OpenCode Go" info="Models marked OpenCode in the model menu run on your OpenCode Go subscription. Connect either or both.">
+      <Section title="OpenCode Go" info="Models marked OpenCode in the model menu run on your OpenCode Go subscription.">
         <OpenCodeConnect />
+      </Section>
+
+      <Section title="ChatGPT" info="Models marked ChatGPT in the model menu run on your ChatGPT Plus or Pro plan. Connect any or all of these.">
+        <ChatGPTConnect />
       </Section>
 
       <Section title="Cloud VMs" info="Chats run code, browsers, and servers on VMs in your boat.dev account.">

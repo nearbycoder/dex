@@ -12,12 +12,13 @@ import { type ClineUsage, type DailySpend, type OpenCodeUsage, type OpenCodeWind
 
 export const Route = createFileRoute("/_app/usage")({ component: UsagePage })
 
-/** Validated categorical slots 1–4 (dark mode) from the data-viz reference palette, in fixed order. */
+/** Validated categorical slots 1–5 (dark mode) from the data-viz reference palette, in fixed order. */
 const SERIES = [
   { key: "cline", label: "ClinePass", note: "at API list prices", color: "#3987e5" },
   { key: "boat", label: "boat.dev", note: "VM time", color: "#d95926" },
   { key: "cloudflare", label: "Cloudflare", note: "metered", color: "#199e70" },
-  { key: "opencode", label: "OpenCode Go", note: "at Go rates", color: "#c98500" }
+  { key: "opencode", label: "OpenCode Go", note: "at Go rates", color: "#c98500" },
+  { key: "chatgpt", label: "ChatGPT", note: "at API list prices", color: "#d55181" }
 ] as const
 type Series = (typeof SERIES)[number]
 
@@ -77,7 +78,7 @@ function DailyChart({ daily, series }: { daily: ReadonlyArray<DailySpend>; serie
   const pad = { top: 8, right: 4, bottom: 22, left: 44 }
   const plotW = Math.max(1, width - pad.left - pad.right)
   const plotH = height - pad.top - pad.bottom
-  const totals = daily.map((day) => series.reduce((sum, item) => sum + day[item.key], 0))
+  const totals = daily.map((day) => series.reduce((sum, item) => sum + (day[item.key] ?? 0), 0))
   const max = Math.max(...totals, 0.0001)
   const niceMax = (() => {
     const step = 10 ** Math.floor(Math.log10(max))
@@ -104,7 +105,7 @@ function DailyChart({ daily, series }: { daily: ReadonlyArray<DailySpend>; serie
           const x = pad.left + index * slot + (slot - barW) / 2
           let base = 0
           const segments = series.map((item) => {
-            const value = day[item.key]
+            const value = day[item.key] ?? 0
             const segment = { series: item, value, from: base }
             base += value
             return segment
@@ -151,7 +152,7 @@ function DailyChart({ daily, series }: { daily: ReadonlyArray<DailySpend>; serie
             <div key={item.key} className="flex items-center gap-2 py-0.5 text-zinc-400">
               <span className="size-2 rounded-sm" style={{ background: item.color }} />
               {item.label}
-              <span className="ml-auto text-zinc-200 tabular-nums">{usd(daily[hover]![item.key])}</span>
+              <span className="ml-auto text-zinc-200 tabular-nums">{usd(daily[hover]![item.key] ?? 0)}</span>
             </div>
           ))}
           <div className="mt-1 flex border-t border-zinc-800 pt-1 text-zinc-300">
@@ -184,10 +185,10 @@ function DailyTable({ daily, series }: { daily: ReadonlyArray<DailySpend>; serie
               <td className="py-1.5">{shortDate(day.date)}</td>
               {series.map((item) => (
                 <td key={item.key} className="py-1.5 pl-3 text-right whitespace-nowrap">
-                  {usd(day[item.key])}
+                  {usd(day[item.key] ?? 0)}
                 </td>
               ))}
-              <td className="py-1.5 pl-3 text-right whitespace-nowrap text-zinc-100">{usd(series.reduce((sum, item) => sum + day[item.key], 0))}</td>
+              <td className="py-1.5 pl-3 text-right whitespace-nowrap text-zinc-100">{usd(series.reduce((sum, item) => sum + (day[item.key] ?? 0), 0))}</td>
             </tr>
           ))}
         </tbody>
@@ -325,7 +326,10 @@ function UsagePage() {
   const clineConnected = state?.cline.connected ?? true
   const showCline = clineConnected || (report?.cline.totalTokens ?? 0) > 0
   const showOpenCode = Boolean(report && (report.opencode.connected || report.opencode.totalTokens > 0))
-  const series = SERIES.filter((item) => (item.key === "cline" ? showCline : item.key === "opencode" ? showOpenCode : true))
+  const showChatGPT = Boolean(report?.chatgpt && (report.chatgpt.connected || report.chatgpt.totalTokens > 0))
+  const series = SERIES.filter((item) =>
+    item.key === "cline" ? showCline : item.key === "opencode" ? showOpenCode : item.key === "chatgpt" ? showChatGPT : true
+  )
   const plans = PLAN_FEES.workersPaid + (clineConnected ? PLAN_FEES.clinePass : 0) + (report?.opencode.connected ? PLAN_FEES.openCodeGo : 0)
 
   return (
@@ -359,7 +363,7 @@ function UsagePage() {
             <UsageSkeleton />
           ) : (
             <>
-              <div className={`grid gap-3 sm:grid-cols-2 ${showCline && showOpenCode ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>
+              <div className={`grid gap-3 sm:grid-cols-2 ${[showCline, showOpenCode, showChatGPT].filter(Boolean).length >= 2 ? "lg:grid-cols-5" : "lg:grid-cols-4"}`}>
                 <Tile
                   icon={<BarChart3 className="size-3.5" />}
                   label={isMonth ? "Estimated bill this month" : "Variable spend"}
@@ -393,6 +397,15 @@ function UsagePage() {
                     }
                   />
                 )}
+                {showChatGPT && report.chatgpt && (
+                  <Tile
+                    swatch={SERIES[4].color}
+                    icon={<Sparkles className="size-3.5" />}
+                    label="ChatGPT"
+                    value={`${compact(report.chatgpt.totalTokens)} tokens`}
+                    detail={`${usd(report.chatgpt.listCost)} at list prices · on your ChatGPT plan, not in the estimate`}
+                  />
+                )}
                 <Tile
                   swatch={SERIES[1].color}
                   icon={<Cpu className="size-3.5" />}
@@ -422,7 +435,7 @@ function UsagePage() {
 
               <Section
                 title="Daily usage"
-                info="ClinePass is shown at what its tokens would cost at API list prices and OpenCode Go at Go's rates; you pay their flat plans. Cloudflare is metered usage at list rates, before the plan's included allowance."
+                info="ClinePass and ChatGPT are shown at what their tokens would cost at API list prices and OpenCode Go at Go's rates; you pay their flat plans. Cloudflare is metered usage at list rates, before the plan's included allowance."
                 icon={<BarChart3 className="size-4 text-zinc-500" />}
                 aside={
                   <div className="flex items-center gap-3">
@@ -459,6 +472,7 @@ function UsagePage() {
                 {showOpenCode && <OpenCodeAllowance usage={report.opencode} />}
                 {showOpenCode && <ModelUsage title="OpenCode Go by model" series={SERIES[3]} usage={report.opencode} costLabel="At Go rates" />}
                 {showCline && <ModelUsage title="ClinePass by model" series={SERIES[0]} usage={report.cline} costLabel="List price" />}
+                {showChatGPT && report.chatgpt && <ModelUsage title="ChatGPT by model" series={SERIES[4]} usage={report.chatgpt} costLabel="List price" />}
 
                 <Section title="boat.dev VM time" icon={<span className="size-2.5 rounded-sm" style={{ background: SERIES[1].color }} />} aside="billed per second">
                   {report.boat.runs.length === 0 ? (

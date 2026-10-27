@@ -82,7 +82,11 @@ public enum MockData {
         DexModel(id: "cline-pass/qwen3.8-max", provider: "clinepass", name: "Qwen3.8 Max", maker: "qwen", input: ["text", "image"], cost: .init(input: 2, output: 6)),
         DexModel(id: "opencode-go/glm-5.3", apiId: "glm-5.3", provider: "opencode-go", name: "GLM-5.3", maker: "zai", cost: .init(input: 1.4, output: 4.4)),
         DexModel(id: "opencode-go/longcat-2.5-preview-free", apiId: "longcat-2.5-preview-free", provider: "opencode-go", name: "LongCat 2.5 Preview (Free)", maker: "meituan", cost: .init(input: 0, output: 0)),
-        DexModel(id: "opencode-go/gemini-4-argon-contributor", apiId: "gemini-4-argon-contributor", provider: "opencode-go", name: "Gemini 4 Argon (Contributor)", maker: "google", input: ["text", "image"], cost: .init(input: 4, output: 20), trainsOnData: true)
+        DexModel(id: "opencode-go/gemini-4-argon-contributor", apiId: "gemini-4-argon-contributor", provider: "opencode-go", name: "Gemini 4 Argon (Contributor)", maker: "google", input: ["text", "image"], cost: .init(input: 4, output: 20), trainsOnData: true),
+        DexModel(id: "chatgpt/gpt-6.1-sol", apiId: "gpt-6.1-sol", provider: "chatgpt", name: "GPT-6.1 Sol", maker: "openai", input: ["text", "image"], contextWindow: 272_000,
+                 maxTokens: 128_000, cost: .init(input: 2, output: 10), thinkingLevelMap: ["off": nil, "minimal": nil, "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": "max"]),
+        DexModel(id: "chatgpt/gpt-6-luna", apiId: "gpt-6-luna", provider: "chatgpt", name: "GPT-6 Luna", maker: "openai", input: ["text", "image"], contextWindow: 272_000,
+                 maxTokens: 128_000, cost: .init(input: 0.1, output: 0.5), thinkingLevelMap: ["off": "none", "minimal": nil, "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": "max"])
     ])
 
     static func assistant(_ blocks: [ContentBlock], at: Double, duration: Double = 4_000, stop: String = "stop") -> PiMessage {

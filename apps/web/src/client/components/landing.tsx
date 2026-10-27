@@ -311,8 +311,8 @@ const SHOWCASE: ReadonlyArray<Feature> = [
   {
     icon: Brain,
     eyebrow: "Models",
-    title: "Two subscriptions. One searchable menu.",
-    body: "Connect ClinePass, OpenCode Go, or both. Pick a model and thinking level per chat; free models and ones that train on your prompts are clearly marked.",
+    title: "Your subscriptions. One searchable menu.",
+    body: "Connect ClinePass, OpenCode Go, your ChatGPT plan, or any mix. Pick a model and thinking level per chat; free models and ones that train on your prompts are clearly marked.",
     points: ["GLM, Kimi, DeepSeek, Qwen, Claude, GPT, Grok, Gemini, and more", "Agents fall back to the subscription you have", "Each subscription's allowance and spend on the Usage page"],
     image: "/landing/models.webp",
     alt: "The model menu with All, ClinePass, and OpenCode Go tabs"

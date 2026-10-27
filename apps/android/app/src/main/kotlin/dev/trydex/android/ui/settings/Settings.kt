@@ -21,6 +21,7 @@ import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Key
+import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Palette
@@ -58,6 +59,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -86,7 +88,9 @@ import dev.trydex.android.ui.nav.Secrets
 import dev.trydex.android.ui.nav.Tab
 import dev.trydex.android.ui.nav.Usage
 import dev.trydex.android.ui.theme.DexTheme
+import dev.trydex.core.model.ChatGPTSignInStart
 import dev.trydex.core.model.ConnectResult
+import dev.trydex.core.model.ProviderStatus
 import dev.trydex.core.model.ScheduledPrompt
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.buildJsonObject
@@ -135,7 +139,7 @@ fun SettingsHomeScreen() {
     val session by app.graph.repository.session.collectAsStateWithLifecycle()
     val selected = app.navigator.stack(Tab.Settings).getOrNull(1)
     val waiting = waitingCount(state)
-    val providerMissing = state?.let { !it.cline.connected && !it.opencode.connected } == true
+    val providerMissing = state?.let { !it.anyProviderConnected } == true
     PaneScaffold(title = "Settings", back = false, modifier = Modifier.testTag("settings-home")) { padding ->
         PageColumn(padding) {
             session?.user?.let { user ->
@@ -226,7 +230,7 @@ fun GeneralSettingsScreen() {
                     tag = "cline",
                 )
             }
-            SectionCard(title = "OpenCode Go", info = "Models marked OpenCode in the model menu run on your OpenCode Go subscription. Connect either or both.") {
+            SectionCard(title = "OpenCode Go", info = "Models marked OpenCode in the model menu run on your OpenCode Go subscription.") {
                 val user = current.opencode.source == "user"
                 SecretConnect(
                     connected = current.opencode.connected,
@@ -239,6 +243,9 @@ fun GeneralSettingsScreen() {
                     onDisconnect = if (user) ({ repository.api.disconnectOpenCode(); ConnectResult(ok = true) }) else null,
                     tag = "opencode",
                 )
+            }
+            SectionCard(title = "ChatGPT", info = "Models marked ChatGPT in the model menu run on your ChatGPT Plus or Pro plan. Connect any or all of these.") {
+                ChatGPTConnect(current.chatgpt)
             }
             SectionCard(title = "Cloud VMs", info = "Chats run code, browsers, and servers on VMs in your boat.dev account.") {
                 val user = current.boat.source == "user"
@@ -351,6 +358,109 @@ fun SecretConnect(
             }
         }
         footer?.invoke()
+        message?.let { (ok, text) -> Text(text, style = MaterialTheme.typography.bodySmall, color = if (ok) DexTheme.colors.success else MaterialTheme.colorScheme.error) }
+    }
+}
+
+/**
+ * ChatGPT: Sign in with ChatGPT, so its models run on the user's Plus or Pro plan (chatgpt-connect.tsx on the web).
+ * OpenAI only sends the browser back to a 127.0.0.1 address, which doesn't load; the user pastes that address here.
+ * It opens in the full browser rather than a Custom Tab, whose address is harder to copy.
+ */
+@Composable
+private fun ChatGPTConnect(status: ProviderStatus) {
+    val app = LocalApp.current
+    val api = app.graph.repository.api
+    val uriHandler = LocalUriHandler.current
+    val scope = rememberCoroutineScope()
+    var signIn by remember { mutableStateOf<ChatGPTSignInStart?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
+    val callback = rememberTextFieldState()
+
+    fun start() {
+        busy = true
+        message = null
+        scope.launch {
+            runCatching { api.startChatGPTSignIn() }
+                .onSuccess { started ->
+                    callback.setTextAndPlaceCursorAtEnd("")
+                    signIn = started
+                    runCatching { uriHandler.openUri(started.url) }
+                }
+                .onFailure { message = false to (it.message ?: "That didn't work.") }
+            busy = false
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.testTag("connect-chatgpt")) {
+        if (status.connected) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = DexTheme.colors.success, modifier = Modifier.size(20.dp))
+                Text(status.keyHint ?: "Signed in", color = DexTheme.colors.success, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                if (signIn == null) TextButton(onClick = { start() }, enabled = !busy) { Text("Sign in again") }
+                TextButton(onClick = {
+                    signIn = null
+                    message = null
+                    scope.launch { runCatching { api.disconnectChatGPT() }.onFailure { message = false to (it.message ?: "That didn't work.") } }
+                }) { Text("Disconnect") }
+            }
+        }
+        val pending = signIn
+        if (!status.connected && pending == null) {
+            Text(
+                "Use your ChatGPT Plus or Pro plan for GPT models, through OpenAI's Sign in with ChatGPT. Plus plans share their 5-hour limit with every app signed in this way. Dex stores the tokens encrypted in your agent; they're never sent to this device.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Button(onClick = { start() }, enabled = !busy, modifier = Modifier.testTag("connect-chatgpt-start")) {
+                if (busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                Text("Sign in with ChatGPT", modifier = if (busy) Modifier.padding(start = 8.dp) else Modifier)
+            }
+        }
+        if (pending != null) {
+            Text(
+                "Approve Dex on the ChatGPT page that opened in your browser. It then shows a page that can't be reached, at an address starting with ${pending.redirectUri}. That's expected: copy the whole address and paste it here.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            TextButton(onClick = { runCatching { uriHandler.openUri(pending.url) } }, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 0.dp)) {
+                Text("Open the ChatGPT sign-in page ↗")
+            }
+            OutlinedTextField(
+                state = callback,
+                placeholder = { Text("${pending.redirectUri}?code=…") },
+                leadingIcon = { Icon(Icons.Outlined.Link, contentDescription = null) },
+                lineLimits = TextFieldLineLimits.SingleLine,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth().testTag("connect-chatgpt-callback"),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Button(onClick = {
+                    busy = true
+                    message = null
+                    scope.launch {
+                        runCatching { api.finishChatGPTSignIn(callback.text.toString()) }
+                            .onSuccess { result ->
+                                if (result.ok) {
+                                    signIn = null
+                                    callback.setTextAndPlaceCursorAtEnd("")
+                                    message = true to "Signed in. ChatGPT's models are in the model menu."
+                                } else message = false to (result.error ?: "That didn't work.")
+                            }
+                            .onFailure { message = false to (it.message ?: "That didn't work.") }
+                        busy = false
+                    }
+                }, enabled = callback.text.isNotBlank() && !busy, modifier = Modifier.testTag("connect-chatgpt-submit")) {
+                    if (busy) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                        Text("Checking", modifier = Modifier.padding(start = 8.dp))
+                    } else Text("Connect")
+                }
+                TextButton(onClick = { signIn = null; message = null }) { Text("Cancel") }
+            }
+        }
         message?.let { (ok, text) -> Text(text, style = MaterialTheme.typography.bodySmall, color = if (ok) DexTheme.colors.success else MaterialTheme.colorScheme.error) }
     }
 }

@@ -5,10 +5,10 @@
 <p align="center">
   <a href="docs/media/dex-promo.mp4"><img src="docs/media/dex-preview.gif" alt="Dex answering a request with a live chart card" width="100%"></a>
   <br>
-  <sub><b><a href="https://trydex.dev">trydex.dev</a></b> · <b><a href="docs/media/dex-promo.mp4">▶ Watch the 2-minute tour</a></b> · generative UI, ClinePass and OpenCode Go, a cloud VM per chat you can watch while you chat, GitHub repos, skills, MCP, usage, and the phone app</sub>
+  <sub><b><a href="https://trydex.dev">trydex.dev</a></b> · <b><a href="docs/media/dex-promo.mp4">▶ Watch the 2-minute tour</a></b> · generative UI, ClinePass, OpenCode Go, and ChatGPT, a cloud VM per chat you can watch while you chat, GitHub repos, skills, MCP, usage, and the phone app</sub>
 </p>
 
-**Dex** is a personal agent harness. Each user gets an agent in a Cloudflare Durable Object running [Pi Durable](https://developers.cloudflare.com/agents/harnesses/pi/), thinking with models through [ClinePass](https://docs.cline.bot/getting-started/clinepass) or [OpenCode Go](https://opencode.ai/docs/go/), answering with generative UI from [OpenUI](https://www.openui.com/), and doing real work on its own cloud VM from [boat.dev](https://boat.dev). Built with TanStack Start, Effect, and the Cloudflare Agents SDK, installable on your phone, and with native apps for iPhone, iPad, and Android. See it at **[trydex.dev](https://trydex.dev)**, then [deploy your own](#deploy).
+**Dex** is a personal agent harness. Each user gets an agent in a Cloudflare Durable Object running [Pi Durable](https://developers.cloudflare.com/agents/harnesses/pi/), thinking with models through [ClinePass](https://docs.cline.bot/getting-started/clinepass), [OpenCode Go](https://opencode.ai/docs/go/), or a ChatGPT plan ([Sign in with ChatGPT](https://developers.openai.com/siwc/token-sharing-open-source)), answering with generative UI from [OpenUI](https://www.openui.com/), and doing real work on its own cloud VM from [boat.dev](https://boat.dev). Built with TanStack Start, Effect, and the Cloudflare Agents SDK, installable on your phone, and with native apps for iPhone, iPad, and Android. See it at **[trydex.dev](https://trydex.dev)**, then [deploy your own](#deploy).
 
 [Highlights](#highlights) · [Features](#features) · [Repository](#repository) · [Architecture](#architecture) · [Develop](#develop) · [Deploy](#deploy) · [Security](#security) · [Limits](#limits) · [License](#license)
 
@@ -40,7 +40,7 @@
   </tr>
 </table>
 
-- **Two model subscriptions, connect either or both:** ClinePass and OpenCode Go (GLM, Kimi, DeepSeek, Qwen, MiniMax, MiMo, Claude Haiku, GPT Luna, Grok, Gemini, and more, each on the API style Go serves it with). Pick a model and thinking level per chat from one searchable menu with All / ClinePass / OpenCode Go tabs; free models and ones whose provider trains on your prompts are marked, and the model button says which subscription it's on. An agent or default on a subscription you haven't connected runs the same model on one you have. The list keeps itself current: each agent checks OpenCode Go's live model list and [models.dev](https://models.dev) at startup and hourly while you're using it (or now, from the menu's refresh button), so new models appear, retired ones drop out, and a chat on a retired model continues on your default one. Replies stream live, and runs survive restarts, evictions, and deploys.
+- **Three model subscriptions, connect any mix:** ClinePass and OpenCode Go (GLM, Kimi, DeepSeek, Qwen, MiniMax, MiMo, Claude Haiku, GPT Luna, Grok, Gemini, and more, each on the API style Go serves it with), and your ChatGPT Plus or Pro plan through Sign in with ChatGPT (GPT models on OpenAI's Responses API; the list is the one your account offers). Pick a model and thinking level per chat from one searchable menu with All / ClinePass / OpenCode Go tabs; free models and ones whose provider trains on your prompts are marked, and the model button says which subscription it's on. An agent or default on a subscription you haven't connected runs the same model on one you have. The list keeps itself current: each agent checks OpenCode Go's live model list and [models.dev](https://models.dev) at startup and hourly while you're using it (or now, from the menu's refresh button), so new models appear, retired ones drop out, and a chat on a retired model continues on your default one. Replies stream live, and runs survive restarts, evictions, and deploys.
 - **One activity row per reply** folds its thinking, tool calls, and in-between notes. While it works it shows what's really happening: the running tool and its arguments ("Running on the VM… npm test"), or the latest line of the model's thinking. Then it reads "Worked for 36s · 8 tools · 6 thoughts"; tap it to see every step. Screenshots in those steps load when you open them, so long VM chats stay light.
 - **Generative UI** with `render_ui` (OpenUI): cards, stat tiles, tables, charts, and forms. They work without a round trip to the model: filters, tabs, and toggles keep their own state (saved, so a card opens as you left it), `Query()` shows live Dex data (your chats, VMs, usage, workspace files, and read-only peeks into a chat's running VM: files, git status, ports, processes) that refreshes on its own while the card is on screen, and buttons run app operations with `Mutation()` or open a chat, file, or machine. Live data may only read; anything that deletes or changes settings shows Dex's own description of it to confirm first, button actions appear in the Access page's activity, and the chat hears what you did with its UI along with your next message. A UI with mistakes offers **Fix it**. Markdown tables wrap at word boundaries and scroll sideways in their own frame on a phone.
 - **Tools:** `bash` over a persistent `/workspace` (a simulated shell with grep, sed, jq, sqlite3, curl), file tools, `web_search` / `web_fetch` (Workers AI), `schedule_prompt` (one-off or cron), and `use_skill`.
@@ -190,7 +190,7 @@ Neither is in the App Store or Play Store yet: build them from their folders wit
 
 <img src="docs/screenshots/usage.png" alt="The Usage page" width="100%">
 
-- **Usage:** what Dex costs across ClinePass (tokens per model and chat, at list prices), OpenCode Go (tokens at Go's rates, plus your 5-hour, weekly, and monthly allowance read live from OpenCode), boat.dev (VM time), and Cloudflare (from the Analytics API), with a daily chart.
+- **Usage:** what Dex costs across ClinePass and ChatGPT (tokens per model and chat, at list prices), OpenCode Go (tokens at Go's rates, plus your 5-hour, weekly, and monthly allowance read live from OpenCode), boat.dev (VM time), and Cloudflare (from the Analytics API), with a daily chart.
 - **Snappy navigation:** pages render from the agent's synced state, so switching pages never waits on the network.
   - Every page's code is fetched while idle, and the last state, the last sign-in, and the last 8 chats you opened are kept on the device (signing out clears them), so a launch shows them at once while a cold agent wakes; the session is confirmed in the background. The service worker serves the app's shell from its last copy and refreshes it in the background, so a launch doesn't wait on the network (even offline, recent chats open); after a deploy the app moves onto the new build on its own when nothing is typed.
   - Anything still loading shows a skeleton shaped like the page.
@@ -228,6 +228,7 @@ Worker (src/server.ts) ── auth check ──► DexAgent Durable Object, one 
   └─ TanStack Start handler                  ├─ PiHarness → Pi Durable (chats in the object's SQLite)
                                              ├─ ClinePass provider (openai-completions → api.cline.bot)
                                              ├─ OpenCode Go provider (completions, responses, messages, google → opencode.ai)
+                                             ├─ ChatGPT provider (openai-responses → api.openai.com, Sign in with ChatGPT token)
                                              ├─ tools + Workspace (SQLite-backed files, just-bash)
                                              ├─ VmManager → boat.dev VMs (one per chat, plus the MCP VM)
                                              ├─ MCP client (remote servers; local ones via supergateway)
@@ -238,7 +239,7 @@ Worker (src/server.ts) ── auth check ──► DexAgent Durable Object, one 
 In `apps/web/src/`:
 
 - `server/`: Effect services for config, keys (HMAC session signing, AES-GCM), sessions, and GitHub OAuth.
-- `agent/`: the Durable Object and its parts (operations, VMs, MCP and registry search, skills, secrets, queue, media, push, the ClinePass and OpenCode Go providers) and the tools.
+- `agent/`: the Durable Object and its parts (operations, VMs, MCP and registry search, skills, secrets, queue, media, push, the ClinePass, OpenCode Go, and ChatGPT providers) and the tools.
 - `shared/`: model catalog, wire protocol, and shared types.
 - `client/`: the agent connection (`useAgent`), the Pi event reducer, and UI components.
 - `routes/`: pages and auth endpoints.
@@ -320,7 +321,8 @@ cd ../.. && npm run deploy                    # checks operations, builds, and d
 
 ## Limits
 
-- Cline and OpenCode have no third-party OAuth, so users connect with an API key. OpenCode Go's allowance comes from an endpoint its docs don't list (what its console reads); if it changes, the Usage page says so and tokens are still counted.
+- Cline and OpenCode have no third-party OAuth, so users connect with an API key.
+- Sign in with ChatGPT allows only a `127.0.0.1` loopback callback for open-source apps, and Dex runs on Cloudflare, so after approving, the browser lands on a page that doesn't load; you paste its address into Settings and the agent finishes the sign-in. OpenAI offers plan usage to open-source and locally run apps; a paid or hosted service needs [OpenAI's approval](https://developers.openai.com/siwc/token-sharing-open-source) first. OpenCode Go's allowance comes from an endpoint its docs don't list (what its console reads); if it changes, the Usage page says so and tokens are still counted.
 - The `/workspace` shell is simulated (just-bash) and can't install or run programs; real work happens on a VM.
 - boat.dev's free trial allows 2 running VMs at once; stopped VM disks are kept 14 days.
 - boat's Stream player needs Chrome; other browsers (every iPhone and iPad browser) use Selkies. The Selkies desktop keeps the VM's screen size (the agent's screenshots and clicks depend on it) and scales the picture to fit.

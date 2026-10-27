@@ -11,6 +11,8 @@ import kotlinx.serialization.Serializable
 data class DexState(
     val cline: ProviderStatus = ProviderStatus(),
     val opencode: ProviderStatus = ProviderStatus(),
+    /** Sign in with ChatGPT; `keyHint` is the account's email. Missing in state an older agent saved. */
+    val chatgpt: ProviderStatus = ProviderStatus(),
     val boat: BoatStatus = BoatStatus(),
     val settings: DexSettings = DexSettings(),
     val sessions: List<SessionMeta> = emptyList(),
@@ -29,9 +31,13 @@ data class DexState(
 ) {
     /** Which model subscriptions this user can run on. */
     val connectedProviders: Map<ModelProvider, Boolean>
-        get() = mapOf(ModelProvider.ClinePass to cline.connected, ModelProvider.OpenCodeGo to opencode.connected)
+        get() = mapOf(
+            ModelProvider.ClinePass to cline.connected,
+            ModelProvider.OpenCodeGo to opencode.connected,
+            ModelProvider.ChatGPT to chatgpt.connected,
+        )
 
-    val anyProviderConnected: Boolean get() = cline.connected || opencode.connected
+    val anyProviderConnected: Boolean get() = cline.connected || opencode.connected || chatgpt.connected
 
     fun session(id: String): SessionMeta? = sessions.firstOrNull { it.id == id }
     fun agent(id: String?): AgentProfile? = id?.let { key -> agents.firstOrNull { it.id == key } }
@@ -433,6 +439,10 @@ data class SavedArtifact(val url: String, val name: String = "", val kind: Strin
 /** What connecting a key returns (`ConnectClineResult`). */
 @Serializable
 data class ConnectResult(val ok: Boolean = false, val note: String? = null, val error: String? = null, val login: String? = null)
+
+/** A ChatGPT sign-in started: the page to approve on. Approving lands on a 127.0.0.1 address to paste back. */
+@Serializable
+data class ChatGPTSignInStart(val url: String = "", val redirectUri: String = "http://127.0.0.1:1455/auth/callback")
 
 @Serializable
 data class McpConnectResult(val ok: Boolean = false, val id: String? = null, val authUrl: String? = null, val error: String? = null)

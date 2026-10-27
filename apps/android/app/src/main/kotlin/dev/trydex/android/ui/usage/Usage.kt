@@ -134,8 +134,11 @@ fun UsageScreen() {
             val clineConnected = state?.cline?.connected ?: true
             val showCline = clineConnected || report.cline.totalTokens > 0
             val showOpenCode = report.opencode.connected || report.opencode.totalTokens > 0
-            val series = UsageFormat.SERIES.filter { (it.key != "cline" || showCline) && (it.key != "opencode" || showOpenCode) }
-            Tiles(report, range == "month", clineConnected, showCline, showOpenCode)
+            val showChatGPT = report.chatgpt.connected || report.chatgpt.totalTokens > 0
+            val series = UsageFormat.SERIES.filter {
+                (it.key != "cline" || showCline) && (it.key != "opencode" || showOpenCode) && (it.key != "chatgpt" || showChatGPT)
+            }
+            Tiles(report, range == "month", clineConnected, showCline, showOpenCode, showChatGPT)
             DailyUsage(report, series)
             BoxWithConstraints {
                 val two = maxWidth >= 840.dp
@@ -143,6 +146,7 @@ fun UsageScreen() {
                     if (showOpenCode) add { Allowance(report.opencode) }
                     if (showOpenCode) add { ModelUsage("OpenCode Go by model", Color(0xFFC98500), "At Go rates", report.opencode) }
                     if (showCline) add { ModelUsage("ClinePass by model", Color(0xFF3987E5), "List price", report.cline) }
+                    if (showChatGPT) add { ModelUsage("ChatGPT by model", Color(0xFFD55181), "List price", report.chatgpt) }
                     add { Vms(report) }
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -166,7 +170,7 @@ private fun Swatch(color: Color) {
 }
 
 @Composable
-private fun Tiles(report: UsageReport, month: Boolean, clineConnected: Boolean, showCline: Boolean, showOpenCode: Boolean) {
+private fun Tiles(report: UsageReport, month: Boolean, clineConnected: Boolean, showCline: Boolean, showOpenCode: Boolean, showChatGPT: Boolean) {
     val plans = UsageFormat.WORKERS_PAID_FEE + (if (clineConnected) UsageFormat.CLINE_PASS_FEE else 0.0) + (if (report.opencode.connected) UsageFormat.OPENCODE_GO_FEE else 0.0)
     val tiles = buildList<Triple<Color?, Pair<String, String>, List<String>>> {
         add(Triple(null, (if (month) "Estimated bill this month" else "Variable spend") to Format.usd(if (month) plans + report.boat.cost else report.boat.cost),
@@ -175,6 +179,9 @@ private fun Tiles(report: UsageReport, month: Boolean, clineConnected: Boolean, 
         if (showOpenCode) add(Triple(Color(0xFFC98500), "OpenCode Go" to "\$10.00/mo", listOfNotNull(
             "${Format.compact(report.opencode.totalTokens)} tokens · ${Format.usd(report.opencode.listCost)} at Go rates",
             report.opencode.limits?.let { "${Format.jsRound(it.monthly.percent)}% of this month's allowance" },
+        )))
+        if (showChatGPT) add(Triple(Color(0xFFD55181), "ChatGPT" to "${Format.compact(report.chatgpt.totalTokens)} tokens", listOf(
+            "${Format.usd(report.chatgpt.listCost)} at list prices · on your ChatGPT plan, not in the estimate",
         )))
         add(Triple(Color(0xFFD95926), "boat.dev" to Format.usd(report.boat.cost), listOf("${Format.fixed(report.boat.hours, 1)} h of VM time" + if (report.boat.running) " · running now" else "")))
         add(Triple(Color(0xFF199E70), "Cloudflare" to "\$5.00/mo", listOf(when {
@@ -217,7 +224,7 @@ private fun DailyUsage(report: UsageReport, series: List<UsageFormat.Series>) {
     var table by rememberSaveable { mutableStateOf(false) }
     SectionCard(
         title = "Daily usage",
-        info = "ClinePass is shown at what its tokens would cost at API list prices and OpenCode Go at Go's rates; you pay their flat plans. Cloudflare is metered usage at list rates, before the plan's included allowance.",
+        info = "ClinePass and ChatGPT are shown at what their tokens would cost at API list prices and OpenCode Go at Go's rates; you pay their flat plans. Cloudflare is metered usage at list rates, before the plan's included allowance.",
         aside = {
             TextButton(onClick = { table = !table }, modifier = Modifier.testTag("usage-toggle")) {
                 Icon(if (table) Icons.Outlined.BarChart else Icons.Outlined.TableChart, contentDescription = null, modifier = Modifier.size(18.dp))

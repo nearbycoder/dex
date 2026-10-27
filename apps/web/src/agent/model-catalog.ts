@@ -1,11 +1,14 @@
 import { BUILT_IN_MODELS, type DexModel, type ModelApi, type ModelMaker, type ModelProvider } from "~/shared/models"
+import { CHATGPT_BASE_URL } from "./chatgpt"
 import { OPENCODE_GO_BASE_URL } from "./opencode-go"
 
 /**
  * Keeps the model list current. Providers add, rename, and retire models every few weeks (an anonymous preview
- * gets its real name, a preview becomes a release), and a chat on a model that's gone just fails. Two sources:
+ * gets its real name, a preview becomes a release), and a chat on a model that's gone just fails. Three sources:
  *
  * - OpenCode Go's own model list (`/v1/models`, public): which models it serves right now. It decides what's listed.
+ * - The signed-in ChatGPT account's model list (OpenAI's `/v1/models`, read by the agent with its token, when one is
+ *   connected): which chat models the plan offers. It decides ChatGPT's list.
  * - models.dev, the open catalog pi-ai's is generated from: names, limits, prices, input types, thinking levels, and
  *   each OpenCode Go model's API style. Cline publishes no ClinePass list, so its ClinePass section decides those.
  *
@@ -154,6 +157,30 @@ const newClinePassModel = (apiId: string, entry: DevModel, names: ReadonlyMap<st
   }
 }
 
+/** OpenAI lists every model the account can call; chats need the text ones that reason over the Responses API. */
+const CHATGPT_CHAT_MODEL = /^(gpt-\d|o\d)/
+const CHATGPT_NOT_CHAT = /(realtime|audio|tts|transcribe|image|search|embedding|moderation|instruct|chat-latest|-\d{4}-\d{2}-\d{2}$)/
+
+/** A ChatGPT model Dex hasn't seen, from its catalog entry. */
+const newChatGPTModel = (apiId: string, entry: DevModel): DexModel => {
+  const thinkingLevelMap = thinkingMap(entry, "openai-responses")
+  return {
+    id: `chatgpt/${apiId}`,
+    apiId,
+    provider: "chatgpt",
+    name: entry.name ?? apiId,
+    maker: "openai",
+    api: "openai-responses",
+    baseUrl: CHATGPT_BASE_URL,
+    input: input(entry),
+    contextWindow: entry.limit?.context ?? 128_000,
+    maxTokens: entry.limit?.output ?? 32_768,
+    cost: cost(entry.cost),
+    ...(thinkingLevelMap && { thinkingLevelMap }),
+    compat: { supportsStrictMode: true }
+  }
+}
+
 /**
  * One provider's list of what it serves: known models in the built-in order with fresh details, and each new one
  * after the last of its maker's (so the menu stays grouped by maker).
@@ -201,10 +228,11 @@ export const catalogChanges = (before: ReadonlyArray<DexModel>, after: ReadonlyA
 }
 
 /**
- * The models each provider offers now. `current` stands in for a provider whose list can't be read. Throws only
- * when neither source answered, so a refresh that learned nothing doesn't count as checked.
+ * The models each provider offers now. `current` stands in for a provider whose list can't be read, and for ChatGPT
+ * when `chatgptServed` (the signed-in account's model ids) is missing. Throws only when neither public source
+ * answered, so a refresh that learned nothing doesn't count as checked.
  */
-export async function fetchModelCatalog(current: ReadonlyArray<DexModel>): Promise<DexModel[]> {
+export async function fetchModelCatalog(current: ReadonlyArray<DexModel>, chatgptServed?: ReadonlySet<string>): Promise<DexModel[]> {
   const [dev, served] = await Promise.allSettled([
     getJson(MODELS_DEV) as Promise<Readonly<Record<string, DevProvider>>>,
     getJson(OPENCODE_GO_LIST).then((body) => new Set(((body as { data?: Array<{ id?: unknown }> }).data ?? []).map((model) => String(model.id))))
@@ -225,7 +253,16 @@ export async function fetchModelCatalog(current: ReadonlyArray<DexModel>): Promi
   const names = new Map(openCode.map((model) => [slugOf(model), model.name]))
   const cline = clineServed.size > 0 ? providerList("clinepass", clineServed, clineEntries, (apiId, entry) => newClinePassModel(apiId, entry, names)) : keep("clinepass")
 
-  return [...(cline.length > 0 ? cline : keep("clinepass")), ...(openCode.length > 0 ? openCode : keep("opencode-go"))]
+  // ChatGPT: the chat models the account lists that the catalog describes (and the built-in ones it lists).
+  const openAIEntries = catalog["openai"]?.models ?? {}
+  const chatgptChat = new Set([...(chatgptServed ?? [])].filter((id) => CHATGPT_CHAT_MODEL.test(id) && !CHATGPT_NOT_CHAT.test(id)))
+  const chatgpt = chatgptChat.size > 0 ? providerList("chatgpt", chatgptChat, openAIEntries, newChatGPTModel) : keep("chatgpt")
+
+  return [
+    ...(cline.length > 0 ? cline : keep("clinepass")),
+    ...(openCode.length > 0 ? openCode : keep("opencode-go")),
+    ...(chatgpt.length > 0 ? chatgpt : BUILT_IN_MODELS.filter((model) => model.provider === "chatgpt"))
+  ]
 }
 
 /** A short fingerprint of a list, so apps refetch it only when it changed. */

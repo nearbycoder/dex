@@ -26,12 +26,14 @@ import {
   MODELS,
   type ModelCatalog,
   modelsOf,
+  PI_PROVIDER_IDS,
   providerOf,
   setModelCatalog,
   type ThinkingLevel,
   usableModel
 } from "~/shared/models"
 import type {
+  ChatGPTSignInStart,
   ClientMessage,
   ConnectClineResult,
   DexSettings,
@@ -45,7 +47,7 @@ import type {
   GitHubStatus,
   WorkspaceFile
 } from "~/shared/protocol"
-import { MCP_VM, SHARED_VM } from "~/shared/protocol"
+import { connectedProviders, MCP_VM, SHARED_VM } from "~/shared/protocol"
 import { withUiNotes } from "~/shared/ui-notes"
 import { githubFullName, isProjectImage, normalizeRepoUrl, type ProjectDraft, type ProjectImageCandidate, type ProjectProfile, type ProjectRepo, PROJECT_ROOT, repoDirName, repoLabel } from "~/shared/projects"
 import { CLOUDFLARE_RATES, type CloudflareLine, type OpenCodeLimits, type UsageRange, type UsageReport } from "~/shared/usage"
@@ -60,6 +62,7 @@ import { BoatClient, BoatKey, checkBoatKey } from "./boat"
 import { CloudflareAnalytics, type CloudflareDay, dayCost, emptyDay } from "./cloudflare-analytics"
 import { datesBetween, UsageLedger, utcDate } from "./usage-ledger"
 import { CLINEPASS_PROVIDER_ID, ClinePassClient, clinePassProvider } from "./clinepass"
+import { type ChatGPTCredential, ChatGPTClient, type ChatGPTPending, chatGPTProvider, CHATGPT_REDIRECT_URI, parseChatGPTCallback, startChatGPTSignIn } from "./chatgpt"
 import { catalogChanges, catalogVersion, fetchModelCatalog } from "./model-catalog"
 import { OpenCodeGoClient, openCodeGoProvider } from "./opencode-go"
 import { isMcpExtension, type McpCallResult, mcpExtension, mcpExtensionName, type McpToolSpec, toToolResult } from "./mcp-tools"
@@ -91,7 +94,7 @@ import { UiCards } from "./ui-cards"
 import { Workspace, WORKSPACE_ROOT } from "./workspace"
 
 const AgentLayer = (env: object, boatKey: BoatKey["Service"]) =>
-  Layer.mergeAll(Keys.layer, ClinePassClient.layer, OpenCodeGoClient.layer, BoatClient.layer.pipe(Layer.provide(Layer.succeed(BoatKey, boatKey))), CloudflareAnalytics.layer).pipe(
+  Layer.mergeAll(Keys.layer, ClinePassClient.layer, OpenCodeGoClient.layer, ChatGPTClient.layer, BoatClient.layer.pipe(Layer.provide(Layer.succeed(BoatKey, boatKey))), CloudflareAnalytics.layer).pipe(
     Layer.provideMerge(AppConfig.layer),
     Layer.provide(envConfigProvider(env))
   )
@@ -237,13 +240,14 @@ const keyHint = (key: string) => (key.length > 8 ? `${key.slice(0, 4)}…${key.s
 
 /**
  * One per user. Hosts Pi Durable through PiHarness: each chat is a Pi
- * session in this object's SQLite, model calls go to ClinePass or OpenCode Go, and runs
+ * session in this object's SQLite, model calls go to ClinePass, OpenCode Go, or ChatGPT, and runs
  * resume on their own after an eviction or deploy.
  */
 export class DexAgent extends Agent<Env, DexState> {
   initialState: DexState = {
     cline: { connected: false, source: null, keyHint: null, verifiedAt: null },
     opencode: { connected: false, source: null, keyHint: null, verifiedAt: null },
+    chatgpt: { connected: false, source: null, keyHint: null, verifiedAt: null },
     boat: { connected: false, source: null, keyHint: null },
     settings: DEFAULT_SETTINGS,
     sessions: [],
@@ -492,6 +496,7 @@ export class DexAgent extends Agent<Env, DexState> {
     this.startMcp()
     await this.refreshClineStatus()
     this.refreshOpenCodeStatus()
+    this.refreshChatGPTStatus()
     await this.refreshSessions()
     for (const vm of this.vms.values()) void vm.refresh()
     this.ctx.waitUntil(this.reapOrphanVms())
@@ -620,6 +625,71 @@ export class DexAgent extends Agent<Env, DexState> {
     this.publish({ opencode: { connected: shared, source: shared ? "server" : null, keyHint: null, verifiedAt: null } })
   }
 
+  private chatGPTRefreshing?: Promise<ChatGPTCredential | undefined>
+
+  /**
+   * The signed-in ChatGPT account's access token, refreshed first when it's near expiry. Refreshes run one at a time:
+   * each one replaces the refresh token, so two at once would leave one holding a token that's already used.
+   */
+  private async resolveChatGPTToken(): Promise<{ key: string; source: string } | undefined> {
+    const credential = await this.chatGPTCredential()
+    if (!credential) return undefined
+    if (credential.expires > Date.now()) return { key: credential.access, source: "ChatGPT (signed in)" }
+    this.chatGPTRefreshing ??= this.refreshChatGPT().finally(() => {
+      this.chatGPTRefreshing = undefined
+    })
+    const fresh = await this.chatGPTRefreshing
+    return fresh && { key: fresh.access, source: "ChatGPT (signed in)" }
+  }
+
+  private async chatGPTCredential(): Promise<ChatGPTCredential | undefined> {
+    const stored = this.secret("chatgpt_credential")
+    if (!stored) return undefined
+    const json = await this.runtime.runPromise(Keys.use((keys) => keys.decrypt(stored)).pipe(Effect.option))
+    return Option.isSome(json) ? (JSON.parse(json.value) as ChatGPTCredential) : undefined
+  }
+
+  private async refreshChatGPT(): Promise<ChatGPTCredential | undefined> {
+    // Read it again here: a refresh that just finished may have replaced the one the caller saw (and used its token).
+    const credential = await this.chatGPTCredential()
+    if (!credential || credential.expires > Date.now()) return credential
+    const result = await this.runtime.runPromise(
+      ChatGPTClient.use((client) => client.refresh(credential)).pipe(
+        Effect.map((fresh) => ({ ok: true as const, fresh })),
+        Effect.catchTag("ChatGPTError", (error) => Effect.succeed({ ok: false as const, error }))
+      )
+    )
+    if (result.ok) {
+      // A sign-out while this was in flight wins.
+      if (!this.secret("chatgpt_credential")) return undefined
+      await this.saveChatGPTCredential(result.fresh)
+      return result.fresh
+    }
+    // A refresh token that no longer works never will: say so in Settings instead of failing every request.
+    if (result.error.reason === "expired") {
+      this.ctx.storage.sql.exec(`DELETE FROM dex_secrets WHERE name = 'chatgpt_credential'`)
+      this.refreshChatGPTStatus()
+    }
+    throw new Error(result.error.message)
+  }
+
+  private async saveChatGPTCredential(credential: ChatGPTCredential) {
+    const sealed = await this.runtime.runPromise(Keys.use((keys) => keys.encrypt(JSON.stringify(credential))))
+    this.ctx.storage.sql.exec(
+      `INSERT INTO dex_secrets (name, value) VALUES ('chatgpt_credential', ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value`,
+      sealed
+    )
+  }
+
+  private refreshChatGPTStatus() {
+    if (this.secret("chatgpt_credential")) {
+      const verifiedAt = Number(this.secret("chatgpt_verified_at") ?? 0) || null
+      this.publish({ chatgpt: { connected: true, source: "user", keyHint: this.secret("chatgpt_account") ?? null, verifiedAt } })
+      return
+    }
+    this.publish({ chatgpt: { connected: false, source: null, keyHint: null, verifiedAt: null } })
+  }
+
   private secret(name: string): string | undefined {
     return this.ctx.storage.sql.exec<{ value: string }>(`SELECT value FROM dex_secrets WHERE name = ?`, name).toArray()[0]?.value
   }
@@ -675,7 +745,7 @@ export class DexAgent extends Agent<Env, DexState> {
     await conversation.configure(
       {
         // Each model runs on its own subscription, under the id that provider's API uses.
-        model: { provider: findModel(model)?.provider ?? CLINEPASS_PROVIDER_ID, modelId: findModel(model)?.apiId ?? model },
+        model: { provider: PI_PROVIDER_IDS[findModel(model)?.provider ?? "clinepass"], modelId: findModel(model)?.apiId ?? model },
         thinkingLevel: thinking,
         ...(mcpServers && { extensions: { add: mcpServers.map((id) => ({ name: mcpExtensionName(id) })) } })
       },
@@ -849,6 +919,68 @@ export class DexAgent extends Agent<Env, DexState> {
     this.refreshOpenCodeStatus()
   }
 
+  // ── ChatGPT sign-in ───────────────────────────────────────────────────────
+
+  /**
+   * Starts Sign in with ChatGPT: returns the page to approve on. OpenAI then sends the browser to a 127.0.0.1
+   * address that doesn't load (OpenAI allows only loopback callbacks); `finishChatGPTSignIn` takes that address.
+   */
+  @callable()
+  async startChatGPTSignIn(): Promise<ChatGPTSignInStart> {
+    // OpenAI identifies each install by an opaque, stable id.
+    let hostId = this.secret("chatgpt_host_id")
+    const upsert = `INSERT INTO dex_secrets (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value`
+    if (!hostId) {
+      hostId = crypto.randomUUID()
+      this.ctx.storage.sql.exec(upsert, "chatgpt_host_id", hostId)
+    }
+    const { url, pending } = await startChatGPTSignIn(hostId)
+    const sealed = await this.runtime.runPromise(Keys.use((keys) => keys.encrypt(JSON.stringify(pending))))
+    this.ctx.storage.sql.exec(upsert, "chatgpt_pending", sealed)
+    return { url, redirectUri: CHATGPT_REDIRECT_URI }
+  }
+
+  /** Finishes a ChatGPT sign-in with the address the browser landed on after approving. */
+  @callable()
+  async finishChatGPTSignIn(callbackUrl: string): Promise<ConnectClineResult> {
+    if (typeof callbackUrl !== "string" || !callbackUrl.trim()) return { ok: false, error: "Paste the address the browser landed on." }
+    if (callbackUrl.length > 8_192) return { ok: false, error: "That doesn't look like the sign-in address." }
+    const sealed = this.secret("chatgpt_pending")
+    const json = sealed ? await this.runtime.runPromise(Keys.use((keys) => keys.decrypt(sealed)).pipe(Effect.option)) : Option.none()
+    const pending = Option.isSome(json) ? (JSON.parse(json.value) as ChatGPTPending) : undefined
+    if (!pending || Date.now() - pending.startedAt > 30 * 60_000) {
+      return { ok: false, error: "This sign-in has expired. Start again with Sign in with ChatGPT." }
+    }
+    const parsed = parseChatGPTCallback(callbackUrl, pending.state)
+    if (parsed instanceof Error) return { ok: false, error: parsed.message }
+    const result = await this.runtime.runPromise(
+      ChatGPTClient.use((client) => client.exchange(parsed.code, pending.verifier, parsed.clientId)).pipe(
+        Effect.map((credential) => ({ ok: true as const, credential })),
+        Effect.catchTag("ChatGPTError", (error) => Effect.succeed({ ok: false as const, error: error.message }))
+      )
+    )
+    // A code works once, so the pending sign-in is done either way.
+    this.ctx.storage.sql.exec(`DELETE FROM dex_secrets WHERE name = 'chatgpt_pending'`)
+    if (!result.ok) return { ok: false, error: `${result.error} Start again with Sign in with ChatGPT.` }
+    await this.saveChatGPTCredential(result.credential)
+    const upsert = `INSERT INTO dex_secrets (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value`
+    this.ctx.storage.sql.exec(upsert, "chatgpt_account", result.credential.email ?? "ChatGPT account")
+    this.ctx.storage.sql.exec(upsert, "chatgpt_verified_at", String(Date.now()))
+    this.refreshChatGPTStatus()
+    // The plan's own model list replaces the built-in guess.
+    this.ctx.waitUntil(this.refreshModels({ force: true }).catch(() => undefined))
+    return { ok: true }
+  }
+
+  /** Signs out of ChatGPT here: Dex forgets the tokens (the access token lapses within the hour). */
+  @callable()
+  async disconnectChatGPT() {
+    this.ctx.storage.sql.exec(
+      `DELETE FROM dex_secrets WHERE name IN ('chatgpt_credential', 'chatgpt_pending', 'chatgpt_account', 'chatgpt_verified_at')`
+    )
+    this.refreshChatGPTStatus()
+  }
+
   /** OpenCode Go's allowance windows, read live; null with a reason when there's no key or it can't be read. */
   private async openCodeLimits(): Promise<{ limits: OpenCodeLimits | null; error: string | null }> {
     const resolved = await this.resolveOpenCodeKey()
@@ -889,7 +1021,7 @@ export class DexAgent extends Agent<Env, DexState> {
     const fallbackModel = agent?.model ?? this.state.settings.defaultModel
     const picked = options.model && findModel(options.model) ? options.model : findModel(fallbackModel) ? fallbackModel : defaultModelId()
     // An agent or default on a subscription this user hasn't connected runs the same model on one they have.
-    const model = usableModel(picked, { clinepass: this.state.cline.connected, "opencode-go": this.state.opencode.connected })
+    const model = usableModel(picked, connectedProviders(this.state))
     const thinking = clampThinking(findModel(model), options.thinking ?? agent?.thinking ?? this.state.settings.defaultThinking)
     // Picked in the composer, else the agent's, else the servers marked for new chats.
     const mcpServers = this.knownMcpIds(options.mcpServers ?? agent?.mcpServers ?? this.mcpRows().filter((row) => row.defaultOn).map((row) => row.id))
@@ -1108,10 +1240,11 @@ export class DexAgent extends Agent<Env, DexState> {
 
   // ── Model list ────────────────────────────────────────────────────────────
 
-  /** Both subscriptions as pi-ai providers, with the models listed now (installing again replaces them). */
+  /** Every subscription as a pi-ai provider, with the models listed now (installing again replaces them). */
   private installProviders(models: ReturnType<typeof createModels>) {
     models.setProvider(clinePassProvider(() => this.resolveClineKey()))
     models.setProvider(openCodeGoProvider(() => this.resolveOpenCodeKey()))
+    models.setProvider(chatGPTProvider(() => this.resolveChatGPTToken()))
   }
 
   private storedCatalog(): (ModelCatalog & { build?: string }) | undefined {
@@ -1127,9 +1260,10 @@ export class DexAgent extends Agent<Env, DexState> {
   private modelsAttemptedAt = 0
 
   /**
-   * Looks up what models ClinePass and OpenCode Go offer now (src/agent/model-catalog.ts), at most hourly unless
-   * forced, and puts the result in place: chats and title writing use it from their next request, open apps fetch it,
-   * and a default model that's been retired moves to one that's listed. A failed lookup waits 10 minutes to retry.
+   * Looks up what models ClinePass, OpenCode Go, and the signed-in ChatGPT plan offer now (src/agent/model-catalog.ts),
+   * at most hourly unless forced, and puts the result in place: chats and title writing use it from their next request,
+   * open apps fetch it, and a default model that's been retired moves to one that's listed. A failed lookup waits 10
+   * minutes to retry.
    */
   private async refreshModels({ force = false } = {}): Promise<{ added: string[]; retired: string[] }> {
     if (this.modelsRefresh) return this.modelsRefresh
@@ -1139,7 +1273,7 @@ export class DexAgent extends Agent<Env, DexState> {
     this.modelsAttemptedAt = Date.now()
     this.modelsRefresh = (async () => {
       const before = [...MODELS]
-      const models = await fetchModelCatalog(before)
+      const models = await fetchModelCatalog(before, await this.chatGPTModelIds())
       const catalog = { version: catalogVersion(models), updatedAt: Date.now(), models }
       this.ctx.storage.sql.exec(
         `INSERT OR REPLACE INTO dex_meta (key, value) VALUES ('model_catalog', ?)`,
@@ -1157,10 +1291,17 @@ export class DexAgent extends Agent<Env, DexState> {
     return this.modelsRefresh
   }
 
+  /** The models the signed-in ChatGPT account lists; undefined when none is signed in or OpenAI can't be read. */
+  private async chatGPTModelIds(): Promise<ReadonlySet<string> | undefined> {
+    const token = await this.resolveChatGPTToken().catch(() => undefined)
+    if (!token) return undefined
+    return this.runtime.runPromise(ChatGPTClient.use((client) => client.models(token.key)).pipe(Effect.option)).then(Option.getOrUndefined)
+  }
+
   /** What a chat on a retired model continues with: your default model, on a subscription you've connected. */
   private replacementModel() {
     const preferred = findModel(this.state.settings.defaultModel) ? this.state.settings.defaultModel : defaultModelId()
-    return usableModel(preferred, { clinepass: this.state.cline.connected, "opencode-go": this.state.opencode.connected })
+    return usableModel(preferred, connectedProviders(this.state))
   }
 
   /** The current model list, for apps (state carries only its version, so every state change doesn't resend it). */
@@ -1192,16 +1333,15 @@ export class DexAgent extends Agent<Env, DexState> {
       .join("\n")
       .slice(0, 5_000)
 
-    const connected = { clinepass: this.state.cline.connected, "opencode-go": this.state.opencode.connected }
+    const connected = connectedProviders(this.state)
     const session = this.state.sessions.find((candidate) => candidate.id === sessionId)
     const own = providerOf(session?.model ?? DEFAULT_MODEL_ID)
-    const provider = connected[own] ? own : connected.clinepass ? "clinepass" : connected["opencode-go"] ? "opencode-go" : null
-    if (!provider) throw new Error("Connect ClinePass or OpenCode Go in Settings first.")
-    // DeepSeek V4.1 Flash, or the cheapest model the subscription has if that one's been retired.
-    const fast =
-      findModel(provider === "clinepass" ? "cline-pass/deepseek-v4.1-flash" : "opencode-go/deepseek-v4.1-flash") ??
-      modelsOf(provider).toSorted((a, b) => a.cost.output - b.cost.output)[0]
-    const model = fast && this.models().getModel(provider === "clinepass" ? CLINEPASS_PROVIDER_ID : "opencode-go", fast.apiId)
+    const provider = connected[own] ? own : (Object.keys(connected) as Array<keyof typeof connected>).find((candidate) => connected[candidate])
+    if (!provider) throw new Error("Connect ClinePass, OpenCode Go, or ChatGPT in Settings first.")
+    // A fast, cheap model per subscription, or its cheapest one if that's been retired.
+    const preferred = { clinepass: "cline-pass/deepseek-v4.1-flash", "opencode-go": "opencode-go/deepseek-v4.1-flash", chatgpt: "chatgpt/gpt-6-luna" }[provider]
+    const fast = findModel(preferred) ?? modelsOf(provider).toSorted((a, b) => a.cost.output - b.cost.output)[0]
+    const model = fast && this.models().getModel(PI_PROVIDER_IDS[provider], fast.apiId)
     if (!model) throw new Error("The title model isn't available.")
 
     const reply = await this.models().completeSimple(
@@ -1948,7 +2088,7 @@ export class DexAgent extends Agent<Env, DexState> {
     return entry
   }
 
-  /** Spending across ClinePass, OpenCode Go, boat.dev, and Cloudflare for a period. */
+  /** Spending across ClinePass, OpenCode Go, ChatGPT, boat.dev, and Cloudflare for a period. */
   @callable()
   async usageReport(range: UsageRange): Promise<UsageReport> {
     const DAY = 86_400_000
@@ -1967,6 +2107,8 @@ export class DexAgent extends Agent<Env, DexState> {
     const opencodeTokens = this.ledger.modelUsage("opencode-go", since, until, titles)
     const opencodeDaily = this.ledger.modelDaily("opencode-go", since, until)
     const opencodeLimits = await this.openCodeLimits()
+    const chatgptTokens = this.ledger.modelUsage("chatgpt", since, until, titles)
+    const chatgptDaily = this.ledger.modelDaily("chatgpt", since, until)
     const { usage: boat, daily: boatDaily } = this.ledger.boatUsage(since, until)
 
     // Cloudflare keeps these analytics for about a month.
@@ -1995,6 +2137,7 @@ export class DexAgent extends Agent<Env, DexState> {
       until,
       cline,
       opencode: { ...opencodeTokens, connected: this.state.opencode.connected, limits: opencodeLimits.limits, limitsError: opencodeLimits.error },
+      chatgpt: { ...chatgptTokens, connected: this.state.chatgpt.connected },
       boat,
       cloudflare: {
         configured,
@@ -2009,6 +2152,7 @@ export class DexAgent extends Agent<Env, DexState> {
           date,
           cline: clineDaily.get(date) ?? 0,
           opencode: opencodeDaily.get(date) ?? 0,
+          chatgpt: chatgptDaily.get(date) ?? 0,
           boat: boatDaily.get(date) ?? 0,
           cloudflare: day ? dayCost(day) : 0
         }

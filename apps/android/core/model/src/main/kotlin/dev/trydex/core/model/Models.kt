@@ -7,13 +7,16 @@ import kotlinx.serialization.json.JsonObject
 import kotlin.math.abs
 import kotlin.math.roundToLong
 
-/** The models Dex runs, from ClinePass and OpenCode Go (apps/web/src/shared/models.ts). */
+/** The models Dex runs, from ClinePass, OpenCode Go, and ChatGPT (apps/web/src/shared/models.ts). */
 @Serializable
-enum class ModelProvider(val displayName: String, val short: String) {
-    @SerialName("clinepass") ClinePass("ClinePass", "Cline"),
-    @SerialName("opencode-go") OpenCodeGo("OpenCode Go", "OpenCode");
+enum class ModelProvider(val id: String, val displayName: String, val short: String) {
+    @SerialName("clinepass") ClinePass("clinepass", "ClinePass", "Cline"),
+    @SerialName("opencode-go") OpenCodeGo("opencode-go", "OpenCode Go", "OpenCode"),
+    @SerialName("chatgpt") ChatGPT("chatgpt", "ChatGPT", "ChatGPT");
 
-    val id: String get() = if (this == ClinePass) "clinepass" else "opencode-go"
+    companion object {
+        fun fromId(id: String): ModelProvider? = entries.firstOrNull { it.id == id }
+    }
 }
 
 /** Who makes each model family; `logo` is the SVG under /public/models on the web (bundled in the app). */
@@ -62,7 +65,7 @@ data class DexModel(
     val thinkingLevelMap: JsonObject? = null,
     val trainsOnData: Boolean = false,
 ) {
-    val modelProvider: ModelProvider get() = if (provider == "opencode-go") ModelProvider.OpenCodeGo else ModelProvider.ClinePass
+    val modelProvider: ModelProvider get() = ModelProvider.fromId(provider) ?: ModelProvider.ClinePass
     val modelMaker: ModelMaker? get() = ModelMaker.fromId(maker)
     val hasVision: Boolean get() = "image" in input
     val free: Boolean get() = cost.input == 0.0 && cost.output == 0.0
@@ -91,7 +94,7 @@ class ModelRegistry(initial: List<DexModel> = BuiltInModels.list) {
      * doesn't know are left out, and an empty list changes nothing.
      */
     fun install(catalog: ModelCatalog): Boolean {
-        val known = catalog.models.filter { ModelMaker.fromId(it.maker) != null && (it.provider == "clinepass" || it.provider == "opencode-go") }
+        val known = catalog.models.filter { ModelMaker.fromId(it.maker) != null && ModelProvider.fromId(it.provider) != null }
         if (catalog.updatedAt < updatedAt || known.isEmpty()) return false
         models = known
         updatedAt = catalog.updatedAt
@@ -106,9 +109,13 @@ class ModelRegistry(initial: List<DexModel> = BuiltInModels.list) {
     /** The default model, or the first one listed if the provider retired it. */
     fun defaultModelId(): String = if (find(DEFAULT_MODEL_ID) != null) DEFAULT_MODEL_ID else models.firstOrNull()?.id ?: DEFAULT_MODEL_ID
 
-    /** Which subscription a chat's model runs on (an unlisted id counts as ClinePass, as on the web). */
+    /** Which subscription a chat's model runs on (an unlisted id goes by its prefix, else ClinePass, as on the web). */
     fun providerOf(id: String): ModelProvider =
-        find(id)?.modelProvider ?: if (id.startsWith("opencode-go/")) ModelProvider.OpenCodeGo else ModelProvider.ClinePass
+        find(id)?.modelProvider ?: when {
+            id.startsWith("opencode-go/") -> ModelProvider.OpenCodeGo
+            id.startsWith("chatgpt/") -> ModelProvider.ChatGPT
+            else -> ModelProvider.ClinePass
+        }
 
     /** The same model on the other provider, when it offers it. */
     fun counterpart(id: String, provider: ModelProvider): DexModel? {

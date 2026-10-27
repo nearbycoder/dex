@@ -28,7 +28,7 @@ import { timeAgo } from "~/client/lib/format"
 import { useNav } from "~/client/lib/mobile-nav"
 import { UpdateButton } from "~/client/lib/updates"
 import { findModel } from "~/shared/models"
-import type { SessionMeta } from "~/shared/protocol"
+import { connectedProviders, type SessionMeta } from "~/shared/protocol"
 import { AgentAvatar } from "./agent-avatar"
 import { mcpNeedsAttention } from "./mcp-picker"
 import { ModelLogo } from "./model-logo"
@@ -76,7 +76,7 @@ export function Sidebar() {
   const vmChanging = state?.vms.some((vm) => vm.status === "starting" || vm.status === "stopping") ?? false
   const mcpAttention = state?.mcp.some(mcpNeedsAttention) ?? false
   // No model subscription at all: nothing can answer.
-  const clineMissing = state ? !state.cline.connected && !state.opencode.connected : false
+  const clineMissing = state ? !Object.values(connectedProviders(state)).some(Boolean) : false
 
   // Switching sidebars keeps the phone drawer open, so you can go on from there.
   const openSettings = () => {
@@ -96,7 +96,7 @@ export function Sidebar() {
       to: "/settings",
       label: "General",
       icon: <SlidersHorizontal className="size-4" />,
-      hint: clineMissing && <Hint dot="bg-amber-500" title="Connect ClinePass or OpenCode Go" />
+      hint: clineMissing && <Hint dot="bg-amber-500" title="Connect a model subscription" />
     },
     { to: "/notifications", label: "Notifications", icon: <Bell className="size-4" /> },
     {
@@ -223,7 +223,7 @@ export function Sidebar() {
               {running > 0 ? (
                 <Hint count={running} dot="bg-emerald-500" title={`${running} VM${running === 1 ? "" : "s"} running`} />
               ) : (
-                (clineMissing || mcpAttention) && <Hint dot="bg-amber-500" title={clineMissing ? "Connect ClinePass or OpenCode Go" : "A server needs attention"} />
+                (clineMissing || mcpAttention) && <Hint dot="bg-amber-500" title={clineMissing ? "Connect a model subscription" : "A server needs attention"} />
               )}
               <ChevronRight className={`size-4 text-zinc-600 ${running > 0 || clineMissing || mcpAttention ? "" : "ml-auto"}`} />
             </button>

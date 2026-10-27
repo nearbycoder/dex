@@ -107,7 +107,8 @@ fun ModelPicker(model: String, thinking: ThinkingLevel, onChange: (String, Think
     @Suppress("UNUSED_VARIABLE") val redraw = modelsVersion
     val current = registry.find(model)
     var open by remember { mutableStateOf(false) }
-    val both = state?.cline?.connected == true && state?.opencode?.connected == true
+    // With more than one subscription connected, the same model can come from several: say which.
+    val both = (state?.connectedProviders?.values?.count { it } ?: 0) > 1
     ToolbarButton(onClick = { open = true }, modifier = Modifier.testTag("model-picker")) {
         ModelLogo(model, registry, size = 16.dp)
         Text(current?.name ?: model, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = if (compact) 120.dp else 180.dp))
@@ -149,7 +150,7 @@ private fun ThinkingPicker(thinking: ThinkingLevel, levels: List<ThinkingLevel>,
     }
 }
 
-/** The searchable model menu: All / ClinePass / OpenCode Go, with badges, grouped by subscription. */
+/** The searchable model menu: All / ClinePass / OpenCode Go / ChatGPT, with badges, grouped by subscription. */
 @Composable
 private fun ModelSheet(selected: String, onDismiss: () -> Unit, onSelect: (String) -> Unit) {
     val app = LocalApp.current
@@ -158,7 +159,7 @@ private fun ModelSheet(selected: String, onDismiss: () -> Unit, onSelect: (Strin
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val query = rememberTextFieldState()
     var tab by remember { mutableStateOf<ModelProvider?>(null) }
-    val connected = mapOf(ModelProvider.ClinePass to (state?.cline?.connected ?: true), ModelProvider.OpenCodeGo to (state?.opencode?.connected ?: true))
+    val connected = state?.connectedProviders ?: ModelProvider.entries.associateWith { true }
     val providers = ModelProvider.entries.sortedByDescending { connected[it] == true }
     val needle = query.text.toString().trim().lowercase()
     fun matches(model: DexModel) = (tab == null || model.modelProvider == tab) &&

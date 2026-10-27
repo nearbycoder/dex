@@ -52,6 +52,7 @@ class GoldenTest {
             mapOf(
                 ModelProvider.ClinePass to (connection["clinepass"].bool == true),
                 ModelProvider.OpenCodeGo to (connection["opencode-go"].bool == true),
+                ModelProvider.ChatGPT to (connection["chatgpt"].bool == true),
             )
         }
         for (case in golden.items("models")) {
@@ -73,6 +74,9 @@ class GoldenTest {
         assertThat(supportedThinkingLevels(registry.find("nope/none"))).isEmpty()
         unknown["usable"]!!.jsonArray.forEachIndexed { index, expected ->
             assertThat(registry.usableModel("opencode-go/retired", connections[index])).isEqualTo(expected.str)
+        }
+        unknown["chatgptUsable"]!!.jsonArray.forEachIndexed { index, expected ->
+            assertThat(registry.usableModel("chatgpt/retired", connections[index])).isEqualTo(expected.str)
         }
     }
 

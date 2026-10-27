@@ -36,6 +36,8 @@ import Testing
         let state = try JSONDecoder.dex.decode(DexState.self, from: Data(json.utf8))
         #expect(state.cline.connected)
         #expect(state.opencode.connected == false)
+        #expect(state.chatgpt.connected == false)
+        #expect(state.connectedProviders["chatgpt"] == false)
         #expect(state.vms.isEmpty)
         #expect(state.settings.vmSize == "small")
         #expect(state.settings.vmMinutes == 5)
@@ -174,6 +176,8 @@ import Testing
         #expect(catalog.usableModel("cline-pass/glm-5.3", connected: ["clinepass": false, "opencode-go": true]) == "opencode-go/glm-5.3")
         #expect(catalog.usableModel("cline-pass/kimi-k3", connected: ["opencode-go": true]) == "opencode-go/glm-5.3")
         #expect(catalog.provider(of: "opencode-go/unknown") == "opencode-go")
+        #expect(catalog.usableModel("cline-pass/glm-5.3", connected: ["clinepass": false, "opencode-go": false, "chatgpt": true]) == "chatgpt/gpt-6.1-sol")
+        #expect(catalog.provider(of: "chatgpt/retired") == "chatgpt")
     }
 
     @Test func catalogRoundTripKeepsNulls() throws {

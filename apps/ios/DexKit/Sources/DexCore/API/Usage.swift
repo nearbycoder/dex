@@ -29,18 +29,21 @@ public struct DailySpend: Codable, Sendable, Hashable, Identifiable {
     public var date: String
     public var cline: Double
     public var opencode: Double
+    /// At API list prices. Missing from an older agent's report.
+    public var chatgpt: Double?
     public var boat: Double
     public var cloudflare: Double
     public var id: String { date }
 
-    public init(date: String, cline: Double = 0, opencode: Double = 0, boat: Double = 0, cloudflare: Double = 0) {
-        self.date = date; self.cline = cline; self.opencode = opencode; self.boat = boat; self.cloudflare = cloudflare
+    public init(date: String, cline: Double = 0, opencode: Double = 0, chatgpt: Double? = nil, boat: Double = 0, cloudflare: Double = 0) {
+        self.date = date; self.cline = cline; self.opencode = opencode; self.chatgpt = chatgpt; self.boat = boat; self.cloudflare = cloudflare
     }
 
     public func value(_ series: UsageSeries) -> Double {
         switch series {
         case .cline: cline
         case .opencode: opencode
+        case .chatgpt: chatgpt ?? 0
         case .boat: boat
         case .cloudflare: cloudflare
         }
@@ -60,7 +63,7 @@ public struct DailySpend: Codable, Sendable, Hashable, Identifiable {
 
 /// The services in the daily chart, in the web's fixed order.
 public enum UsageSeries: String, Sendable, Hashable, CaseIterable, Identifiable {
-    case cline, boat, cloudflare, opencode
+    case cline, boat, cloudflare, opencode, chatgpt
     public var id: String { rawValue }
     public var label: String {
         switch self {
@@ -68,6 +71,7 @@ public enum UsageSeries: String, Sendable, Hashable, CaseIterable, Identifiable 
         case .boat: "boat.dev"
         case .cloudflare: "Cloudflare"
         case .opencode: "OpenCode Go"
+        case .chatgpt: "ChatGPT"
         }
     }
     public var note: String {
@@ -76,6 +80,7 @@ public enum UsageSeries: String, Sendable, Hashable, CaseIterable, Identifiable 
         case .boat: "VM time"
         case .cloudflare: "metered"
         case .opencode: "at Go rates"
+        case .chatgpt: "at API list prices"
         }
     }
 }
@@ -114,7 +119,7 @@ public struct ModelUsage: Codable, Sendable, Hashable {
     public var listCost: Double
     public var byModel: [ModelUsageRow]
     public var byChat: [ChatUsageRow]
-    /// OpenCode Go only.
+    /// OpenCode Go and ChatGPT only.
     public var connected: Bool?
     public var limits: OpenCodeLimits?
     public var limitsError: String?
@@ -266,17 +271,19 @@ public struct UsageReport: Codable, Sendable, Hashable {
     public var cline: ModelUsage
     /// Its token costs are at Go's rates, which is what counts against the plan's allowance.
     public var opencode: ModelUsage
+    /// Tokens on the ChatGPT plan, at API list prices. Empty in an older agent's report.
+    public var chatgpt: ModelUsage
     public var boat: BoatUsage
     public var cloudflare: CloudflareUsage
     public var daily: [DailySpend]
 
-    public init(range: UsageRange, since: Double, until: Double, cline: ModelUsage = .init(), opencode: ModelUsage = .init(), boat: BoatUsage = .init(),
-                cloudflare: CloudflareUsage = .init(), daily: [DailySpend] = []) {
-        self.range = range; self.since = since; self.until = until; self.cline = cline; self.opencode = opencode; self.boat = boat
+    public init(range: UsageRange, since: Double, until: Double, cline: ModelUsage = .init(), opencode: ModelUsage = .init(), chatgpt: ModelUsage = .init(),
+                boat: BoatUsage = .init(), cloudflare: CloudflareUsage = .init(), daily: [DailySpend] = []) {
+        self.range = range; self.since = since; self.until = until; self.cline = cline; self.opencode = opencode; self.chatgpt = chatgpt; self.boat = boat
         self.cloudflare = cloudflare; self.daily = daily
     }
 
-    enum CodingKeys: String, CodingKey { case range, since, until, cline, opencode, boat, cloudflare, daily }
+    enum CodingKeys: String, CodingKey { case range, since, until, cline, opencode, chatgpt, boat, cloudflare, daily }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         range = c.value(.range, default: .month)
@@ -284,6 +291,7 @@ public struct UsageReport: Codable, Sendable, Hashable {
         until = c.value(.until, default: 0)
         cline = c.value(.cline, default: .init())
         opencode = c.value(.opencode, default: .init())
+        chatgpt = c.value(.chatgpt, default: .init())
         boat = c.value(.boat, default: .init())
         cloudflare = c.value(.cloudflare, default: .init())
         daily = c.value(.daily, default: [])
@@ -293,6 +301,7 @@ public struct UsageReport: Codable, Sendable, Hashable {
     public struct Summary: Sendable, Hashable {
         public var showCline: Bool
         public var showOpenCode: Bool
+        public var showChatGPT: Bool
         /// The chart's series: a subscription appears once it's connected or was used in the period.
         public var series: [UsageSeries]
         /// The month's plan fees.
@@ -306,11 +315,12 @@ public struct UsageReport: Codable, Sendable, Hashable {
     public func summary(clineConnected: Bool) -> Summary {
         let showCline = clineConnected || cline.totalTokens > 0
         let showOpenCode = opencode.connected == true || opencode.totalTokens > 0
-        let series = UsageSeries.allCases.filter { $0 == .cline ? showCline : $0 == .opencode ? showOpenCode : true }
+        let showChatGPT = chatgpt.connected == true || chatgpt.totalTokens > 0
+        let series = UsageSeries.allCases.filter { $0 == .cline ? showCline : $0 == .opencode ? showOpenCode : $0 == .chatgpt ? showChatGPT : true }
         let plans = PlanFees.workersPaid + (clineConnected ? PlanFees.clinePass : 0) + (opencode.connected == true ? PlanFees.openCodeGo : 0)
         let isMonth = range == .month
         return Summary(
-            showCline: showCline, showOpenCode: showOpenCode, series: series, plans: plans,
+            showCline: showCline, showOpenCode: showOpenCode, showChatGPT: showChatGPT, series: series, plans: plans,
             headline: isMonth ? plans + boat.cost : boat.cost,
             headlineLabel: isMonth ? "Estimated bill this month" : "Variable spend",
             headlineDetail: isMonth ? "Plans \(UsageFormat.usd(plans)) + boat.dev \(UsageFormat.usd(boat.cost))" : "boat.dev VM time. Plans add \(UsageFormat.usd(plans))/month."

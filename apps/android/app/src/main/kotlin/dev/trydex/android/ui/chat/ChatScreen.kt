@@ -80,7 +80,6 @@ import dev.trydex.android.ui.nav.ChatMachine
 import dev.trydex.android.ui.nav.GeneralSettings
 import dev.trydex.android.ui.nav.ProjectEditor
 import dev.trydex.android.ui.theme.DexTheme
-import dev.trydex.core.model.ModelProvider
 import dev.trydex.core.model.SessionMeta
 import dev.trydex.core.model.VmInfo
 import dev.trydex.core.model.VmStatus
@@ -203,7 +202,7 @@ private fun queueActions(sessionId: String, app: dev.trydex.android.ui.AppContex
 private fun ProviderWarning(session: SessionMeta, state: dev.trydex.core.model.DexState) {
     val app = LocalApp.current
     val provider = app.graph.models.providerOf(session.model)
-    val connected = if (provider == ModelProvider.OpenCodeGo) state.opencode.connected else state.cline.connected
+    val connected = state.connectedProviders[provider] == true
     if (connected) return
     Surface(
         onClick = { app.navigator.open(GeneralSettings) },

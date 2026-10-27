@@ -398,6 +398,19 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
         }
         "disconnectCline" -> { update { it.copy(cline = it.cline.copy(connected = false, source = null, keyHint = null)) }; null }
         "disconnectOpenCode" -> { update { it.copy(opencode = it.opencode.copy(connected = false, source = null, keyHint = null)) }; null }
+        "startChatGPTSignIn" -> buildJsonObject {
+            put("url", "https://auth.openai.com/api/accounts/authorize?client_id=dynamic_agent_client&state=fake")
+            put("redirectUri", "http://127.0.0.1:1455/auth/callback")
+        }
+        "finishChatGPTSignIn" -> {
+            val address = args.s(0).trim()
+            if (!address.contains("code=")) buildJsonObject { put("ok", false); put("error", "That address has no sign-in code. Paste the one the browser landed on after you approved.") }
+            else {
+                update { it.copy(chatgpt = it.chatgpt.copy(connected = true, source = "user", keyHint = "you@example.com", verifiedAt = clock())) }
+                buildJsonObject { put("ok", true) }
+            }
+        }
+        "disconnectChatGPT" -> { update { it.copy(chatgpt = it.chatgpt.copy(connected = false, source = null, keyHint = null)) }; null }
         "disconnectBoat" -> {
             if (state.vms.any { it.id != null }) buildJsonObject { put("ok", false); put("error", "Delete your ${state.vms.size} VMs on the Machines page first: they belong to the boat.dev account you're using now.") }
             else { update { it.copy(boat = it.boat.copy(connected = false, source = null, keyHint = null), vmConfigured = false) }; buildJsonObject { put("ok", true) } }

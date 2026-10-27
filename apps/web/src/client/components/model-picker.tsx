@@ -14,6 +14,7 @@ import {
   supportedThinkingLevels,
   type ThinkingLevel
 } from "~/shared/models"
+import { connectedProviders } from "~/shared/protocol"
 import { ModelLogo } from "./model-logo"
 
 const selectClass =
@@ -46,7 +47,9 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
   const current = findModel(props.model)
   const { state, stub, connected: online } = useDex()
   const [checking, setChecking] = useState(false)
-  const connected: Record<ModelProvider, boolean> = { clinepass: state?.cline.connected ?? true, "opencode-go": state?.opencode.connected ?? true }
+  const connected: Record<ModelProvider, boolean> = state
+    ? connectedProviders(state)
+    : { clinepass: true, "opencode-go": true, chatgpt: true }
   // Connected subscriptions first; a model matches on its name, maker, or subscription.
   const providers = (Object.keys(MODEL_PROVIDERS) as ModelProvider[]).sort((a, b) => Number(connected[b]) - Number(connected[a]))
   const needle = query.trim().toLowerCase()
@@ -89,8 +92,8 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
       >
         <ModelLogo modelId={props.model} className="size-3.5" />
         <span className="min-w-0 truncate">{current?.name ?? props.model}</span>
-        {/* With both subscriptions connected, the same model can come from either: say which. */}
-        {current && connected.clinepass && connected["opencode-go"] && (
+        {/* With more than one subscription connected, the same model can come from several: say which. */}
+        {current && Object.values(connected).filter(Boolean).length > 1 && (
           <span className="shrink-0 rounded bg-zinc-800 px-1 text-[10px] text-zinc-400">{MODEL_PROVIDERS[current.provider].short}</span>
         )}
         {hasVision(current) && <Eye className="size-3.5 shrink-0 text-emerald-400" />}

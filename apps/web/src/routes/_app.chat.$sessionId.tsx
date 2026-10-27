@@ -16,6 +16,7 @@ import { ChatSecretsContext } from "~/client/lib/chat-secrets"
 import { useDex, useTranscript } from "~/client/lib/dex"
 import { MenuButton } from "~/client/lib/mobile-nav"
 import { MODEL_PROVIDERS, providerOf } from "~/shared/models"
+import { connectedProviders } from "~/shared/protocol"
 
 export const Route = createFileRoute("/_app/chat/$sessionId")({ component: Chat })
 
@@ -212,7 +213,7 @@ function Chat() {
       </ChatSecretsContext.Provider>
 
       <div className="mx-auto w-full max-w-3xl px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:px-4 md:pb-[max(1rem,env(safe-area-inset-bottom))]">
-        {state && session && !(providerOf(session.model) === "opencode-go" ? state.opencode.connected : state.cline.connected) && (
+        {state && session && !connectedProviders(state)[providerOf(session.model)] && (
           <Link to="/settings" className="mb-2 flex items-center gap-2 text-xs text-amber-300 hover:underline">
             <KeyRound className="size-3.5" /> Connect {MODEL_PROVIDERS[providerOf(session.model)].name} to get answers, or pick another model
           </Link>

@@ -65,7 +65,7 @@ struct SettingsView: View {
 
     private var subscriptionsDetail: String? {
         guard let state = client.state else { return nil }
-        let names = [state.cline.connected ? "ClinePass" : nil, state.opencode.connected ? "OpenCode Go" : nil].compactMap { $0 }
+        let names = [state.cline.connected ? "ClinePass" : nil, state.opencode.connected ? "OpenCode Go" : nil, state.chatgpt.connected ? "ChatGPT" : nil].compactMap { $0 }
         return names.isEmpty ? "None" : names.joined(separator: ", ")
     }
 

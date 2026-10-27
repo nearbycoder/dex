@@ -36,11 +36,11 @@ struct NewChatView: View {
                     .accessibilityAddTraits(.isHeader)
                     .accessibilityIdentifier("newchat.heading")
 
-                if let state, !state.cline.connected, !state.opencode.connected {
+                if let state, !state.anyProviderConnected {
                     Button {
                         router.openSettings(.models)
                     } label: {
-                        Label("Connect ClinePass or OpenCode Go in Settings so Dex can think.", systemImage: "key.fill")
+                        Label("Connect ClinePass, OpenCode Go, or ChatGPT in Settings so Dex can think.", systemImage: "key.fill")
                             .font(.subheadline)
                             .multilineTextAlignment(.leading)
                             .frame(maxWidth: .infinity, alignment: .leading)

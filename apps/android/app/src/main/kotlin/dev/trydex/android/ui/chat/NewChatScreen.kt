@@ -78,13 +78,12 @@ import dev.trydex.android.ui.nav.ProjectList
 import dev.trydex.android.ui.theme.DexTheme
 import dev.trydex.core.model.AgentProfile
 import dev.trydex.core.model.DexState
-import dev.trydex.core.model.ModelProvider
 import dev.trydex.core.model.ProjectProfile
 import dev.trydex.core.model.ThinkingLevel
 import dev.trydex.core.model.clampThinking
 import kotlinx.coroutines.launch
 
-private fun connected(state: DexState) = mapOf(ModelProvider.ClinePass to state.cline.connected, ModelProvider.OpenCodeGo to state.opencode.connected)
+private fun connected(state: DexState) = state.connectedProviders
 
 /** "New" in the agent catalog: a fresh agent or project. */
 private const val NEW = "new"
@@ -120,7 +119,7 @@ fun NewChatScreen(route: NewChat) {
     val mcp = mcpChoice ?: current?.mcp.orEmpty().filter { it.defaultOn }.map { it.id }
 
     // With no agent, the model follows Settings.
-    LaunchedEffect(current?.settings?.defaultModel, current?.settings?.defaultThinking, current?.cline?.connected, current?.opencode?.connected, agentId) {
+    LaunchedEffect(current?.settings?.defaultModel, current?.settings?.defaultThinking, current?.cline?.connected, current?.opencode?.connected, current?.chatgpt?.connected, agentId) {
         val s = current ?: return@LaunchedEffect
         if (agentId == null) {
             model = registry.usableModel(s.settings.defaultModel, connected(s))
@@ -210,7 +209,7 @@ fun NewChatScreen(route: NewChat) {
                             textAlign = TextAlign.Center,
                             modifier = Modifier.fillMaxWidth().semantics { heading() }.testTag("new-chat-headline"),
                         )
-                        if (current != null && !current.cline.connected && !current.opencode.connected) {
+                        if (current != null && !current.anyProviderConnected) {
                             Surface(
                                 onClick = { app.navigator.open(GeneralSettings) },
                                 shape = RoundedCornerShape(20.dp),
@@ -220,7 +219,7 @@ fun NewChatScreen(route: NewChat) {
                             ) {
                                 Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Outlined.Key, contentDescription = null)
-                                    Text("Connect ClinePass or OpenCode Go in Settings so Dex can think.", style = MaterialTheme.typography.bodyMedium)
+                                    Text("Connect ClinePass, OpenCode Go, or ChatGPT in Settings so Dex can think.", style = MaterialTheme.typography.bodyMedium)
                                 }
                             }
                         }

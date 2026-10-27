@@ -137,9 +137,10 @@ export const noVm = (key: string): VmInfo => ({
 })
 
 /** Which model subscriptions this user can run on (see usableModel in shared/models.ts). */
-export const connectedProviders = (state: Pick<DexState, "cline" | "opencode">) => ({
+export const connectedProviders = (state: Pick<DexState, "cline" | "opencode" | "chatgpt">) => ({
   clinepass: state.cline.connected,
-  "opencode-go": state.opencode.connected
+  "opencode-go": state.opencode.connected,
+  chatgpt: state.chatgpt?.connected ?? false
 })
 
 /** Fills fields an agent saved before they existed, so older state never breaks the UI. */
@@ -149,6 +150,7 @@ export const withStateDefaults = (state: DexState): DexState => ({
   vmConfigured: state.vmConfigured ?? false,
   boat: state.boat ?? { connected: false, source: null, keyHint: null },
   opencode: state.opencode ?? { connected: false, source: null, keyHint: null, verifiedAt: null },
+  chatgpt: state.chatgpt ?? { connected: false, source: null, keyHint: null, verifiedAt: null },
   projects: state.projects ?? [],
   github: state.github ?? { connected: false, login: null },
   push: state.push ?? { configured: false, publicKey: null, devices: [] },
@@ -174,6 +176,11 @@ export interface DexState {
   readonly cline: ClineStatus
   /** The OpenCode Go key models with the opencode-go provider run on (same shape as ClinePass's). */
   readonly opencode: ClineStatus
+  /**
+   * The ChatGPT plan models with the chatgpt provider run on, through Sign in with ChatGPT (same shape; `keyHint` is
+   * the account's email). Missing in state an older agent saved.
+   */
+  readonly chatgpt: ClineStatus
   /** Whose boat.dev account this user's VMs run on. */
   readonly boat: BoatStatus
   readonly settings: DexSettings
@@ -212,6 +219,9 @@ export interface ScheduledPrompt {
   readonly when: string
   readonly cron: string | null
 }
+
+/** A ChatGPT sign-in started: the page to approve on. Approving lands on a 127.0.0.1 address to paste back. */
+export type ChatGPTSignInStart = { readonly url: string; readonly redirectUri: string }
 
 export type ConnectClineResult = { readonly ok: true; readonly note?: string } | { readonly ok: false; readonly error: string }
 

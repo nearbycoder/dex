@@ -5,6 +5,7 @@ import dev.trydex.core.client.AgentConnection.Companion.VM_TIMEOUT_MS
 import dev.trydex.core.client.AgentConnection.Companion.args
 import dev.trydex.core.model.AgentProfile
 import dev.trydex.core.model.ChatArtifact
+import dev.trydex.core.model.ChatGPTSignInStart
 import dev.trydex.core.model.CommandResult
 import dev.trydex.core.model.ConnectResult
 import dev.trydex.core.model.CreatedAccessToken
@@ -142,6 +143,9 @@ class DexApi(private val rpc: AgentRpc) {
     suspend fun disconnectCline() { raw("disconnectCline") }
     suspend fun connectOpenCode(key: String): ConnectResult = typed(ConnectResult.serializer(), "connectOpenCode", key)
     suspend fun disconnectOpenCode() { raw("disconnectOpenCode") }
+    suspend fun startChatGPTSignIn(): ChatGPTSignInStart = typed(ChatGPTSignInStart.serializer(), "startChatGPTSignIn")
+    suspend fun finishChatGPTSignIn(callbackUrl: String): ConnectResult = typed(ConnectResult.serializer(), "finishChatGPTSignIn", callbackUrl)
+    suspend fun disconnectChatGPT() { raw("disconnectChatGPT") }
     suspend fun connectBoat(key: String): ConnectResult = typed(ConnectResult.serializer(), "connectBoat", key)
     suspend fun disconnectBoat(): ConnectResult = typed(ConnectResult.serializer(), "disconnectBoat")
     suspend fun connectGitHub(token: String): ConnectResult = typed(ConnectResult.serializer(), "connectGitHub", token, "token")

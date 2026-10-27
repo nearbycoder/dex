@@ -1,4 +1,4 @@
-/** Spending and usage across ClinePass, OpenCode Go, boat.dev, and Cloudflare, as the Usage page shows it. */
+/** Spending and usage across ClinePass, OpenCode Go, ChatGPT, boat.dev, and Cloudflare, as the Usage page shows it. */
 
 export type UsageRange = "month" | "30d" | "all"
 
@@ -40,6 +40,8 @@ export interface DailySpend {
   readonly date: string
   readonly cline: number
   readonly opencode: number
+  /** At API list prices; the ChatGPT plan is a flat fee. Missing from an older agent's report. */
+  readonly chatgpt?: number
   readonly boat: number
   readonly cloudflare: number
 }
@@ -121,6 +123,8 @@ export interface UsageReport {
   readonly cline: ClineUsage
   /** Its token costs are at Go's rates, which is what counts against the plan's allowance. */
   readonly opencode: OpenCodeUsage
+  /** Tokens on the ChatGPT plan, at API list prices. Missing from an older agent's report. */
+  readonly chatgpt?: ClineUsage & { readonly connected: boolean }
   readonly boat: BoatUsage
   readonly cloudflare: CloudflareUsage
   readonly daily: ReadonlyArray<DailySpend>

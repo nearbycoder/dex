@@ -484,6 +484,8 @@ public struct ModelListVersion: Codable, Sendable, Hashable {
 public struct DexState: Codable, Sendable, Hashable {
     public var cline: ClineStatus
     public var opencode: ClineStatus
+    /// Sign in with ChatGPT; `keyHint` is the account's email. Missing in state an older agent saved.
+    public var chatgpt: ClineStatus
     public var boat: BoatStatus
     public var settings: DexSettings
     public var sessions: [SessionMeta]
@@ -500,20 +502,21 @@ public struct DexState: Codable, Sendable, Hashable {
     public var build: String?
     public var models: ModelListVersion?
 
-    public init(cline: ClineStatus = .init(), opencode: ClineStatus = .init(), boat: BoatStatus = .init(), settings: DexSettings = .init(),
+    public init(cline: ClineStatus = .init(), opencode: ClineStatus = .init(), chatgpt: ClineStatus = .init(), boat: BoatStatus = .init(), settings: DexSettings = .init(),
                 sessions: [SessionMeta] = [], vms: [VmInfo] = [], vmConfigured: Bool = false, projects: [ProjectProfile] = [],
                 github: GitHubStatus = .init(), push: PushStatus = .init(), agents: [AgentProfile] = [], mcp: [McpServerInfo] = [],
                 access: AccessState = .init(), secrets: [SavedSecret] = [], skills: [SkillInfo] = [], build: String? = nil, models: ModelListVersion? = nil) {
-        self.cline = cline; self.opencode = opencode; self.boat = boat; self.settings = settings; self.sessions = sessions; self.vms = vms
+        self.cline = cline; self.opencode = opencode; self.chatgpt = chatgpt; self.boat = boat; self.settings = settings; self.sessions = sessions; self.vms = vms
         self.vmConfigured = vmConfigured; self.projects = projects; self.github = github; self.push = push; self.agents = agents; self.mcp = mcp
         self.access = access; self.secrets = secrets; self.skills = skills; self.build = build; self.models = models
     }
 
-    enum CodingKeys: String, CodingKey { case cline, opencode, boat, settings, sessions, vms, vmConfigured, projects, github, push, agents, mcp, access, secrets, skills, build, models }
+    enum CodingKeys: String, CodingKey { case cline, opencode, chatgpt, boat, settings, sessions, vms, vmConfigured, projects, github, push, agents, mcp, access, secrets, skills, build, models }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         cline = c.value(.cline, default: .init())
         opencode = c.value(.opencode, default: .init())
+        chatgpt = c.value(.chatgpt, default: .init())
         boat = c.value(.boat, default: .init())
         settings = c.value(.settings, default: .init())
         sessions = c.value(.sessions, default: [])
@@ -532,7 +535,10 @@ public struct DexState: Codable, Sendable, Hashable {
     }
 
     /// Which model subscriptions this user can run on.
-    public var connectedProviders: [String: Bool] { ["clinepass": cline.connected, "opencode-go": opencode.connected] }
+    public var connectedProviders: [String: Bool] { ["clinepass": cline.connected, "opencode-go": opencode.connected, "chatgpt": chatgpt.connected] }
+
+    /// Whether any model subscription is connected (nothing can answer otherwise).
+    public var anyProviderConnected: Bool { cline.connected || opencode.connected || chatgpt.connected }
 
     public func session(_ id: String) -> SessionMeta? { sessions.first { $0.id == id } }
     public func vm(_ key: String) -> VmInfo? { vms.first { $0.key == key } }

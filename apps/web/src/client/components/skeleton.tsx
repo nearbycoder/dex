@@ -716,6 +716,14 @@ export function SettingsSkeleton() {
             <Bone className="ml-auto h-3.5 w-28" />
           </div>
         </SectionBones>
+        {/* ChatGPT: signed in, with an email. */}
+        <SectionBones title={62}>
+          <div className="flex h-6 items-center gap-2">
+            <Bone className="size-4 rounded-full" />
+            <Bone className="h-3.5 w-40" />
+            <Bone className="ml-auto h-3.5 w-36" />
+          </div>
+        </SectionBones>
         {/* Cloud VMs: connected, like ClinePass. */}
         <SectionBones title={76}>
           <div className="flex h-6 items-center gap-2">

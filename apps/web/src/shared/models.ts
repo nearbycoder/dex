@@ -1,11 +1,13 @@
 /**
- * The models Dex can run, from two subscriptions:
+ * The models Dex can run, from three subscriptions:
  * - ClinePass (Cline's OpenAI-compatible API). Context windows and thinking maps follow jellydn/pi-clinepass-provider,
  *   which was tested against the live API.
  * - OpenCode Go (https://opencode.ai/docs/go/), which serves each model over its own API style (OpenAI Chat
  *   Completions or Responses, Anthropic Messages, Google). Generated from pi-ai's opencode-go catalog, limited to the
  *   models Go lists and serves.
- * `id` is unique across both (it's what chats store); `apiId` is what the provider's API calls the model.
+ * - ChatGPT (Sign in with ChatGPT: a Plus or Pro plan on OpenAI's Responses API). From pi-ai's openai catalog,
+ *   limited to the models ChatGPT plans offer.
+ * `id` is unique across all three (it's what chats store); `apiId` is what the provider's API calls the model.
  * In a thinking map, `null` marks a level the model rejects; a missing key uses the provider's default.
  *
  * This list is built in, so a fresh agent has models before it has looked anything up. Providers add, rename, and
@@ -15,13 +17,21 @@
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const
 export type ThinkingLevel = (typeof THINKING_LEVELS)[number]
 
-export type ModelProvider = "clinepass" | "opencode-go"
+export type ModelProvider = "clinepass" | "opencode-go" | "chatgpt"
 
 /** The subscriptions models run on, as Settings and the model menu name them. */
 export const MODEL_PROVIDERS: Readonly<Record<ModelProvider, { readonly name: string; readonly short: string }>> = {
   clinepass: { name: "ClinePass", short: "Cline" },
-  "opencode-go": { name: "OpenCode Go", short: "OpenCode" }
+  "opencode-go": { name: "OpenCode Go", short: "OpenCode" },
+  chatgpt: { name: "ChatGPT", short: "ChatGPT" }
 }
+
+/** Each subscription's id in pi-ai: ChatGPT's is `openai`, which is how pi-ai knows to send a ChatGPT token. */
+export const PI_PROVIDER_IDS: Readonly<Record<ModelProvider, string>> = { clinepass: "clinepass", "opencode-go": "opencode-go", chatgpt: "openai" }
+
+/** The Dex subscription for a pi-ai provider id (what responses and pi's usage records carry). */
+export const dexProvider = (piProvider: string | undefined): ModelProvider =>
+  piProvider === "opencode-go" ? "opencode-go" : piProvider === "openai" || piProvider === "chatgpt" ? "chatgpt" : "clinepass"
 
 export type ModelMaker =
   | "zai" | "moonshot" | "deepseek" | "qwen" | "minimax" | "xiaomi" | "meta"
@@ -62,7 +72,7 @@ export interface DexModel {
   /** Per million tokens. Tiers: higher rates above a prompt size. */
   readonly cost: Cost & { tiers?: Array<Cost & { inputTokensAbove: number }> }
   readonly thinkingLevelMap?: ThinkingMap
-  /** OpenCode Go: the API style and base URL this model is served on, and pi-ai compatibility flags. */
+  /** OpenCode Go and ChatGPT: the API style and base URL this model is served on, and pi-ai compatibility flags. */
   readonly api?: ModelApi
   readonly baseUrl?: string
   readonly compat?: Readonly<Record<string, unknown>>
@@ -131,7 +141,33 @@ const BUILT_IN_OPENCODE_GO: ReadonlyArray<DexModel> = OPENCODE_GO.map((model) =>
   provider: "opencode-go"
 }))
 
-export const BUILT_IN_MODELS: ReadonlyArray<DexModel> = [...BUILT_IN_CLINEPASS, ...BUILT_IN_OPENCODE_GO]
+/** ChatGPT's own effort levels; `minimal` isn't one of them. */
+const gpt = { off: "none", minimal: null, low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" } as const
+const gptNoOff = { ...gpt, off: null } as const
+const gptCompat = { supportsStrictMode: true, supportsOpenAIGrammarTools: true, supportsAdditionalTools: true, supportsToolSearch: true, supportsMidConvoSystemMessages: true }
+
+/** The models ChatGPT plans offer (pi-ai's openai catalog, for the models its ChatGPT plan list names), best first. */
+const CHATGPT: ReadonlyArray<CatalogEntry & { apiId: string }> = [
+  { apiId: "gpt-6.1-sol", name: "GPT-6.1 Sol", maker: "openai", input: ["text", "image"], contextWindow: 272_000, maxTokens: 128_000, cost: { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 }, thinkingLevelMap: gptNoOff, compat: gptCompat },
+  { apiId: "gpt-6-sol", name: "GPT-6 Sol", maker: "openai", input: ["text", "image"], contextWindow: 272_000, maxTokens: 128_000, cost: { input: 2, output: 10, cacheRead: 0.2, cacheWrite: 2.5 }, thinkingLevelMap: gpt, compat: gptCompat },
+  { apiId: "gpt-6-astra", name: "GPT-6 Astra", maker: "openai", input: ["text", "image"], contextWindow: 272_000, maxTokens: 128_000, cost: { input: 10, output: 50, cacheRead: 1, cacheWrite: 12.5 }, thinkingLevelMap: gptNoOff, compat: gptCompat },
+  { apiId: "gpt-6-luna", name: "GPT-6 Luna", maker: "openai", input: ["text", "image"], contextWindow: 272_000, maxTokens: 128_000, cost: { input: 0.1, output: 0.5, cacheRead: 0.01, cacheWrite: 0.125 }, thinkingLevelMap: gpt, compat: gptCompat },
+  { apiId: "gpt-5.6-sol", name: "GPT-5.6 Sol", maker: "openai", input: ["text", "image"], contextWindow: 272_000, maxTokens: 128_000, cost: { input: 4, output: 20, cacheRead: 0.4, cacheWrite: 5 }, thinkingLevelMap: gpt, compat: gptCompat },
+  { apiId: "gpt-5.6-terra", name: "GPT-5.6 Terra", maker: "openai", input: ["text", "image"], contextWindow: 272_000, maxTokens: 128_000, cost: { input: 2, output: 12, cacheRead: 0.2, cacheWrite: 2.5 }, thinkingLevelMap: gpt, compat: gptCompat },
+  { apiId: "gpt-5.6-luna", name: "GPT-5.6 Luna", maker: "openai", input: ["text", "image"], contextWindow: 272_000, maxTokens: 128_000, cost: { input: 0.2, output: 1.2, cacheRead: 0.02, cacheWrite: 0.25 }, thinkingLevelMap: gpt, compat: gptCompat },
+  { apiId: "gpt-5.5", name: "GPT-5.5", maker: "openai", input: ["text", "image"], contextWindow: 272_000, maxTokens: 128_000, cost: { input: 5, output: 30, cacheRead: 0.5, cacheWrite: 0 }, thinkingLevelMap: { ...gpt, max: null }, compat: gptCompat },
+  { apiId: "gpt-5.3-codex-spark", name: "GPT-5.3 Codex Spark", maker: "openai", input: ["text", "image"], contextWindow: 128_000, maxTokens: 32_000, cost: { input: 1.75, output: 14, cacheRead: 0.175, cacheWrite: 0 }, thinkingLevelMap: { ...gptNoOff, max: null }, compat: { supportsStrictMode: true, supportsOpenAIGrammarTools: true } }
+]
+
+const BUILT_IN_CHATGPT: ReadonlyArray<DexModel> = CHATGPT.map((model) => ({
+  ...model,
+  id: `chatgpt/${model.apiId}`,
+  provider: "chatgpt",
+  api: "openai-responses",
+  baseUrl: "https://api.openai.com/v1"
+}))
+
+export const BUILT_IN_MODELS: ReadonlyArray<DexModel> = [...BUILT_IN_CLINEPASS, ...BUILT_IN_OPENCODE_GO, ...BUILT_IN_CHATGPT]
 
 /** A refreshed model list: `version` changes only when the list does; `updatedAt` is when it was last checked. */
 export interface ModelCatalog {
@@ -168,8 +204,9 @@ export const findModel = (id: string) => MODELS.find((model) => model.id === id)
 /** The default model, or the first one listed if the provider has retired it. */
 export const defaultModelId = () => (findModel(DEFAULT_MODEL_ID) ? DEFAULT_MODEL_ID : (MODELS[0]?.id ?? DEFAULT_MODEL_ID))
 
-/** Which subscription a chat's model runs on (a stored id that's no longer listed counts as ClinePass, as before). */
-export const providerOf = (id: string): ModelProvider => findModel(id)?.provider ?? (id.startsWith("opencode-go/") ? "opencode-go" : "clinepass")
+/** Which subscription a chat's model runs on (a stored id that's no longer listed goes by its prefix, else ClinePass). */
+export const providerOf = (id: string): ModelProvider =>
+  findModel(id)?.provider ?? (id.startsWith("opencode-go/") ? "opencode-go" : id.startsWith("chatgpt/") ? "chatgpt" : "clinepass")
 
 /** The same model on the other provider, when it offers it (switching providers keeps a chat's model). */
 export const counterpart = (id: string, provider: ModelProvider) => {

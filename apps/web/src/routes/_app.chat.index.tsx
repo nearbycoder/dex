@@ -43,7 +43,7 @@ function NewChat() {
   // With no agent picked, follow the defaults from Settings.
   useEffect(() => {
     if (state && !agentId) setChoice({ model: usableModel(state.settings.defaultModel, connectedProviders(state)), thinking: state.settings.defaultThinking })
-  }, [state?.settings.defaultModel, state?.settings.defaultThinking, state?.cline.connected, state?.opencode.connected, agentId])
+  }, [state?.settings.defaultModel, state?.settings.defaultThinking, state?.cline.connected, state?.opencode.connected, state?.chatgpt.connected, agentId])
 
   const pick = (next: AgentProfile | null) => {
     if (!next || next.id === agentId) {
@@ -104,13 +104,13 @@ function NewChat() {
                 ? `What should Dex do in ${project.name}?`
                 : "What should Dex do?"}
           </h1>
-          {state && !state.cline.connected && !state.opencode.connected && (
+          {state && !Object.values(connectedProviders(state)).some(Boolean) && (
             <Link
               to="/settings"
               className="mb-4 flex items-center gap-3 rounded-xl border border-amber-900/60 bg-amber-950/30 px-4 py-3 text-sm text-amber-200 hover:bg-amber-950/50"
             >
               <KeyRound className="size-4 shrink-0" />
-              Connect ClinePass or OpenCode Go in Settings so Dex can think.
+              Connect ClinePass, OpenCode Go, or ChatGPT in Settings so Dex can think.
             </Link>
           )}
 

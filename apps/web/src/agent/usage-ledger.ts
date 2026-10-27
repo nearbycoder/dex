@@ -1,5 +1,5 @@
 import type { AssistantMessage, Usage } from "@earendil-works/pi-ai"
-import type { ModelProvider } from "~/shared/models"
+import { dexProvider, type ModelProvider } from "~/shared/models"
 import { BOAT_HOURLY, type BoatUsage, type ClineUsage } from "~/shared/usage"
 
 const HOUR_MS = 3_600_000
@@ -57,10 +57,11 @@ export class UsageLedger {
 
   // ── Model responses ───────────────────────────────────────────────────────
 
-  /** `model` is Dex's id for it (see shared/models.ts): OpenCode's bare ids get the `opencode-go/` prefix. */
+  /** `model` is Dex's id for it (see shared/models.ts): OpenCode's and ChatGPT's bare ids get their prefix. */
   private insertUsage(at: number, sessionId: string, provider: ModelProvider, model: string, usage: Usage, dedupe: string) {
     if (!usage.totalTokens) return
-    const id = provider === "opencode-go" && !model.startsWith("opencode-go/") ? `opencode-go/${model}` : model
+    const prefix = provider === "clinepass" ? "" : `${provider}/`
+    const id = prefix && !model.startsWith(prefix) ? `${prefix}${model}` : model
     this.sql.exec(
       `INSERT OR IGNORE INTO dex_usage_llm (at, session_id, model, provider, input, output, cache_read, cache_write, total_tokens, cost, dedupe)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -73,7 +74,7 @@ export class UsageLedger {
     this.insertUsage(
       message.timestamp || Date.now(),
       sessionId,
-      message.provider === "opencode-go" ? "opencode-go" : "clinepass",
+      dexProvider(message.provider),
       message.model,
       message.usage,
       `${sessionId}:${message.timestamp}:${message.responseId ?? ""}`
@@ -84,7 +85,7 @@ export class UsageLedger {
   backfill(sessionId: string, at: number, models: Readonly<Record<string, Usage>>) {
     for (const [key, usage] of Object.entries(models)) {
       // Keys are `provider/modelId`; model ids contain a slash themselves.
-      const provider = key.slice(0, key.indexOf("/")) === "opencode-go" ? "opencode-go" : "clinepass"
+      const provider = dexProvider(key.slice(0, key.indexOf("/")))
       const model = key.slice(key.indexOf("/") + 1)
       this.insertUsage(at, sessionId, provider, model, usage, `backfill:${sessionId}:${key}`)
     }

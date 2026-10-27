@@ -89,6 +89,7 @@ object UsageFormat {
         Series("boat", "boat.dev", "VM time", 0xFFD95926),
         Series("cloudflare", "Cloudflare", "metered", 0xFF199E70),
         Series("opencode", "OpenCode Go", "at Go rates", 0xFFC98500),
+        Series("chatgpt", "ChatGPT", "at API list prices", 0xFFD55181),
     )
 
     val RANGES = listOf("month" to "This month", "30d" to "Last 30 days", "all" to "All time")
@@ -113,10 +114,11 @@ object UsageFormat {
 }
 
 @Serializable
-data class DailySpend(val date: String, val cline: Double = 0.0, val opencode: Double = 0.0, val boat: Double = 0.0, val cloudflare: Double = 0.0) {
+data class DailySpend(val date: String, val cline: Double = 0.0, val opencode: Double = 0.0, val chatgpt: Double = 0.0, val boat: Double = 0.0, val cloudflare: Double = 0.0) {
     fun value(key: String): Double = when (key) {
         "cline" -> cline
         "opencode" -> opencode
+        "chatgpt" -> chatgpt
         "boat" -> boat
         else -> cloudflare
     }
@@ -144,7 +146,7 @@ data class TokenUsage(
     val listCost: Double = 0.0,
     val byModel: List<ModelUsageRow> = emptyList(),
     val byChat: List<ChatUsageRow> = emptyList(),
-    /** OpenCode Go only. */
+    /** OpenCode Go and ChatGPT only. */
     val connected: Boolean = false,
     val limits: OpenCodeLimits? = null,
     val limitsError: String? = null,
@@ -191,6 +193,8 @@ data class UsageReport(
     val until: Long = 0,
     val cline: TokenUsage = TokenUsage(),
     val opencode: TokenUsage = TokenUsage(),
+    /** At API list prices; missing from an older agent's report. */
+    val chatgpt: TokenUsage = TokenUsage(),
     val boat: BoatUsage = BoatUsage(),
     val cloudflare: CloudflareUsage = CloudflareUsage(),
     val daily: List<DailySpend> = emptyList(),

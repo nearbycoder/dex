@@ -2,7 +2,7 @@ import Charts
 import DexCore
 import SwiftUI
 
-/// Spending and usage across ClinePass, OpenCode Go, boat.dev, and Cloudflare (the web's Usage page).
+/// Spending and usage across ClinePass, OpenCode Go, ChatGPT, boat.dev, and Cloudflare (the web's Usage page).
 struct UsagePage: View {
     @Environment(DexClient.self) private var client
     @AppStorage("dex.usage.range") private var range: UsageRange = .month
@@ -83,6 +83,7 @@ extension UsageSeries {
         case .boat: Color(red: 0xD9 / 255, green: 0x59 / 255, blue: 0x26 / 255)
         case .cloudflare: Color(red: 0x19 / 255, green: 0x9E / 255, blue: 0x70 / 255)
         case .opencode: Color(red: 0xC9 / 255, green: 0x85 / 255, blue: 0x00 / 255)
+        case .chatgpt: Color(red: 0xD5 / 255, green: 0x51 / 255, blue: 0x81 / 255)
         }
     }
 }
@@ -122,6 +123,10 @@ private struct UsageReportSections: View {
                            detail: "\(UsageFormat.compact(report.opencode.totalTokens)) tokens · \(UsageFormat.usd(report.opencode.listCost)) at Go rates"
                                + (report.opencode.limits.map { "\n\(Int($0.monthly.percent.rounded()))% of this month's allowance" } ?? ""))
             }
+            if summary.showChatGPT {
+                ServiceRow(series: .chatgpt, value: "\(UsageFormat.compact(report.chatgpt.totalTokens)) tokens",
+                           detail: "\(UsageFormat.usd(report.chatgpt.listCost)) at list prices · on your ChatGPT plan, not in the estimate")
+            }
             ServiceRow(series: .boat, value: UsageFormat.usd(report.boat.cost),
                        detail: String(format: "%.1f h of VM time", report.boat.hours) + (report.boat.running ? " · running now" : ""))
             ServiceRow(series: .cloudflare, value: "\(UsageFormat.usd(PlanFees.workersPaid))/mo",
@@ -150,7 +155,7 @@ private struct UsageReportSections: View {
                 .accessibilityIdentifier("usage.view")
             }
         } footer: {
-            Text("ClinePass is shown at what its tokens would cost at API list prices and OpenCode Go at Go's rates; you pay their flat plans. Cloudflare is metered usage at list rates, before the plan's included allowance.")
+            Text("ClinePass and ChatGPT are shown at what their tokens would cost at API list prices and OpenCode Go at Go's rates; you pay their flat plans. Cloudflare is metered usage at list rates, before the plan's included allowance.")
         }
 
         if summary.showOpenCode {
@@ -174,6 +179,9 @@ private struct UsageReportSections: View {
         }
         if summary.showCline {
             ModelUsageSections(title: "ClinePass by Model", series: .cline, usage: report.cline, costLabel: "list price")
+        }
+        if summary.showChatGPT {
+            ModelUsageSections(title: "ChatGPT by Model", series: .chatgpt, usage: report.chatgpt, costLabel: "list price")
         }
 
         Section {

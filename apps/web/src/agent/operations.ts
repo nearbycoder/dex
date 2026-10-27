@@ -6,7 +6,7 @@ import { MODEL_PROVIDERS, MODELS, supportedThinkingLevels, THINKING_LEVELS, type
 import type { McpAuth, McpTransport } from "~/shared/mcp"
 import { NOTIFY_KINDS, type NotifyKind } from "~/shared/notifications"
 import { githubFullName, normalizeRepoUrl, type ProjectProfile, type ProjectRepo } from "~/shared/projects"
-import { type DexState, type VmSize, VM_SIZES } from "~/shared/protocol"
+import { connectedProviders, type DexState, type VmSize, VM_SIZES } from "~/shared/protocol"
 import { USAGE_RANGES, type UsageRange } from "~/shared/usage"
 import { VM_PEEK_VIEWS } from "./vm-peek"
 import type { DexAgent } from "./dex-agent"
@@ -127,6 +127,9 @@ export const EXCLUDED: Readonly<Record<string, string>> = {
   disconnectCline: "Credentials are managed only in Settings.",
   connectOpenCode: "Credentials are entered only in Settings, never through a chat or an external agent.",
   disconnectOpenCode: "Credentials are managed only in Settings.",
+  startChatGPTSignIn: "Signing in to ChatGPT happens only in Settings, never through a chat or an external agent.",
+  finishChatGPTSignIn: "Signing in to ChatGPT happens only in Settings, never through a chat or an external agent.",
+  disconnectChatGPT: "Credentials are managed only in Settings.",
   connectBoat: "Credentials are entered only in Settings, never through a chat or an external agent.",
   saveSecret: "Secrets are entered only in Settings, never through a chat or an external agent.",
   removeSecret: "Secrets are managed only in Settings.",
@@ -292,7 +295,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
         projects: state.projects.length,
         mcpServers: state.mcp.map((server) => ({ id: server.id, name: server.name, status: server.status })),
         vms: { configured: state.vmConfigured, running: state.vms.filter((vm) => vm.status === "running").length, total: state.vms.length },
-        connected: { clinePass: state.cline.connected, openCodeGo: state.opencode.connected, github: state.github.connected ? state.github.login : null },
+        connected: { clinePass: state.cline.connected, openCodeGo: state.opencode.connected, chatGPT: state.chatgpt.connected, github: state.github.connected ? state.github.login : null },
         pushDevices: state.push.devices.length,
         settings: state.settings
       }
@@ -594,7 +597,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
   define({
     name: "app_list_models",
     description:
-      "Models chats and agents can use: each runs on a subscription (ClinePass or OpenCode Go), usable only while that one is connected. With image input, context window, thinking levels, and cost per million tokens. The list refreshes from the providers hourly; `refresh` looks it up now (when a model seems missing or renamed).",
+      "Models chats and agents can use: each runs on a subscription (ClinePass, OpenCode Go, or a ChatGPT plan), usable only while that one is connected. With image input, context window, thinking levels, and cost per million tokens. The list refreshes from the providers hourly; `refresh` looks it up now (when a model seems missing or renamed).",
     risk: "read",
     parameters: Type.Object({ refresh: Type.Optional(Type.Boolean()) }),
     covers: ["modelCatalog", "refreshModelList"],
@@ -602,7 +605,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     run: async (host, args) => {
       if (args.refresh) await host.refreshModelList()
       const state = host.appState()
-      const connected = { clinepass: state.cline.connected, "opencode-go": state.opencode.connected }
+      const connected = connectedProviders(state)
       return MODELS.map((model) => ({
         id: model.id,
         name: model.name,
@@ -657,7 +660,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
   define({
     name: "app_usage_report",
     description:
-      "What Dex costs: ClinePass and OpenCode Go tokens per model and chat (with OpenCode Go's 5-hour, weekly, and monthly allowance used), boat.dev VM time, and Cloudflare usage, with daily totals.",
+      "What Dex costs: ClinePass, OpenCode Go, and ChatGPT tokens per model and chat (with OpenCode Go's 5-hour, weekly, and monthly allowance used), boat.dev VM time, and Cloudflare usage, with daily totals.",
     risk: "read",
     parameters: Type.Object({ range: Type.Optional(Type.Union(USAGE_RANGES.map((range) => Type.Literal(range.id)))) }),
     covers: ["usageReport"],
