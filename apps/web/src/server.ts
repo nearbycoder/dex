@@ -1,6 +1,6 @@
 import handler from "@tanstack/react-start/server-entry"
 import { routeAgentRequest } from "agents"
-import { activeViewer } from "./server/active-session"
+import { sessionUnavailable, viewerOrUnavailable } from "./server/active-session"
 import { serveTour, TOUR_PATH } from "./server/tour"
 import { handleWorkspacePreview, WORKSPACE_PREVIEW_PATH } from "./server/workspace-preview"
 import { handleVmDesktop, VM_DESKTOP_PREFIX } from "./server/vm-desktop"
@@ -22,7 +22,9 @@ const authorizeAgent = (env: Env) => async (request: Request, route: { name: str
   if (origin && !sameOrigin(origin, request)) {
     return new Response("Cross-origin agent requests are not allowed", { status: 403 })
   }
-  const viewer = await activeViewer(request, env)
+  // A 401 tells the apps the session is gone (they sign out); a check that couldn't run is a 503 to retry.
+  const viewer = await viewerOrUnavailable(request, env)
+  if (viewer === "unavailable") return sessionUnavailable()
   if (!viewer) return new Response("Unauthorized", { status: 401 })
   if (viewer.id !== route.name) return new Response("Forbidden", { status: 403 })
 }

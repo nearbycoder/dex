@@ -43,10 +43,15 @@ export const Route = createFileRoute("/_app")({
       signedIn = getViewer()
       if (kept) {
         signedIn.then(
-          ({ viewer }) => {
+          ({ viewer, unavailable }) => {
             if (viewer && viewer.id === kept.id) {
               confirmed = true
               keepViewer(viewer)
+              return
+            }
+            // The check couldn't run (the agent restarting onto a deploy): like offline, not signed out.
+            if (unavailable) {
+              signedIn = undefined
               return
             }
             forgetSavedState()
@@ -59,10 +64,14 @@ export const Route = createFileRoute("/_app")({
     }
     // Until the check answers, navigate on the kept sign-in rather than waiting for it.
     if (kept && !confirmed) return { viewer: kept }
-    const { viewer } = await signedIn.catch((error: unknown) => {
+    const { viewer, unavailable } = await signedIn.catch((error: unknown) => {
       signedIn = undefined
       throw error
     })
+    if (unavailable) {
+      signedIn = undefined
+      throw new Error("Dex is restarting. Try again in a moment.")
+    }
     if (!viewer) {
       signedIn = undefined
       // Signed out, expired, or revoked: don't leave this account's chats on the device.
