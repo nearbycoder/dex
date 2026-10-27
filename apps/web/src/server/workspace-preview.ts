@@ -1,3 +1,4 @@
+import { withAudioUnlock } from "~/shared/web-audio"
 import { activeViewer } from "./active-session"
 
 /**
@@ -30,7 +31,8 @@ export async function handleWorkspacePreview(request: Request, env: Env): Promis
 
   const html = (await request.formData()).get("html")
   if (typeof html !== "string" || html.length > MAX_BYTES) return new Response("Nothing to preview", { status: 400 })
-  return new Response(html, {
+  // So a game or demo with sound plays it on iPhone too (see shared/web-audio.ts).
+  return new Response(withAudioUnlock(html), {
     headers: {
       "content-type": "text/html; charset=utf-8",
       "content-security-policy": POLICY,

@@ -49,6 +49,7 @@ import type {
 } from "~/shared/protocol"
 import { connectedProviders, MCP_VM, SHARED_VM } from "~/shared/protocol"
 import { withUiNotes } from "~/shared/ui-notes"
+import { AUDIO_UNLOCK_SCRIPT } from "~/shared/web-audio"
 import { attachmentSummary, type ChatAttachment, splitAttachments } from "~/shared/attachments"
 import { githubFullName, isProjectImage, normalizeRepoUrl, type ProjectDraft, type ProjectImageCandidate, type ProjectProfile, type ProjectRepo, PROJECT_ROOT, repoDirName, repoLabel } from "~/shared/projects"
 import { CLOUDFLARE_RATES, type CloudflareLine, type OpenCodeLimits, type UsageRange, type UsageReport } from "~/shared/usage"
@@ -117,6 +118,8 @@ You can:
 - Use this chat's own cloud VM, a full Ubuntu machine with a desktop (vm_exec, vm_computer, vm_screenshot, vm_read_file, vm_write_file, vm_expose_port, vm_stop). Use it for real work: cloning repos, installing packages, running code, tests, servers, Docker, and driving a browser. The user can watch it live and take over. It is created the first time you call a VM tool in this chat, which costs time and money, so only use it when the task needs real execution; answer questions, research, and light file work without it.
 - Keep notes and small files in ${WORKSPACE_ROOT} with a lightweight simulated shell (bash, read_file, write_file, edit_file). It cannot install or run programs; use the VM for that.
 - Research the web (web_search, web_fetch, and curl inside bash).
+- Build web pages, games, and demos for the user to open (vm_expose_port). Many open them on an iPhone, where sound fails unless it starts from a tap's end and the silent switch is handled: in every page with sound, put this as the first thing in <head>, unchanged (it makes any AudioContext, or library built on one, play after the first tap or key press), and start sounds from click, pointerup, touchend, or keydown, never touchstart alone:
+${AUDIO_UNLOCK_SCRIPT}
 - Show videos, audio, and images you made on the VM inline with share_media (it returns Markdown to put in your reply). Always use it for files: never serve them over a VM port with a file server and link that (it stops working when the VM sleeps and won't play on iPhones), even if an earlier message in the chat did. Links to YouTube, Vimeo, and direct video files also play inline.
 - Show rich interactive UI with render_ui. Call load_ui_guide once per chat before your first render_ui.
 - Schedule prompts for yourself to run later (schedule_prompt); recurring schedules go through app_call (app_schedule_prompt) and need the user's confirmation.
