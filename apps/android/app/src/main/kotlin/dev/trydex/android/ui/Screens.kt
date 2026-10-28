@@ -33,6 +33,7 @@ import dev.trydex.android.ui.nav.MachineList
 import dev.trydex.android.ui.nav.McpEditor
 import dev.trydex.android.ui.nav.McpList
 import dev.trydex.android.ui.nav.NewChat
+import dev.trydex.android.ui.nav.AppearanceSettings
 import dev.trydex.android.ui.nav.NotificationSettings
 import dev.trydex.android.ui.nav.ProjectEditor
 import dev.trydex.android.ui.nav.ProjectList
@@ -44,6 +45,7 @@ import dev.trydex.android.ui.nav.Usage
 import dev.trydex.android.ui.nav.Workspace
 import dev.trydex.android.ui.nav.WorkspaceFile
 import dev.trydex.android.ui.settings.AccessScreen
+import dev.trydex.android.ui.settings.AppearanceSettingsScreen
 import dev.trydex.android.ui.settings.GeneralSettingsScreen
 import dev.trydex.android.ui.settings.NotificationSettingsScreen
 import dev.trydex.android.ui.settings.SecretsScreen
@@ -78,6 +80,7 @@ fun EntryProviderScope<NavKey>.screens(@Suppress("UNUSED_PARAMETER") wide: Boole
 
     entry<SettingsHome>(metadata = list("Accounts, notifications, secrets, usage, and access.")) { SettingsHomeScreen() }
     entry<GeneralSettings>(metadata = detail) { GeneralSettingsScreen() }
+    entry<AppearanceSettings>(metadata = detail) { AppearanceSettingsScreen() }
     entry<NotificationSettings>(metadata = detail) { NotificationSettingsScreen() }
     entry<Secrets>(metadata = detail) { SecretsScreen() }
     entry<Usage>(metadata = detail) { UsageScreen() }

@@ -226,7 +226,7 @@ struct McpCheckSheet: View {
                             } label: {
                                 Label("Add to Run on a VM", systemImage: "plus").frame(maxWidth: .infinity)
                             }
-                            .buttonStyle(.glassProminent)
+                            .prominentButton()
                             .accessibilityIdentifier("mcp.check.add")
                         } else if !report.url.isEmpty || !server.url.isEmpty {
                             let url = report.url.isEmpty ? server.url : report.url
@@ -241,6 +241,7 @@ struct McpCheckSheet: View {
                                     Label(report.failed ? "Add Anyway" : "Add Server", systemImage: "plus").frame(maxWidth: .infinity)
                                 }
                                 .buttonStyle(report.failed ? AnyPrimitiveButtonStyle(.glass) : AnyPrimitiveButtonStyle(.glassProminent))
+                                .foregroundStyle(report.failed ? AnyShapeStyle(.tint) : AnyShapeStyle(Color.onAccent))
                                 .accessibilityIdentifier("mcp.check.add")
                             }
                         }

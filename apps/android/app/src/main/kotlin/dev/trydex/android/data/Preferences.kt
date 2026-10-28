@@ -36,7 +36,12 @@ data class AppPrefs(
     val notifyKinds: Set<String> = setOf("reply", "error", "scheduled", "machine", "mcp", "snooze"),
     /** Skip a chat's notification while it's on screen here. */
     val onlyWhenAway: Boolean = true,
-    val dynamicColor: Boolean = true,
+    /** Material You colors from the wallpaper instead of [theme] (Android 12+). */
+    val dynamicColor: Boolean = false,
+    /** One of AppThemes' ids (ui/theme/Themes.kt). */
+    val theme: String = "emerald",
+    /** system, light, or dark. */
+    val appearance: String = "system",
 )
 
 private val Context.dexPrefs: DataStore<androidx.datastore.preferences.core.Preferences> by preferencesDataStore("dex-prefs")
@@ -60,6 +65,8 @@ class Preferences(context: Context, private val scope: CoroutineScope) {
         val notifyKinds = stringSetPreferencesKey("notify_kinds")
         val onlyWhenAway = booleanPreferencesKey("only_when_away")
         val dynamicColor = booleanPreferencesKey("dynamic_color")
+        val theme = stringPreferencesKey("theme")
+        val appearance = stringPreferencesKey("appearance")
     }
 
     val prefs: StateFlow<AppPrefs> = store.data.map { p ->
@@ -79,7 +86,10 @@ class Preferences(context: Context, private val scope: CoroutineScope) {
             notifications = p[Keys.notifications] ?: false,
             notifyKinds = p[Keys.notifyKinds] ?: defaults.notifyKinds,
             onlyWhenAway = p[Keys.onlyWhenAway] ?: true,
-            dynamicColor = p[Keys.dynamicColor] ?: true,
+            // Wallpaper colors were the default before themes: keep them only for someone who chose them.
+            dynamicColor = p[Keys.dynamicColor] ?: false,
+            theme = p[Keys.theme] ?: defaults.theme,
+            appearance = p[Keys.appearance] ?: defaults.appearance,
         )
     }.stateIn(scope, SharingStarted.Eagerly, AppPrefs())
 
@@ -106,6 +116,12 @@ class Preferences(context: Context, private val scope: CoroutineScope) {
     fun setNotifyKinds(kinds: Set<String>) = edit { it[Keys.notifyKinds] = kinds }
     fun setOnlyWhenAway(on: Boolean) = edit { it[Keys.onlyWhenAway] = on }
     fun setDynamicColor(on: Boolean) = edit { it[Keys.dynamicColor] = on }
+    /** Picking a theme turns wallpaper colors off. */
+    fun setTheme(id: String) = edit {
+        it[Keys.theme] = id
+        it[Keys.dynamicColor] = false
+    }
+    fun setAppearance(mode: String) = edit { it[Keys.appearance] = mode }
 
     /** Signing out forgets what this device kept about the account (the server address stays). */
     suspend fun forgetAccount() {

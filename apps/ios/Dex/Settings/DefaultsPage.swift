@@ -57,7 +57,7 @@ struct DefaultsPage: View {
                             AsyncButton(action: { try await save() }) {
                                 Text("Save Instructions")
                             }
-                            .buttonStyle(.glassProminent)
+                            .prominentButton()
                             .disabled(instructions == state.settings.instructions)
                             .keyboardShortcut("s", modifiers: .command)
                             .accessibilityIdentifier("defaults.save")

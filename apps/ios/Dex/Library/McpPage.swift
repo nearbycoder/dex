@@ -38,7 +38,7 @@ struct McpList: View {
                             Button { setDefault(server, !server.defaultOn) } label: {
                                 server.defaultOn ? Label("Off for New Chats", systemImage: "minus.circle") : Label("On for New Chats", systemImage: "plus.circle")
                             }
-                            .tint(server.defaultOn ? .gray : .accentColor)
+                            .tint(server.defaultOn ? .gray : .dexAccent)
                         }
                         .swipeActions(edge: .trailing) {
                             Button(role: .destructive) { removing = server } label: { Label("Remove", systemImage: "trash") }
@@ -99,7 +99,7 @@ struct McpList: View {
             Text("Chats and agents using it lose its tools, and its sign-in is forgotten.")
         }
         // The selected row (iPad): white text on the darker accent, readable in dark mode too.
-        .tint(Color("SelectionAccent"))
+        .tint(Color.selectionAccent)
         .accessibilityIdentifier("mcp.list")
     }
 
@@ -171,7 +171,7 @@ struct McpTemplateRow: View {
                 Text(template.note).font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            Image(systemName: "plus.circle.fill").font(.title3).foregroundStyle(Color.accentColor)
+            Image(systemName: "plus.circle.fill").font(.title3).foregroundStyle(Color.dexAccent)
         }
         .contentShape(.rect)
     }
@@ -256,7 +256,7 @@ struct McpServerDetail: View {
                     Button { Task { await connect(server) } } label: {
                         Label(busy ? "Signing In…" : "Sign In", systemImage: "person.badge.key").frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.glassProminent)
+                    .prominentButton()
                     .disabled(busy)
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets())

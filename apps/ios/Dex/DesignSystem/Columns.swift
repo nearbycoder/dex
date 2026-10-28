@@ -9,9 +9,3 @@ extension View {
             .toolbar(removing: .sidebarToggle)
     }
 }
-
-extension Color {
-    /// The accent behind a selected row: the accent in light mode, a deeper green in dark mode, where the accent is too
-    /// light for white text on it. Put it on the list itself, not its column, so the column's toolbar keeps the accent.
-    static let selectionAccent = Color("SelectionAccent")
-}

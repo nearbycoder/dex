@@ -7,11 +7,14 @@
 #   APPEARANCES=light scripts/tour.sh                      # light only
 #   DEVICES="iPhone 18 Pro,iPad Pro 13-inch" scripts/tour.sh
 #   SKIP_BUILD=1 scripts/tour.sh                           # reuse the last build
+#   THEME=ocean TEST=testThemeGlance scripts/tour.sh       # the themed screens only, in Ocean (saved under <appearance>-ocean)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 DEVICES="${DEVICES:-iPhone SE (3rd generation),iPhone 17e,iPhone 18 Pro,iPhone 18 Pro Max,iPhone Air,iPhone Duo,iPad mini (A17 Pro),iPad Pro 13-inch (M5)}"
 APPEARANCES="${APPEARANCES:-light dark}"
+TEST="${TEST:-testTour}"
+THEME="${THEME:-}"
 CONCURRENCY="${CONCURRENCY:-4}"
 DERIVED=build/tour
 OUT="$PWD/artifacts/tour"
@@ -51,8 +54,9 @@ for name in "${NAMES[@]}"; do
 done
 
 for appearance in $APPEARANCES; do
-  echo "› $appearance: ${DEVICES}"
-  mkdir -p "$OUT/$appearance"
+  folder="$appearance${THEME:+-$THEME}"
+  echo "› $folder: ${DEVICES}"
+  mkdir -p "$OUT/$folder"
   DESTINATIONS=()
   for udid in "${UDIDS[@]}"; do
     xcrun simctl boot "$udid" 2>/dev/null || true
@@ -60,11 +64,11 @@ for appearance in $APPEARANCES; do
     xcrun simctl ui "$udid" appearance "$appearance"
     DESTINATIONS+=(-destination "id=$udid")
   done
-  TEST_RUNNER_DEX_SCREENSHOTS="$OUT/$appearance" \
+  TEST_RUNNER_DEX_SCREENSHOTS="$OUT/$folder" TEST_RUNNER_DEX_THEME="$THEME" \
   xcodebuild test-without-building -project Dex.xcodeproj -scheme Dex -derivedDataPath "$DERIVED" \
-    "${DESTINATIONS[@]}" -only-testing:DexUITests/ScreenTourUITests \
+    "${DESTINATIONS[@]}" -only-testing:"DexUITests/ScreenTourUITests/$TEST" \
     -parallel-testing-enabled NO -maximum-concurrent-test-device-destinations "$CONCURRENCY" \
-    -resultBundlePath "$PWD/build/tour-$appearance-$(date +%s).xcresult" -quiet || echo "  (some tour runs failed; screenshots so far are kept)"
+    -resultBundlePath "$PWD/build/tour-$folder-$(date +%s).xcresult" -quiet || echo "  (some tour runs failed; screenshots so far are kept)"
 done
 
 # Screenshots come in the screen's native (portrait) orientation: turn the landscape ones upright.
@@ -77,7 +81,8 @@ done
 
 echo "✓ Screenshots in $OUT"
 for appearance in $APPEARANCES; do
+  folder="$appearance${THEME:+-$THEME}"
   for name in "${NAMES[@]}"; do
-    echo "  $appearance/$name: $(ls "$OUT/$appearance" 2>/dev/null | grep -c "^Tour $name-" || true)"
+    echo "  $folder/$name: $(ls "$OUT/$folder" 2>/dev/null | grep -c "^Tour $name-" || true)"
   done
 done

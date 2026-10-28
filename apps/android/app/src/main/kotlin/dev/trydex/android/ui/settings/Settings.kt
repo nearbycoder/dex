@@ -84,6 +84,7 @@ import dev.trydex.android.ui.components.haptics
 import dev.trydex.android.ui.components.rememberConfirm
 import dev.trydex.android.ui.nav.Access
 import dev.trydex.android.ui.nav.GeneralSettings
+import dev.trydex.android.ui.nav.AppearanceSettings
 import dev.trydex.android.ui.nav.NotificationSettings
 import dev.trydex.android.ui.nav.Route
 import dev.trydex.android.ui.nav.Secrets
@@ -161,6 +162,7 @@ fun SettingsHomeScreen() {
             }
             SectionCard(contentPadding = false) {
                 HubRow(Icons.Outlined.Tune, "General", "Providers, GitHub, defaults, account", GeneralSettings, selected, attention = providerMissing)
+                HubRow(Icons.Outlined.Palette, "Appearance", "Theme, and light or dark", AppearanceSettings, selected)
                 HubRow(Icons.Outlined.Notifications, "Notifications", "What this device tells you about", NotificationSettings, selected)
                 HubRow(Icons.Outlined.Lock, "Secrets", "API keys VMs get as environment variables", Secrets, selected)
                 HubRow(Icons.Outlined.BarChart, "Usage", "Tokens, cost, and VM time", Usage, selected)
@@ -216,11 +218,6 @@ fun GeneralSettingsScreen() {
                 SettingRow("Haptic feedback", icon = Icons.Outlined.Vibration, info = "A light tap when you press buttons. Saved on this device.", trailing = {
                     Switch(checked = prefs.haptics, onCheckedChange = { app.graph.preferences.setHaptics(it); if (it) haptics.toggle(true) }, modifier = Modifier.semantics { contentDescription = "Haptic feedback" })
                 })
-                if (android.os.Build.VERSION.SDK_INT >= 31) {
-                    SettingRow("Colours from your wallpaper", icon = Icons.Outlined.Palette, info = "Material You: Dex takes its colours from your wallpaper. Off: Dex's own emerald.", trailing = {
-                        Switch(checked = prefs.dynamicColor, onCheckedChange = { app.graph.preferences.setDynamicColor(it) }, modifier = Modifier.semantics { contentDescription = "Colours from your wallpaper" })
-                    })
-                }
             }
             SectionCard(title = "ClinePass", info = "Models marked Cline in the model menu run on your ClinePass subscription.") {
                 val user = current.cline.source == "user"

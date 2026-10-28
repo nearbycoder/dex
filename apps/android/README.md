@@ -16,6 +16,8 @@ Sign in with your Dex's address (trydex.dev, or your own deployment). The browse
 
 **Sign in with ChatGPT** (Settings → ChatGPT): OpenAI sends the browser back only to `http://127.0.0.1:1455/auth/callback`, which Dex's server can't receive. While the sign-in page is open in a Custom Tab, the app listens on that port (`data/LoopbackCallback.kt`), catches the address, hands the browser on to `dex://chatgpt/signed-in` to come back, and finishes the sign-in with the agent. If the port is taken, the page opens in the full browser and you paste the address it lands on, as on the web.
 
+**Appearance** (Settings → Appearance, or `dex://app/appearance`): light, dark, or the system's mode, and ten color themes, the same as the iOS app's (`ui/theme/Themes.kt`). A theme sets only the accent; surfaces are neutral grays, and composer chips stay gray in every theme. On Android 12+ the wallpaper's Material You colors are a further choice. Saved per device and applied at once.
+
 **Demo:** debug builds have **Try the demo** on the sign-in screen. It starts an in-process fake Dex (`core/fake`) with sample chats, generated UIs, machines, and a desktop, so you can try every screen without an account. Release builds don't include it.
 
 **Against a local Dex:** run `npm run dev` at the repo root (with `DEV_LOGIN=true` in `apps/web/.dev.vars`) and sign in to `http://10.0.2.2:5173` from the emulator. Debug builds allow plain HTTP to `10.0.2.2`, `localhost`, and `127.0.0.1` only.

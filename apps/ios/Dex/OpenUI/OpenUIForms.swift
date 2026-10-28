@@ -476,7 +476,7 @@ struct OUIEditableTable: View {
                         card.document.saveTable(node.key, rows: .array(out))
                         edits = [:]
                     }
-                    .buttonStyle(.glassProminent)
+                    .prominentButton()
                     .controlSize(.small)
                     .accessibilityIdentifier("openui.button.Save Changes")
                 }

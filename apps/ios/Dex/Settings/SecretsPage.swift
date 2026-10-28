@@ -30,7 +30,7 @@ struct SecretsPage: View {
                         } description: {
                             Text("Add an API key a CLI or service on your VMs needs.")
                         } actions: {
-                            Button("Add Secret") { editing = .new }.buttonStyle(.glassProminent)
+                            Button("Add Secret") { editing = .new }.prominentButton()
                         }
                     }
                     ForEach(state.secrets) { secret in

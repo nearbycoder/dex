@@ -10,7 +10,6 @@ struct DexApp: App {
         WindowGroup {
             RootView()
                 .environment(model)
-                .tint(.accentColor)
         }
         .commands { DexCommands() }
     }
@@ -28,6 +27,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
+    private var theme: ThemeStore { .shared }
 
     var body: some View {
         Group {
@@ -42,6 +42,11 @@ struct RootView: View {
             }
         }
         .animation(.smooth, value: model.phase)
+        // The theme's accent and appearance, in every window; they change live from Settings → Appearance.
+        .tint(theme.theme.accent)
+        .preferredColorScheme(theme.appearance.colorScheme)
+        // After the window exists: UIKit's own views (alerts, Safari) take the accent too.
+        .onAppear { DispatchQueue.main.async { theme.applyToWindows() } }
         .task { await model.refreshIfNeeded() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await model.refreshIfNeeded() } }

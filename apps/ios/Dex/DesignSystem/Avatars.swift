@@ -109,7 +109,7 @@ struct UserAvatar: View {
                 .font(.system(size: size * 0.45, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.accentColor.gradient)
+                .background(Color.selectionAccent.gradient)
         }
         .frame(width: size, height: size)
         .clipShape(.circle)

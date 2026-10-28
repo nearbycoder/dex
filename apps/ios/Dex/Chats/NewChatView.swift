@@ -251,8 +251,8 @@ private struct ProjectChip: View {
             .padding(.vertical, 2)
         }
         .buttonStyle(.glass)
-        .tint(selected ? .accentColor : nil)
-        .overlay(Capsule().strokeBorder(selected ? Color.accentColor : .clear, lineWidth: 1.5))
+        .tint(selected ? .dexAccent : nil)
+        .overlay(Capsule().strokeBorder(selected ? Color.dexAccent : .clear, lineWidth: 1.5))
         .accessibilityLabel("\(project.name) project, \(project.repos.count) repos")
         .accessibilityHint(project.description)
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -293,8 +293,8 @@ private struct AgentCard: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(selected ? AnyShapeStyle(Color.accentColor.opacity(0.14)) : AnyShapeStyle(Color(.secondarySystemBackground)), in: .rect(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(selected ? Color.accentColor : Color.primary.opacity(0.06), lineWidth: selected ? 1.5 : 1))
+            .background(selected ? AnyShapeStyle(Color.dexAccent.opacity(0.14)) : AnyShapeStyle(Color(.secondarySystemBackground)), in: .rect(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(selected ? Color.dexAccent : Color.primary.opacity(0.06), lineWidth: selected ? 1.5 : 1))
             .contentShape(.rect)
         }
         .buttonStyle(.plain)

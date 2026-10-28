@@ -71,6 +71,8 @@ enum class Tab { Chats, Machines, Library, Settings }
 
 @Serializable data object GeneralSettings : Route { override val tab get() = Tab.Settings }
 
+@Serializable data object AppearanceSettings : Route { override val tab get() = Tab.Settings }
+
 @Serializable data object NotificationSettings : Route { override val tab get() = Tab.Settings }
 
 @Serializable data object Secrets : Route { override val tab get() = Tab.Settings }
@@ -98,6 +100,7 @@ fun routesFor(link: String): List<Route>? {
         "files" -> listOf(LibraryHome, Workspace)
         "access" -> listOf(SettingsHome, Access)
         "notifications" -> listOf(SettingsHome, NotificationSettings)
+        "appearance" -> listOf(SettingsHome, AppearanceSettings)
         else -> null
     }
 }

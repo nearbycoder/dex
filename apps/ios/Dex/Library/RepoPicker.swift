@@ -147,7 +147,7 @@ private struct RepoSearch: View {
             .padding(.horizontal, 4)
         }
         .buttonStyle(.glass)
-        .tint(selected ? .accentColor : nil)
+        .tint(selected ? .dexAccent : nil)
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier("repo.owner.\(value ?? "all")")
         .sensoryFeedback(.selection, trigger: selected)

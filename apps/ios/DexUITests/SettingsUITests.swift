@@ -6,11 +6,12 @@ final class SettingsUITests: DexUITestCase {
     func openSettings(_ page: String) {
         openTab("Settings")
         let row = app.descendants(matching: .any)["settings.page.\(page)"].firstMatch
-        XCTAssertTrue(app.descendants(matching: .any)["settings.page.account"].firstMatch.waitForExistence(timeout: 10))
-        // Lower rows appear once scrolled to.
+        let list = app.descendants(matching: .any)["settings.list"].firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 10))
+        // Rows appear once scrolled to: the list may still be scrolled down from the last page, so look both ways.
         var swipes = 0
-        while !(row.exists && row.isHittable), swipes < 5 {
-            app.descendants(matching: .any)["settings.list"].firstMatch.swipeUp()
+        while !(row.waitForExistence(timeout: 1) && row.isHittable), swipes < 10 {
+            if swipes < 5 { list.swipeUp() } else { list.swipeDown() }
             swipes += 1
         }
         XCTAssertTrue(row.waitForExistence(timeout: 5), "No Settings row for \(page)")
@@ -73,9 +74,29 @@ final class SettingsUITests: DexUITestCase {
 
     // MARK: Pages
 
+    func testThemeChangesAndStays() {
+        launch()
+        openSettings("appearance")
+        let ocean = element("theme.ocean")
+        XCTAssertTrue(ocean.waitForExistence(timeout: 5))
+        XCTAssertTrue(element("theme.emerald").isSelected, "Emerald is the default")
+        ocean.tap()
+        XCTAssertTrue(NSPredicate(format: "isSelected == true").evaluate(with: ocean) || ocean.waitForSelected())
+        snapshot("settings-appearance-ocean")
+
+        // Kept on this device: a relaunch (without resetting) opens in Ocean.
+        app.terminate()
+        app.launchArguments = ["-DexMock", "-DexFast"]
+        app.launch()
+        openSettings("appearance")
+        XCTAssertTrue(element("theme.ocean").waitForExistence(timeout: 5))
+        XCTAssertTrue(element("theme.ocean").isSelected)
+        XCTAssertFalse(element("theme.emerald").isSelected)
+    }
+
     func testSettingsPagesOpen() {
         launch()
-        for page in ["account", "models", "machines", "github", "defaults", "secrets", "access", "notifications", "usage", "about"] {
+        for page in ["account", "appearance", "models", "machines", "github", "defaults", "secrets", "access", "notifications", "usage", "about"] {
             openSettings(page)
             XCTAssertTrue(app.navigationBars.element(boundBy: app.navigationBars.count - 1).waitForExistence(timeout: 5))
             snapshot("settings-\(page)")
@@ -376,5 +397,12 @@ final class SettingsUITests: DexUITestCase {
         XCTAssertTrue(app.textFields["signin.server"].waitForExistence(timeout: 10))
         XCTAssertTrue(element("signin.error").exists)
         snapshot("signed-out-everywhere")
+    }
+}
+
+extension XCUIElement {
+    /// Waits for the element to report itself selected.
+    func waitForSelected(timeout: TimeInterval = 3) -> Bool {
+        XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "isSelected == true"), object: self)], timeout: timeout) == .completed
     }
 }

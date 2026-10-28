@@ -318,7 +318,7 @@ private fun ChatTopBar(
                     Icon(
                         Icons.Rounded.DoneAll,
                         contentDescription = if (settled) "Settled. Tap to move it back to the inbox." else "Settle: done for now",
-                        tint = if (settled) DexTheme.colors.success else MaterialTheme.colorScheme.onSurfaceVariant,
+                        tint = if (settled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 IconButton(onClick = onMenu, modifier = Modifier.testTag("chat-options")) { Icon(Icons.Rounded.MoreVert, contentDescription = "Chat options") }

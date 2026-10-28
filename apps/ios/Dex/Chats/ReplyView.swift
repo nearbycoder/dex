@@ -331,6 +331,7 @@ struct ConfirmCard: View {
                                 .overlay { if busy == false { ProgressView() } }
                         }
                         .buttonStyle(.glass)
+                        .tint(.primary)
                         .accessibilityIdentifier("confirm.decline")
                     }
                     .disabled(busy != nil)

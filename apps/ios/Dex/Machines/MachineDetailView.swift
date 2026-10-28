@@ -436,7 +436,7 @@ struct MachineDetailView: View {
                 } label: {
                     if busy == "start" { ProgressView() } else { Label(vm.startLabel, systemImage: "play.fill").labelStyle(.titleAndIcon) }
                 }
-                .buttonStyle(.glassProminent)
+                .prominentButton()
                 .disabled(busy != nil)
                 .accessibilityIdentifier("machine.start")
             } else if vm.canStop {

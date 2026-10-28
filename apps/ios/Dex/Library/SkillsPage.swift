@@ -68,7 +68,7 @@ struct SkillsList: View {
             Text("Chats stop using it.")
         }
         // The selected row (iPad): white text on the darker accent, readable in dark mode too.
-        .tint(Color("SelectionAccent"))
+        .tint(Color.selectionAccent)
         .accessibilityIdentifier("skills.list")
     }
 
@@ -523,7 +523,7 @@ private struct SkillResultRow: View {
                         Button { Task { await install() } } label: {
                             Label(installing ? "Installing…" : "Install /\(skill.skillId)", systemImage: "arrow.down.circle").frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.glassProminent)
+                        .prominentButton()
                         .disabled(installing)
                         .accessibilityIdentifier("skill.install.confirm")
                     }

@@ -17,6 +17,9 @@ struct SettingsView: View {
                 Section {
                     AccountRow().tag(SettingsPage.account)
                 }
+                Section {
+                    row(.appearance, detail: ThemeStore.shared.theme.name)
+                }
                 Section("Connections") {
                     row(.models, detail: subscriptionsDetail)
                     row(.machines, detail: client.state.map { $0.boat.connected ? "boat.dev" : "Not connected" })
@@ -113,6 +116,7 @@ struct SettingsPageView: View {
     var body: some View {
         switch page {
         case .account: AccountPage()
+        case .appearance: AppearancePage()
         case .models: ModelSubscriptionsPage()
         case .machines: CloudVMsPage()
         case .github: GitHubPage()

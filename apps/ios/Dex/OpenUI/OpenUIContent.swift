@@ -328,7 +328,7 @@ struct OUIIconText: View {
 
     private var badge: some View {
         let variant = node.string("iconVariant")
-        let tint: Color = ["filled", "inverted"].contains(variant ?? "") ? .accentColor : OUIStyle.tint(variant == "soft" ? "info" : variant)
+        let tint: Color = ["filled", "inverted"].contains(variant ?? "") ? .dexAccent : OUIStyle.tint(variant == "soft" ? "info" : variant)
         let side: CGFloat = switch node.string("iconSize") {
         case "xs": 22
         case "s", "sm": 28

@@ -40,7 +40,7 @@ struct ProjectsList: View {
                 .accessibilityIdentifier("project.row.\(project.id)")
                 .swipeActions(edge: .leading, allowsFullSwipe: true) {
                     Button { router.newChat(projectId: project.id) } label: { Label("Start Chat", systemImage: "plus.bubble") }
-                        .tint(.accentColor)
+                        .tint(.dexAccent)
                 }
                 .swipeActions(edge: .trailing) {
                     Button(role: .destructive) { deleting = project } label: { Label("Delete", systemImage: "trash") }
@@ -70,7 +70,7 @@ struct ProjectsList: View {
             Text("Its chats and their VMs stay.")
         }
         // The selected row (iPad): white text on the darker accent, readable in dark mode too.
-        .tint(Color("SelectionAccent"))
+        .tint(Color.selectionAccent)
         .accessibilityIdentifier("projects.list")
     }
 
@@ -475,7 +475,7 @@ struct ProjectPicturePicker: View {
                 .padding(10)
                 .frame(width: 56, height: 56)
                 .background(Color(.tertiarySystemFill), in: .rect(cornerRadius: 14, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(selected ? Color.accentColor : .clear, lineWidth: 2.5))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(selected ? Color.dexAccent : .clear, lineWidth: 2.5))
         }
         .buttonStyle(.plain)
         .help(label)

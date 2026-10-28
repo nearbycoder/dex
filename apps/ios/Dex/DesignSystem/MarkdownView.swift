@@ -153,7 +153,7 @@ private struct ListView: View {
                     Group {
                         if let checkbox = item.checkbox {
                             Image(systemName: checkbox == .checked ? "checkmark.square.fill" : "square")
-                                .foregroundStyle(checkbox == .checked ? Color.accentColor : .secondary)
+                                .foregroundStyle(checkbox == .checked ? Color.dexAccent : .secondary)
                         } else if ordered {
                             SwiftUI.Text("\(start + index).").monospacedDigit()
                         } else {

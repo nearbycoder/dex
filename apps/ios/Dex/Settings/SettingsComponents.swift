@@ -157,7 +157,7 @@ struct KeyConnectSection<Help: View>: View {
                         }
                         .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.glassProminent)
+                    .prominentButton()
                     .disabled(value.trimmingCharacters(in: .whitespaces).isEmpty || busy)
                     .accessibilityIdentifier("\(id).connect")
                     if replacing {

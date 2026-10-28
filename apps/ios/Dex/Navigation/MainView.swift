@@ -18,25 +18,25 @@ struct MainView: View {
         @Bindable var router = router
         TabView(selection: $router.tab) {
             Tab(AppTab.chats.title, systemImage: AppTab.chats.symbol, value: AppTab.chats) {
-                ChatsView().tint(.accentColor)
+                ChatsView().tint(.dexAccent)
             }
             .badge(inboxBadge)
             .accessibilityIdentifier("tab.chats")
 
             Tab(AppTab.machines.title, systemImage: AppTab.machines.symbol, value: AppTab.machines) {
-                MachinesView().tint(.accentColor)
+                MachinesView().tint(.dexAccent)
             }
             .accessibilityIdentifier("tab.machines")
 
             Tab(AppTab.files.title, systemImage: AppTab.files.symbol, value: AppTab.files) {
-                FilesView().tint(.accentColor)
+                FilesView().tint(.dexAccent)
             }
             .accessibilityIdentifier("tab.files")
 
             if compact {
                 // Compact width: one Library tab with its pages inside.
                 Tab(AppTab.library.title, systemImage: AppTab.library.symbol, value: AppTab.library) {
-                    LibraryView().tint(.accentColor)
+                    LibraryView().tint(.dexAccent)
                 }
                 .accessibilityIdentifier("tab.library")
             } else {
@@ -44,7 +44,7 @@ struct MainView: View {
                 TabSection("Library") {
                     ForEach(AppTab.libraryPages, id: \.self) { page in
                         Tab(page.title, systemImage: page.symbol, value: page) {
-                            LibraryPageStack(page: page).tint(.accentColor)
+                            LibraryPageStack(page: page).tint(.dexAccent)
                         }
                         .accessibilityIdentifier("tab.\(page.rawValue)")
                     }
@@ -52,21 +52,21 @@ struct MainView: View {
             }
 
             Tab(AppTab.settings.title, systemImage: AppTab.settings.symbol, value: AppTab.settings) {
-                SettingsView().tint(.accentColor)
+                SettingsView().tint(.dexAccent)
             }
             .accessibilityIdentifier("tab.settings")
 
             // iPhone has room for five tabs; the chat list has its own search there.
             if !compact {
                 Tab(value: AppTab.search, role: .search) {
-                    SearchView().tint(.accentColor)
+                    SearchView().tint(.dexAccent)
                 }
                 .accessibilityIdentifier("tab.search")
             }
         }
         .tabViewStyle(.sidebarAdaptable)
         // The sidebar's selected row, readable in dark mode; each tab's content keeps the accent.
-        .tint(compact ? .accentColor : .selectionAccent)
+        .tint(compact ? .dexAccent : .selectionAccent)
         .tabBarMinimizeBehavior(.onScrollDown)
         .onChange(of: compact, initial: true) { _, compact in router.adapt(compact: compact) }
         .background(TabBarRelayout(trigger: router.tab))

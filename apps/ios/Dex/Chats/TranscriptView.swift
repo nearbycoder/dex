@@ -217,7 +217,7 @@ struct UserBubble: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .foregroundStyle(.white)
-                .background(Color.accentColor.gradient, in: .rect(cornerRadius: 20, style: .continuous))
+                .background(Color.selectionAccent.gradient, in: .rect(cornerRadius: 20, style: .continuous))
                 .opacity(pending ? 0.65 : 1)
                 .contextMenu {
                     Button { UIPasteboard.general.string = split.text } label: { Label("Copy", systemImage: "doc.on.doc") }

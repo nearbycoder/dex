@@ -62,12 +62,13 @@ enum LibraryRoute: Hashable {
 }
 
 enum SettingsPage: String, Hashable, CaseIterable, Identifiable {
-    case account, models, machines, github, defaults, secrets, access, notifications, usage, about
+    case account, appearance, models, machines, github, defaults, secrets, access, notifications, usage, about
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .account: "Account"
+        case .appearance: "Appearance"
         case .models: "Model Subscriptions"
         case .machines: "Cloud VMs"
         case .github: "GitHub"
@@ -83,6 +84,7 @@ enum SettingsPage: String, Hashable, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .account: "person.crop.circle"
+        case .appearance: "paintpalette"
         case .models: "cpu"
         case .machines: "server.rack"
         case .github: "chevron.left.forwardslash.chevron.right"

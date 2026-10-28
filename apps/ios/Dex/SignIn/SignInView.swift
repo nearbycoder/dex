@@ -22,7 +22,7 @@ struct SignInView: View {
                         .resizable()
                         .scaledToFit()
                         .frame(width: 88, height: 88)
-                        .shadow(color: .green.opacity(0.35), radius: 24, y: 8)
+                        .shadow(color: Color.dexAccent.opacity(0.35), radius: 24, y: 8)
                         .accessibilityHidden(true)
                     VStack(spacing: 8) {
                         Text("Sign in to Dex")
@@ -47,7 +47,7 @@ struct SignInView: View {
     }
 
     private var background: some View {
-        LinearGradient(colors: [Color.green.opacity(0.22), Color(.systemBackground), Color(.systemBackground)], startPoint: .top, endPoint: .bottom)
+        LinearGradient(colors: [Color.dexAccent.opacity(0.22), Color(.systemBackground), Color(.systemBackground)], startPoint: .top, endPoint: .bottom)
             .ignoresSafeArea()
     }
 
@@ -89,7 +89,7 @@ struct SignInView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 6)
             }
-            .buttonStyle(.glassProminent)
+            .prominentButton()
             .controlSize(.large)
             .disabled(working || AuthClient.normalize(server) == nil)
             .accessibilityIdentifier("signin.continue")

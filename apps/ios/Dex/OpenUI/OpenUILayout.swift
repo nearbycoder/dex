@@ -38,7 +38,7 @@ struct OUITabs: View {
                                 let value = item.string("value") ?? ""
                                 Button(item.string("trigger") ?? "") { selection.wrappedValue = value }
                                     .buttonStyle(.glass)
-                                    .tint(value == active ? .accentColor : nil)
+                                    .tint(value == active ? .dexAccent : nil)
                                     .fontWeight(value == active ? .semibold : .regular)
                                     .accessibilityAddTraits(value == active ? .isSelected : [])
                             }
@@ -218,7 +218,7 @@ extension View {
         switch variant {
         case "secondary": buttonStyle(.glass)
         case "tertiary", "ghost": buttonStyle(.borderless)
-        default: buttonStyle(.glassProminent)
+        default: prominentButton()
         }
     }
 }

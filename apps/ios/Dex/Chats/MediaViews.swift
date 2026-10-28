@@ -321,7 +321,7 @@ struct VmMediaView: View {
                             } label: {
                                 Label(error == nil ? "Save to Chat" : "Try Again", systemImage: "square.and.arrow.down")
                             }
-                            .buttonStyle(.glassProminent)
+                            .prominentButton()
                             .accessibilityIdentifier("media.vm.save")
                         }
                         if let link = URL(string: url) {

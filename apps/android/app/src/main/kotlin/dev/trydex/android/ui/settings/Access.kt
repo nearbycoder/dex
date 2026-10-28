@@ -216,7 +216,7 @@ fun AccessScreen() {
                             "mcp" -> Icons.Outlined.Power to DexTheme.colors.info
                             "user" -> Icons.Outlined.Check to DexTheme.colors.warning
                             "ui" -> Icons.Outlined.Mouse to MaterialTheme.colorScheme.tertiary
-                            else -> Icons.Outlined.SmartToy to DexTheme.colors.success
+                            else -> Icons.Outlined.SmartToy to MaterialTheme.colorScheme.primary
                         }
                         Icon(icon, contentDescription = entry.actor, tint = tint, modifier = Modifier.size(18.dp).padding(top = 2.dp))
                         Column(Modifier.weight(1f)) {

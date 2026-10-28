@@ -127,7 +127,7 @@ struct EmptyStateView: View {
             if let message { Text(message) }
         } actions: {
             if let actionTitle, let action {
-                Button(actionTitle, action: action).buttonStyle(.glassProminent)
+                Button(actionTitle, action: action).prominentButton()
             }
         }
     }

@@ -191,7 +191,7 @@ struct ActorBadge: View {
 
     var body: some View {
         let (label, symbol, color): (String, String?, Color) = switch actor {
-        case "agent": ("Dex", "sparkles", .green)
+        case "agent": ("Dex", "sparkles", .dexAccent)
         case "user": ("You", "person.fill", .blue)
         default: ("VM", nil, .secondary)
         }

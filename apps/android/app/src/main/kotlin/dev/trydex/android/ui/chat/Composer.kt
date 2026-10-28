@@ -362,7 +362,7 @@ fun SkillMenu(query: String, menu: SkillMenuState, onPick: (String) -> Unit, onC
             itemsIndexed(installed, key = { _, s -> "mine-${s.id}" }) { index, skill ->
                 SkillRow(
                     active = menu.active == index,
-                    icon = { Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = DexTheme.colors.success, modifier = Modifier.size(20.dp)) },
+                    icon = { Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp)) },
                     title = { Text("/${skill.id}", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodyMedium) },
                     subtitle = skill.description.takeIf { it.isNotEmpty() },
                     onClick = { onPick(skill.id) },

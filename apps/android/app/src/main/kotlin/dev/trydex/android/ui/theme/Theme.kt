@@ -5,91 +5,15 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.MotionScheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-
-/** Dex's own scheme (seeded from its emerald), used where the device has no dynamic color. */
-private val DexLight = lightColorScheme(
-    primary = Color(0xFF006C4C),
-    onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFF89F8C7),
-    onPrimaryContainer = Color(0xFF002114),
-    secondary = Color(0xFF4C6358),
-    onSecondary = Color(0xFFFFFFFF),
-    secondaryContainer = Color(0xFFCEE9DA),
-    onSecondaryContainer = Color(0xFF092016),
-    tertiary = Color(0xFF3E6374),
-    onTertiary = Color(0xFFFFFFFF),
-    tertiaryContainer = Color(0xFFC1E8FB),
-    onTertiaryContainer = Color(0xFF001F29),
-    error = Color(0xFFBA1A1A),
-    onError = Color(0xFFFFFFFF),
-    errorContainer = Color(0xFFFFDAD6),
-    onErrorContainer = Color(0xFF410002),
-    background = Color(0xFFF4FBF7),
-    onBackground = Color(0xFF171D1A),
-    surface = Color(0xFFF4FBF7),
-    onSurface = Color(0xFF171D1A),
-    surfaceVariant = Color(0xFFDBE5DE),
-    onSurfaceVariant = Color(0xFF404943),
-    outline = Color(0xFF707973),
-    outlineVariant = Color(0xFFBFC9C2),
-    inverseSurface = Color(0xFF2C322E),
-    inverseOnSurface = Color(0xFFECF2ED),
-    inversePrimary = Color(0xFF6CDBAC),
-    surfaceDim = Color(0xFFD5DCD7),
-    surfaceBright = Color(0xFFF4FBF7),
-    surfaceContainerLowest = Color(0xFFFFFFFF),
-    surfaceContainerLow = Color(0xFFEFF5F0),
-    surfaceContainer = Color(0xFFE9EFEB),
-    surfaceContainerHigh = Color(0xFFE3EAE5),
-    surfaceContainerHighest = Color(0xFFDDE4DF),
-)
-
-private val DexDark = darkColorScheme(
-    primary = Color(0xFF6CDBAC),
-    onPrimary = Color(0xFF003826),
-    primaryContainer = Color(0xFF005138),
-    onPrimaryContainer = Color(0xFF89F8C7),
-    secondary = Color(0xFFB3CCBF),
-    onSecondary = Color(0xFF1F352B),
-    secondaryContainer = Color(0xFF354B41),
-    onSecondaryContainer = Color(0xFFCEE9DA),
-    tertiary = Color(0xFFA5CCDF),
-    onTertiary = Color(0xFF073544),
-    tertiaryContainer = Color(0xFF254B5B),
-    onTertiaryContainer = Color(0xFFC1E8FB),
-    error = Color(0xFFFFB4AB),
-    onError = Color(0xFF690005),
-    errorContainer = Color(0xFF93000A),
-    onErrorContainer = Color(0xFFFFDAD6),
-    background = Color(0xFF0E1512),
-    onBackground = Color(0xFFDDE4DF),
-    surface = Color(0xFF0E1512),
-    onSurface = Color(0xFFDDE4DF),
-    surfaceVariant = Color(0xFF404943),
-    onSurfaceVariant = Color(0xFFBFC9C2),
-    outline = Color(0xFF8A938D),
-    outlineVariant = Color(0xFF404943),
-    inverseSurface = Color(0xFFDDE4DF),
-    inverseOnSurface = Color(0xFF2C322E),
-    inversePrimary = Color(0xFF006C4C),
-    surfaceDim = Color(0xFF0E1512),
-    surfaceBright = Color(0xFF343B37),
-    surfaceContainerLowest = Color(0xFF09100D),
-    surfaceContainerLow = Color(0xFF171D1A),
-    surfaceContainer = Color(0xFF1B211E),
-    surfaceContainerHigh = Color(0xFF252B28),
-    surfaceContainerHighest = Color(0xFF303633),
-)
 
 /**
  * Colors with a meaning that the scheme doesn't carry: success, warning, info (status dots, callouts, the activity
@@ -110,6 +34,10 @@ data class DexColors(
     val codeBackground: Color,
     val codeText: Color,
     val dark: Boolean,
+    /** The theme's accent as chosen (Material's `primary` may be a shade darker so white text reads on it). */
+    val accent: Color = Color(0xFF059669),
+    /** The darker accent shade that white text sits on (a selected swatch, a highlighted row). */
+    val selection: Color = Color(0xFF059669),
 )
 
 private val LightExtras = DexColors(
@@ -139,7 +67,7 @@ private val DarkExtras = DexColors(
     infoContainer = Color(0xFF15305A),
     onInfoContainer = Color(0xFFD6E4FF),
     danger = Color(0xFFFF8A80),
-    codeBackground = Color(0xFF161B18),
+    codeBackground = Color(0xFF18181B),
     codeText = Color(0xFFD4D4D4),
     dark = true,
 )
@@ -150,20 +78,39 @@ object DexTheme {
     val colors: DexColors @Composable get() = LocalDexColors.current
 }
 
+/** The theme in use (Settings' Appearance shows it as chosen). */
+val LocalAppTheme = staticCompositionLocalOf { AppThemes.default }
+
+/**
+ * Dex's look: [theme]'s accent on neutral surfaces, in light or dark per [appearance]. With [dynamicColor] (Android
+ * 12+), the wallpaper's Material You colors replace the theme's.
+ */
 @Composable
 fun DexTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    dynamicColor: Boolean = true,
+    theme: AppTheme = AppThemes.default,
+    appearance: AppearanceMode = AppearanceMode.System,
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val context = LocalContext.current
-    val scheme: ColorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        darkTheme -> DexDark
-        else -> DexLight
+    val darkTheme = when (appearance) {
+        AppearanceMode.System -> isSystemInDarkTheme()
+        AppearanceMode.Light -> false
+        AppearanceMode.Dark -> true
     }
-    CompositionLocalProvider(LocalDexColors provides if (darkTheme) DarkExtras else LightExtras) {
+    val dynamic = dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val scheme: ColorScheme = remember(theme, darkTheme, dynamic) {
+        if (dynamic) {
+            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        } else {
+            colorSchemeFor(theme, darkTheme)
+        }
+    }
+    val extras = (if (darkTheme) DarkExtras else LightExtras).let {
+        if (dynamic) it.copy(accent = scheme.primary, selection = scheme.primary)
+        else it.copy(accent = theme.accent(darkTheme), selection = theme.selection(darkTheme))
+    }
+    CompositionLocalProvider(LocalDexColors provides extras, LocalAppTheme provides theme) {
         MaterialExpressiveTheme(
             colorScheme = scheme,
             motionScheme = MotionScheme.expressive(),
@@ -172,4 +119,3 @@ fun DexTheme(
         )
     }
 }
-

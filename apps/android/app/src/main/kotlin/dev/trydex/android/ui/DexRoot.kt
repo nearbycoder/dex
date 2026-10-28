@@ -7,6 +7,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.trydex.android.AppGraph
@@ -16,6 +23,8 @@ import dev.trydex.android.ui.machine.PipDesktop
 import dev.trydex.android.ui.nav.Route
 import dev.trydex.android.ui.signin.SignInController
 import dev.trydex.android.ui.signin.SignInScreen
+import dev.trydex.android.ui.theme.AppThemes
+import dev.trydex.android.ui.theme.AppearanceMode
 import dev.trydex.android.ui.theme.DexTheme
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -74,7 +83,21 @@ fun DexRoot(
     val prefs by graph.preferences.prefs.collectAsStateWithLifecycle()
     val view = LocalView.current
     val haptics = remember(view) { Haptics(view) { graph.preferences.prefs.value.haptics } }
-    DexTheme(dynamicColor = prefs.dynamicColor) {
+    val appearance = AppearanceMode.byId(prefs.appearance)
+    val dark = when (appearance) {
+        AppearanceMode.System -> isSystemInDarkTheme()
+        AppearanceMode.Light -> false
+        AppearanceMode.Dark -> true
+    }
+    // The status and navigation bars' icons follow the app's mode, which can differ from the system's.
+    val activity = LocalContext.current as? ComponentActivity
+    LaunchedEffect(activity, dark) {
+        val transparent = androidx.compose.ui.graphics.Color.Transparent.toArgb()
+        val style = if (dark) SystemBarStyle.dark(transparent) else SystemBarStyle.light(transparent, transparent)
+        activity?.enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+    }
+    LaunchedEffect(prefs.theme) { dev.trydex.android.notifications.Notifier.accent = AppThemes.byId(prefs.theme).accentLight.toArgb() }
+    DexTheme(theme = AppThemes.byId(prefs.theme), appearance = appearance, dynamicColor = prefs.dynamicColor) {
         CompositionLocalProvider(
             LocalGraph provides graph,
             LocalHaptics provides haptics,

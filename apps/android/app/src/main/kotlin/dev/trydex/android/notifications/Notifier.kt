@@ -8,6 +8,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import androidx.compose.ui.graphics.toArgb
+import dev.trydex.android.ui.theme.AppThemes
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -122,6 +124,9 @@ class Notifier(private val context: Context, private val graph: AppGraph) {
     }
 
     companion object {
+        /** Notifications' accent: the chosen theme's (the app sets it), emerald until then. */
+        @Volatile var accent: Int = AppThemes.default.accentLight.toArgb()
+
         const val CHANNEL_REPLIES = "replies"
         const val CHANNEL_PROBLEMS = "problems"
         const val CHANNEL_ACTIVITY = "activity"
@@ -160,7 +165,7 @@ class Notifier(private val context: Context, private val graph: AppGraph) {
                 .setStyle(NotificationCompat.BigTextStyle().bigText(alert.body))
                 .setContentIntent(open)
                 .setAutoCancel(true)
-                .setColor(0xFF10B981.toInt())
+                .setColor(accent)
                 .setGroup(alert.kind)
                 .apply {
                     if (alert.sessionId != null) {

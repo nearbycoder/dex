@@ -43,12 +43,15 @@ struct Composer<Accessory: View>: View {
                         .onKeyPress(keys: [.return, .upArrow, .downArrow, .tab, .escape], phases: .down) { press in handle(press) }
                         .accessibilityIdentifier("composer.field")
                     HStack(spacing: 6) {
+                        // The chips are neutral (gray glass, primary text) in every theme; only Send carries the accent.
                         AttachButton(model: model, disabled: disabled)
+                            .tint(.primary)
                         ScrollView(.horizontal) {
                             HStack(spacing: 6) { accessory }
                         }
                         .scrollIndicators(.hidden)
                         .scrollClipDisabled()
+                        .tint(.primary)
                         Spacer(minLength: 0)
                         if running, let onStop {
                             Button {
@@ -58,13 +61,14 @@ struct Composer<Accessory: View>: View {
                             }
                             .buttonStyle(.glass)
                             .buttonBorderShape(.circle)
+                            .tint(.primary)
                             .accessibilityLabel("Stop")
                             .accessibilityIdentifier("composer.stop")
                         }
                         Button(action: send) {
                             Image(systemName: "arrow.up").font(.body.weight(.bold)).frame(width: 20, height: 20)
                         }
-                        .buttonStyle(.glassProminent)
+                        .prominentButton()
                         .buttonBorderShape(.circle)
                         .disabled(!canSend)
                         .keyboardShortcut(.return, modifiers: .command)
@@ -414,7 +418,7 @@ private struct QueueItemRow: View {
                     Spacer()
                     Button("Cancel") { editing = false }.buttonStyle(.glass)
                     Button("Save", action: save)
-                        .buttonStyle(.glassProminent)
+                        .prominentButton()
                         .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         .accessibilityIdentifier("queue.save")
                 }

@@ -29,7 +29,7 @@ struct ModelPickerButton: View {
                         .background(.quaternary, in: .rect(cornerRadius: 4))
                 }
                 if current?.acceptsImages == true {
-                    Image(systemName: "eye").font(.caption2).foregroundStyle(.green)
+                    Image(systemName: "eye").font(.caption2).foregroundStyle(.secondary)
                 }
             }
             .font(.caption.weight(.medium))
@@ -45,6 +45,8 @@ struct ModelPickerButton: View {
                 onChange(picked, clamped == thinking ? nil : clamped)
             }
             .frame(minWidth: 380, idealWidth: 420, minHeight: 520, idealHeight: 640)
+            // The chip is neutral; the list it opens keeps the theme.
+            .tint(.dexAccent)
             .presentationCompactAdaptation(.sheet)
             .presentationDetents([.large])
         }
@@ -156,6 +158,8 @@ struct ModelPickerSheet: View {
                                 } label: {
                                     ModelRow(model: candidate, selected: selected)
                                 }
+                                // Rows read as text, not links; only the checkmark carries the theme.
+                                .tint(.primary)
                                 .disabled(!(connected[provider.id] == true || selected))
                                 .accessibilityIdentifier("model.\(candidate.id)")
                             }
@@ -239,7 +243,7 @@ struct ModelPickerSheet: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .foregroundStyle(chosen ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
-            .background(chosen ? AnyShapeStyle(Color("SelectionAccent")) : AnyShapeStyle(.quaternary), in: .capsule)
+            .background(chosen ? AnyShapeStyle(Color.selectionAccent) : AnyShapeStyle(.quaternary), in: .capsule)
             .contentShape(.capsule)
         }
         .buttonStyle(.plain)
@@ -270,7 +274,7 @@ struct ModelRow: View {
                 FlowBadges(model: model)
             }
             Spacer(minLength: 0)
-            if selected { Image(systemName: "checkmark").foregroundStyle(.tint).fontWeight(.semibold).accessibilityLabel("Selected") }
+            if selected { Image(systemName: "checkmark").foregroundStyle(Color.dexAccent).fontWeight(.semibold).accessibilityLabel("Selected") }
         }
         .accessibilityElement(children: .combine)
     }
@@ -364,7 +368,6 @@ struct McpPickerButton: View {
         }
         .menuActionDismissBehavior(.disabled)
         .buttonStyle(.glass)
-        .tint(attached.isEmpty ? nil : .green)
         .accessibilityLabel(attached.isEmpty ? "MCP servers" : "MCP servers: \(attached.map(\.name).joined(separator: ", "))")
         .accessibilityIdentifier("composer.mcp")
     }

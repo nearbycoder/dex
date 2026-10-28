@@ -10,6 +10,8 @@ final class ScreenTourUITests: DexUITestCase {
         super.setUp()
         continueAfterFailure = true
         XCUIDevice.shared.orientation = .portrait
+        // `THEME=ocean scripts/tour.sh`: every launch starts in that theme.
+        if let theme = ProcessInfo.processInfo.environment["DEX_THEME"], !theme.isEmpty { app.launchEnvironment["DEX_THEME"] = theme }
     }
 
     override func tearDown() {
@@ -149,6 +151,22 @@ final class ScreenTourUITests: DexUITestCase {
     }
 
     // MARK: Tour
+
+    /// The screens where the theme shows most: the inbox, a chat and its composer, the model list, a new chat, and
+    /// Settings → Appearance (`TEST=testThemeGlance THEME=ocean scripts/tour.sh`).
+    func testThemeGlance() {
+        app.launchArguments = ["-DexMock", "-DexReset", "-DexFast"]
+        app.launch()
+        if labelled("Plan a weekend in Lisbon").waitForExistence(timeout: 10) { shot("chats-list") } else { missing("chats-list") }
+        if tap(element("chats.new")), element("newchat.heading").waitForExistence(timeout: 10) { shot("newchat") } else { missing("newchat") }
+        if openChatAtLaunch("s-welcome") { shot("chat-welcome-bottom", settle: 2) } else { missing("chat-welcome") }
+        if tap(element("composer.model")) { shot("chat-model-picker", settle: 2); dismissPopup(); sleep(1) } else { missing("chat-model-picker") }
+        if openChatAtLaunch("s-chart") { shot("chat-openui", settle: 3) } else { missing("chat-openui") }
+        if go("settings", "Settings") {
+            let row = element("settings.page.appearance")
+            if tap(row) { shot("settings-appearance", settle: 2) } else { missing("settings-appearance") }
+        } else { missing("settings") }
+    }
 
     func testTour() {
         signIn()

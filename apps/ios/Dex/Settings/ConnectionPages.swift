@@ -134,7 +134,7 @@ struct ChatGPTConnectSection: View {
                         }
                         .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.glassProminent)
+                    .prominentButton()
                     .disabled(callback.trimmingCharacters(in: .whitespaces).isEmpty || checking)
                     .accessibilityIdentifier("chatgpt.connect")
                     Button("Cancel") {
@@ -158,7 +158,7 @@ struct ChatGPTConnectSection: View {
                     }
                     .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.glassProminent)
+                .prominentButton()
                 .disabled(starting)
                 .accessibilityIdentifier("chatgpt.start")
             }

@@ -31,7 +31,7 @@ struct GitHubPage: View {
                                 .font(.footnote)
                                 .foregroundStyle(.orange)
                             Button("Reconnect") { startOAuth() }
-                                .buttonStyle(.glassProminent)
+                                .prominentButton()
                                 .accessibilityIdentifier("github.reconnectExpired")
                         }
                     }
@@ -59,7 +59,7 @@ struct GitHubPage: View {
                             Label("Connect with GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
                                 .frame(maxWidth: .infinity)
                         }
-                        .buttonStyle(.glassProminent)
+                        .prominentButton()
                         .controlSize(.large)
                         .disabled(connecting)
                         .accessibilityIdentifier("github.connectOAuth")

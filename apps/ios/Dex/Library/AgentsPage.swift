@@ -29,7 +29,7 @@ struct AgentsList: View {
                 .accessibilityIdentifier("agent.row.\(agent.id)")
                 .swipeActions(edge: .leading, allowsFullSwipe: true) {
                     Button { router.newChat(agentId: agent.id) } label: { Label("Start Chat", systemImage: "plus.bubble") }
-                        .tint(.accentColor)
+                        .tint(.dexAccent)
                 }
                 .swipeActions(edge: .trailing) {
                     Button(role: .destructive) { deleting = agent } label: { Label("Delete", systemImage: "trash") }
@@ -59,7 +59,7 @@ struct AgentsList: View {
             Text("Its chats stay, as plain chats.")
         }
         // The selected row (iPad): white text on the darker accent, readable in dark mode too.
-        .tint(Color("SelectionAccent"))
+        .tint(Color.selectionAccent)
         .accessibilityIdentifier("agents.list")
     }
 

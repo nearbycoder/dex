@@ -184,11 +184,12 @@ struct ChatRow: View {
                 } else if let agent {
                     AgentAvatar(icon: agent.icon, color: agent.color, size: 36)
                 } else {
+                    // A plain chat: neutral, so agents' and projects' colors stand out.
                     Image(systemName: "bubble.left.fill")
                         .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(.tint)
+                        .foregroundStyle(.secondary)
                         .frame(width: 36, height: 36)
-                        .background(.tint.opacity(0.14), in: .rect(cornerRadius: 10, style: .continuous))
+                        .background(Color.secondary.opacity(0.14), in: .rect(cornerRadius: 10, style: .continuous))
                 }
             }
             .opacity(place == .settled ? 0.6 : 1)

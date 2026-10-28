@@ -141,7 +141,7 @@ struct InspectView: View {
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: entry.isDirectory ? "folder.fill" : entry.type == "link" ? "link" : "doc")
-                        .foregroundStyle(entry.isDirectory ? Color.accentColor : .secondary)
+                        .foregroundStyle(entry.isDirectory ? Color.dexAccent : .secondary)
                         .frame(width: 22)
                     Text(entry.name).font(.callout).lineLimit(1)
                     Spacer()
@@ -353,7 +353,7 @@ struct PortsView: View {
                 Button(action: expose) {
                     if working { ProgressView().controlSize(.small) } else { Text("Get URL") }
                 }
-                .buttonStyle(.glassProminent)
+                .prominentButton()
                 .disabled(PortURL.parse(port) == nil || working)
                 .accessibilityIdentifier("ports.expose")
             }
@@ -386,7 +386,7 @@ struct PortsView: View {
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.green.opacity(0.08), in: .rect(cornerRadius: 14))
+                .background(Color.dexAccent.opacity(0.08), in: .rect(cornerRadius: 14))
                 .transition(.opacity.combined(with: .scale(scale: 0.98)))
                 .task(id: copied) {
                     guard copied else { return }

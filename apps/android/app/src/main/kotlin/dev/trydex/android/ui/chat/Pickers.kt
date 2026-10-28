@@ -87,8 +87,10 @@ fun ToolbarButton(
     Surface(
         onClick = onClick,
         shape = RoundedCornerShape(50),
-        color = if (highlighted) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest,
-        contentColor = if (highlighted) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+        // Neutral in every theme (the send button carries the accent); a highlighted one is outlined, darker text.
+        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        contentColor = if (highlighted) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+        border = if (highlighted) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline) else null,
         modifier = modifier.heightIn(min = 36.dp),
     ) {
         Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -115,7 +117,7 @@ fun ModelPicker(model: String, thinking: ThinkingLevel, onChange: (String, Think
         if (both && current != null) {
             Text(current.modelProvider.short, style = MaterialTheme.typography.labelSmall, modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(MaterialTheme.colorScheme.surfaceContainer).padding(horizontal = 4.dp, vertical = 1.dp))
         }
-        if (current?.hasVision == true) Icon(Icons.Outlined.Visibility, contentDescription = "Can see images", modifier = Modifier.size(16.dp), tint = DexTheme.colors.success)
+        if (current?.hasVision == true) Icon(Icons.Outlined.Visibility, contentDescription = "Can see images", modifier = Modifier.size(16.dp))
         Icon(Icons.Rounded.ExpandMore, contentDescription = null, modifier = Modifier.size(16.dp))
     }
     val levels = supportedThinkingLevels(current)
@@ -250,7 +252,7 @@ private fun ModelRow(model: DexModel, selected: Boolean, enabled: Boolean, onCli
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(model.modelMaker?.displayName ?: model.maker, style = MaterialTheme.typography.bodySmall)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (model.hasVision) Badge(Icons.Outlined.Visibility, "Vision", DexTheme.colors.success) else Badge(Icons.Outlined.TextFields, "Text only", null)
+                    if (model.hasVision) Badge(Icons.Outlined.Visibility, "Vision", MaterialTheme.colorScheme.primary) else Badge(Icons.Outlined.TextFields, "Text only", null)
                     Badge(null, "${formatTokens(model.contextWindow)} context", null)
                     if (levels.isNotEmpty()) Badge(Icons.Outlined.Psychology, if (ThinkingLevel.Off in levels) "thinking optional" else "always thinks", null)
                     if (model.free) Badge(null, "Free", DexTheme.colors.info)

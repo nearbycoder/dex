@@ -188,7 +188,7 @@ fun ActivityRow(
                 when {
                     active -> LoadingIndicator(Modifier.size(20.dp))
                     failed > 0 -> Icon(Icons.Rounded.WarningAmber, contentDescription = null, tint = DexTheme.colors.warning, modifier = Modifier.size(18.dp))
-                    else -> Icon(Icons.Rounded.ChecklistRtl, contentDescription = null, tint = DexTheme.colors.success, modifier = Modifier.size(18.dp))
+                    else -> Icon(Icons.Rounded.ChecklistRtl, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                 }
                 Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     AnimatedContent(
@@ -272,7 +272,7 @@ fun ToolCard(sessionId: String, call: ToolCallBlock, result: ToolResultMessage?,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Icon(Icons.Rounded.ChevronRight, contentDescription = null, modifier = Modifier.size(16.dp).rotate(chevron), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                Icon(toolIcon(call.name), contentDescription = null, modifier = Modifier.size(16.dp), tint = if (failed) MaterialTheme.colorScheme.error else DexTheme.colors.success)
+                Icon(toolIcon(call.name), contentDescription = null, modifier = Modifier.size(16.dp), tint = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
                 Text(call.name, style = MaterialTheme.typography.labelLarge)
                 Text(Tools.summarize(call.arguments), style = Mono.copy(fontSize = 12.sp), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                 if (onVm) {
