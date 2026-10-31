@@ -74,8 +74,6 @@ import { isMcpExtension, type McpCallResult, mcpExtension, mcpExtensionName, typ
 import { AccessCenter, parseAccessToken } from "./access"
 import { MediaCenter, type SharedMedia } from "./media"
 import { mediaTools } from "./tools/media-tools"
-import { imageTools, type ImageToolOptions } from "./tools/image-tools"
-import { AVATAR_STYLES, generateImage, type ImageRequest, sidekickPicturePrompt } from "./images"
 import { GitHubRepos } from "./github-repos"
 import { checkServer, searchRegistry, searchSmithery } from "./mcp-registry"
 import { MessageQueue } from "./queue"
@@ -647,11 +645,6 @@ export class DexAgent extends Agent<Env, DexState> {
             ...saved.map((secret) => `- ${secret.name}${secret.note ? `: ${secret.note}` : ""}`)
           ].join("\n")
         }),
-        section("images", () =>
-          this.state.chatgpt?.connected
-            ? undefined
-            : "generate_image runs on the user's ChatGPT plan, which isn't connected, so it fails. If they ask for an image, say they can connect ChatGPT in Settings → Model subscriptions."
-        ),
         section("vm_access", () =>
           this.vmHost.configured()
             ? undefined
@@ -699,8 +692,7 @@ export class DexAgent extends Agent<Env, DexState> {
           command: (chatId, command) => this.secrets.command(chatId, command),
           fill: (chatId, content) => this.secrets.fill(chatId, content)
         }),
-        ...(this.media.configured ? mediaTools((chatId, path, title) => this.shareMediaFromVm(chatId, path, title)) : []),
-        ...(this.media.configured ? imageTools((chatId, options) => this.generateChatImage(chatId, options)) : [])
+        ...(this.media.configured ? mediaTools((chatId, path, title) => this.shareMediaFromVm(chatId, path, title)) : [])
       ]
     })
   }
@@ -1881,62 +1873,6 @@ export class DexAgent extends Agent<Env, DexState> {
     const content = String(text ?? "").slice(0, 64_000)
     if (content.trim()) this.workspace.write(characterMemoryPath(id), content)
     else this.workspace.remove(characterMemoryPath(id))
-  }
-
-  // ── Images ────────────────────────────────────────────────────────────────
-
-  /** An image from OpenAI's image model on the user's ChatGPT plan. */
-  private async makeImage(request: ImageRequest) {
-    const token = await this.resolveChatGPTToken()
-    if (!token) throw new Error("Making images uses your ChatGPT plan: connect ChatGPT in Settings → Model subscriptions.")
-    return generateImage(token.key, request)
-  }
-
-  /** generate_image in a chat: made, saved with the chat's files, and shown inline. */
-  async generateChatImage(sessionId: string, options: ImageToolOptions) {
-    if (!this.hasSession(sessionId)) throw new Error("No such chat.")
-    const references = (
-      await Promise.all(options.references.map((link) => this.media.readImage(sessionId, link.replace(/^.*\/api\/media\//, "").split(/[?#]/)[0]!)))
-    ).filter((image) => image !== null)
-    if (references.length < options.references.length) throw new Error("A reference isn't one of this chat's images. Use the /api/media/… link of an image in this chat.")
-    const image = await this.makeImage({
-      prompt: options.prompt,
-      size: options.shape === "portrait" ? "1024x1536" : options.shape === "landscape" ? "1536x1024" : "1024x1024",
-      background: options.transparent ? "transparent" : "auto",
-      quality: options.quality,
-      format: "png",
-      references
-    })
-    const name = options.prompt.replace(/\s+/g, " ").slice(0, 60)
-    const media = await this.media.store(sessionId, image.bytes, name, image.mimeType)
-    this.publishArtifacts(sessionId)
-    return { ...media, revisedPrompt: image.revisedPrompt }
-  }
-
-  /**
-   * A picture for a sidekick from a description (or, without one, their profile), in one of AVATAR_STYLES, as a data:
-   * URL. The editor shrinks it to keep; `small` asks the image model for one that already fits (for operations).
-   */
-  @callable()
-  async generateSidekickPicture(input: { prompt?: string; style?: string; color?: string; characterId?: string; small?: boolean }) {
-    const character = input.characterId ? this.characterById(input.characterId) : undefined
-    const description =
-      String(input.prompt ?? "").trim().slice(0, 1_000) ||
-      (character ? [character.name, character.tagline, character.persona.slice(0, 600)].filter(Boolean).join(". ") : "")
-    if (!description) throw new Error("Describe who to draw.")
-    const style = AVATAR_STYLES[input.style ?? ""] ?? AVATAR_STYLES.illustration!
-    const color = String(input.color ?? character?.color ?? "violet")
-    const background = { emerald: "deep emerald green", sky: "deep sky blue", violet: "deep violet", amber: "deep amber", rose: "deep rose", orange: "deep burnt orange", teal: "deep teal", zinc: "charcoal gray" }[color] ?? "deep violet"
-    const prompt = sidekickPicturePrompt(description, style!, background)
-    // Small: webp squeezed until it fits a sidekick's picture (48 KB); otherwise a good one for the editor to shrink.
-    for (const compression of input.small ? [45, 25, 10] : [85]) {
-      const image = await this.makeImage({ prompt, size: "1024x1024", quality: input.small ? "low" : "medium", format: "webp", compression })
-      let binary = ""
-      for (let index = 0; index < image.bytes.length; index += 0x8000) binary += String.fromCharCode(...image.bytes.subarray(index, index + 0x8000))
-      const dataUrl = `data:${image.mimeType};base64,${btoa(binary)}`
-      if (!input.small || isProjectImage(dataUrl)) return { dataUrl, revisedPrompt: image.revisedPrompt }
-    }
-    throw new Error("The picture came out too detailed to keep small. Try a simpler style, like illustration or pixel art.")
   }
 
   // ── MCP servers ───────────────────────────────────────────────────────────

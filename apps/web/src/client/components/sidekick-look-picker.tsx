@@ -1,5 +1,5 @@
-import { Check, Dices, ImagePlus, LoaderCircle, RotateCcw, Wand2, X } from "lucide-react"
-import { type ReactNode, useState } from "react"
+import { Dices, ImagePlus, X } from "lucide-react"
+import type { ReactNode } from "react"
 import { lookUrl } from "~/client/lib/sidekick-art"
 import { AGENT_COLORS, type AgentColor } from "~/shared/agents"
 import { BODIES, EXTRAS, EYES, LABELS, LOOK_PRESETS, MOUTHS, randomLook, type SidekickLook, SKINS, type Skin } from "~/shared/sidekick-look"
@@ -30,23 +30,14 @@ export function SidekickLookPicker({
   color,
   hasPhoto,
   onChange,
-  onPhoto,
-  canGenerate,
-  generate,
-  onPicture
+  onPhoto
 }: {
   look: SidekickLook | null
   color: AgentColor
   hasPhoto: boolean
   onChange: (patch: { look?: SidekickLook | null; color?: AgentColor; image?: null }) => void
   onPhoto: () => void
-  /** Whether ChatGPT is connected, which drawing a picture needs. */
-  canGenerate: boolean
-  /** Draws a picture from a description (empty: from their profile) in a style; resolves to a data: URL to keep. */
-  generate: (prompt: string, style: string) => Promise<string>
-  onPicture: (image: string) => void
 }) {
-  const [drawing, setDrawing] = useState(false)
   const background = AGENT_COLORS[color]?.[0] ?? AGENT_COLORS.violet[0]
   // Customizing a photo or an emoji starts from the first ready-made look.
   const current = look ?? LOOK_PRESETS[0]!.look
@@ -99,24 +90,12 @@ export function SidekickLookPicker({
         >
           <ImagePlus className="size-4" /> {hasPhoto && !look ? "Change photo" : "Use a photo"}
         </button>
-        <button
-          type="button"
-          aria-expanded={drawing}
-          onClick={() => setDrawing(!drawing)}
-          className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm ${
-            drawing ? "border-emerald-600/70 bg-emerald-950/40 text-emerald-100" : "border-zinc-800 text-zinc-300 hover:border-zinc-700 hover:text-zinc-100"
-          }`}
-        >
-          <Wand2 className="size-4" /> Draw one
-        </button>
         {hasPhoto && !look && (
           <button type="button" onClick={() => onChange({ look: current, image: null })} className="flex items-center gap-1 rounded-lg px-2 py-2 text-sm text-zinc-500 hover:text-zinc-200">
             <X className="size-4" /> Remove photo
           </button>
         )}
       </div>
-
-      {drawing && <DrawPicture canGenerate={canGenerate} generate={generate} onPicture={(image) => (onPicture(image), setDrawing(false))} />}
 
       <div className="space-y-3 rounded-xl border border-zinc-800/80 bg-zinc-900/30 p-3 sm:p-4">
         <Row label="Body">{BODIES.map((value) => option("body", value, LABELS[value]))}</Row>
@@ -176,97 +155,6 @@ export function SidekickLookPicker({
           ))}
         </Row>
       </div>
-    </div>
-  )
-}
-
-const STYLES: ReadonlyArray<{ readonly id: string; readonly label: string }> = [
-  { id: "illustration", label: "Illustration" },
-  { id: "3d", label: "3D" },
-  { id: "pixel", label: "Pixel art" },
-  { id: "anime", label: "Anime" },
-  { id: "watercolor", label: "Watercolor" },
-  { id: "photo", label: "Photo" }
-]
-
-/** Draws a picture with the image model on the user's ChatGPT plan: describe them, pick a style, keep or redo it. */
-function DrawPicture({ canGenerate, generate, onPicture }: { canGenerate: boolean; generate: (prompt: string, style: string) => Promise<string>; onPicture: (image: string) => void }) {
-  const [prompt, setPrompt] = useState("")
-  const [style, setStyle] = useState("illustration")
-  const [busy, setBusy] = useState(false)
-  const [result, setResult] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  const run = async () => {
-    setBusy(true)
-    setError(null)
-    try {
-      setResult(await generate(prompt.trim(), style))
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  if (!canGenerate) {
-    return (
-      <p className="rounded-xl border border-zinc-800/80 bg-zinc-900/30 p-3 text-sm text-zinc-400">
-        Drawing a picture uses your ChatGPT plan's image model. Connect ChatGPT in Settings → Model subscriptions first.
-      </p>
-    )
-  }
-  return (
-    <div className="space-y-3 rounded-xl border border-zinc-800/80 bg-zinc-900/30 p-3 sm:p-4">
-      <textarea
-        value={prompt}
-        onChange={(event) => setPrompt(event.target.value)}
-        rows={2}
-        maxLength={1_000}
-        aria-label="Describe their picture"
-        placeholder="A cheerful fox in a green hoodie with round glasses. Leave empty to draw them from their profile."
-        className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-base text-zinc-100 placeholder:text-zinc-600 focus:border-emerald-600 focus:outline-none md:text-sm"
-      />
-      <div className="flex flex-wrap gap-2">
-        {STYLES.map((option) => (
-          <button
-            key={option.id}
-            type="button"
-            aria-pressed={style === option.id}
-            onClick={() => setStyle(option.id)}
-            className={`rounded-full border px-3 py-1 text-xs ${
-              style === option.id ? "border-emerald-600/70 bg-emerald-950/40 text-emerald-100" : "border-zinc-800 text-zinc-400 hover:text-zinc-200"
-            }`}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
-      <div className="flex flex-wrap items-center gap-3">
-        {result && !busy && <img src={result} alt="The drawn picture" className="size-20 rounded-full object-cover ring-1 ring-zinc-700" />}
-        {busy && (
-          <span className="flex size-20 items-center justify-center rounded-full bg-zinc-900 ring-1 ring-zinc-800">
-            <LoaderCircle className="size-6 animate-spin text-zinc-500" />
-          </span>
-        )}
-        <div className="flex flex-wrap gap-2">
-          {result && !busy && (
-            <button type="button" onClick={() => onPicture(result)} className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-500">
-              <Check className="size-4" /> Use this
-            </button>
-          )}
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => void run()}
-            className="flex items-center gap-1.5 rounded-lg border border-zinc-700 px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800 disabled:text-zinc-500"
-          >
-            {result ? <RotateCcw className="size-4" /> : <Wand2 className="size-4" />}
-            {busy ? "Drawing… about 30 seconds" : result ? "Draw again" : "Draw"}
-          </button>
-        </div>
-      </div>
-      {error && <p className="text-sm text-red-400">{error}</p>}
     </div>
   )
 }

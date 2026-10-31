@@ -3,7 +3,7 @@ import { ArrowLeft, Check, LoaderCircle, MessageCircle, Plug, RotateCcw, Trash2 
 import { type ReactNode, useEffect, useRef, useState } from "react"
 import { CharacterAvatar } from "~/client/components/agent-avatar"
 import { SidekickLookPicker } from "~/client/components/sidekick-look-picker"
-import { dataUrlBlob, lookPng, shrinkPicture } from "~/client/lib/sidekick-art"
+import { lookPng } from "~/client/lib/sidekick-art"
 import { randomLook } from "~/shared/sidekick-look"
 import { InfoTip } from "~/client/components/info-tip"
 import { McpStatusDot } from "~/client/components/mcp-picker"
@@ -46,6 +46,21 @@ function Field({ label, hint, children, as = "label" }: { label: string; hint?: 
       <div className="mt-2">{children}</div>
     </Tag>
   )
+}
+
+/** A picture as a small square data: URL (center-cropped), under the 48 KB a character's picture may be. */
+async function avatarDataUrl(file: File): Promise<string> {
+  const bitmap = await createImageBitmap(file)
+  const side = Math.min(bitmap.width, bitmap.height)
+  for (const [size, quality] of [[256, 0.85], [192, 0.8], [160, 0.7], [128, 0.6]] as const) {
+    const canvas = document.createElement("canvas")
+    canvas.width = canvas.height = size
+    canvas.getContext("2d")!.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, size, size)
+    const url = canvas.toDataURL("image/webp", quality)
+    const data = url.startsWith("data:image/webp") ? url : canvas.toDataURL("image/jpeg", quality)
+    if (data.length < 63_000) return data
+  }
+  throw new Error("That picture is too detailed to keep small. Try another.")
 }
 
 /** Keyed by id: moving from one character (or “new”) to another starts a fresh draft instead of keeping the last one. */
@@ -113,7 +128,7 @@ function CharacterEditor() {
     if (!file) return
     try {
       // A photo instead of a look.
-      update({ image: await shrinkPicture(file), look: null, avatar: "" })
+      update({ image: await avatarDataUrl(file), look: null, avatar: "" })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Couldn't read that picture.")
     }
@@ -203,13 +218,6 @@ function CharacterEditor() {
               hasPhoto={Boolean(draft.image)}
               onChange={(patch) => update({ ...patch, avatar: "" })}
               onPhoto={() => pictureInput.current?.click()}
-              canGenerate={state.chatgpt?.connected ?? false}
-              generate={async (prompt, style) => {
-                const description = prompt || [draft.name, draft.tagline, draft.persona.slice(0, 600)].filter(Boolean).join(". ")
-                const picture = await stub.generateSidekickPicture({ prompt: description, style, color: draft.color })
-                return shrinkPicture(dataUrlBlob(picture.dataUrl))
-              }}
-              onPicture={(image) => update({ image, look: null, avatar: "" })}
             />
           </Field>
 

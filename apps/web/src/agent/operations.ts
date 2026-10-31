@@ -58,8 +58,6 @@ export type OperationHost = Pick<
   | "restartCharacter"
   | "characterMemory"
   | "saveCharacterMemory"
-  | "generateSidekickPicture"
-  | "generateChatImage"
   | "saveProject"
   | "projectImageCandidates"
   | "deleteProject"
@@ -1022,30 +1020,6 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     }
   }),
   define({
-    name: "app_generate_sidekick_picture",
-    description:
-      "Draw a new picture for a sidekick with OpenAI's image model (on the user's ChatGPT plan) and make it their face, replacing their look or photo. Describe them, or leave the prompt out to draw them from their profile.",
-    risk: "admin",
-    parameters: Type.Object({
-      sidekick_id: id("The sidekick's id."),
-      prompt: Type.Optional(Type.String({ maxLength: 1_000, description: "Who to draw: appearance, outfit, mood." })),
-      style: Type.Optional(
-        Type.Union([Type.Literal("illustration"), Type.Literal("3d"), Type.Literal("pixel"), Type.Literal("anime"), Type.Literal("watercolor"), Type.Literal("photo")], {
-          description: "Default illustration."
-        })
-      )
-    }),
-    covers: ["generateSidekickPicture"],
-    summarize: (args, state) => `Draw a new picture for ${quote(characterName(state, args.sidekick_id))}`,
-    run: async (host, args) => {
-      const existing = host.appState().characters.find((character) => character.id === args.sidekick_id)
-      if (!existing) throw new Error(`No sidekick ${args.sidekick_id}.`)
-      const picture = await host.generateSidekickPicture({ prompt: args.prompt, style: args.style, characterId: existing.id, small: true })
-      const saved = await host.saveCharacter({ ...characterDraft({ name: existing.name }, existing), image: picture.dataUrl, look: null })
-      return { ...characterSummary(saved), revisedPrompt: picture.revisedPrompt }
-    }
-  }),
-  define({
     name: "app_read_sidekick_memory",
     description: "Read a sidekick's memory: their own notes about the user, which they read every turn.",
     risk: "read",
@@ -1064,34 +1038,6 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     run: async (host, args) => {
       await host.saveCharacterMemory(args.sidekick_id, args.memory)
       return { saved: args.sidekick_id }
-    }
-  }),
-
-  // Images
-  define({
-    name: "app_generate_image",
-    description:
-      "Make an image with OpenAI's image model on the user's ChatGPT plan and save it in a chat's files (it shows in that chat's Files). Returns its link. Takes 20–60 seconds.",
-    risk: "write",
-    inChats: false,
-    parameters: Type.Object({
-      session_id: id("The chat to keep it in."),
-      prompt: Type.String({ minLength: 3, maxLength: 4_000 }),
-      shape: Type.Optional(Type.Union([Type.Literal("square"), Type.Literal("portrait"), Type.Literal("landscape")])),
-      transparent: Type.Optional(Type.Boolean()),
-      quality: Type.Optional(Type.Union([Type.Literal("low"), Type.Literal("medium"), Type.Literal("high")]))
-    }),
-    covers: [],
-    summarize: (args, state) => `Make an image in ${quote(chatTitle(state, args.session_id))}: ${quote(args.prompt, 50)}`,
-    run: async (host, args) => {
-      const image = await host.generateChatImage(args.session_id, {
-        prompt: args.prompt,
-        shape: args.shape ?? "square",
-        transparent: args.transparent ?? false,
-        quality: args.quality ?? "medium",
-        references: []
-      })
-      return { url: image.url, name: image.name, size: image.size, revisedPrompt: image.revisedPrompt }
     }
   }),
 

@@ -133,29 +133,6 @@ export class MediaCenter {
       })
   }
 
-  /** Saves bytes made in the agent (a generated image) as one of a chat's files. */
-  async store(sessionId: string, bytes: Uint8Array, name: string, contentType: string): Promise<SharedMedia> {
-    if (!this.host.bucket) throw new Error("Media isn't set up on this deployment (no MEDIA bucket).")
-    const extension = { "image/png": "png", "image/webp": "webp", "image/jpeg": "jpg" }[contentType] ?? "png"
-    const key = `${encodeUserId(this.host.userId())}/${crypto.randomUUID()}.${extension}`
-    const title = name.trim().slice(0, 120) || "image"
-    await this.host.bucket.put(key, bytes, { httpMetadata: { contentType }, customMetadata: { name: title } })
-    this.finishUpload(key, sessionId, title, contentType, bytes.length)
-    return this.get(key)!
-  }
-
-  /** A chat's stored image, as base64 (to work from when making another). Null if it isn't this chat's. */
-  async readImage(sessionId: string, key: string): Promise<{ data: string; mimeType: string } | null> {
-    const row = this.host.sql.exec<{ content_type: string }>(`SELECT content_type FROM dex_media WHERE key = ? AND session_id = ?`, key, sessionId).toArray()[0]
-    if (!row || !row.content_type.startsWith("image/") || !this.host.bucket) return null
-    const object = await this.host.bucket.get(key)
-    if (!object) return null
-    const bytes = new Uint8Array(await object.arrayBuffer())
-    let binary = ""
-    for (let index = 0; index < bytes.length; index += 0x8000) binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000))
-    return { data: btoa(binary), mimeType: row.content_type }
-  }
-
   get(key: string): SharedMedia | null {
     const row = this.host.sql
       .exec<{ key: string; name: string; content_type: string; size: number }>(`SELECT key, name, content_type, size FROM dex_media WHERE key = ?`, key)
