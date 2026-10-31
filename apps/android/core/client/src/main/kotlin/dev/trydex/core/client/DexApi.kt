@@ -4,6 +4,7 @@ import dev.trydex.core.client.AgentConnection.Companion.LONG_TIMEOUT_MS
 import dev.trydex.core.client.AgentConnection.Companion.VM_TIMEOUT_MS
 import dev.trydex.core.client.AgentConnection.Companion.args
 import dev.trydex.core.model.AgentProfile
+import dev.trydex.core.model.CharacterProfile
 import dev.trydex.core.model.ChatArtifact
 import dev.trydex.core.model.ChatGPTSignInStart
 import dev.trydex.core.model.CommandResult
@@ -25,6 +26,7 @@ import dev.trydex.core.model.RegistryServer
 import dev.trydex.core.model.SavedArtifact
 import dev.trydex.core.model.ScheduledPrompt
 import dev.trydex.core.model.SessionMeta
+import dev.trydex.core.model.SidekickLook
 import dev.trydex.core.model.SkillDetail
 import dev.trydex.core.model.SkillPreview
 import dev.trydex.core.model.ThinkingLevel
@@ -186,6 +188,18 @@ class DexApi(private val rpc: AgentRpc) {
     suspend fun listGitHubBranches(fullName: String): List<String> = typed(ListSerializer(String.serializer()), "listGitHubBranches", fullName)
     suspend fun githubRepoAccess(): GitHubAccess = typed(GitHubAccess.serializer(), "githubRepoAccess")
 
+    // ── Characters ───────────────────────────────────────────────────────────
+
+    /** Creates (no id) or updates a character; creating also starts their conversation. */
+    suspend fun saveCharacter(draft: JsonObject): CharacterProfile = typed(CharacterProfile.serializer(), "saveCharacter", draft, timeout = 60_000)
+    /** Their conversations stay, as ordinary chats. */
+    suspend fun deleteCharacter(id: String) { raw("deleteCharacter", id, timeout = 60_000) }
+    /** Start over: a new conversation (same memory); the profile comes back with its new `sessionId`. */
+    suspend fun restartCharacter(id: String): CharacterProfile = typed(CharacterProfile.serializer(), "restartCharacter", id, timeout = 60_000)
+    suspend fun characterMemory(id: String): String = typed(String.serializer(), "characterMemory", id)
+    /** Replaces their memory; empty clears it. */
+    suspend fun saveCharacterMemory(id: String, text: String) { raw("saveCharacterMemory", id, text) }
+
     // ── MCP ──────────────────────────────────────────────────────────────────
 
     suspend fun saveMcpServer(draft: JsonObject): McpConnectResult = typed(McpConnectResult.serializer(), "saveMcpServer", draft, timeout = LONG_TIMEOUT_MS)
@@ -263,6 +277,27 @@ class DexApi(private val rpc: AgentRpc) {
             if (project.id.isEmpty()) json.remove("id")
             json["image"] = project.image?.let(::JsonPrimitive) ?: JsonNull
             json["vmSize"] = project.vmSize?.let(::JsonPrimitive) ?: JsonNull
+            return JsonObject(json)
+        }
+
+        /**
+         * A sidekick as `saveCharacter` takes it (a CharacterDraft): no id when new (blank), no conversation or
+         * timestamps. Its picture and look go only when [picture] says they changed, then explicitly (null removes);
+         * left out, the agent keeps them.
+         */
+        fun characterDraft(character: CharacterProfile, picture: Boolean): JsonObject {
+            val json = draft(CharacterProfile.serializer(), character).toMutableMap()
+            json.remove("sessionId")
+            json.remove("createdAt")
+            json.remove("updatedAt")
+            if (character.id.isEmpty()) json.remove("id")
+            if (picture) {
+                json["image"] = character.image?.let(::JsonPrimitive) ?: JsonNull
+                json["look"] = character.look?.let { DexJson.encodeToJsonElement(SidekickLook.serializer(), it) } ?: JsonNull
+            } else {
+                json.remove("image")
+                json.remove("look")
+            }
             return JsonObject(json)
         }
 

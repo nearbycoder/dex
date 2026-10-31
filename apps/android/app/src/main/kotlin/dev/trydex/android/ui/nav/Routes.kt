@@ -22,6 +22,12 @@ enum class Tab { Chats, Machines, Library, Settings }
 
 @Serializable data class Chat(val id: String) : Route { override val tab get() = Tab.Chats }
 
+/** A new character, from the Characters section above the chats. */
+@Serializable data class NewCharacter(val nonce: Long = 0) : Route { override val tab get() = Tab.Chats }
+
+/** A character's page opened from their conversation: beside it on wide screens, and back returns to it. */
+@Serializable data class CharacterPage(val id: String, val sessionId: String) : Route { override val tab get() = Tab.Chats }
+
 /** A chat's VM desktop beside the chat, on screens wide enough for both. */
 @Serializable data class ChatMachine(val key: String) : Route { override val tab get() = Tab.Chats }
 
@@ -42,6 +48,10 @@ enum class Tab { Chats, Machines, Library, Settings }
 @Serializable data object AgentList : Route { override val tab get() = Tab.Library }
 
 @Serializable data class AgentEditor(val id: String) : Route { override val tab get() = Tab.Library }
+
+@Serializable data object CharacterList : Route { override val tab get() = Tab.Library }
+
+@Serializable data class CharacterEditor(val id: String) : Route { override val tab get() = Tab.Library }
 
 @Serializable data object SkillList : Route { override val tab get() = Tab.Library }
 
@@ -96,6 +106,7 @@ fun routesFor(link: String): List<Route>? {
         "chat" -> listOf(ChatList, path.getOrNull(1)?.let(::Chat) ?: NewChat(nonce = System.nanoTime()))
         "machine" -> listOfNotNull(MachineList, path.getOrNull(1)?.let(::Machine))
         "mcp" -> listOfNotNull(LibraryHome, McpList, path.getOrNull(1)?.let { McpEditor(it) })
+        "characters" -> listOfNotNull(LibraryHome, CharacterList, path.getOrNull(1)?.let(::CharacterEditor))
         "usage" -> listOf(SettingsHome, Usage)
         "files" -> listOf(LibraryHome, Workspace)
         "access" -> listOf(SettingsHome, Access)

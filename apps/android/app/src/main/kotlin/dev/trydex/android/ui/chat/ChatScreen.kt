@@ -30,6 +30,7 @@ import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material.icons.rounded.DoneAll
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -80,6 +81,7 @@ import dev.trydex.android.ui.nav.ChatMachine
 import dev.trydex.android.ui.nav.GeneralSettings
 import dev.trydex.android.ui.nav.ProjectEditor
 import dev.trydex.android.ui.theme.DexTheme
+import dev.trydex.core.model.CharacterProfile
 import dev.trydex.core.model.SessionMeta
 import dev.trydex.core.model.VmInfo
 import dev.trydex.core.model.VmStatus
@@ -100,6 +102,8 @@ fun ChatScreen(id: String) {
     LaunchedEffect(model) { model.errors.collect { snackbar.showSnackbar(it) } }
 
     val session = state?.sessions?.firstOrNull { it.id == id }
+    // A character's conversation: their face and name in the header, their greeting first, no inbox triage.
+    val character = state?.character(session?.characterId)
     val vm = if (state?.vmConfigured == true) state?.vms?.firstOrNull { it.key == id } else null
     if (state != null && session == null) {
         Scaffold(topBar = { CompactTopBar(title = {}) }) { padding ->
@@ -126,6 +130,8 @@ fun ChatScreen(id: String) {
         topBar = {
             ChatTopBar(
                 session = session,
+                character = character,
+                running = transcript.running,
                 vm = vm,
                 onRename = { renaming = true },
                 onMenu = { menu = true },
@@ -145,6 +151,7 @@ fun ChatScreen(id: String) {
                             transcript = transcript,
                             pending = pending,
                             onSend = model::send,
+                            character = character,
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                         )
@@ -158,6 +165,7 @@ fun ChatScreen(id: String) {
                 ) {
                     Column(Modifier.widthIn(max = 800.dp).fillMaxWidth()) {
                         if (session != null && state != null) ProviderWarning(session, state!!)
+                        if (character != null && character.sessionId != id) EarlierConversationNote(character)
                         QueuePanel(transcript.queue, transcript.queueHeld, transcript.running, remember(id) { queueActions(id, app) })
                         Composer(
                             onSend = model::send,
@@ -166,7 +174,7 @@ fun ChatScreen(id: String) {
                             enabled = connected,
                             autoFocus = false,
                             state = composer,
-                            placeholder = if (transcript.running) "Queue a follow-up…" else "Message Dex, or / for skills…",
+                            placeholder = if (transcript.running) "Queue a follow-up…" else "Message ${character?.name ?: "Dex"}, or / for skills…",
                             toolbar = {
                                 if (session != null) {
                                     ModelPicker(session.model, session.thinking, onChange = { picked, thinking ->
@@ -185,7 +193,7 @@ fun ChatScreen(id: String) {
         }
     }
 
-    if (menu && session != null) ChatMenuSheet(session, actions, onDismiss = { menu = false }, showMute = true)
+    if (menu && session != null) ChatMenuSheet(session, actions, onDismiss = { menu = false }, showMute = true, character = character)
     if (renaming && session != null) RenameDialog(session, onDismiss = { renaming = false }) { title -> model.rename(title) }
 }
 
@@ -221,6 +229,8 @@ private fun ProviderWarning(session: SessionMeta, state: dev.trydex.core.model.D
 @Composable
 private fun ChatTopBar(
     session: SessionMeta?,
+    character: CharacterProfile?,
+    running: Boolean,
     vm: VmInfo?,
     onRename: () -> Unit,
     onMenu: () -> Unit,
@@ -253,6 +263,8 @@ private fun ChatTopBar(
                 }
                 if (session == null) {
                     dev.trydex.android.ui.components.Bone(width = 176.dp, height = 18.dp)
+                } else if (character != null) {
+                    CharacterChatTitle(character, session, running)
                 } else {
                     val pulse by rememberInfiniteTransition(label = "naming").animateFloat(1f, 0.4f, infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "pulse")
                     TextButton(onClick = onRename, modifier = Modifier.testTag("chat-title"), contentPadding = PaddingValues(horizontal = 4.dp)) {
@@ -312,7 +324,12 @@ private fun ChatTopBar(
                     )
                 }
             }
-            if (session != null) {
+            if (session != null && character != null) {
+                IconButton(onClick = { actions.restartCharacter(character) }, modifier = Modifier.testTag("character-start-over")) {
+                    Icon(Icons.Rounded.RestartAlt, contentDescription = "Start a new conversation with ${character.name}", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (session != null && character == null) {
                 val settled = session.settledAt != null
                 IconToggleButton(checked = settled, onCheckedChange = { haptics.toggle(it); actions.settle(session, it) }, modifier = Modifier.testTag("settle")) {
                     Icon(
@@ -321,6 +338,8 @@ private fun ChatTopBar(
                         tint = if (settled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+            }
+            if (session != null) {
                 IconButton(onClick = onMenu, modifier = Modifier.testTag("chat-options")) { Icon(Icons.Rounded.MoreVert, contentDescription = "Chat options") }
             }
         },

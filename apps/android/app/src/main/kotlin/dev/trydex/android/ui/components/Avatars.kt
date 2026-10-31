@@ -46,7 +46,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import androidx.compose.foundation.shape.CircleShape
 import dev.trydex.core.model.Catalogs
+import dev.trydex.core.model.CharacterProfile
 import dev.trydex.core.model.ModelRegistry
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -102,6 +104,32 @@ fun AgentAvatar(icon: String, color: String, size: Dp = 32.dp, image: String? = 
     val (background, foreground) = Catalogs.agentColor(color)
     Box(modifier.size(size).clip(shape).background(Color(background)), contentAlignment = Alignment.Center) {
         Icon(agentIcon(icon), contentDescription = null, tint = Color(foreground), modifier = Modifier.size(size * 0.56f))
+    }
+}
+
+/**
+ * A character's face: their picture, or their emoji (else their initial) on their color. Round, unlike agents and
+ * projects, so a character reads as someone rather than something.
+ */
+@Composable
+fun CharacterAvatar(character: CharacterProfile, size: Dp = 32.dp, modifier: Modifier = Modifier) {
+    val (background, foreground) = Catalogs.AGENT_COLORS[character.color] ?: Catalogs.agentColor("violet")
+    val image = character.image
+    if (!image.isNullOrEmpty()) {
+        Box(modifier.size(size).clip(CircleShape).background(Color(background)).border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)) {
+            AsyncImage(model = image, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.size(size))
+        }
+        return
+    }
+    Box(modifier.size(size).clip(CircleShape).background(Color(background)), contentAlignment = Alignment.Center) {
+        Text(
+            character.face,
+            color = Color(foreground),
+            fontSize = (size.value * if (character.avatar.isNotEmpty()) 0.5f else 0.45f).sp,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+            maxLines = 1,
+            style = androidx.compose.ui.text.TextStyle(platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false)),
+        )
     }
 }
 

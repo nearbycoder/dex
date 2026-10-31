@@ -19,22 +19,17 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.AddComment
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Edit
-import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.SmartToy
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -54,7 +49,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.trydex.android.ui.LocalApp
 import dev.trydex.android.ui.chat.ModelPicker
-import dev.trydex.android.ui.chat.mcpStatusColor
 import dev.trydex.android.ui.components.AgentAvatar
 import dev.trydex.android.ui.components.BoneRows
 import dev.trydex.android.ui.components.EmptyState
@@ -64,15 +58,12 @@ import dev.trydex.android.ui.components.ModelLogo
 import dev.trydex.android.ui.components.PageColumn
 import dev.trydex.android.ui.components.PaneScaffold
 import dev.trydex.android.ui.components.SectionCard
-import dev.trydex.android.ui.components.StatusDot
 import dev.trydex.android.ui.components.haptics
 import dev.trydex.android.ui.components.rememberConfirm
 import dev.trydex.android.ui.nav.AgentEditor
 import dev.trydex.android.ui.nav.AgentList
-import dev.trydex.android.ui.nav.McpEditor
 import dev.trydex.android.ui.nav.NewChat
 import dev.trydex.android.ui.nav.Tab
-import dev.trydex.android.ui.theme.DexTheme
 import dev.trydex.core.client.DexApi
 import dev.trydex.core.model.AgentProfile
 import dev.trydex.core.model.DexState
@@ -275,8 +266,6 @@ fun AgentEditorScreen(id: String) {
 
 @Composable
 private fun AgentForm(draft: AgentProfile, state: DexState, onChange: ((AgentProfile) -> AgentProfile) -> Unit) {
-    val app = LocalApp.current
-    val haptics = haptics()
     SectionCard {
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
             AgentAvatar(draft.icon, draft.color, size = 56.dp)
@@ -315,35 +304,7 @@ private fun AgentForm(draft: AgentProfile, state: DexState, onChange: ((AgentPro
             }
         }
         ProfileField("MCP servers", "Attached to new chats with this agent; you can still change them per chat.") {
-            if (state.mcp.isEmpty()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("No MCP servers yet. ", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    TextButton(onClick = { app.navigator.open(McpEditor("new")) }) { Text("Connect one") }
-                }
-            } else {
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    state.mcp.forEach { server ->
-                        val on = server.id in draft.mcpServers
-                        FilterChip(
-                            selected = on,
-                            onClick = {
-                                haptics.toggle(!on)
-                                onChange { a -> a.copy(mcpServers = if (on) a.mcpServers - server.id else a.mcpServers + server.id) }
-                            },
-                            label = {
-                                Text(server.name, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 180.dp))
-                                Box(Modifier.padding(start = 6.dp)) {
-                                    StatusDot(mcpStatusColor(server.status, DexTheme.colors, MaterialTheme.colorScheme), pulsing = server.status.pending, label = server.status.label)
-                                }
-                            },
-                            leadingIcon = {
-                                Icon(if (on) Icons.Rounded.Check else Icons.Rounded.Extension, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize))
-                            },
-                            modifier = Modifier.heightIn(min = 40.dp).testTag("agent-mcp-${server.id}"),
-                        )
-                    }
-                }
-            }
+            ProfileMcpChips(state, draft.mcpServers, tag = "agent-mcp") { ids -> onChange { it.copy(mcpServers = ids) } }
         }
     }
 

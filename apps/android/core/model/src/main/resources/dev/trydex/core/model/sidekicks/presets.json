@@ -1,0 +1,170 @@
+[
+  {
+    "key": "muse",
+    "name": "Muse",
+    "color": "violet",
+    "look": {
+      "body": "blob",
+      "skin": "pink",
+      "eyes": "sparkle",
+      "mouth": "grin",
+      "extra": "beret",
+      "blush": true
+    },
+    "image": "muse.png"
+  },
+  {
+    "key": "atlas",
+    "name": "Atlas",
+    "color": "sky",
+    "look": {
+      "body": "cube",
+      "skin": "cloud",
+      "eyes": "round",
+      "mouth": "smile",
+      "extra": "glasses",
+      "blush": false
+    },
+    "image": "atlas.png"
+  },
+  {
+    "key": "sage",
+    "name": "Sage",
+    "color": "teal",
+    "look": {
+      "body": "ghost",
+      "skin": "mint",
+      "eyes": "sleepy",
+      "mouth": "smile",
+      "extra": "sprout",
+      "blush": true
+    },
+    "image": "sage.png"
+  },
+  {
+    "key": "rex",
+    "name": "Rex",
+    "color": "orange",
+    "look": {
+      "body": "bean",
+      "skin": "peach",
+      "eyes": "happy",
+      "mouth": "grin",
+      "extra": "headband",
+      "blush": false
+    },
+    "image": "rex.png"
+  },
+  {
+    "key": "byte",
+    "name": "Byte",
+    "color": "zinc",
+    "look": {
+      "body": "bot",
+      "skin": "sky",
+      "eyes": "visor",
+      "mouth": "flat",
+      "extra": "headphones",
+      "blush": false
+    },
+    "image": "byte.png"
+  },
+  {
+    "key": "mochi",
+    "name": "Mochi",
+    "color": "rose",
+    "look": {
+      "body": "cat",
+      "skin": "cloud",
+      "eyes": "dot",
+      "mouth": "purr",
+      "extra": "bow",
+      "blush": true
+    },
+    "image": "mochi.png"
+  },
+  {
+    "key": "nova",
+    "name": "Nova",
+    "color": "violet",
+    "look": {
+      "body": "bean",
+      "skin": "lilac",
+      "eyes": "sparkle",
+      "mouth": "o",
+      "extra": "wizard",
+      "blush": true
+    },
+    "image": "nova.png"
+  },
+  {
+    "key": "pip",
+    "name": "Pip",
+    "color": "emerald",
+    "look": {
+      "body": "blob",
+      "skin": "lemon",
+      "eyes": "wink",
+      "mouth": "tongue",
+      "extra": "none",
+      "blush": true
+    },
+    "image": "pip.png"
+  },
+  {
+    "key": "duke",
+    "name": "Duke",
+    "color": "amber",
+    "look": {
+      "body": "cube",
+      "skin": "coral",
+      "eyes": "round",
+      "mouth": "smile",
+      "extra": "crown",
+      "blush": false
+    },
+    "image": "duke.png"
+  },
+  {
+    "key": "fern",
+    "name": "Fern",
+    "color": "emerald",
+    "look": {
+      "body": "cat",
+      "skin": "teal",
+      "eyes": "happy",
+      "mouth": "smile",
+      "extra": "sprout",
+      "blush": true
+    },
+    "image": "fern.png"
+  },
+  {
+    "key": "ziggy",
+    "name": "Ziggy",
+    "color": "sky",
+    "look": {
+      "body": "ghost",
+      "skin": "lilac",
+      "eyes": "dot",
+      "mouth": "o",
+      "extra": "beanie",
+      "blush": false
+    },
+    "image": "ziggy.png"
+  },
+  {
+    "key": "bolt",
+    "name": "Bolt",
+    "color": "amber",
+    "look": {
+      "body": "bot",
+      "skin": "slate",
+      "eyes": "round",
+      "mouth": "grin",
+      "extra": "none",
+      "blush": false
+    },
+    "image": "bolt.png"
+  }
+]

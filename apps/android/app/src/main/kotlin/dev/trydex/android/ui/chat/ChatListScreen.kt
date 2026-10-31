@@ -126,7 +126,7 @@ fun ChatListScreen() {
                     if (searching) {
                         TextField(
                             state = query,
-                            placeholder = { Text("Search chats") },
+                            placeholder = { Text("Search chats and sidekicks") },
                             lineLimits = androidx.compose.foundation.text.input.TextFieldLineLimits.SingleLine,
                             colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent),
                             modifier = Modifier.fillMaxWidth().testTag("search-chats"),
@@ -170,11 +170,15 @@ fun ChatListScreen() {
                 BoneRows(8)
             } else {
                 val needle = query.text.toString().trim().lowercase()
-                val sessions = if (needle.isEmpty()) current.sessions else current.sessions.filter { needle in it.title.lowercase() }
+                // A character's conversations live under them, not in the inbox.
+                val chats = current.chats
+                val sessions = if (needle.isEmpty()) chats else chats.filter { needle in it.title.lowercase() }
+                val characters = if (needle.isEmpty()) current.characters else current.characters.filter { needle in it.name.lowercase() }
                 val groups = inboxGroups(sessions, now)
                 LazyColumn(state = listState, modifier = Modifier.fillMaxSize().testTag("chat-list")) {
+                    characterSection(current, characters, selected, now, searching = needle.isNotEmpty())
                     when {
-                        current.sessions.isEmpty() -> item { EmptyState("No chats yet. Start one, and Dex will do the work.") }
+                        chats.isEmpty() -> item { EmptyState("No chats yet. Start one, and Dex will do the work.") }
                         groups.inbox.isEmpty() && needle.isEmpty() -> item { EmptyState("All caught up", Icons.Rounded.DoneAll) }
                         groups.isEmpty -> item { EmptyState("No chats match “$needle”.") }
                     }

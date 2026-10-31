@@ -2,6 +2,8 @@ package dev.trydex.fake
 
 import dev.trydex.core.model.AgentProfile
 import dev.trydex.core.model.AttachedFile
+import dev.trydex.core.model.CharacterProfile
+import dev.trydex.core.model.Characters
 import dev.trydex.core.model.attachmentSummary
 import dev.trydex.core.model.ChatArtifact
 import dev.trydex.core.model.DexJson
@@ -110,6 +112,7 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
         "/workspace/notes/plan.md" to "# Plan\n\n1. Ship the Android app\n2. Write the release notes\n\n| Task | Owner |\n|---|---|\n| QA | Dex |\n",
         "/workspace/reports/q3.html" to "<!doctype html><h1 style='font-family:sans-serif'>Q3 report</h1><p>Revenue up <b>12%</b>.</p>",
         "/workspace/data/sales.csv" to "month,revenue\nJul,120\nAug,135\nSep,142\n",
+        Characters.memoryPath("muse") to "# Muse's notes\n\n- Mona is making a tiny game for her niece's 8th birthday (space cats).\n- Likes bold colors and silly names.\n",
     )
     private val vmActivity = ConcurrentHashMap<String, MutableList<VmActivity>>()
     private var activityId = 100L
@@ -350,6 +353,8 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
         "deleteSession" -> {
             chats.remove(args.s(0))?.abort()
             update { s -> s.copy(sessions = s.sessions.filter { it.id != args.s(0) }, vms = s.vms.filter { it.key != args.s(0) }) }
+            // A character always has a conversation: deleting theirs starts a new one.
+            state.characters.firstOrNull { it.sessionId == args.s(0) }?.let { restartCharacter(it.id) }
             null
         }
         "triageSession" -> {
@@ -487,6 +492,31 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
         "deleteAgent" -> {
             // Its chats keep running as plain chats.
             update { s -> s.copy(agents = s.agents.filter { it.id != args.s(0) }, sessions = s.sessions.map { if (it.agentId == args.s(0)) it.copy(agentId = null) else it }) }
+            null
+        }
+        "saveCharacter" -> saveCharacter(args.o(0))
+        "deleteCharacter" -> {
+            val id = args.s(0)
+            // Their conversations stay, as ordinary chats; ones that never got a message go.
+            val untouched = state.sessions.filter { it.characterId == id && it.updatedAt == it.createdAt }.map { it.id }.toSet()
+            untouched.forEach { chats.remove(it)?.abort() }
+            update { s ->
+                s.copy(
+                    characters = s.characters.filter { it.id != id },
+                    sessions = s.sessions.filter { it.id !in untouched }.map { if (it.characterId == id) it.copy(characterId = null) else it },
+                )
+            }
+            null
+        }
+        "restartCharacter" -> encode(CharacterProfile.serializer(), restartCharacter(args.s(0)))
+        "characterMemory" -> {
+            state.character(args.s(0)) ?: error("That sidekick no longer exists.")
+            JsonPrimitive(files[Characters.memoryPath(args.s(0))] ?: "")
+        }
+        "saveCharacterMemory" -> {
+            state.character(args.s(0)) ?: error("That sidekick no longer exists.")
+            val text = args.s(1).take(64_000)
+            if (text.isBlank()) files.remove(Characters.memoryPath(args.s(0))) else files[Characters.memoryPath(args.s(0))] = text
             null
         }
         "saveProject" -> {
@@ -656,6 +686,59 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
 
     private val skillText = ConcurrentHashMap<String, String>()
 
+    /** A new conversation for a character, titled with their name, on their model and MCP servers. */
+    private fun openCharacterSession(character: CharacterProfile): String {
+        val id = "chat-" + UUID.randomUUID().toString().take(8)
+        val now = clock()
+        chats[id] = FakeChat(id)
+        val session = SessionMeta(id, character.name, character.model, character.thinking, now, now, mcpServers = character.mcpServers, characterId = character.id)
+        update { it.copy(sessions = listOf(session) + it.sessions) }
+        return id
+    }
+
+    /** saveCharacter: creates (no id) or updates; a left-out `image` or `look` is kept, null removes it. */
+    private fun saveCharacter(draft: JsonObject): JsonElement {
+        val name = draft["name"].str?.trim()?.take(40).orEmpty()
+        if (name.isEmpty()) error("Give your sidekick a name.")
+        val existing = draft["id"].str?.let { id -> state.character(id) ?: error("That sidekick no longer exists.") }
+        val image = if ("image" in draft) draft["image"].str else existing?.image
+        if (image != null && (!image.startsWith("data:image/") || image.length > 66_000)) error("Pick a smaller picture (PNG, JPEG, WebP, GIF, or SVG under 48 KB).")
+        val id = existing?.id ?: (name.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').take(32).ifEmpty { "character" } + "-" + UUID.randomUUID().toString().take(6))
+        val now = clock()
+        val parsed = DexJson.decodeFromJsonElement(CharacterProfile.serializer(), JsonObject(draft + mapOf("id" to JsonPrimitive(id))))
+        var character = parsed.copy(
+            name = name,
+            tagline = parsed.tagline.trim().take(120),
+            greeting = parsed.greeting.trim().take(2_000),
+            avatar = parsed.avatar.trim().let { if (it.isEmpty()) "" else it.substring(0, it.offsetByCodePoints(0, 1)) },
+            image = image,
+            look = if ("look" in draft) parsed.look else existing?.look,
+            color = parsed.color.takeIf { it in dev.trydex.core.model.Catalogs.AGENT_COLORS } ?: "violet",
+            mcpServers = if ("mcpServers" in draft) parsed.mcpServers.filter { server -> state.mcp.any { it.id == server } } else existing?.mcpServers.orEmpty(),
+            sessionId = existing?.sessionId.orEmpty(),
+            createdAt = existing?.createdAt ?: now,
+            updatedAt = now,
+        )
+        if (existing == null || state.session(existing.sessionId) == null) character = character.copy(sessionId = openCharacterSession(character))
+        else updateSession(existing.sessionId) { it.copy(title = name, model = character.model, thinking = character.thinking, mcpServers = character.mcpServers) }
+        update { s -> s.copy(characters = if (existing == null) s.characters + character else s.characters.map { if (it.id == id) character else it }) }
+        return encode(CharacterProfile.serializer(), character)
+    }
+
+    /** Start over: a new conversation; the old one stays unless it never got a message. */
+    private fun restartCharacter(id: String): CharacterProfile {
+        val character = state.character(id) ?: error("That sidekick no longer exists.")
+        val sessionId = openCharacterSession(character)
+        val restarted = character.copy(sessionId = sessionId, updatedAt = clock())
+        update { s -> s.copy(characters = s.characters.map { if (it.id == id) restarted else it }) }
+        val old = state.session(character.sessionId)
+        if (old != null && old.updatedAt == old.createdAt && !old.busy) {
+            chats.remove(old.id)?.abort()
+            update { s -> s.copy(sessions = s.sessions.filter { it.id != old.id }) }
+        }
+        return restarted
+    }
+
     private fun detail(skill: SkillInfo) = SkillDetail(
         skill.id, skill.description, skill.source, skill.path, skill.auto, skill.files, skill.size, skill.installedAt, skill.updatedAt,
         skillText[skill.id] ?: "# ${skill.id}\n\n1. Read what's asked.\n2. Do it well.",
@@ -770,6 +853,23 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
                     entries += Pi.entry(nextId++, "pi.user", Pi.userMessage("Which vector database should I use for 2M documents?", at - 50_000))
                     replay(Scripts.pick("compare", { "1" }), at - 45_000)
                 }
+                "chat-muse" -> {
+                    entries += Pi.entry(nextId++, "pi.user", Pi.userMessage("I want to make a tiny game for my niece's birthday. She loves cats and space.", at - 50_000))
+                    entries += Pi.entry(nextId++, "pi.assistant", Pi.assistantMessage(listOf(Pi.text(
+                        "Space cats. Obviously. Three directions:\n\n1. **Laser Pointer Galaxy**: steer a cat through asteroids chasing a red dot.\n" +
+                            "2. **Purrlanet**: tap planets to wake sleeping cats; each one meows a note.\n3. **Hairball Rocket**: a one-button launcher, very silly.\n\nWhich one makes you grin?",
+                    )), at - 40_000, 4_000))
+                }
+                "chat-muse-earlier" -> {
+                    entries += Pi.entry(nextId++, "pi.user", Pi.userMessage("Help me name my band", at - 50_000))
+                    entries += Pi.entry(nextId++, "pi.assistant", Pi.assistantMessage(listOf(Pi.text("Ooh. The Half-Baked Ideas? Velvet Spreadsheet? Tell me what you sound like.")), at - 40_000, 3_000))
+                }
+                "chat-atlas" -> {
+                    entries += Pi.entry(nextId++, "pi.user", Pi.userMessage("What's on my plate this week?", at - 50_000))
+                    entries += Pi.entry(nextId++, "pi.assistant", Pi.assistantMessage(listOf(Pi.text(
+                        "Three things:\n\n- **Tuesday**: the dentist at 9.\n- **Thursday**: Android release notes are due.\n- **Friday**: your niece's birthday. The game?\n\nI'll check in Thursday morning.",
+                    )), at - 40_000, 3_000))
+                }
                 else -> {
                     entries += Pi.entry(nextId++, "pi.user", Pi.userMessage(session.title, at - 50_000))
                     entries += Pi.entry(nextId++, "pi.assistant", Pi.assistantMessage(listOf(Pi.text("Done. Anything else?")), at - 40_000, 4_000))
@@ -878,7 +978,8 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
             events(buildJsonObject { put("type", "entry_appended"); put("entry", entry) })
             val title = text.ifEmpty { attachmentSummary(attachments.map { it["name"].str ?: "file" }) }
             updateSession(id) { it.copy(title = if (it.title == "New chat") title.replace(Regex("\\s+"), " ").take(60) else it.title, updatedAt = clock(), settledAt = null, snoozedUntil = null) }
-            run(Scripts.pick(text) { (nextId + 1).toString() })
+            val character = state.character(state.session(id)?.characterId)
+            run(if (character != null) Scripts.companion(character.name) else Scripts.pick(text) { (nextId + 1).toString() })
         }
 
         private fun at(delay: Long, block: () -> Unit) {

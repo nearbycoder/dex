@@ -13,6 +13,7 @@ import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.SmartToy
+import androidx.compose.material.icons.rounded.TheaterComedy
 import androidx.compose.material.icons.rounded.Source
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
@@ -38,6 +39,7 @@ import dev.trydex.android.ui.components.SectionCard
 import dev.trydex.android.ui.components.StatusDot
 import dev.trydex.android.ui.components.haptics
 import dev.trydex.android.ui.nav.AgentList
+import dev.trydex.android.ui.nav.CharacterList
 import dev.trydex.android.ui.nav.McpList
 import dev.trydex.android.ui.nav.ProjectList
 import dev.trydex.android.ui.nav.Route
@@ -80,6 +82,7 @@ fun LibraryHomeScreen() {
             val destinations = listOf(
                 Destination(ProjectList, "projects", "Projects", "Repos and a setup script, cloned onto each chat's VM", Icons.Rounded.Source, current.projects.size),
                 Destination(AgentList, "agents", "Agents", "Presets for a job: instructions, a model, MCP servers", Icons.Rounded.SmartToy, current.agents.size),
+                Destination(CharacterList, "characters", "Sidekicks", "Companions with a conversation of their own", Icons.Rounded.TheaterComedy, current.characters.size),
                 Destination(SkillList, "skills", "Skills", "Instructions for particular tasks", Icons.Rounded.AutoAwesome, current.skills.size),
                 Destination(McpList, "mcp", "MCP servers", "Remote tools for Dex", Icons.Rounded.Extension, current.mcp.size, current.mcp.any { it.status.needsAttention }),
                 Destination(Workspace, "workspace", "Workspace files", "The agent's files, kept across chats", Icons.Rounded.FolderOpen, files),

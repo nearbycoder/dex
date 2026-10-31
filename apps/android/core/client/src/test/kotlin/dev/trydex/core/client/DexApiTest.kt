@@ -1,7 +1,9 @@
 package dev.trydex.core.client
 
 import com.google.common.truth.Truth.assertThat
+import dev.trydex.core.model.CharacterProfile
 import dev.trydex.core.model.DexJson
+import dev.trydex.core.model.SidekickLook
 import dev.trydex.core.model.ThinkingLevel
 import dev.trydex.core.model.UiOperationResult
 import kotlinx.coroutines.runBlocking
@@ -83,6 +85,27 @@ class DexApiTest {
         result = "null"
         assertThat(api.vmDesktopUrl("s1", "selkies")).isNull()
         assertThat(calls.map { it.timeout }).containsExactly(AgentConnection.LONG_TIMEOUT_MS, AgentConnection.VM_TIMEOUT_MS, 300_000L).inOrder()
+    }
+
+    @Test fun characters() = runBlocking<Unit> {
+        // New: no id, no conversation or timestamps; a changed picture and look go explicitly (null removes them).
+        val draft = DexApi.characterDraft(CharacterProfile("", name = "Muse", image = "data:image/png;base64,AA", sessionId = "x", createdAt = 1, updatedAt = 2), picture = true)
+        assertThat(draft.keys).containsNoneOf("id", "sessionId", "createdAt", "updatedAt")
+        assertThat(draft["image"].toString()).isEqualTo("\"data:image/png;base64,AA\"")
+        assertThat(draft["look"].toString()).isEqualTo("null")
+        // Unchanged, they're left out so the agent keeps them.
+        val kept = DexApi.characterDraft(CharacterProfile("muse", name = "Muse", look = SidekickLook("blob"), image = "data:image/png;base64,AA"), picture = false)
+        assertThat(kept["id"].toString()).isEqualTo("\"muse\"")
+        assertThat(kept.keys).containsNoneOf("image", "look")
+        result = """{"id":"muse","name":"Muse","sessionId":"s2"}"""
+        assertThat(api.restartCharacter("muse").sessionId).isEqualTo("s2")
+        result = "\"- likes cats\""
+        assertThat(api.characterMemory("muse")).isEqualTo("- likes cats")
+        result = "null"
+        api.saveCharacterMemory("muse", "")
+        api.deleteCharacter("muse")
+        assertThat(calls.map { it.method }).containsExactly("restartCharacter", "characterMemory", "saveCharacterMemory", "deleteCharacter").inOrder()
+        assertThat(calls[2].args).isEqualTo("""["muse",""]""")
     }
 
     @Test fun nullableResults() = runBlocking<Unit> {

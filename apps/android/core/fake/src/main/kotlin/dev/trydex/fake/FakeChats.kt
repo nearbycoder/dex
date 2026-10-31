@@ -134,6 +134,12 @@ form = Form("deploy", buttons, [FormControl("Service name", Input("service", "ap
 buttons = Buttons([Button("Deploy", @ToAssistant("Deploy it"), "primary"), Button("Cancel", @ToAssistant("Never mind"), "secondary")])
 """.trim()
 
+    /** A character's reply: short, warm, and in their voice, with no work to show. */
+    fun companion(name: String): List<Step> = listOf(
+        Step.Think("Stay in character as $name; check the memory file for what we were working on."),
+        Step.Say("Love that. Tell me a little more and I'll run with it — I'm keeping notes so we can pick this up any time."),
+    )
+
     fun pick(text: String, ids: () -> String): List<Step> {
         val t = text.lowercase()
         return when {

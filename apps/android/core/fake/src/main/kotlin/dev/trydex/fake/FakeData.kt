@@ -5,6 +5,8 @@ import dev.trydex.core.model.AccessToken
 import dev.trydex.core.model.AgentProfile
 import dev.trydex.core.model.AuditEntry
 import dev.trydex.core.model.BoatStatus
+import dev.trydex.core.model.CharacterProfile
+import dev.trydex.core.model.Characters
 import dev.trydex.core.model.DexSettings
 import dev.trydex.core.model.DexState
 import dev.trydex.core.model.GitHubStatus
@@ -27,7 +29,10 @@ import dev.trydex.core.model.VmInfo
 import dev.trydex.core.model.VmSetup
 import dev.trydex.core.model.VmStatus
 
-/** A believable account: chats in every inbox state, agents, projects, servers, VMs, and an access history. */
+/**
+ * A believable account: chats in every inbox state, characters with their conversations, agents, projects, servers,
+ * VMs, and an access history.
+ */
 object FakeData {
     const val USER_ID = "user-octocat"
     const val LOGIN = "octocat"
@@ -48,7 +53,16 @@ object FakeData {
                 SessionMeta("chat-trip", "Plan a weekend in Lisbon", "cline-pass/deepseek-v4.1-flash", ThinkingLevel.Off, now - 2 * day, now - day, muted = true),
                 SessionMeta("chat-snoozed", "Renew the TLS certificates", "cline-pass/glm-5.3", ThinkingLevel.Low, now - 3 * day, now - 2 * day, snoozedUntil = now + 20 * hour),
                 SessionMeta("chat-settled", "Release notes for v2.4", "cline-pass/glm-5.3", ThinkingLevel.Low, now - 6 * day, now - 5 * day, agentId = "changelog", settledAt = now - 4 * day),
+                // Characters' conversations: Muse's current one and one from before she started over, and Atlas's.
+                SessionMeta("chat-muse", "Muse", "cline-pass/glm-5.3", ThinkingLevel.Low, now - 3 * day, now - 35 * minute, characterId = "muse"),
+                SessionMeta("chat-muse-earlier", "Muse", "cline-pass/glm-5.3", ThinkingLevel.Low, now - 20 * day, now - 4 * day, characterId = "muse"),
+                SessionMeta("chat-atlas", "Atlas", "cline-pass/glm-5.3", ThinkingLevel.Low, now - 10 * day, now - 9 * hour, characterId = "atlas"),
             ),
+            characters = listOf("muse" to "chat-muse", "atlas" to "chat-atlas").map { (key, session) ->
+                val template = Characters.TEMPLATES.first { it.key == key }
+                template.applyTo(CharacterProfile(key, thinking = ThinkingLevel.Low))
+                    .copy(sessionId = session, createdAt = now - 20 * day, updatedAt = now - 3 * day)
+            },
             vms = listOf(
                 VmInfo("chat-tests", id = "sb_1f2e", status = VmStatus.Running, size = "small", lastActiveAt = now - minute, busy = false, setup = VmSetup("done", null, null)),
                 VmInfo("chat-dashboard", id = "sb_8c1a", status = VmStatus.Stopped, size = "small", lastActiveAt = now - 2 * hour),

@@ -25,6 +25,18 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.rounded.AddComment
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Extension
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.text.style.TextOverflow
+import dev.trydex.android.ui.LocalApp
+import dev.trydex.android.ui.chat.mcpStatusColor
+import dev.trydex.android.ui.components.StatusDot
+import dev.trydex.android.ui.components.haptics
+import dev.trydex.android.ui.nav.McpEditor
+import dev.trydex.android.ui.theme.DexTheme
+import dev.trydex.core.model.DexState
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -149,6 +161,42 @@ fun ProfileColorPicker(selected: String, onPick: (String) -> Unit) {
     }
 }
 
+/** Every MCP server as a chip to attach or detach, with its status; a link to connect one when there are none. */
+@Composable
+fun ProfileMcpChips(state: DexState, selected: List<String>, tag: String, onChange: (List<String>) -> Unit) {
+    val app = LocalApp.current
+    val haptics = haptics()
+    if (state.mcp.isEmpty()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("No MCP servers yet. ", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onClick = { app.navigator.open(McpEditor("new")) }) { Text("Connect one") }
+        }
+        return
+    }
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        state.mcp.forEach { server ->
+            val on = server.id in selected
+            FilterChip(
+                selected = on,
+                onClick = {
+                    haptics.toggle(!on)
+                    onChange(if (on) selected - server.id else selected + server.id)
+                },
+                label = {
+                    Text(server.name, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 180.dp))
+                    Box(Modifier.padding(start = 6.dp)) {
+                        StatusDot(mcpStatusColor(server.status, DexTheme.colors, MaterialTheme.colorScheme), pulsing = server.status.pending, label = server.status.label)
+                    }
+                },
+                leadingIcon = {
+                    Icon(if (on) Icons.Rounded.Check else Icons.Rounded.Extension, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize))
+                },
+                modifier = Modifier.heightIn(min = 40.dp).testTag("$tag-${server.id}"),
+            )
+        }
+    }
+}
+
 /** A two-column grid of cards on wide panes, one column on phones. */
 @Composable
 fun <T> ProfileGrid(items: List<T>, modifier: Modifier = Modifier, card: @Composable (T) -> Unit) {
@@ -186,6 +234,7 @@ fun ProfileSaveBar(
     onSave: () -> Unit,
     onStartChat: (() -> Unit)?,
     onDelete: (() -> Unit)?,
+    startChatLabel: String = "Start chat",
 ) {
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal))) {
@@ -199,9 +248,9 @@ fun ProfileSaveBar(
                     SaveButtonContent(label, saving, saved)
                 }
                 if (onStartChat != null) {
-                    OutlinedButton(onClick = onStartChat) {
+                    OutlinedButton(onClick = onStartChat, modifier = Modifier.testTag("$saveTag-chat")) {
                         Icon(Icons.Rounded.AddComment, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text("Start chat", modifier = Modifier.padding(start = 8.dp))
+                        Text(startChatLabel, modifier = Modifier.padding(start = 8.dp))
                     }
                 }
                 Spacer(Modifier.weight(1f))

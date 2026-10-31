@@ -81,6 +81,11 @@ import dev.trydex.android.ui.nav.WorkspaceFile
 import dev.trydex.android.ui.openui.OpenUICard
 import dev.trydex.android.ui.theme.DexTheme
 import dev.trydex.core.model.AssistantMessage
+import dev.trydex.core.model.CharacterProfile
+import dev.trydex.core.model.Characters
+import dev.trydex.android.ui.components.CharacterAvatar
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import dev.trydex.core.model.DisplayItem
 import dev.trydex.core.model.LiveTool
 import dev.trydex.core.model.Media
@@ -108,6 +113,8 @@ fun MessageList(
     onSend: (String) -> Unit,
     modifier: Modifier = Modifier,
     contentPadding: PaddingValues = PaddingValues(0.dp),
+    /** Who answers, when it isn't Dex (a character): their face beside replies, and their greeting first. */
+    character: CharacterProfile? = null,
 ) {
     val items = remember(transcript.entries, transcript.streaming) { displayItems(transcript) }
     val results = remember(transcript.entries) { toolResults(transcript.entries) }
@@ -153,7 +160,7 @@ fun MessageList(
                         is DisplayItem.User -> UserBubble(item.text, item.images, files = item.files, imageParts = item.imageParts, sessionId = sessionId)
                         is DisplayItem.Assistant -> AssistantTurn(
                             sessionId, item.messages, item.streaming, active = transcript.running && item === items.last(),
-                            endedAt = item.endedAt, results = results, tools = transcript.tools, onSend = onSend,
+                            endedAt = item.endedAt, results = results, tools = transcript.tools, onSend = onSend, character = character,
                         )
                         is DisplayItem.Divider -> Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             HorizontalDivider(Modifier.weight(1f))
@@ -163,6 +170,7 @@ fun MessageList(
                     }
                 }
             }
+            character?.greeting?.takeIf { it.isNotBlank() }?.let { item(key = "greeting") { Centered { CharacterGreeting(character) } } }
         }
         AnimatedVisibility(!atBottom, enter = scaleIn() + fadeIn(), exit = scaleOut() + fadeOut(), modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp)) {
             BadgedBox(badge = { if (transcript.running) Badge(containerColor = DexTheme.colors.success) }) {
@@ -294,6 +302,7 @@ fun AssistantTurn(
     results: Map<String, ToolResultMessage>,
     tools: Map<String, LiveTool>,
     onSend: (String) -> Unit,
+    character: CharacterProfile? = null,
 ) {
     val app = LocalApp.current
     val openUrl = LocalOpenInBrowser.current
@@ -321,7 +330,8 @@ fun AssistantTurn(
     }
     val errors = messages.filter { it.stopReason == "error" }
     Row(Modifier.fillMaxWidth().testTag("assistant-turn"), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Image(painterResource(R.drawable.ic_launcher_foreground), contentDescription = "Dex", modifier = Modifier.size(28.dp).padding(top = 2.dp))
+        if (character != null) CharacterAvatar(character, size = 28.dp, modifier = Modifier.semantics { contentDescription = character.name })
+        else Image(painterResource(R.drawable.ic_launcher_foreground), contentDescription = "Dex", modifier = Modifier.size(28.dp).padding(top = 2.dp))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (steps.isNotEmpty()) {
                 ActivityRow(
@@ -336,7 +346,8 @@ fun AssistantTurn(
             }
             if (touchedMemory) {
                 AssistChip(
-                    onClick = { app.navigator.open(WorkspaceFile("/workspace/MEMORY.md")) },
+                    // A character keeps their own notes about you.
+                    onClick = { app.navigator.open(WorkspaceFile(character?.let { Characters.memoryPath(it.id) } ?: "/workspace/MEMORY.md")) },
                     label = { Text("Memory updated") },
                     leadingIcon = { Icon(Icons.Outlined.Psychology, contentDescription = null, modifier = Modifier.size(18.dp)) },
                 )

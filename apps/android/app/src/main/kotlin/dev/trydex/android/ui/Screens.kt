@@ -11,6 +11,9 @@ import dev.trydex.android.ui.files.WorkspaceFileScreen
 import dev.trydex.android.ui.files.WorkspaceScreen
 import dev.trydex.android.ui.library.AgentEditorScreen
 import dev.trydex.android.ui.library.AgentListScreen
+import dev.trydex.android.ui.library.CharacterEditorScreen
+import dev.trydex.android.ui.library.NEW_CHARACTER
+import dev.trydex.android.ui.library.CharacterListScreen
 import dev.trydex.android.ui.library.LibraryHomeScreen
 import dev.trydex.android.ui.library.McpEditorScreen
 import dev.trydex.android.ui.library.McpListScreen
@@ -23,6 +26,10 @@ import dev.trydex.android.ui.machine.MachineScreen
 import dev.trydex.android.ui.nav.Access
 import dev.trydex.android.ui.nav.AgentEditor
 import dev.trydex.android.ui.nav.AgentList
+import dev.trydex.android.ui.nav.CharacterEditor
+import dev.trydex.android.ui.nav.CharacterList
+import dev.trydex.android.ui.nav.CharacterPage
+import dev.trydex.android.ui.nav.NewCharacter
 import dev.trydex.android.ui.nav.Chat
 import dev.trydex.android.ui.nav.ChatList
 import dev.trydex.android.ui.nav.ChatMachine
@@ -62,15 +69,19 @@ fun EntryProviderScope<NavKey>.screens(@Suppress("UNUSED_PARAMETER") wide: Boole
     entry<NewChat>(metadata = detail) { NewChatScreen(it) }
     entry<Chat>(metadata = detail) { ChatScreen(it.id) }
     entry<ChatMachine>(metadata = extra) { MachineScreen(it.key, beside = true) }
+    entry<NewCharacter>(metadata = detail) { CharacterEditorScreen(NEW_CHARACTER, it) }
+    entry<CharacterPage>(metadata = extra) { CharacterEditorScreen(it.id, it) }
 
     entry<MachineList>(metadata = list("Pick a machine to watch or control it.")) { MachineListScreen() }
     entry<Machine>(metadata = detail) { MachineScreen(it.key) }
 
-    entry<LibraryHome>(metadata = list("Projects, agents, skills, MCP servers, and the workspace.")) { LibraryHomeScreen() }
+    entry<LibraryHome>(metadata = list("Projects, agents, sidekicks, skills, MCP servers, and the workspace.")) { LibraryHomeScreen() }
     entry<ProjectList>(metadata = detail) { ProjectListScreen() }
     entry<ProjectEditor>(metadata = extra) { ProjectEditorScreen(it.id) }
     entry<AgentList>(metadata = detail) { AgentListScreen() }
     entry<AgentEditor>(metadata = extra) { AgentEditorScreen(it.id) }
+    entry<CharacterList>(metadata = detail) { CharacterListScreen() }
+    entry<CharacterEditor>(metadata = extra) { CharacterEditorScreen(it.id, it) }
     entry<SkillList>(metadata = detail) { SkillListScreen() }
     entry<SkillEditor>(metadata = extra) { SkillEditorScreen(it.id) }
     entry<McpList>(metadata = detail) { McpListScreen() }

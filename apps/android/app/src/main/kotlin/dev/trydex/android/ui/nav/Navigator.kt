@@ -13,8 +13,8 @@ import androidx.navigation3.runtime.rememberNavBackStack
 /** How deep a route sits in its tab's list-detail layout: 0 list, 1 detail, 2 extra. */
 fun Route.level(): Int = when (this) {
     ChatList, MachineList, LibraryHome, SettingsHome -> 0
-    is ChatMachine -> 2
-    is ProjectEditor, is AgentEditor, is SkillEditor, is McpEditor, is WorkspaceFile -> 2
+    is ChatMachine, is CharacterPage -> 2
+    is ProjectEditor, is AgentEditor, is CharacterEditor, is SkillEditor, is McpEditor, is WorkspaceFile -> 2
     else -> 1
 }
 
@@ -22,8 +22,10 @@ fun Route.level(): Int = when (this) {
 fun Route.parents(): List<Route> = when (this) {
     ChatList, MachineList, LibraryHome, SettingsHome -> emptyList()
     is ChatMachine -> listOf(ChatList, Chat(key))
+    is CharacterPage -> listOf(ChatList, Chat(sessionId))
     is ProjectEditor -> listOf(LibraryHome, ProjectList)
     is AgentEditor -> listOf(LibraryHome, AgentList)
+    is CharacterEditor -> listOf(LibraryHome, CharacterList)
     is SkillEditor -> listOf(LibraryHome, SkillList)
     is McpEditor -> listOf(LibraryHome, McpList)
     is WorkspaceFile -> listOf(LibraryHome, Workspace)

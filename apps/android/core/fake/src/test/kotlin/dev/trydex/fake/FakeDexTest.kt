@@ -10,6 +10,8 @@ import dev.trydex.core.client.DexUploads
 import dev.trydex.core.client.DexUser
 import dev.trydex.core.client.asRpc
 import dev.trydex.core.model.AgentProfile
+import dev.trydex.core.model.CharacterProfile
+import dev.trydex.core.model.Characters
 import dev.trydex.core.model.ClientMessages
 import dev.trydex.core.model.DisplayItem
 import dev.trydex.core.model.ProjectProfile
@@ -158,6 +160,67 @@ class FakeDexTest {
         assertThat(agent.id).startsWith("triage-")
         assertThat(agent.thinking).isEqualTo(ThinkingLevel.High)
         assertThat(api.searchGitHubRepos("", "acme").map { it.fullName }).containsExactly("acme/api")
+        connection.stop()
+    }
+
+    @Test fun charactersLiveInTheirOwnConversations() = runBlocking {
+        val url = fake.start()
+        val connection = AgentConnection(OkHttpClient(), url, FakeData.USER_ID, { fake.token }, scope)
+        val api = DexApi(connection.asRpc())
+        connection.start()
+        withTimeout(5_000) { connection.status.first { it == ConnectionStatus.Connected } }
+        val seeded = connection.state.value!!
+        assertThat(seeded.characters.map { it.name }).containsExactly("Muse", "Atlas").inOrder()
+        assertThat(seeded.chats.none { it.characterId != null }).isTrue()
+        assertThat(api.characterMemory("muse")).contains("space cats")
+
+        // Seeded with ready-made looks, as the demo shows them.
+        assertThat(seeded.characters.all { it.image!!.startsWith("data:image/png;base64,") && it.look != null }).isTrue()
+
+        // Creating one starts their conversation, titled with their name; a template brings its look.
+        val draft = Characters.TEMPLATES.first { it.key == "rex" }.applyTo(CharacterProfile("", thinking = ThinkingLevel.Low))
+        val rex = api.saveCharacter(DexApi.characterDraft(draft, picture = true))
+        assertThat(rex.id).startsWith("rex-")
+        assertThat(rex.look).isEqualTo(Characters.preset("rex")!!.look)
+        assertThat(rex.image).isEqualTo(Characters.preset("rex")!!.dataUrl)
+        withTimeout(5_000) { while (connection.state.value!!.session(rex.sessionId) == null) kotlinx.coroutines.delay(10) }
+        val chat = connection.state.value!!.session(rex.sessionId)!!
+        assertThat(chat.characterId).isEqualTo(rex.id)
+        assertThat(chat.title).isEqualTo("Rex")
+        assertThat(runCatching { api.saveCharacter(DexApi.characterDraft(draft.copy(name = " "), picture = false)) }.exceptionOrNull()!!.message).isEqualTo("Give your sidekick a name.")
+
+        // Renaming renames the conversation; leaving the picture and look out keeps them.
+        val renamed = api.saveCharacter(DexApi.characterDraft(rex.copy(name = "Coach Rex", image = null, look = null), picture = false))
+        assertThat(renamed.image).isEqualTo(rex.image)
+        assertThat(renamed.look).isEqualTo(rex.look)
+        withTimeout(5_000) { while (connection.state.value!!.session(rex.sessionId)?.title != "Coach Rex") kotlinx.coroutines.delay(10) }
+        // A photo replaces the look; null removes the picture.
+        val photo = api.saveCharacter(DexApi.characterDraft(rex.copy(image = "data:image/webp;base64,AAAA", look = null), picture = true))
+        assertThat(photo.look).isNull()
+        assertThat(photo.image).isEqualTo("data:image/webp;base64,AAAA")
+        assertThat(api.saveCharacter(DexApi.characterDraft(rex.copy(image = null, look = null), picture = true)).image).isNull()
+
+        // Start over: a new conversation; the old one never got a message, so it goes.
+        val restarted = api.restartCharacter(rex.id)
+        assertThat(restarted.sessionId).isNotEqualTo(rex.sessionId)
+        withTimeout(5_000) { while (connection.state.value!!.session(rex.sessionId) != null) kotlinx.coroutines.delay(10) }
+        // Muse's had messages: it stays, as an earlier conversation.
+        val muse = api.restartCharacter("muse")
+        withTimeout(5_000) { while (connection.state.value!!.session(muse.sessionId) == null) kotlinx.coroutines.delay(10) }
+        assertThat(Characters.conversations(connection.state.value!!, muse).map { it.id }).containsAtLeast(muse.sessionId, "chat-muse", "chat-muse-earlier")
+
+        api.saveCharacterMemory("muse", "- Likes space cats.")
+        assertThat(api.characterMemory("muse")).isEqualTo("- Likes space cats.")
+        api.saveCharacterMemory("muse", "")
+        assertThat(api.characterMemory("muse")).isEmpty()
+
+        // Deleting keeps their conversations, as ordinary chats (the untouched new one goes).
+        api.deleteCharacter("muse")
+        withTimeout(5_000) { while (connection.state.value!!.character("muse") != null) kotlinx.coroutines.delay(10) }
+        val after = connection.state.value!!
+        assertThat(after.chats.map { it.id }).containsAtLeast("chat-muse", "chat-muse-earlier")
+        assertThat(after.session(muse.sessionId)).isNull()
+        assertThat(runCatching { api.characterMemory("muse") }.exceptionOrNull()!!.message).isEqualTo("That sidekick no longer exists.")
         connection.stop()
     }
 

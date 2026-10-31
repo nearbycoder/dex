@@ -22,6 +22,8 @@ data class DexState(
     val github: GitHubStatus = GitHubStatus(),
     val push: PushStatus = PushStatus(),
     val agents: List<AgentProfile> = emptyList(),
+    /** Characters, pinned above the chats, each with a conversation of their own. Missing in state an older agent saved. */
+    val characters: List<CharacterProfile> = emptyList(),
     val mcp: List<McpServerInfo> = emptyList(),
     val access: AccessState = AccessState(),
     val secrets: List<SavedSecret> = emptyList(),
@@ -42,6 +44,10 @@ data class DexState(
     fun session(id: String): SessionMeta? = sessions.firstOrNull { it.id == id }
     fun agent(id: String?): AgentProfile? = id?.let { key -> agents.firstOrNull { it.id == key } }
     fun project(id: String?): ProjectProfile? = id?.let { key -> projects.firstOrNull { it.id == key } }
+    fun character(id: String?): CharacterProfile? = id?.let { key -> characters.firstOrNull { it.id == key } }
+
+    /** The chat list: a character's conversations live under them, not in the inbox. */
+    val chats: List<SessionMeta> get() = sessions.filter { it.characterId == null }
     fun vm(key: String): VmInfo? = vms.firstOrNull { it.key == key }
     fun mcpServer(id: String): McpServerInfo? = mcp.firstOrNull { it.id == id }
 }
@@ -96,6 +102,8 @@ data class SessionMeta(
     val agentId: String? = null,
     val mcpServers: List<String> = emptyList(),
     val projectId: String? = null,
+    /** The character this is a conversation with, if any. */
+    val characterId: String? = null,
     val muted: Boolean = false,
     val settledAt: Long? = null,
     val snoozedUntil: Long? = null,

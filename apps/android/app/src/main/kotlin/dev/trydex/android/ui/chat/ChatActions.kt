@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Face
+import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material.icons.outlined.Notifications
@@ -37,7 +39,9 @@ import androidx.compose.ui.unit.dp
 import dev.trydex.android.ui.LocalApp
 import dev.trydex.android.ui.components.ConfirmState
 import dev.trydex.android.ui.components.haptics
+import dev.trydex.android.ui.nav.CharacterPage
 import dev.trydex.android.ui.nav.Chat
+import dev.trydex.core.model.CharacterProfile
 import dev.trydex.core.model.InboxState
 import dev.trydex.core.model.SessionMeta
 import dev.trydex.core.model.Snooze
@@ -86,6 +90,21 @@ class ChatActions(private val scope: CoroutineScope, private val snackbar: Snack
         }
     }
 
+    /** Start over: a new conversation with the character (same memory); this one stays on their page. */
+    fun restartCharacter(character: CharacterProfile) {
+        confirm.ask(
+            "Start over with ${character.name}?",
+            "A new conversation. They keep their memory, and this one stays on their page.",
+            confirm = "Start over",
+            destructive = false,
+        ) {
+            run {
+                val next = api.restartCharacter(character.id)
+                app.navigator.open(Chat(next.sessionId))
+            }
+        }
+    }
+
     fun delete(session: SessionMeta) {
         confirm.ask("Delete “${session.title}”?", "Its VM and its files go with it.") {
             run {
@@ -105,7 +124,8 @@ fun rememberChatActions(snackbar: SnackbarHostState, confirm: ConfirmState): Cha
 
 /** The chat's menu as a bottom sheet (long press on a row, or ⋯ in its header). */
 @Composable
-fun ChatMenuSheet(session: SessionMeta, actions: ChatActions, onDismiss: () -> Unit, showMute: Boolean = false) {
+fun ChatMenuSheet(session: SessionMeta, actions: ChatActions, onDismiss: () -> Unit, showMute: Boolean = false, character: CharacterProfile? = null) {
+    val app = LocalApp.current
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val haptics = haptics()
     val now = System.currentTimeMillis()
@@ -127,7 +147,16 @@ fun ChatMenuSheet(session: SessionMeta, actions: ChatActions, onDismiss: () -> U
                     },
                 )
             }
-            if (!picking) {
+            if (character != null) {
+                // A character's conversation isn't in the inbox: no settling or snoozing, and its title is their name.
+                item(Icons.Outlined.Face, "About ${character.name}", "Their profile, memory, and conversations", null) {
+                    app.navigator.open(CharacterPage(character.id, session.id))
+                }
+                item(Icons.Rounded.RestartAlt, "Start over", "A new conversation; they keep their memory", null) { actions.restartCharacter(character) }
+                item(if (session.muted) Icons.Outlined.Notifications else Icons.Outlined.NotificationsOff, if (session.muted) "Unmute notifications" else "Mute notifications", null, null) { actions.mute(session) }
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                item(Icons.Outlined.DeleteOutline, "Delete", null, MaterialTheme.colorScheme.error) { actions.delete(session) }
+            } else if (!picking) {
                 item(Icons.Outlined.AutoAwesome, "Regenerate title", "A fast model names it from its messages", null) { actions.regenerateTitle(session) }
                 if (state == InboxState.Settled) item(Icons.Outlined.Inbox, "Move to inbox", null, null) { actions.settle(session, false) }
                 else item(Icons.Rounded.DoneAll, "Settle", "Done for now; it comes back when something new happens", null) { actions.settle(session, true) }
