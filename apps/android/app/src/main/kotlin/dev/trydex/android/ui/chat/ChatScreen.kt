@@ -81,7 +81,10 @@ import dev.trydex.android.ui.nav.ChatMachine
 import dev.trydex.android.ui.nav.GeneralSettings
 import dev.trydex.android.ui.nav.ProjectEditor
 import dev.trydex.android.ui.theme.DexTheme
+import dev.trydex.android.ui.ComposeRequests
+import dev.trydex.android.ui.settings.AskForNotificationsOnce
 import dev.trydex.core.model.CharacterProfile
+import dev.trydex.core.model.SidekickNotify
 import dev.trydex.core.model.SessionMeta
 import dev.trydex.core.model.VmInfo
 import dev.trydex.core.model.VmStatus
@@ -124,6 +127,31 @@ fun ChatScreen(id: String) {
     var renaming by rememberSaveable { mutableStateOf(false) }
     val scroll = TopAppBarDefaults.pinnedScrollBehavior()
     val composer = rememberTextFieldState()
+    var draft by remember { mutableStateOf<Draft?>(null) }
+
+    // On screen: presence tells the agent (it marks the chat read and skips notifying about it), and its notification
+    // goes away. Marking it read here too is the backup for an agent that missed the presence.
+    val context = androidx.compose.ui.platform.LocalContext.current
+    DisposableEffect(id) {
+        repository.setOnScreen(id, true)
+        dev.trydex.android.notifications.Notifier.clear(context, id)
+        onDispose { repository.setOnScreen(id, false) }
+    }
+    val unread = session?.unread == true
+    LaunchedEffect(id, unread, connected) {
+        if (unread && connected) {
+            dev.trydex.android.notifications.Notifier.clear(context, id)
+            runCatching { repository.api.markSessionRead(id) }
+        }
+    }
+    // A widget's Message or a notification's Reply: the keyboard comes up, keeping what's typed.
+    LaunchedEffect(id) {
+        ComposeRequests.requests.collect { target ->
+            if (target == id && ComposeRequests.take(id)) draft = Draft(composer.text.toString(), System.nanoTime())
+        }
+    }
+    // The first sidekick you open is when the app asks whether it may notify you.
+    AskForNotificationsOnce(character?.id)
 
     Scaffold(
         modifier = Modifier.nestedScroll(scroll.nestedScrollConnection).testTag("chat-screen"),
@@ -173,6 +201,7 @@ fun ChatScreen(id: String) {
                             running = transcript.running,
                             enabled = connected,
                             autoFocus = false,
+                            draft = draft,
                             state = composer,
                             placeholder = if (transcript.running) "Queue a follow-up…" else "Message ${character?.name ?: "Dex"}, or / for skills…",
                             toolbar = {
@@ -315,7 +344,26 @@ private fun ChatTopBar(
                     )
                 }
             }
-            if (session != null && !narrow) {
+            if (session != null && character != null) {
+                // A sidekick's notifications: every message, or off (their page has "when they reach out" too).
+                val notify = character.notifyLevel
+                IconToggleButton(
+                    checked = notify != SidekickNotify.Off,
+                    onCheckedChange = { on -> haptics.toggle(on); actions.setNotify(character, if (on) SidekickNotify.All else SidekickNotify.Off) },
+                    modifier = Modifier.testTag("character-notify"),
+                ) {
+                    Icon(
+                        if (notify == SidekickNotify.Off) Icons.Outlined.NotificationsOff else Icons.Outlined.Notifications,
+                        contentDescription = when (notify) {
+                            SidekickNotify.Off -> "Notifications from ${character.name} are off. Tap to turn them on."
+                            SidekickNotify.All -> "Notifying you of every message from ${character.name}. Tap to turn off."
+                            SidekickNotify.Reachouts -> "Notifying you when ${character.name} reaches out. Tap to turn off."
+                        },
+                        tint = if (notify == SidekickNotify.Off) DexTheme.colors.warning else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            if (session != null && character == null && !narrow) {
                 IconToggleButton(checked = session.muted, onCheckedChange = { haptics.toggle(it); actions.mute(session) }, modifier = Modifier.testTag("mute")) {
                     Icon(
                         if (session.muted) Icons.Outlined.NotificationsOff else Icons.Outlined.Notifications,

@@ -98,6 +98,11 @@ class DexApi(private val rpc: AgentRpc) {
     suspend fun abort(sessionId: String) { raw("abort", sessionId) }
     suspend fun setSessionMuted(sessionId: String, muted: Boolean) { raw("setSessionMuted", sessionId, muted) }
 
+    /** You've seen this chat's latest (presence does it too; this is the backup when a chat opens). */
+    suspend fun markSessionRead(sessionId: String) { raw("markSessionRead", sessionId) }
+    /** Brings a chat back as unread, to come back to later. */
+    suspend fun markSessionUnread(sessionId: String) { raw("markSessionUnread", sessionId) }
+
     /** Settle (or move back to the inbox) and snooze; a null `snoozedUntil` unsnoozes. */
     suspend fun settle(sessionId: String, settled: Boolean) {
         raw("triageSession", sessionId, buildJsonObject { put("settled", settled) })
@@ -255,6 +260,13 @@ class DexApi(private val rpc: AgentRpc) {
         })
     }
     suspend fun pushUnsubscribe(id: String) { raw("pushUnsubscribe", id) }
+
+    /**
+     * This app's push token (Firebase on Android); returns its device id. It upserts by token, so call it on every
+     * start and whenever the token changes. [environment] is APNs' (sandbox or production); null for Android.
+     */
+    suspend fun registerNativePush(platform: String, token: String, environment: String?, label: String): String =
+        typed(String.serializer(), "registerNativePush", platform, token, environment, label)
     suspend fun pushTest(id: String): String? = raw("pushTest", id)?.str
 
     suspend fun createAccessToken(label: String, scope: String, days: Int?): CreatedAccessToken =
@@ -300,6 +312,10 @@ class DexApi(private val rpc: AgentRpc) {
             }
             return JsonObject(json)
         }
+
+        /** A sidekick with a new notification setting, keeping their picture and look as they are. */
+        fun characterNotifyDraft(character: CharacterProfile, notify: dev.trydex.core.model.SidekickNotify): JsonObject =
+            characterDraft(character.copy(notify = notify.id), picture = false)
 
         /** An agent as `saveAgent` takes it: no id when new (blank), no timestamps. */
         fun agentDraft(agent: AgentProfile): JsonObject {

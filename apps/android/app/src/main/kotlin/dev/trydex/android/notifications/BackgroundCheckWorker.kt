@@ -9,6 +9,7 @@ import androidx.work.WorkerParameters
 import dev.trydex.android.AppGraph
 import dev.trydex.android.DexApplication
 import dev.trydex.android.data.LocalCache
+import dev.trydex.android.widget.WidgetSync
 import dev.trydex.core.client.AgentConnection
 import dev.trydex.core.client.ConnectionStatus
 import dev.trydex.core.client.DexApi
@@ -62,10 +63,16 @@ class BackgroundCheckWorker(context: Context, params: WorkerParameters) : Corout
         val cache = LocalCache(File(applicationContext.filesDir, "dex-cache"))
         val before = cache.loadState(user)
         val fresh = withAgent(graph) { _, state -> state } ?: return Result.retry()
-        for (alert in Alerts.between(before, fresh, System.currentTimeMillis())) {
-            if (alert.kind in prefs.notifyKinds) Notifier.post(applicationContext, alert)
+        // With push, the agent notified this device already.
+        if (!graph.push.registered) {
+            for (alert in Alerts.between(before, fresh, System.currentTimeMillis())) {
+                if (Notifier.wantsKind(prefs.notifyKinds, alert.kind)) {
+                    Notifier.post(applicationContext, alert, character = fresh.characters.firstOrNull { it.sessionId == alert.sessionId })
+                }
+            }
         }
         cache.saveState(user, fresh)
+        WidgetSync.fromState(applicationContext, fresh)
         return Result.success()
     }
 

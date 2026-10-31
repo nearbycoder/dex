@@ -9,6 +9,7 @@ import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.test.core.app.ApplicationProvider
 import dev.trydex.android.AppGraph
 import dev.trydex.android.data.MemorySessionStore
+import dev.trydex.android.notifications.PushTokens
 import dev.trydex.android.ui.DexRoot
 import dev.trydex.android.ui.LinkInbox
 import dev.trydex.android.ui.PipController
@@ -27,11 +28,20 @@ class TestApplication : Application()
  * The real app against an in-process fake Dex: a graph with an in-memory session, signed in to FakeDex, rendering
  * [DexRoot] as the activity would.
  */
-class Harness(chunkMs: Long = 0) : AutoCloseable {
+/** Push tokens without Firebase: a fixed token, and whether it was deleted. */
+class FakePushTokens(override val available: Boolean = true, var value: String? = "fcm-test-token-0123456789abcdef") : PushTokens {
+    var deleted = 0
+    override suspend fun token() = value
+    override suspend fun delete() {
+        deleted++
+    }
+}
+
+class Harness(chunkMs: Long = 0, val pushTokens: FakePushTokens = FakePushTokens()) : AutoCloseable {
     val fake = FakeDex(chunkMs = chunkMs)
     val server = fake.start()
     val context: Application = ApplicationProvider.getApplicationContext()
-    val graph = AppGraph(context, sessionStore = MemorySessionStore(), cacheDir = Files.createTempDirectory("dex-cache").toFile())
+    val graph = AppGraph(context, sessionStore = MemorySessionStore(), cacheDir = Files.createTempDirectory("dex-cache").toFile(), pushTokens = pushTokens)
     val links = LinkInbox()
     val pip = PipController()
     val opened = mutableListOf<String>()

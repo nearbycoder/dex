@@ -70,6 +70,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.trydex.android.ui.LocalApp
+import dev.trydex.android.ui.nav.NotificationSettings
+import dev.trydex.android.ui.theme.DexTheme
+import dev.trydex.core.model.SidekickNotify
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.material3.RadioButton
+import androidx.compose.ui.semantics.Role
 import dev.trydex.android.ui.chat.ModelPicker
 import dev.trydex.android.ui.components.Bone
 import dev.trydex.android.ui.components.BoneRows
@@ -456,6 +463,20 @@ private fun CharacterForm(draft: CharacterProfile, state: DexState, onChange: ((
     }
 
     SectionCard {
+        ProfileField("Notifications", "Which of their messages notify you on the devices you turned notifications on for.") {
+            Column {
+                SidekickNotifyChoices(draft.notifyLevel) { level -> onChange { it.copy(notify = level.id) } }
+                if (state.push.devices.isEmpty()) {
+                    val app = LocalApp.current
+                    TextButton(onClick = { app.navigator.open(NotificationSettings) }, modifier = Modifier.testTag("character-notify-setup")) {
+                        Text("No device gets notifications yet. Turn them on", style = MaterialTheme.typography.bodySmall, color = DexTheme.colors.warning)
+                    }
+                }
+            }
+        }
+    }
+
+    SectionCard {
         ProfileField("Model and thinking", "Changing them moves the conversation to the new model.") {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 ModelPicker(draft.model, draft.thinking, onChange = { model, thinking -> onChange { it.copy(model = model, thinking = thinking) } })
@@ -463,6 +484,27 @@ private fun CharacterForm(draft: CharacterProfile, state: DexState, onChange: ((
         }
         ProfileField("MCP servers", "Tools from these servers are always on in their conversation.") {
             ProfileMcpChips(state, draft.mcpServers, tag = "character-mcp") { ids -> onChange { it.copy(mcpServers = ids) } }
+        }
+    }
+}
+
+/** Every message, When they reach out, or Off: a sidekick's notifications (their page and Settings → Notifications). */
+@Composable
+fun SidekickNotifyChoices(selected: SidekickNotify, enabled: Boolean = true, onPick: (SidekickNotify) -> Unit) {
+    Column(Modifier.selectableGroup()) {
+        SidekickNotify.entries.forEach { level ->
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    .selectable(selected = level == selected, enabled = enabled, role = Role.RadioButton) { onPick(level) }
+                    .testTag("notify-${level.id}"),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(selected = level == selected, onClick = null, enabled = enabled)
+                Column(Modifier.padding(start = 12.dp, top = 6.dp, bottom = 6.dp)) {
+                    Text(level.label, style = MaterialTheme.typography.bodyLarge)
+                    Text(level.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
         }
     }
 }

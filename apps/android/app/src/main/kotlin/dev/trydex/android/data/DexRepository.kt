@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import java.util.concurrent.atomic.AtomicLong
 
@@ -81,16 +82,21 @@ class DexRepository(
     lateinit var api: DexApi
         private set
 
-    /** The chat on screen here (for presence and the subscription), and whether Dex is visible. */
+    /** The chat open here (for the subscription), the one on screen (for presence), and whether Dex is visible. */
     private val openChat = MutableStateFlow<String?>(null)
+    private val onScreen = MutableStateFlow<String?>(null)
     private val visible = MutableStateFlow(false)
+
+    /** Work that needs the agent one last time before signing out (unregistering push). */
+    private val signOutHooks = mutableListOf<suspend (DexApi, DexSession) -> Unit>()
 
     init {
         cache.loadModels()?.let { if (models.install(it)) _modelsVersion.value = it.version }
         sessions.load()?.let { activate(it) }
-        // Presence: whether Dex is on screen here, and which chat it shows, so notifications skip what you're looking at.
+        // Presence: whether Dex is on screen here, and which chat it shows, so notifications skip what you're looking at
+        // and the agent marks that chat read. Sent again when the app goes to the background (visible false).
         scope.launch {
-            combine(connected, visible, openChat) { up, shown, chat -> Triple(up, shown, chat) }.distinctUntilChanged().collect { (up, shown, chat) ->
+            combine(connected, visible, onScreen) { up, shown, chat -> Triple(up, shown, chat) }.distinctUntilChanged().collect { (up, shown, chat) ->
                 if (up) connection?.send(ClientMessages.presence(shown, chat))
             }
         }
@@ -106,11 +112,26 @@ class DexRepository(
         activate(session)
     }
 
+    /** Runs [hook] with the agent just before signing out (the socket stays up for it, a few seconds at most). */
+    fun beforeSignOut(hook: suspend (DexApi, DexSession) -> Unit) {
+        signOutHooks += hook
+    }
+
     /** Forgets the session and everything kept for it on this device. */
     fun signOut(reason: SignedOutReason = SignedOutReason.SignedOut) {
-        connection?.stop()
+        val old = connection
+        val oldSession = _session.value
+        val oldApi = if (this::api.isInitialized) api else null
         connectionJobs.forEach { it.cancel() }
         connection = null
+        if (oldApi != null && oldSession != null && signOutHooks.isNotEmpty()) {
+            scope.launch {
+                withTimeoutOrNull(SIGN_OUT_HOOK_MS) { signOutHooks.forEach { hook -> runCatching { hook(oldApi, oldSession) } } }
+                old?.stop()
+            }
+        } else {
+            old?.stop()
+        }
         sessions.clear()
         cache.clear()
         transcripts.clear()
@@ -157,7 +178,7 @@ class DexRepository(
                 }
             }
             ConnectionStatus.Connected -> {
-                connection?.send(ClientMessages.presence(visible.value, openChat.value))
+                connection?.send(ClientMessages.presence(visible.value, onScreen.value))
                 resubscribe()
             }
             else -> Unit
@@ -217,7 +238,22 @@ class DexRepository(
     }
 
     /** Whether this chat is on screen here right now. */
-    fun isShowing(sessionId: String) = visible.value && openChat.value == sessionId
+    fun isShowing(sessionId: String) = visible.value && onScreen.value == sessionId
+
+    private val sent = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    /** You sent a message to this chat from here (a sidekick's answer to it isn't them reaching out). */
+    fun noteSent(sessionId: String) {
+        sent[sessionId] = System.currentTimeMillis()
+    }
+
+    fun sentRecently(sessionId: String, withinMs: Long = 30 * 60_000L) = (sent[sessionId] ?: 0) > System.currentTimeMillis() - withinMs
+
+    /** A chat came on screen here (or left it): presence tells the agent, which marks it read. */
+    fun setOnScreen(sessionId: String, shown: Boolean) {
+        if (shown) onScreen.value = sessionId
+        else if (onScreen.value == sessionId) onScreen.value = null
+    }
 
     fun send(message: kotlinx.serialization.json.JsonObject) = connection?.send(message) ?: false
 
@@ -315,6 +351,7 @@ class DexRepository(
     companion object {
         const val PING_MS = 20_000L
         const val MAX_TRANSCRIPTS = 12
+        const val SIGN_OUT_HOOK_MS = 6_000L
 
         fun reduce(state: TranscriptState, message: ServerMessage): TranscriptState = when (message) {
             is ServerMessage.Snapshot -> TranscriptReducer.fromSnapshot(message.snapshot, state)

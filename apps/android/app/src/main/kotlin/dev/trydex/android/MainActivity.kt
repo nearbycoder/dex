@@ -18,6 +18,8 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import dev.trydex.android.ui.DexRoot
 import dev.trydex.android.ui.LinkInbox
 import dev.trydex.android.ui.PipController
+import dev.trydex.android.ui.ComposeRequests
+import dev.trydex.android.ui.nav.composeTarget
 import dev.trydex.android.ui.nav.routesFor
 import dev.trydex.android.ui.signin.SignInController
 
@@ -56,7 +58,10 @@ class MainActivity : ComponentActivity() {
         val data = intent?.data?.toString() ?: return
         when {
             data.startsWith("dex://auth/callback") -> signIn.complete(data)
-            data.startsWith("dex://app") -> routesFor(data)?.let(links::send)
+            data.startsWith("dex://app") -> {
+                composeTarget(data)?.let(ComposeRequests::request)
+                routesFor(data)?.let(links::send)
+            }
             // dex://chatgpt/signed-in only brings Dex back over the browser; Settings already has the address.
         }
     }

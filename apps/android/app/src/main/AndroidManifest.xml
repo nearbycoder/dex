@@ -60,5 +60,47 @@
         <receiver
             android:name=".notifications.NotificationActionReceiver"
             android:exported="false" />
+
+        <!-- Pushes from your agent (Firebase, data only); the app builds each notification itself. Inert in builds
+             without app/google-services.json. -->
+        <service
+            android:name=".notifications.DexMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="updates" />
+
+        <!-- Home-screen widgets (Jetpack Glance): one sidekick, and up to four. -->
+        <receiver
+            android:name=".widget.SidekickWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_sidekick_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_sidekick" />
+        </receiver>
+        <receiver
+            android:name=".widget.SidekicksWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_sidekicks_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_sidekicks" />
+        </receiver>
+        <activity
+            android:name=".widget.SidekickWidgetConfigActivity"
+            android:exported="true"
+            android:label="@string/widget_sidekick_name"
+            android:theme="@style/Theme.Dex">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>

@@ -56,6 +56,7 @@ class ChatViewModel(val sessionId: String, private val repository: DexRepository
         val state = transcript.value
         val willQueue = state.running || state.queue.isNotEmpty()
         if (!willQueue) _pending.value = Pending.add(_pending.value, label, state.userCount, System.currentTimeMillis())
+        repository.noteSent(sessionId)
         viewModelScope.launch {
             runCatching { repository.api.sendMessage(sessionId, trimmed, attachments) }.onFailure { error ->
                 _pending.value = _pending.value.filter { it.text != label }

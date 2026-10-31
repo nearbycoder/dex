@@ -70,6 +70,8 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -316,15 +318,19 @@ fun ChatRow(session: SessionMeta, state: DexState, now: Long, selected: Boolean,
     val project = state.project(session.projectId)
     val model = app.graph.models.find(session.model)?.name ?: session.model
     val naming = session.id in Naming.ids
+    // Something came in you haven't seen (not while it's open beside the list).
+    val unread = session.unread && !selected
     ListItem(
-        modifier = modifier.padding(horizontal = 8.dp).clip(RoundedCornerShape(24.dp)).testTag("chat-${session.id}"),
+        modifier = modifier.padding(horizontal = 8.dp).clip(RoundedCornerShape(24.dp)).testTag("chat-${session.id}")
+            .semantics { if (unread) stateDescription = "Unread" },
         headlineContent = {
             Text(
                 session.title,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = if (naming) Modifier.alpha(0.5f) else Modifier,
-                color = if (settled) MaterialTheme.colorScheme.onSurfaceVariant else Color.Unspecified,
+                fontWeight = if (unread) FontWeight.Bold else null,
+                color = if (settled && !unread) MaterialTheme.colorScheme.onSurfaceVariant else Color.Unspecified,
             )
         },
         supportingContent = {
@@ -354,6 +360,10 @@ fun ChatRow(session: SessionMeta, state: DexState, now: Long, selected: Boolean,
                     Text("working", style = MaterialTheme.typography.labelMedium, color = DexTheme.colors.success)
                 }
                 snoozed && session.snoozedUntil != null -> Text(Snooze.untilLabel(session.snoozedUntil!!, now), style = MaterialTheme.typography.labelMedium, color = DexTheme.colors.info)
+                unread -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(Format.timeAgo(session.updatedAt, now), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                    UnreadDot(Modifier.testTag("unread-${session.id}"))
+                }
                 else -> Text(Format.timeAgo(session.updatedAt, now), style = MaterialTheme.typography.labelMedium)
             }
         },

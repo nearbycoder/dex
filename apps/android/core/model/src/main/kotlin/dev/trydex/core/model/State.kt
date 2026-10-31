@@ -48,6 +48,9 @@ data class DexState(
 
     /** The chat list: a character's conversations live under them, not in the inbox. */
     val chats: List<SessionMeta> get() = sessions.filter { it.characterId == null }
+
+    /** Chats with something you haven't seen (muted ones too: muting is about notifications), for the app's badge. */
+    val unreadCount: Int get() = sessions.count { it.unread }
     fun vm(key: String): VmInfo? = vms.firstOrNull { it.key == key }
     fun mcpServer(id: String): McpServerInfo? = mcp.firstOrNull { it.id == id }
 }
@@ -104,6 +107,12 @@ data class SessionMeta(
     val projectId: String? = null,
     /** The character this is a conversation with, if any. */
     val characterId: String? = null,
+    /** A reply came in since you last looked at it (on any device). Missing from older agents. */
+    val unread: Boolean = false,
+    /** The latest reply, shortened (for lists, widgets, and notifications). */
+    val lastReply: String? = null,
+    /** When the latest reply finished. */
+    val repliedAt: Long? = null,
     val muted: Boolean = false,
     val settledAt: Long? = null,
     val snoozedUntil: Long? = null,
@@ -284,6 +293,8 @@ data class McpServerInfo(
 @Serializable
 data class PushDevice(
     val id: String,
+    /** web (a browser's Web Push), ios, or android (the apps). Missing on devices saved before the apps had push. */
+    val platform: String = "web",
     val label: String = "Device",
     val kinds: List<String> = emptyList(),
     val onlyWhenAway: Boolean = true,
@@ -294,10 +305,16 @@ data class PushDevice(
 
 @Serializable
 data class PushStatus(
+    /** Web Push (VAPID keys). The apps have their own: [native]. */
     val configured: Boolean = false,
     val publicKey: String? = null,
     val devices: List<PushDevice> = emptyList(),
+    /** Whether this deployment can push to the apps (APNs, Firebase). Missing from older agents: neither. */
+    val native: NativePush = NativePush(),
 )
+
+@Serializable
+data class NativePush(val ios: Boolean = false, val android: Boolean = false)
 
 @Serializable
 data class AccessToken(

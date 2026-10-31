@@ -97,6 +97,7 @@ import dev.trydex.core.model.ToolCallBlock
 import dev.trydex.core.model.ToolResultMessage
 import dev.trydex.core.model.Tools
 import dev.trydex.core.model.TranscriptState
+import dev.trydex.core.model.ScheduledNote
 import dev.trydex.core.model.UiNotes
 import dev.trydex.core.model.displayItems
 import dev.trydex.core.model.obj
@@ -157,7 +158,9 @@ fun MessageList(
             items(items.reversed(), key = { it.id }) { item ->
                 Centered {
                     when (item) {
-                        is DisplayItem.User -> UserBubble(item.text, item.images, files = item.files, imageParts = item.imageParts, sessionId = sessionId)
+                        // A prompt that ran on a schedule: the chat reaching out on its own, not something you said.
+                        is DisplayItem.User -> ScheduledNote.of(item.text)?.let { ScheduledNoteRow(it) }
+                            ?: UserBubble(item.text, item.images, files = item.files, imageParts = item.imageParts, sessionId = sessionId)
                         is DisplayItem.Assistant -> AssistantTurn(
                             sessionId, item.messages, item.streaming, active = transcript.running && item === items.last(),
                             endedAt = item.endedAt, results = results, tools = transcript.tools, onSend = onSend, character = character,
@@ -179,6 +182,21 @@ fun MessageList(
                 }
             }
         }
+    }
+}
+
+/** "⏰ Scheduled: <prompt>", small, centered, and muted, where a scheduled prompt ran. */
+@Composable
+fun ScheduledNoteRow(prompt: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp).testTag("scheduled-note"), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            "⏰ Scheduled: $prompt",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
     }
 }
 

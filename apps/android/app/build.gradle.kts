@@ -5,6 +5,11 @@ plugins {
     alias(libs.plugins.roborazzi)
 }
 
+// Push (Firebase Cloud Messaging) needs your Firebase project's config, per deployment and kept out of git. Without
+// app/google-services.json the app builds the same and Firebase stays off: it notifies from its own connection and a
+// check about every 15 minutes instead.
+if (file("google-services.json").exists()) apply(plugin = libs.plugins.google.services.get().pluginId)
+
 android {
     namespace = "dev.trydex.android"
     compileSdk {
@@ -116,6 +121,10 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.work.runtime)
     implementation(libs.androidx.core.splashscreen)
+    implementation(libs.androidx.glance.appwidget)
+    implementation(libs.androidx.glance.material3)
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
     implementation(libs.kotlinx.coroutines.android)
 
     implementation(platform(libs.androidx.compose.bom))

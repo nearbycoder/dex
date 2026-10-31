@@ -32,6 +32,8 @@ data class CharacterProfile(
     val model: String = DEFAULT_MODEL_ID,
     val thinking: ThinkingLevel = DEFAULT_THINKING,
     val mcpServers: List<String> = emptyList(),
+    /** Which of their messages notify you: "all", "reachouts" (only ones they start themselves), or "off". */
+    val notify: String = SidekickNotify.All.id,
     /** Their conversation now; Start over replaces it and the old one stays readable. */
     val sessionId: String = "",
     val createdAt: Long = 0,
@@ -39,6 +41,20 @@ data class CharacterProfile(
 ) {
     /** What their avatar shows without a picture: the emoji, else the name's initial. */
     val face: String get() = avatar.ifEmpty { Characters.initial(name) }
+
+    /** [notify] as a level (anything unknown, from a newer agent, reads as every message). */
+    val notifyLevel: SidekickNotify get() = SidekickNotify.fromId(notify)
+}
+
+/** Which of a sidekick's messages notify you (NOTIFY_LEVELS and NOTIFY_LABELS in apps/web/src/shared/characters.ts). */
+enum class SidekickNotify(val id: String, val label: String, val description: String) {
+    All("all", "Every message", "Whenever they reply or reach out, while you're away."),
+    Reachouts("reachouts", "When they reach out", "Only messages they start themselves, like check-ins and reminders."),
+    Off("off", "Off", "No notifications; their messages still show as unread.");
+
+    companion object {
+        fun fromId(id: String?): SidekickNotify = entries.firstOrNull { it.id == id } ?: All
+    }
 }
 
 /** A sidekick's look: one of each part (SidekickLook in apps/web/src/shared/sidekick-look.ts). */

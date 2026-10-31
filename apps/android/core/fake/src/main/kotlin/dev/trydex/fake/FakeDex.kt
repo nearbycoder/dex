@@ -19,6 +19,10 @@ import dev.trydex.core.model.McpStatus
 import dev.trydex.core.model.McpToolInfo
 import dev.trydex.core.model.ModelCatalog
 import dev.trydex.core.model.PendingAction
+import dev.trydex.core.model.PushDevice
+import dev.trydex.core.model.ScheduledNote
+import dev.trydex.core.model.WidgetSnapshot
+import dev.trydex.core.model.get
 import dev.trydex.core.model.ProjectImageCandidate
 import dev.trydex.core.model.ProjectProfile
 import dev.trydex.core.model.QueuedMessage
@@ -185,6 +189,13 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
                 if (!authorized(request)) return json(buildJsonObject { put("error", "Sign in again") }, 401)
                 attachment(request.body?.utf8() ?: "")
             }
+            path == "/api/sidekicks" -> {
+                if (!authorized(request)) return json(buildJsonObject { put("error", "Sign in again") }, 401)
+                val snapshot = encode(WidgetSnapshot.serializer(), WidgetSnapshot.from(state)).jsonObject
+                // `images=0` leaves the pictures out, for a widget that already has them.
+                if (url.queryParameter("images") == "0") json(JsonObject(snapshot + ("sidekicks" to JsonArray(snapshot["sidekicks"]!!.jsonArray.map { JsonObject(it.jsonObject - "image") }))))
+                else json(snapshot)
+            }
             path == "/api/version" -> if (authorized(request)) json(buildJsonObject { put("build", state.build) }) else MockResponse.Builder().code(401).build()
             path.startsWith("/api/media/") -> {
                 if (!authorized(request)) return MockResponse.Builder().code(401).build()
@@ -227,6 +238,8 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
         lateinit var socket: WebSocket
         @Volatile var chat: String? = null
         @Volatile var visible = true
+        /** The chat this app says is on screen (presence). */
+        @Volatile var showing: String? = null
 
         override fun onOpen(webSocket: WebSocket, response: Response) {
             socket = webSocket
@@ -266,6 +279,13 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
 
     private fun broadcast(message: JsonObject) = connections.forEach { it.send(message) }
 
+    private fun markRead(sessionId: String) {
+        if (state.session(sessionId)?.unread == true) updateSession(sessionId) { it.copy(unread = false) }
+    }
+
+    /** A scheduled prompt runs in this chat and it answers on its own (a sidekick's check-in), for tests and the demo. */
+    fun checkIn(sessionId: String, prompt: String, reply: String) = sync { chats[sessionId]?.checkIn(prompt, reply) }
+
     /** Closes every socket with "Signed out everywhere" (code 4001). */
     fun signOutEverywhere() = connections.forEach { it.socket.close(4001, "Signed out everywhere") }
 
@@ -289,7 +309,12 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
             "dex.subscribe" -> subscribe(connection, message["sessionId"].str ?: return)
             "dex.ping" -> message["sessionId"].str?.let { if (connection.chat != it) subscribe(connection, it) }
             "dex.unsubscribe" -> connection.chat = null
-            "dex.presence" -> connection.visible = message["visible"].bool ?: true
+            "dex.presence" -> {
+                connection.visible = message["visible"].bool ?: true
+                connection.showing = message["sessionId"].str
+                // Showing a chat marks it read, as the agent does.
+                connection.showing?.takeIf { connection.visible }?.let(::markRead)
+            }
         }
     }
 
@@ -369,6 +394,8 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
             }
             null
         }
+        "markSessionRead" -> { markRead(args.s(0)); null }
+        "markSessionUnread" -> { updateSession(args.s(0)) { it.copy(unread = true, repliedAt = it.repliedAt ?: it.updatedAt) }; null }
         "setSessionMuted" -> { updateSession(args.s(0)) { it.copy(muted = args[1].bool == true) }; null }
         "configureSession" -> {
             val options = args.o(1)
@@ -658,11 +685,42 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
             JsonPrimitive("https://sb-1f2e-${args[1]}.on.boat.dev/?_token=abc123")
         }
         "usageReport" -> encode(UsageReport.serializer(), usage(args.s(0)))
-        "pushUpdate", "pushUnsubscribe" -> {
-            if (method == "pushUnsubscribe") update { s -> s.copy(push = s.push.copy(devices = s.push.devices.filter { it.id != args.s(0) })) }
+        "registerNativePush" -> {
+            val platform = args.s(0)
+            if (platform != "ios" && platform != "android") error("Unknown platform.")
+            if (!(if (platform == "ios") state.push.native.ios else state.push.native.android)) error("Push to the Android app isn't set up on this deployment.")
+            val token = args.s(1).trim()
+            if (!Regex("^[\\w:.-]{20,4096}$").matches(token)) error("That isn't a push token.")
+            val id = MessageDigest.getInstance("SHA-256").digest("$platform:$token".toByteArray()).take(8).joinToString("") { "%02x".format(it) }
+            val label = args.s(3).take(60).ifEmpty { "Device" }
+            val existing = state.push.devices.firstOrNull { it.id == id }
+            val device = existing?.copy(label = label, error = null)
+                ?: PushDevice(id, platform, label, listOf("sidekick", "reply", "error", "scheduled", "machine", "mcp", "snooze"), true, clock())
+            update { s -> s.copy(push = s.push.copy(devices = if (existing == null) s.push.devices + device else s.push.devices.map { if (it.id == id) device else it })) }
+            JsonPrimitive(id)
+        }
+        "pushUpdate" -> {
+            val patch = args.o(1)
+            update { s ->
+                s.copy(push = s.push.copy(devices = s.push.devices.map { device ->
+                    if (device.id != args.s(0)) device
+                    else device.copy(
+                        kinds = (patch["kinds"] as? JsonArray)?.mapNotNull { it.str }?.distinct() ?: device.kinds,
+                        onlyWhenAway = patch["onlyWhenAway"].bool ?: device.onlyWhenAway,
+                    )
+                }))
+            }
             null
         }
-        "pushTest" -> JsonNull
+        "pushUnsubscribe" -> { update { s -> s.copy(push = s.push.copy(devices = s.push.devices.filter { it.id != args.s(0) })) }; null }
+        "pushTest" -> {
+            val device = state.push.devices.firstOrNull { it.id == args.s(0) }
+            if (device == null) JsonPrimitive("This device isn't subscribed any more.")
+            else {
+                update { s -> s.copy(push = s.push.copy(devices = s.push.devices.map { if (it.id == device.id) it.copy(lastSentAt = clock()) else it })) }
+                JsonNull
+            }
+        }
         "createAccessToken" -> {
             val label = args.s(0).trim()
             if (label.isEmpty()) error("Name the token after the agent that will use it.")
@@ -865,10 +923,14 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
                     entries += Pi.entry(nextId++, "pi.assistant", Pi.assistantMessage(listOf(Pi.text("Ooh. The Half-Baked Ideas? Velvet Spreadsheet? Tell me what you sound like.")), at - 40_000, 3_000))
                 }
                 "chat-atlas" -> {
-                    entries += Pi.entry(nextId++, "pi.user", Pi.userMessage("What's on my plate this week?", at - 50_000))
+                    val earlier = at - 2 * 86_400_000L
+                    entries += Pi.entry(nextId++, "pi.user", Pi.userMessage("What's on my plate this week?", earlier - 50_000))
                     entries += Pi.entry(nextId++, "pi.assistant", Pi.assistantMessage(listOf(Pi.text(
                         "Three things:\n\n- **Tuesday**: the dentist at 9.\n- **Thursday**: Android release notes are due.\n- **Friday**: your niece's birthday. The game?\n\nI'll check in Thursday morning.",
-                    )), at - 40_000, 3_000))
+                    )), earlier - 40_000, 3_000))
+                    // The check-in he scheduled: a note, then his words.
+                    entries += Pi.entry(nextId++, "pi.user", Pi.userMessage(ScheduledNote.PREFIX + "Check in about the Android release notes due today", at - 2_000))
+                    entries += Pi.entry(nextId++, "pi.assistant", Pi.assistantMessage(listOf(Pi.text(FakeData.ATLAS_CHECK_IN)), at, 2_000))
                 }
                 else -> {
                     entries += Pi.entry(nextId++, "pi.user", Pi.userMessage(session.title, at - 50_000))
@@ -1086,12 +1148,32 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
             running = false
             streaming = null
             events(buildJsonObject { put("type", "run_end"); put("inputs", JsonArray(emptyList())) })
-            updateSession(id) { it.copy(busy = false, updatedAt = clock()) }
+            // Unread until someone looks, unless someone is looking now (notifyRunEnd).
+            val watching = connections.any { it.visible && it.showing == id }
+            updateSession(id) { it.copy(busy = false, updatedAt = clock(), repliedAt = clock(), lastReply = lastReply() ?: "Done.", unread = !watching) }
             if (!held && queue.isNotEmpty()) {
                 val next = queue.removeAt(0)
                 toChat(id, queueMessage())
                 deliver(next.text, queuedFiles.remove(next.id).orEmpty())
             }
+        }
+
+        /** The latest reply's words, shortened, for lists and widgets. */
+        fun lastReply(): String? = entries.lastOrNull { it["kind"].str == "pi.assistant" }
+            ?.let { it["model"].arr?.firstOrNull()?.get("content").arr }
+            ?.filter { it["type"].str == "text" }
+            ?.joinToString(" ") { it["text"].str.orEmpty() }
+            ?.replace(Regex("[*_`#>]+"), "")?.replace(Regex("\\s+"), " ")?.trim()
+            ?.takeIf { it.isNotEmpty() }?.take(280)
+
+        /** A scheduled prompt ran: its note, then the reply, unread (a sidekick reaching out). */
+        fun checkIn(prompt: String, reply: String) {
+            val at = clock()
+            entries += Pi.entry(nextId++, "pi.user", Pi.userMessage(ScheduledNote.PREFIX + prompt, at))
+            entries += Pi.entry(nextId++, "pi.assistant", Pi.assistantMessage(listOf(Pi.text(reply)), at + 1_000, 2_000))
+            toChat(id, buildJsonObject { put("type", "dex.snapshot"); put("sessionId", id); put("snapshot", snapshot()) })
+            val watching = connections.any { it.visible && it.showing == id }
+            updateSession(id) { it.copy(updatedAt = clock(), repliedAt = clock(), lastReply = lastReply(), unread = !watching) }
         }
 
         fun abort() {

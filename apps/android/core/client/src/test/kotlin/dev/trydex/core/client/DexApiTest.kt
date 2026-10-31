@@ -108,6 +108,25 @@ class DexApiTest {
         assertThat(calls[2].args).isEqualTo("""["muse",""]""")
     }
 
+    @Test fun unreadAndPush() = runBlocking<Unit> {
+        api.markSessionRead("s1")
+        api.markSessionUnread("s1")
+        result = "\"a1b2\""
+        assertThat(api.registerNativePush("android", "tok:en-123", null, "Pixel 9 · Android app")).isEqualTo("a1b2")
+        assertThat(calls.map { it.method }).containsExactly("markSessionRead", "markSessionUnread", "registerNativePush").inOrder()
+        assertThat(calls[2].args).isEqualTo("""["android","tok:en-123",null,"Pixel 9 · Android app"]""")
+    }
+
+    @Test fun aSidekicksNotificationsKeepTheirPicture() {
+        val draft = DexApi.characterNotifyDraft(
+            CharacterProfile("atlas", name = "Atlas", look = SidekickLook("blob"), image = "data:image/png;base64,AA", sessionId = "s", createdAt = 1),
+            dev.trydex.core.model.SidekickNotify.Reachouts,
+        )
+        assertThat(draft["notify"].toString()).isEqualTo("\"reachouts\"")
+        assertThat(draft["id"].toString()).isEqualTo("\"atlas\"")
+        assertThat(draft.keys).containsNoneOf("image", "look", "sessionId", "createdAt")
+    }
+
     @Test fun nullableResults() = runBlocking<Unit> {
         result = "null"
         assertThat(api.getSkill("gone")).isNull()

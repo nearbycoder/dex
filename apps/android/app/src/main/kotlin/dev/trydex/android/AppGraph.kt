@@ -9,11 +9,17 @@ import dev.trydex.android.data.KeystoreSessionStore
 import dev.trydex.android.data.LocalCache
 import dev.trydex.android.data.Preferences
 import dev.trydex.android.data.SessionStore
+import dev.trydex.android.notifications.FirebaseTokens
+import dev.trydex.android.notifications.Notifier
+import dev.trydex.android.notifications.PushRegistrar
+import dev.trydex.android.notifications.PushStore
+import dev.trydex.android.notifications.PushTokens
 import dev.trydex.core.client.DexCookieInterceptor
 import dev.trydex.core.model.ModelRegistry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.map
 import okhttp3.OkHttpClient
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -24,6 +30,7 @@ class AppGraph(
     val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
     sessionStore: SessionStore = KeystoreSessionStore(context),
     cacheDir: File = File(context.filesDir, "dex-cache"),
+    pushTokens: PushTokens = FirebaseTokens(context.applicationContext),
 ) {
     val preferences = Preferences(context, scope)
     val models = ModelRegistry()
@@ -36,6 +43,15 @@ class AppGraph(
         .build()
 
     val repository = DexRepository(scope, http, sessionStore, LocalCache(cacheDir), models)
+
+    /** Push to this device (Firebase), registered with the agent while notifications are on here. */
+    val push = context.applicationContext.let { app ->
+        PushRegistrar(
+            scope, repository, pushTokens, PushStore(app),
+            wanted = { preferences.prefs.value.notifications && Notifier.canPost(app) },
+            wantedChanges = preferences.prefs.map { it.notifications },
+        )
+    }
 
     /** For media and images: adds the session cookie to Dex's own host only. */
     val mediaHttp: OkHttpClient = http.newBuilder()

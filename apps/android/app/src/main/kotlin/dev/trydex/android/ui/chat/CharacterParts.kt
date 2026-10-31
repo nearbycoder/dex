@@ -34,6 +34,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.background
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.trydex.android.ui.LocalApp
@@ -106,6 +109,8 @@ private fun CharacterRow(character: CharacterProfile, session: SessionMeta?, sel
     val haptics = haptics()
     val scheme = MaterialTheme.colorScheme
     val busy = session?.busy == true
+    // Something they said that you haven't seen (not while it's open beside the list): their words, bold, and a dot.
+    val unread = session?.unread == true && !selected
     ListItem(
         modifier = modifier.padding(horizontal = 8.dp).clip(RoundedCornerShape(24.dp))
             .combinedClickable(
@@ -116,12 +121,18 @@ private fun CharacterRow(character: CharacterProfile, session: SessionMeta?, sel
                 },
                 onLongClickLabel = "About ${character.name}",
             )
-            .testTag("character-${character.id}"),
-        headlineContent = { Text(character.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            .testTag("character-${character.id}")
+            .semantics { if (unread) stateDescription = "Unread" },
+        headlineContent = { Text(character.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = if (unread) FontWeight.Bold else null) },
         supportingContent = {
+            val words = session?.lastReply?.takeIf { unread && it.isNotBlank() }
             Text(
-                if (busy) "typing…" else character.tagline.ifEmpty { "Say hi" },
-                color = if (busy) scheme.primary else Color.Unspecified,
+                when {
+                    busy -> "typing…"
+                    words != null -> words
+                    else -> character.tagline.ifEmpty { "Say hi" }
+                },
+                color = if (busy) scheme.primary else if (unread) scheme.onSurface else Color.Unspecified,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -133,10 +144,21 @@ private fun CharacterRow(character: CharacterProfile, session: SessionMeta?, sel
             }
         },
         trailingContent = {
-            if (session != null && !busy && session.touched()) Text(Format.timeAgo(session.updatedAt, now), style = MaterialTheme.typography.labelMedium)
+            if (session != null && !busy && unread) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(Format.timeAgo(session.repliedAt ?: session.updatedAt, now), style = MaterialTheme.typography.labelMedium, color = scheme.primary, fontWeight = FontWeight.SemiBold)
+                    UnreadDot(Modifier.testTag("unread-${session.id}"))
+                }
+            } else if (session != null && !busy && session.touched()) Text(Format.timeAgo(session.updatedAt, now), style = MaterialTheme.typography.labelMedium)
         },
         colors = ListItemDefaults.colors(containerColor = if (selected) scheme.secondaryContainer else scheme.surface),
     )
+}
+
+/** The unread marker on a chat or sidekick row. */
+@Composable
+fun UnreadDot(modifier: Modifier = Modifier) {
+    Box(modifier.size(10.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary).semantics { contentDescription = "Unread" })
 }
 
 /** A character's conversation's title: their face and name, and their tagline, "typing…", or which conversation. */

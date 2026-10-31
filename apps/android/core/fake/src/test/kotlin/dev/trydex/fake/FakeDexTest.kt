@@ -224,6 +224,67 @@ class FakeDexTest {
         connection.stop()
     }
 
+    @Test fun unreadReadAndPush() = runBlocking {
+        val url = fake.start()
+        val connection = AgentConnection(OkHttpClient(), url, FakeData.USER_ID, { fake.token }, scope)
+        val api = DexApi(connection.asRpc())
+        connection.start()
+        withTimeout(5_000) { connection.status.first { it == ConnectionStatus.Connected } }
+        suspend fun until(check: (dev.trydex.core.model.DexState) -> Boolean) = withTimeout(5_000) { while (!check(connection.state.value!!)) kotlinx.coroutines.delay(10) }
+        val seeded = connection.state.value!!
+        // Atlas reached out on his own and you haven't seen it; his check-in is a scheduled note in his chat.
+        assertThat(seeded.session("chat-atlas")!!.unread).isTrue()
+        assertThat(seeded.session("chat-atlas")!!.lastReply).isEqualTo(FakeData.ATLAS_CHECK_IN)
+        assertThat(seeded.character("atlas")!!.notifyLevel).isEqualTo(dev.trydex.core.model.SidekickNotify.Reachouts)
+        assertThat(seeded.session("chat-muse")!!.unread).isFalse()
+
+        api.markSessionRead("chat-atlas")
+        until { !it.session("chat-atlas")!!.unread }
+        api.markSessionUnread("chat-atlas")
+        until { it.session("chat-atlas")!!.unread }
+        // Showing a chat (presence) marks it read, as the agent does.
+        connection.send(ClientMessages.presence(true, "chat-atlas"))
+        until { !it.session("chat-atlas")!!.unread }
+
+        // A check-in while you look elsewhere comes in unread, with its words.
+        connection.send(ClientMessages.presence(false, null))
+        fake.checkIn("chat-muse", "Ask how the game is going", "How's Purrlanet coming along?")
+        until { it.session("chat-muse")!!.unread }
+        assertThat(connection.state.value!!.session("chat-muse")!!.lastReply).isEqualTo("How's Purrlanet coming along?")
+
+        // The app's push token: registered (upserted by token), its kinds changed, tested, and removed.
+        val token = "fcm-token-" + "x".repeat(40)
+        val id = api.registerNativePush("android", token, null, "Pixel 9 · Android app")
+        assertThat(api.registerNativePush("android", token, null, "Pixel 9 · Android app")).isEqualTo(id)
+        until { it.push.devices.any { device -> device.id == id } }
+        val device = connection.state.value!!.push.devices.single { it.id == id }
+        assertThat(device.platform).isEqualTo("android")
+        assertThat(device.kinds.first()).isEqualTo("sidekick")
+        api.pushUpdate(id, kinds = listOf("sidekick"), onlyWhenAway = false)
+        until { it.push.devices.single { device -> device.id == id }.kinds == listOf("sidekick") }
+        assertThat(connection.state.value!!.push.devices.single { it.id == id }.onlyWhenAway).isFalse()
+        assertThat(api.pushTest(id)).isNull()
+        assertThat(runCatching { api.registerNativePush("android", "short", null, "x") }.exceptionOrNull()!!.message).isEqualTo("That isn't a push token.")
+        api.pushUnsubscribe(id)
+        until { it.push.devices.none { device -> device.id == id } }
+        connection.stop()
+    }
+
+    @Test fun sidekicksForTheWidgets() = runBlocking<Unit> {
+        val url = fake.start()
+        val session = DexSession(url.toString(), fake.token, DexUser(FakeData.USER_ID, FakeData.LOGIN), Long.MAX_VALUE)
+        val full = dev.trydex.core.client.DexSidekicks.fetch(OkHttpClient(), session)
+        assertThat(full.unread).isEqualTo(2)
+        assertThat(full.sidekicks.map { it.name }).containsExactly("Muse", "Atlas").inOrder()
+        assertThat(full.sidekick("atlas")!!.unread).isTrue()
+        assertThat(full.sidekick("atlas")!!.image).startsWith("data:image/png;base64,")
+        val light = dev.trydex.core.client.DexSidekicks.fetch(OkHttpClient(), session, images = false)
+        assertThat(light.sidekicks.all { it.image == null }).isTrue()
+        assertThat(light.sidekick("atlas")!!.lastReply).isEqualTo(FakeData.ATLAS_CHECK_IN)
+        val signedOut = runCatching { dev.trydex.core.client.DexSidekicks.fetch(OkHttpClient(), session.copy(token = "nope")) }.exceptionOrNull()
+        assertThat((signedOut as dev.trydex.core.client.SidekicksException).status).isEqualTo(401)
+    }
+
     private fun reduce(state: TranscriptState, message: ServerMessage) = when (message) {
         is ServerMessage.Snapshot -> TranscriptReducer.fromSnapshot(message.snapshot, state)
         is ServerMessage.Events -> TranscriptReducer.applyAll(state, message.events)

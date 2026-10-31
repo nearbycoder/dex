@@ -10,6 +10,7 @@ import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Face
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.outlined.Inbox
+import androidx.compose.material.icons.outlined.MarkChatUnread
 import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Snooze
@@ -41,7 +42,9 @@ import dev.trydex.android.ui.components.ConfirmState
 import dev.trydex.android.ui.components.haptics
 import dev.trydex.android.ui.nav.CharacterPage
 import dev.trydex.android.ui.nav.Chat
+import dev.trydex.core.client.DexApi
 import dev.trydex.core.model.CharacterProfile
+import dev.trydex.core.model.SidekickNotify
 import dev.trydex.core.model.InboxState
 import dev.trydex.core.model.SessionMeta
 import dev.trydex.core.model.Snooze
@@ -79,6 +82,20 @@ class ChatActions(private val scope: CoroutineScope, private val snackbar: Snack
     }
 
     fun mute(session: SessionMeta) = run { api.setSessionMuted(session.id, !session.muted) }
+
+    /**
+     * Unread again, to come back to later. Leaves the chat first: one on screen is read as soon as it's shown.
+     */
+    fun markUnread(session: SessionMeta) {
+        app.navigator.close(Chat(session.id))
+        run { api.markSessionUnread(session.id) }
+    }
+
+    /** Which of a sidekick's messages notify you (their page, their chat's bell, and Notifications all set it). */
+    fun setNotify(character: CharacterProfile, notify: SidekickNotify) = run {
+        api.saveCharacter(DexApi.characterNotifyDraft(character, notify))
+        if (notify == SidekickNotify.Off) snackbar.showSnackbar("No notifications from ${character.name}. Their messages still show as unread.")
+    }
 
     fun regenerateTitle(session: SessionMeta) {
         if (session.id in Naming.ids) return
@@ -131,6 +148,8 @@ fun ChatMenuSheet(session: SessionMeta, actions: ChatActions, onDismiss: () -> U
     val now = System.currentTimeMillis()
     val state = inboxState(session, now)
     var picking by remember { mutableStateOf(false) }
+    // Something to come back to: a reply you've seen (as the web's menu offers it).
+    val canMarkUnread = !session.unread && session.repliedAt != null
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet, modifier = Modifier.testTag("chat-menu")) {
         Column(Modifier.navigationBarsPadding().padding(bottom = 12.dp)) {
             Text(session.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
@@ -153,11 +172,19 @@ fun ChatMenuSheet(session: SessionMeta, actions: ChatActions, onDismiss: () -> U
                     app.navigator.open(CharacterPage(character.id, session.id))
                 }
                 item(Icons.Rounded.RestartAlt, "Start over", "A new conversation; they keep their memory", null) { actions.restartCharacter(character) }
-                item(if (session.muted) Icons.Outlined.Notifications else Icons.Outlined.NotificationsOff, if (session.muted) "Unmute notifications" else "Mute notifications", null, null) { actions.mute(session) }
+                if (canMarkUnread) item(Icons.Outlined.MarkChatUnread, "Mark as unread", null, null) { actions.markUnread(session) }
+                val notify = character.notifyLevel
+                item(
+                    if (notify == SidekickNotify.Off) Icons.Outlined.Notifications else Icons.Outlined.NotificationsOff,
+                    if (notify == SidekickNotify.Off) "Turn on notifications" else "Turn off notifications",
+                    if (notify == SidekickNotify.Off) "Every message from ${character.name}" else "Their messages still show as unread",
+                    null,
+                ) { actions.setNotify(character, if (notify == SidekickNotify.Off) SidekickNotify.All else SidekickNotify.Off) }
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 item(Icons.Outlined.DeleteOutline, "Delete", null, MaterialTheme.colorScheme.error) { actions.delete(session) }
             } else if (!picking) {
                 item(Icons.Outlined.AutoAwesome, "Regenerate title", "A fast model names it from its messages", null) { actions.regenerateTitle(session) }
+                if (canMarkUnread) item(Icons.Outlined.MarkChatUnread, "Mark as unread", "Comes back bold, to get back to later", null) { actions.markUnread(session) }
                 if (state == InboxState.Settled) item(Icons.Outlined.Inbox, "Move to inbox", null, null) { actions.settle(session, false) }
                 else item(Icons.Rounded.DoneAll, "Settle", "Done for now; it comes back when something new happens", null) { actions.settle(session, true) }
                 if (state == InboxState.Snoozed) item(Icons.Rounded.AlarmOff, "Unsnooze", session.snoozedUntil?.let { "(${Snooze.untilLabel(it)})" }, null) { actions.snooze(session, null) }

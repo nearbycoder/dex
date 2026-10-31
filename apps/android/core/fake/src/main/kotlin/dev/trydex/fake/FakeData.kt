@@ -19,6 +19,7 @@ import dev.trydex.core.model.PendingAction
 import dev.trydex.core.model.ProjectProfile
 import dev.trydex.core.model.ProjectRepo
 import dev.trydex.core.model.ProviderStatus
+import dev.trydex.core.model.NativePush
 import dev.trydex.core.model.PushDevice
 import dev.trydex.core.model.PushStatus
 import dev.trydex.core.model.SavedSecret
@@ -37,6 +38,9 @@ object FakeData {
     const val USER_ID = "user-octocat"
     const val LOGIN = "octocat"
 
+    /** Atlas's scheduled check-in, unread in the demo. */
+    const val ATLAS_CHECK_IN = "Morning! Thursday's here: the Android release notes are due today. Want me to draft them from this week's commits?"
+
     fun state(now: Long): DexState {
         val minute = 60_000L
         val hour = 60 * minute
@@ -49,18 +53,30 @@ object FakeData {
             sessions = listOf(
                 SessionMeta("chat-dashboard", "Weekly metrics dashboard", "cline-pass/glm-5.3", ThinkingLevel.Low, now - 2 * hour, now - 4 * minute, agentId = "data-analyst", mcpServers = listOf("github")),
                 SessionMeta("chat-tests", "Fix the flaky login test", "opencode-go/kimi-k3", ThinkingLevel.High, now - 5 * hour, now - 20 * minute, busy = false, agentId = "pr-author", projectId = "dex-web"),
-                SessionMeta("chat-research", "Compare vector databases", "cline-pass/qwen3.8-max", ThinkingLevel.Medium, now - day, now - 3 * hour, agentId = "researcher"),
+                // Finished while you were away: unread.
+                SessionMeta(
+                    "chat-research", "Compare vector databases", "cline-pass/qwen3.8-max", ThinkingLevel.Medium, now - day, now - 3 * hour, agentId = "researcher",
+                    unread = true, lastReply = "For 2M documents: pgvector if you're already on Postgres, Qdrant if you want a dedicated store.", repliedAt = now - 3 * hour,
+                ),
                 SessionMeta("chat-trip", "Plan a weekend in Lisbon", "cline-pass/deepseek-v4.1-flash", ThinkingLevel.Off, now - 2 * day, now - day, muted = true),
                 SessionMeta("chat-snoozed", "Renew the TLS certificates", "cline-pass/glm-5.3", ThinkingLevel.Low, now - 3 * day, now - 2 * day, snoozedUntil = now + 20 * hour),
                 SessionMeta("chat-settled", "Release notes for v2.4", "cline-pass/glm-5.3", ThinkingLevel.Low, now - 6 * day, now - 5 * day, agentId = "changelog", settledAt = now - 4 * day),
                 // Characters' conversations: Muse's current one and one from before she started over, and Atlas's.
-                SessionMeta("chat-muse", "Muse", "cline-pass/glm-5.3", ThinkingLevel.Low, now - 3 * day, now - 35 * minute, characterId = "muse"),
+                SessionMeta(
+                    "chat-muse", "Muse", "cline-pass/glm-5.3", ThinkingLevel.Low, now - 3 * day, now - 35 * minute, characterId = "muse",
+                    lastReply = "Space cats. Obviously. Three directions: Laser Pointer Galaxy, Purrlanet, Hairball Rocket. Which one makes you grin?", repliedAt = now - 35 * minute,
+                ),
                 SessionMeta("chat-muse-earlier", "Muse", "cline-pass/glm-5.3", ThinkingLevel.Low, now - 20 * day, now - 4 * day, characterId = "muse"),
-                SessionMeta("chat-atlas", "Atlas", "cline-pass/glm-5.3", ThinkingLevel.Low, now - 10 * day, now - 9 * hour, characterId = "atlas"),
+                // Atlas reached out on his own (a scheduled check-in) and you haven't seen it.
+                SessionMeta(
+                    "chat-atlas", "Atlas", "cline-pass/glm-5.3", ThinkingLevel.Low, now - 10 * day, now - 25 * minute, characterId = "atlas",
+                    unread = true, lastReply = ATLAS_CHECK_IN, repliedAt = now - 25 * minute,
+                ),
             ),
             characters = listOf("muse" to "chat-muse", "atlas" to "chat-atlas").map { (key, session) ->
                 val template = Characters.TEMPLATES.first { it.key == key }
-                template.applyTo(CharacterProfile(key, thinking = ThinkingLevel.Low))
+                // Atlas only notifies when he reaches out; Muse on every message.
+                template.applyTo(CharacterProfile(key, thinking = ThinkingLevel.Low, notify = if (key == "atlas") "reachouts" else "all"))
                     .copy(sessionId = session, createdAt = now - 20 * day, updatedAt = now - 3 * day)
             },
             vms = listOf(
@@ -81,7 +97,8 @@ object FakeData {
             github = GitHubStatus(connected = true, login = LOGIN, via = "oauth", oauthAvailable = true),
             push = PushStatus(
                 configured = true, publicKey = "BEl…",
-                devices = listOf(PushDevice("d1", "Mac · Chrome", listOf("reply", "error", "scheduled", "machine", "mcp", "snooze"), true, now - 20 * day, now - hour)),
+                devices = listOf(PushDevice("d1", "web", "Mac · Chrome", listOf("sidekick", "reply", "error", "scheduled", "machine", "mcp", "snooze"), true, now - 20 * day, now - hour)),
+                native = NativePush(ios = true, android = true),
             ),
             agents = listOf(
                 AgentProfile("pr-author", "PR Author", "Implements a change on the VM and opens a pull request.", "git-pull-request", "violet", "You turn a request into a pull request.", "In github.com/OWNER/REPO, ", "cline-pass/glm-5.3", ThinkingLevel.High, listOf("github"), now - 40 * day, now - 40 * day),

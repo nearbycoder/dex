@@ -119,8 +119,20 @@ object UiNotes {
     }
 }
 
+/**
+ * A prompt that ran on a schedule: the agent writes it into the transcript as a user message starting with
+ * "[Scheduled task] " (runScheduledPrompt in apps/web/src/agent/dex-agent.ts). It's the chat reaching out on its own,
+ * not something you said, so chats show it as a small note instead of your bubble.
+ */
+object ScheduledNote {
+    const val PREFIX = "[Scheduled task] "
+
+    /** The scheduled prompt's text, or null for an ordinary message. */
+    fun of(text: String?): String? = text?.takeIf { it.startsWith(PREFIX) }?.substring(PREFIX.length)?.trim()
+}
+
 object Skills {
-    val NAME = Regex("^[a-z0-9][a-z0-9-]{0,63}$")
+    val NAME =Regex("^[a-z0-9][a-z0-9-]{0,63}$")
     private val INVOKED = Regex("^/([a-z0-9][a-z0-9-]{0,63})(?=\\s|$)")
     /** The composer's slash lookup: the whole text is `/` and name characters. */
     private val SLASH = Regex("^/([a-z0-9-]*)$", RegexOption.IGNORE_CASE)

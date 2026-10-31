@@ -98,9 +98,15 @@ fun Tab.root(): Route = when (this) {
     Tab.Settings -> SettingsHome
 }
 
+/** The chat a `dex://app/chat/<id>?compose=1` link opens with the keyboard up (a widget's Message), if it's one. */
+fun composeTarget(link: String): String? {
+    if (!link.startsWith("dex://app/chat/") || !Regex("[?&]compose=1(&|$)").containsMatchIn(link)) return null
+    return link.removePrefix("dex://app/chat/").substringBefore('?').trim('/').takeIf { it.isNotEmpty() && '/' !in it }
+}
+
 /** The routes a `dex://app/…` link opens (notifications and shortcuts), root first. */
 fun routesFor(link: String): List<Route>? {
-    val path = link.removePrefix("dex://app").trim('/').split('/').filter { it.isNotEmpty() }
+    val path = link.removePrefix("dex://app").substringBefore('?').substringBefore('#').trim('/').split('/').filter { it.isNotEmpty() }
     return when (path.firstOrNull()) {
         null -> listOf(ChatList)
         "chat" -> listOf(ChatList, path.getOrNull(1)?.let(::Chat) ?: NewChat(nonce = System.nanoTime()))

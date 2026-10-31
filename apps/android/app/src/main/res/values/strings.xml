@@ -5,7 +5,12 @@
     <string name="shortcut_machines">Machines</string>
     <string name="shortcut_machines_short">VM</string>
     <string name="shortcut_usage">Usage</string>
-    <string name="notification_channel_replies">Replies</string>
-    <string name="notification_channel_problems">Problems</string>
-    <string name="notification_channel_activity">Machines and schedules</string>
+    <string name="notification_channel_sidekicks">Sidekicks</string>
+    <string name="notification_channel_sidekicks_description">Messages from your sidekicks, like their check-ins</string>
+    <string name="notification_channel_updates">Chats &amp; updates</string>
+    <string name="notification_channel_updates_description">Replies, problems, scheduled tasks, machines, and MCP sign-ins</string>
+    <string name="widget_sidekick_name">Sidekick</string>
+    <string name="widget_sidekick_description">One sidekick: their face, an unread dot, and their latest words</string>
+    <string name="widget_sidekicks_name">Sidekicks</string>
+    <string name="widget_sidekicks_description">Up to four sidekicks, with unread dots</string>
 </resources>

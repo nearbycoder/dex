@@ -26,7 +26,9 @@ object Catalogs {
 
     data class NotifyKind(val id: String, val label: String, val description: String)
 
+    /** NOTIFY_KINDS in apps/web/src/shared/notifications.ts, in its order. */
     val NOTIFY_KINDS = listOf(
+        NotifyKind("sidekick", "Sidekicks", "When a sidekick messages you (each sidekick's own setting decides which messages)."),
         NotifyKind("reply", "Replies", "When Dex finishes answering in a chat."),
         NotifyKind("error", "Problems", "When a reply fails."),
         NotifyKind("scheduled", "Scheduled tasks", "When a scheduled prompt has run."),

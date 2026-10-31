@@ -38,6 +38,19 @@ class LinkInbox {
     }
 }
 
+/** A chat to open with the keyboard up (a widget's Message, a notification's Reply), until that chat takes it. */
+object ComposeRequests {
+    private val pending = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    val requests: kotlinx.coroutines.flow.StateFlow<String?> = pending
+
+    fun request(sessionId: String) {
+        pending.value = sessionId
+    }
+
+    /** The chat on screen takes its request (true once). */
+    fun take(sessionId: String): Boolean = pending.compareAndSet(sessionId, null)
+}
+
 /** A VM desktop that may play in Android's picture-in-picture window when you leave the app. */
 data class PipSource(val vmKey: String, val title: String)
 
