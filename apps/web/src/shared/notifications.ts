@@ -1,5 +1,6 @@
 /** What a device can choose to be notified about. */
 export const NOTIFY_KINDS = [
+  { id: "sidekick", label: "Sidekicks", description: "When a sidekick messages you (each sidekick's own setting decides which messages)." },
   { id: "reply", label: "Replies", description: "When Dex finishes answering in a chat." },
   { id: "error", label: "Problems", description: "When a reply fails." },
   { id: "scheduled", label: "Scheduled tasks", description: "When a scheduled prompt has run." },
@@ -10,11 +11,15 @@ export const NOTIFY_KINDS = [
 
 export type NotifyKind = (typeof NOTIFY_KINDS)[number]["id"]
 
-export const DEFAULT_KINDS: ReadonlyArray<NotifyKind> = ["reply", "error", "scheduled", "machine", "mcp", "snooze"]
+export const DEFAULT_KINDS: ReadonlyArray<NotifyKind> = ["sidekick", "reply", "error", "scheduled", "machine", "mcp", "snooze"]
 
 /** A browser or installed app that receives push notifications. Endpoints and keys stay in the agent. */
+export type PushPlatform = "web" | "ios" | "android"
+
 export interface PushDevice {
   readonly id: string
+  /** A browser (Web Push), or the iPhone/iPad or Android app. Missing on devices saved before the apps had push. */
+  readonly platform?: PushPlatform
   /** e.g. "iPhone · Safari". */
   readonly label: string
   readonly kinds: ReadonlyArray<NotifyKind>
@@ -32,6 +37,8 @@ export interface PushStatus {
   /** The VAPID public key that browsers subscribe with. */
   readonly publicKey: string | null
   readonly devices: ReadonlyArray<PushDevice>
+  /** Whether this deployment can push to the native apps (APNs for iOS, Firebase for Android). */
+  readonly native?: { readonly ios: boolean; readonly android: boolean }
 }
 
 /** A quick action button. Android and desktop show them; iOS opens `url` on tap instead. */
@@ -50,6 +57,8 @@ export interface PushPayload {
   readonly tag: string
   readonly kind: NotifyKind | "test"
   readonly sessionId?: string
+  /** Chats with something unread, for the app icon's badge. */
+  readonly badge?: number
   readonly actions?: ReadonlyArray<PushAction>
   /** Pages for navigation actions, by action id. */
   readonly actionUrls?: Readonly<Record<string, string>>

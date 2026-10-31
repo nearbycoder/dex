@@ -12,7 +12,7 @@ import { EditorSkeleton } from "~/client/components/skeleton"
 import { useDex } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
 import { AGENT_COLORS } from "~/shared/agents"
-import { CHARACTER_TEMPLATES, type CharacterDraft, characterMemoryPath } from "~/shared/characters"
+import { CHARACTER_TEMPLATES, type CharacterDraft, characterMemoryPath, NOTIFY_LABELS, NOTIFY_LEVELS } from "~/shared/characters"
 import { DEFAULT_MODEL_ID, DEFAULT_THINKING } from "~/shared/models"
 
 export const Route = createFileRoute("/_app/sidekicks/$characterId")({ component: CharacterEditorPage })
@@ -250,6 +250,37 @@ function CharacterEditor() {
               maxLength={2_000}
               className={field}
             />
+          </Field>
+
+          <Field as="div" label="Notifications" hint="Which of their messages notify you on the devices you turned notifications on for.">
+            <div className="grid gap-2 sm:grid-cols-3">
+              {NOTIFY_LEVELS.map((level) => {
+                const selected = (draft.notify ?? "all") === level
+                return (
+                  <button
+                    key={level}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => update({ notify: level })}
+                    className={`rounded-lg border px-3 py-2 text-left ${
+                      selected ? "border-emerald-600/70 bg-emerald-950/40" : "border-zinc-800 hover:border-zinc-700"
+                    }`}
+                  >
+                    <span className={`block text-sm ${selected ? "text-emerald-100" : "text-zinc-200"}`}>{NOTIFY_LABELS[level].label}</span>
+                    <span className="mt-0.5 block text-xs text-zinc-500">{NOTIFY_LABELS[level].description}</span>
+                  </button>
+                )
+              })}
+            </div>
+            {state.push.devices.length === 0 && (
+              <p className="mt-2 text-xs text-amber-300/90">
+                No device gets notifications yet.{" "}
+                <Link to="/notifications" className="underline">
+                  Turn them on
+                </Link>{" "}
+                on this one, or open the iPhone or Android app and allow them.
+              </p>
+            )}
           </Field>
 
           <Field as="div" label="Model and thinking" hint="Changing them moves the conversation to the new model.">

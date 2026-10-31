@@ -1,5 +1,6 @@
 import { buildPushPayload } from "@block65/webcrypto-web-push"
-import { DEFAULT_KINDS, NOTIFY_KINDS, type NotifyKind, type PushDevice, type PushPayload, type PushStatus } from "~/shared/notifications"
+import { DEFAULT_KINDS, NOTIFY_KINDS, type NotifyKind, type PushDevice, type PushPayload, type PushPlatform, type PushStatus } from "~/shared/notifications"
+import type { ApnsSender, FcmSender } from "./native-push"
 
 /** Push services browsers subscribe through; subscriptions elsewhere are refused, so nobody can aim pushes at other hosts. */
 const PUSH_HOSTS = [/^fcm\.googleapis\.com$/, /(^|\.)push\.apple\.com$/, /(^|\.)push\.services\.mozilla\.com$/, /(^|\.)notify\.windows\.com$/]
@@ -16,6 +17,10 @@ interface DeviceRow {
   created_at: number
   last_sent_at: number | null
   error: string | null
+  /** web, ios, or android. For the apps, `endpoint` is `<platform>:<token>` and the keys are empty. */
+  platform: string | null
+  /** APNs only: sandbox (builds from Xcode) or production (TestFlight and the App Store). */
+  environment: string | null
   [key: string]: SqlStorageValue
 }
 
@@ -29,6 +34,9 @@ export interface PushHost {
   publish(status: PushStatus): void
   /** Whether Dex is open and visible somewhere, showing this chat (or anything, without one). */
   isWatching(sessionId?: string): boolean
+  /** Senders for the native apps, when this deployment has their keys. */
+  readonly apns?: ApnsSender
+  readonly fcm?: FcmSender
 }
 
 export interface SubscriptionInput {
@@ -43,7 +51,8 @@ const toDevice = (row: DeviceRow): PushDevice => ({
   onlyWhenAway: row.only_when_away === 1,
   createdAt: row.created_at,
   lastSentAt: row.last_sent_at,
-  error: row.error
+  error: row.error,
+  platform: (row.platform ?? "web") as PushPlatform
 })
 
 /** Topics must be URL-safe base64 characters, at most 32 of them. */
@@ -56,8 +65,19 @@ export class PushCenter {
       id TEXT PRIMARY KEY, endpoint TEXT NOT NULL UNIQUE, p256dh TEXT NOT NULL, auth TEXT NOT NULL, label TEXT NOT NULL,
       kinds TEXT NOT NULL, only_when_away INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL,
       last_sent_at INTEGER, error TEXT)`)
+    const columns = host.sql.exec<{ name: string }>(`PRAGMA table_info(dex_push)`).toArray().map((column) => column.name)
+    if (!columns.includes("platform")) {
+      host.sql.exec(`ALTER TABLE dex_push ADD COLUMN platform TEXT`)
+      host.sql.exec(`ALTER TABLE dex_push ADD COLUMN environment TEXT`)
+      // Sidekick messages are a kind of their own now: devices that wanted replies want those too.
+      for (const row of host.sql.exec<{ id: string; kinds: string }>(`SELECT id, kinds FROM dex_push`).toArray()) {
+        const kinds = JSON.parse(row.kinds) as string[]
+        if (kinds.includes("reply") && !kinds.includes("sidekick")) host.sql.exec(`UPDATE dex_push SET kinds = ? WHERE id = ?`, JSON.stringify(["sidekick", ...kinds]), row.id)
+      }
+    }
   }
 
+  /** Web Push (VAPID keys). The apps have their own: see `status().native`. */
   get configured() {
     return Boolean(this.host.publicKey && this.host.privateKey)
   }
@@ -67,7 +87,12 @@ export class PushCenter {
   }
 
   status(): PushStatus {
-    return { configured: this.configured, publicKey: this.host.publicKey ?? null, devices: this.rows().map(toDevice) }
+    return {
+      configured: this.configured,
+      publicKey: this.host.publicKey ?? null,
+      devices: this.rows().map(toDevice),
+      native: { ios: Boolean(this.host.apns), android: Boolean(this.host.fcm) }
+    }
   }
 
   private refresh() {
@@ -98,6 +123,26 @@ export class PushCenter {
     return id
   }
 
+  /** Saves an app's push token (or refreshes it) and returns the device id. */
+  async registerNative(platform: "ios" | "android", token: string, environment: string | null, label: string): Promise<string> {
+    if (platform === "ios" ? !this.host.apns : platform === "android" ? !this.host.fcm : true) {
+      throw new Error(`Push to the ${platform === "ios" ? "iPhone" : "Android"} app isn't set up on this deployment.`)
+    }
+    const clean = String(token ?? "").trim()
+    if (!/^[\w:.-]{20,4096}$/.test(clean)) throw new Error("That isn't a push token.")
+    const endpoint = `${platform}:${clean}`
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(endpoint)))
+    const id = [...digest.slice(0, 8)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
+    const env = platform === "ios" ? (environment === "sandbox" ? "sandbox" : "production") : null
+    this.host.sql.exec(
+      `INSERT INTO dex_push (id, endpoint, p256dh, auth, label, kinds, only_when_away, created_at, platform, environment) VALUES (?, ?, '', '', ?, ?, 1, ?, ?, ?)
+       ON CONFLICT(endpoint) DO UPDATE SET label = excluded.label, environment = excluded.environment, error = NULL`,
+      id, endpoint, String(label).slice(0, 60) || "Device", JSON.stringify(DEFAULT_KINDS), Date.now(), platform, env
+    )
+    this.refresh()
+    return id
+  }
+
   update(id: string, patch: { kinds?: readonly string[]; onlyWhenAway?: boolean }) {
     if (patch.kinds) {
       const kinds = [...new Set(patch.kinds)].filter((kind) => KIND_IDS.has(kind))
@@ -114,11 +159,10 @@ export class PushCenter {
 
   /** Sends to every device that wants this kind (and, if it asked, isn't already looking). Returns how many got it. */
   async notify(kind: NotifyKind, payload: PushPayload): Promise<number> {
-    if (!this.configured) return 0
     const watching = this.host.isWatching(payload.sessionId)
     const targets = this.rows().filter((row) => {
       const device = toDevice(row)
-      return device.kinds.includes(kind) && !(device.onlyWhenAway && watching)
+      return this.canSend(row) && device.kinds.includes(kind) && !(device.onlyWhenAway && watching)
     })
     const results = await Promise.all(targets.map((row) => this.deliver(row, payload)))
     if (targets.length) this.refresh()
@@ -148,7 +192,12 @@ export class PushCenter {
     return jwk.d
   }
 
+  private canSend(row: DeviceRow) {
+    return row.platform === "ios" ? Boolean(this.host.apns) : row.platform === "android" ? Boolean(this.host.fcm) : this.configured
+  }
+
   private async deliver(row: DeviceRow, payload: PushPayload): Promise<boolean> {
+    if (row.platform === "ios" || row.platform === "android") return this.deliverNative(row, payload)
     try {
       // RFC 8291 aes128gcm with RFC 8292 VAPID: what every push service accepts, Apple's included.
       const request = await buildPushPayload(
@@ -176,5 +225,22 @@ export class PushCenter {
       this.host.sql.exec(`UPDATE dex_push SET error = ? WHERE id = ?`, (error instanceof Error ? error.message : String(error)).slice(0, 200), row.id)
       return false
     }
+  }
+
+  private async deliverNative(row: DeviceRow, payload: PushPayload): Promise<boolean> {
+    const token = row.endpoint.slice(row.endpoint.indexOf(":") + 1)
+    const message = { title: payload.title, body: payload.body, url: payload.url, tag: payload.tag, sessionId: payload.sessionId, badge: payload.badge, kind: payload.kind }
+    const result =
+      row.platform === "ios"
+        ? await this.host.apns!.send(token, row.environment === "sandbox" ? "sandbox" : "production", message)
+        : await this.host.fcm!.send(token, message)
+    if (result.ok) {
+      this.host.sql.exec(`UPDATE dex_push SET last_sent_at = ?, error = NULL WHERE id = ?`, Date.now(), row.id)
+      return true
+    }
+    // The app was deleted, or its token was replaced: forget it (the app registers again when it next opens).
+    if (result.gone) this.host.sql.exec(`DELETE FROM dex_push WHERE id = ?`, row.id)
+    else this.host.sql.exec(`UPDATE dex_push SET error = ? WHERE id = ?`, result.error, row.id)
+    return false
   }
 }

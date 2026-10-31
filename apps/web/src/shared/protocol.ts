@@ -30,6 +30,12 @@ export interface SessionMeta {
   readonly projectId: string | null
   /** The character this is a conversation with, if any: it lives under them, not in the chat list. */
   readonly characterId: string | null
+  /** A reply came in since you last looked at it. Missing from older agents. */
+  readonly unread?: boolean
+  /** The latest reply, shortened (for lists, widgets, and notifications). */
+  readonly lastReply?: string | null
+  /** When the latest reply finished. */
+  readonly repliedAt?: number | null
   /** No push notifications for this chat. */
   readonly muted: boolean
   /** When you settled it (done for now): it sits under Settled until something new happens in it. */

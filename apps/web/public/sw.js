@@ -105,7 +105,9 @@ self.addEventListener("push", (event) => {
         data: { url: data.url || "/", sessionId: data.sessionId || null, actionUrls: data.actionUrls || {} }
       })
       const shown = await self.registration.getNotifications()
-      if (self.navigator.setAppBadge) await self.navigator.setAppBadge(shown.length).catch(() => {})
+      // The agent's count of unread chats, when it sent one; else what's in the notification list.
+      const count = typeof data.badge === "number" ? data.badge : shown.length
+      if (self.navigator.setAppBadge) await self.navigator.setAppBadge(count).catch(() => {})
     })()
   )
 })

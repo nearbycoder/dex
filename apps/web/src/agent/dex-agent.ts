@@ -54,7 +54,7 @@ import { attachmentSummary, type ChatAttachment, splitAttachments } from "~/shar
 import { githubFullName, isProjectImage, normalizeRepoUrl, type ProjectDraft, type ProjectImageCandidate, type ProjectProfile, type ProjectRepo, PROJECT_ROOT, repoDirName, repoLabel } from "~/shared/projects"
 import { CLOUDFLARE_RATES, type CloudflareLine, type OpenCodeLimits, type UsageRange, type UsageReport } from "~/shared/usage"
 import { AGENT_COLORS, AGENT_ICONS, type AgentDraft, type AgentProfile, STARTER_AGENTS } from "~/shared/agents"
-import { type CharacterDraft, characterMemoryPath, type CharacterProfile, MAX_CHARACTER_MEMORY_CHARS } from "~/shared/characters"
+import { type CharacterDraft, characterMemoryPath, type CharacterProfile, MAX_CHARACTER_MEMORY_CHARS, NOTIFY_LEVELS } from "~/shared/characters"
 import { cleanLook, LOOK_PRESETS, randomLook } from "~/shared/sidekick-look"
 import { type AccessRisk, type CreatedAccessToken, NO_ACCESS, type UiOperationResult } from "~/shared/access"
 import { extensionOf, MAX_MEDIA_BYTES, vmMediaLinks, vmMediaSource } from "~/shared/media"
@@ -92,6 +92,7 @@ import { parseVmFiles, vmFilesCommand, type VmFilesView } from "./vm-files"
 import { verifyGitHubToken, type GitHubIdentity } from "./github-token"
 import { provisionVm, shellQuote } from "./provision"
 import { PushCenter, type SubscriptionInput } from "./push"
+import { ApnsSender, FcmSender } from "./native-push"
 import type { BackgroundAction, NotifyKind, PushPayload } from "~/shared/notifications"
 import { VmTemplate } from "./vm-template"
 import { adoptSharedVm, type DesktopUpstream, errorText, migrateVmTables, storedVmKeys, type VmHost, VmManager } from "./vm"
@@ -150,6 +151,23 @@ const characterPreamble = (character: CharacterProfile) => {
 
 const MEMORY_FILE = `${WORKSPACE_ROOT}/MEMORY.md`
 
+/** Push senders for the apps, from this deployment's secrets (see native-push.ts); a bad secret leaves that one off. */
+const nativeSenders = (env: Record<string, string | undefined>) => {
+  const senders: { apns?: ApnsSender; fcm?: FcmSender } = {}
+  if (env.APNS_KEY && env.APNS_KEY_ID && env.APNS_TEAM_ID) {
+    senders.apns = new ApnsSender({ key: env.APNS_KEY, keyId: env.APNS_KEY_ID, teamId: env.APNS_TEAM_ID, topic: env.APNS_TOPIC || "dev.trydex.Dex" })
+  }
+  try {
+    if (env.FCM_SERVICE_ACCOUNT) senders.fcm = new FcmSender(env.FCM_SERVICE_ACCOUNT)
+  } catch (error) {
+    console.error("FCM_SERVICE_ACCOUNT:", error)
+  }
+  return senders
+}
+
+/** Something came in since you last looked. */
+const isUnread = (row: SessionRow) => row.reply_at != null && (row.read_at == null || row.read_at < row.reply_at)
+
 /** A character's avatar: one emoji (or any single character). */
 const firstGrapheme = (text: string) => {
   const first = new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text.trim())[Symbol.iterator]().next()
@@ -182,6 +200,9 @@ interface SessionRow {
   snoozed_until: number | null
   parent_id: string | null
   character_id: string | null
+  read_at: number | null
+  reply_at: number | null
+  last_reply: string | null
   [key: string]: SqlStorageValue
 }
 
@@ -319,6 +340,10 @@ export class DexAgent extends Agent<Env, DexState> {
   private readonly mcpLastStatus = new Map<string, McpStatus>()
   /** What each connection shows and whether it's visible; notifications skip what you're looking at. */
   private readonly presence = new Map<string, { visible: boolean; sessionId: string | null }>()
+  /** Whether Dex is open and visible somewhere, showing this chat (or anything, without one). */
+  private isWatching(sessionId?: string) {
+    return [...this.presence.values()].some((entry) => entry.visible && (sessionId === undefined || entry.sessionId === sessionId))
+  }
   /** Each chat's latest model response, for the notification when its run ends. */
   private readonly lastResponses = new Map<string, { text: string; stopReason: string; error: string | null }>()
   /** Media links to its VM each chat wrote during its current run, saved into the chat when the run ends. */
@@ -332,8 +357,8 @@ export class DexAgent extends Agent<Env, DexState> {
     privateKey: (this.env as unknown as Record<string, string | undefined>).VAPID_PRIVATE_KEY,
     subject: () => this.appOrigin() ?? "https://dex.invalid",
     publish: (push) => this.publish({ push }),
-    isWatching: (sessionId) =>
-      [...this.presence.values()].some((entry) => entry.visible && (sessionId === undefined || entry.sessionId === sessionId))
+    isWatching: (sessionId) => this.isWatching(sessionId),
+    ...nativeSenders(this.env as unknown as Record<string, string | undefined>)
   })
 
   /** Who may run app operations (chats and MCP tokens), confirmations, and the audit log. */
@@ -497,6 +522,12 @@ export class DexAgent extends Agent<Env, DexState> {
     if (!sessionColumns.includes("snoozed_until")) ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN snoozed_until INTEGER`)
     // A character's conversations (the current one and any from before Start over).
     if (!sessionColumns.includes("character_id")) ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN character_id TEXT`)
+    // Unread: when a reply last finished (and how it began), and when you last looked.
+    if (!sessionColumns.includes("reply_at")) {
+      ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN reply_at INTEGER`)
+      ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN read_at INTEGER`)
+      ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN last_reply TEXT`)
+    }
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_characters (
       id TEXT PRIMARY KEY, data TEXT NOT NULL, session_id TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_projects (
@@ -801,6 +832,9 @@ export class DexAgent extends Agent<Env, DexState> {
         mcpServers: parseIds(row.mcp_servers),
         projectId: row.project_id ?? null,
         characterId: row.character_id ?? null,
+        unread: isUnread(row),
+        lastReply: row.last_reply ?? null,
+        repliedAt: row.reply_at ?? null,
         muted: row.muted === 1,
         settledAt: row.settled_at ?? null,
         snoozedUntil: row.snoozed_until ?? null
@@ -1132,6 +1166,9 @@ export class DexAgent extends Agent<Env, DexState> {
       mcpServers,
       projectId: project?.id ?? null,
       characterId,
+      unread: false,
+      lastReply: null,
+      repliedAt: null,
       muted: false,
       settledAt: null,
       snoozedUntil: null
@@ -1187,7 +1224,7 @@ export class DexAgent extends Agent<Env, DexState> {
     const vision = findModel(model)?.input.includes("image") ?? false
     const receipt = await session.submit(messageContent(text, attachments, vision), steer ? { whenBusy: "steer" } : undefined)
     const title = row.title === "New chat" ? (content || attachmentSummary(attachments)).replace(/\s+/g, " ").slice(0, 60) : row.title
-    this.ctx.storage.sql.exec(`UPDATE dex_sessions SET title = ?, updated_at = ? WHERE id = ?`, title, Date.now(), sessionId)
+    this.ctx.storage.sql.exec(`UPDATE dex_sessions SET title = ?, updated_at = ?, read_at = ? WHERE id = ?`, title, Date.now(), Date.now(), sessionId)
     // Something new in it: back to the inbox, whether it was settled or snoozed.
     await this.returnToInbox(sessionId)
     await this.refreshSessions()
@@ -1516,6 +1553,7 @@ export class DexAgent extends Agent<Env, DexState> {
         return this.unsubscribe(connection.id)
       case "dex.presence":
         this.presence.set(connection.id, { visible: msg.visible, sessionId: msg.sessionId })
+        if (msg.visible && msg.sessionId) await this.markSessionRead(msg.sessionId)
         return
     }
   }
@@ -1765,6 +1803,7 @@ export class DexAgent extends Agent<Env, DexState> {
       avatar: firstGrapheme(String(draft.avatar ?? "")),
       image: draft.image === undefined ? (existing?.image ?? null) : draft.image,
       look: draft.look === undefined ? (existing?.look ?? null) : cleanLook(draft.look),
+      notify: draft.notify === undefined ? (existing?.notify ?? "all") : NOTIFY_LEVELS.includes(draft.notify) ? draft.notify : "all",
       color: draft.color in AGENT_COLORS ? draft.color : "violet",
       model,
       thinking: clampThinking(findModel(model), draft.thinking),
@@ -2774,7 +2813,18 @@ export class DexAgent extends Agent<Env, DexState> {
     const row = this.ctx.storage.sql.exec<SessionRow>(`SELECT * FROM dex_sessions WHERE id = ?`, sessionId).toArray()[0]
     const last = this.lastResponses.get(sessionId)
     this.lastResponses.delete(sessionId)
-    if (!row || row.muted === 1 || !last || last.stopReason === "aborted") return
+    if (!row || !last || last.stopReason === "aborted") return
+    // Unread until someone looks, unless someone is looking now.
+    const now = Date.now()
+    const preview = last.stopReason === "error" ? `Problem: ${last.error ?? "the model request failed."}` : summarize(last.text) || "Done."
+    this.ctx.storage.sql.exec(
+      `UPDATE dex_sessions SET reply_at = ?, last_reply = ?, read_at = CASE WHEN ? THEN ? ELSE read_at END WHERE id = ?`,
+      now, preview.slice(0, 280), this.isWatching(sessionId) ? 1 : 0, now, sessionId
+    )
+    await this.refreshSessions()
+    if (row.muted === 1) return
+    const character = this.characterForSession(sessionId)
+    if (character) return this.notifySidekick(character, sessionId, kind, last, preview)
     // More is queued: tell your devices when the last of it is done.
     if (!this.messageQueue.held(sessionId) && this.messageQueue.list(sessionId).length > 0 && last.stopReason !== "error") return
     const url = `/chat/${sessionId}`
@@ -2789,7 +2839,85 @@ export class DexAgent extends Agent<Env, DexState> {
       sessionId,
       actions: failed ? [{ action: "open", title: "Open chat" }] : [{ action: "open", title: "Open chat" }, { action: "mute", title: "Mute this chat" }]
     }
-    await this.push.notify(failed ? "error" : kind, payload)
+    await this.push.notify(failed ? "error" : kind, { ...payload, badge: this.unreadCount() })
+  }
+
+  /**
+   * A sidekick said something: their name and words, as the sidekick kind, if their setting wants it ("reachouts":
+   * only what they started themselves, from a schedule).
+   */
+  private async notifySidekick(character: CharacterProfile, sessionId: string, kind: "reply" | "scheduled", last: { stopReason: string }, preview: string) {
+    const notify = character.notify ?? "all"
+    if (notify === "off" || (notify === "reachouts" && kind !== "scheduled")) return
+    const failed = last.stopReason === "error"
+    await this.push.notify(failed ? "error" : "sidekick", {
+      title: character.name,
+      body: preview.slice(0, 180),
+      url: `/chat/${sessionId}`,
+      tag: `chat-${sessionId}`,
+      kind: failed ? "error" : "sidekick",
+      sessionId,
+      badge: this.unreadCount(),
+      actions: [{ action: "open", title: `Reply to ${character.name}`.slice(0, 40) }]
+    })
+  }
+
+  /** Chats with something you haven't seen (muted ones too: muting is about pushes), for app badges. */
+  private unreadCount() {
+    return this.ctx.storage.sql
+      .exec<{ count: number }>(`SELECT count(*) AS count FROM dex_sessions WHERE reply_at IS NOT NULL AND (read_at IS NULL OR read_at < reply_at)`)
+      .one().count
+  }
+
+  /** You've seen this chat's latest. Sent by the apps when a chat is on screen (presence does it too). */
+  @callable()
+  async markSessionRead(sessionId: string) {
+    const changed = this.ctx.storage.sql.exec(
+      `UPDATE dex_sessions SET read_at = ? WHERE id = ? AND reply_at IS NOT NULL AND (read_at IS NULL OR read_at < reply_at)`,
+      Date.now(), String(sessionId)
+    ).rowsWritten
+    if (changed) await this.refreshSessions()
+  }
+
+  /** Brings a chat back as unread, to come back to later. */
+  @callable()
+  async markSessionUnread(sessionId: string) {
+    this.ctx.storage.sql.exec(`UPDATE dex_sessions SET read_at = 0, reply_at = coalesce(reply_at, updated_at) WHERE id = ?`, String(sessionId))
+    await this.refreshSessions()
+  }
+
+  /** The iPhone or Android app's push token. */
+  @callable()
+  async registerNativePush(platform: "ios" | "android", token: string, environment: "sandbox" | "production" | null, label: string): Promise<string> {
+    if (platform !== "ios" && platform !== "android") throw new Error("Unknown platform.")
+    return this.push.registerNative(platform, token, environment, label)
+  }
+
+  /**
+   * What the home-screen widgets show: each sidekick with their picture, whether they've said something you haven't
+   * seen, and their latest words. Worker-only (GET /api/sidekicks), never a callable.
+   */
+  widgetSnapshot() {
+    const sessions = new Map(this.state.sessions.map((session) => [session.id, session]))
+    return {
+      unread: this.unreadCount(),
+      sidekicks: this.loadCharacters().map((character) => {
+        const session = sessions.get(character.sessionId)
+        return {
+          id: character.id,
+          name: character.name,
+          tagline: character.tagline,
+          color: character.color,
+          image: character.image,
+          avatar: character.avatar,
+          sessionId: character.sessionId,
+          unread: session?.unread ?? false,
+          busy: session?.busy ?? false,
+          lastReply: session?.lastReply ?? null,
+          repliedAt: session?.repliedAt ?? null
+        }
+      })
+    }
   }
 
   /** A project chat's VM is ready (repos cloned, setup run), or its setup failed. */

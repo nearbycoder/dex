@@ -30,13 +30,16 @@ export interface CharacterProfile {
   readonly model: string
   readonly thinking: ThinkingLevel
   readonly mcpServers: ReadonlyArray<string>
+  /** Which of their messages notify you: all of them, only ones they start themselves (check-ins), or none. */
+  readonly notify?: SidekickNotify
   /** Their conversation now; Start over replaces it and the old one stays readable. */
   readonly sessionId: string
   readonly createdAt: number
   readonly updatedAt: number
 }
 
-export type CharacterDraft = Omit<CharacterProfile, "id" | "sessionId" | "createdAt" | "updatedAt" | "mcpServers" | "image" | "look"> & {
+export type CharacterDraft = Omit<CharacterProfile, "id" | "sessionId" | "createdAt" | "updatedAt" | "mcpServers" | "image" | "look" | "notify"> & {
+  readonly notify?: SidekickNotify
   readonly id?: string
   readonly mcpServers?: ReadonlyArray<string>
   /** Left out keeps the picture; null removes it. */
@@ -46,6 +49,14 @@ export type CharacterDraft = Omit<CharacterProfile, "id" | "sessionId" | "create
 }
 
 const presetLook = (key: string) => LOOK_PRESETS.find((preset) => preset.key === key)!.look
+
+export const NOTIFY_LEVELS = ["all", "reachouts", "off"] as const
+export type SidekickNotify = (typeof NOTIFY_LEVELS)[number]
+export const NOTIFY_LABELS: Record<SidekickNotify, { readonly label: string; readonly description: string }> = {
+  all: { label: "Every message", description: "Whenever they reply or reach out, while you're away." },
+  reachouts: { label: "When they reach out", description: "Only messages they start themselves, like check-ins and reminders." },
+  off: { label: "Off", description: "No notifications; their messages still show as unread." }
+}
 
 /** A character's own notes about you, in the workspace. */
 export const characterMemoryPath = (id: string) => `/workspace/sidekicks/${id}/MEMORY.md`

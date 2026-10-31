@@ -224,8 +224,24 @@ function Chat() {
               </Link>
             )
           })()}
+          {/* A sidekick's notifications: every message, or off (their page has "when they reach out" too). */}
+          {character && (
+            <button
+              type="button"
+              onClick={() => void stub.saveCharacter({ ...character, notify: (character.notify ?? "all") === "off" ? "all" : "off" })}
+              title={
+                (character.notify ?? "all") === "off"
+                  ? `Notifications from ${character.name} are off. Tap to turn them on.`
+                  : `Notifying you ${(character.notify ?? "all") === "all" ? "of every message" : "when they reach out"}. Tap to turn off.`
+              }
+              aria-pressed={(character.notify ?? "all") !== "off"}
+              className={`shrink-0 rounded-md p-1.5 hover:bg-zinc-900 ${(character.notify ?? "all") === "off" ? "text-amber-400" : "text-zinc-500 hover:text-zinc-200"}`}
+            >
+              {(character.notify ?? "all") === "off" ? <BellOff className="size-4" /> : <Bell className="size-4" />}
+            </button>
+          )}
           {/* Only once some device has notifications on: mute this chat's. */}
-          {session && (state?.push.devices.length ?? 0) > 0 && (
+          {session && !character && (state?.push.devices.length ?? 0) > 0 && (
             <button
               type="button"
               onClick={() => void stub.setSessionMuted(sessionId, !session.muted)}

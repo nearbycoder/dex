@@ -1,7 +1,7 @@
 import type { AssistantMessage, ToolResultMessage } from "@earendil-works/pi-ai"
 import { Predicate } from "effect"
 import { Link } from "@tanstack/react-router"
-import { AlertTriangle, ArrowDown, Brain, ChevronRight, Clock, FileText, ListChecks, LoaderCircle, MousePointerClick } from "lucide-react"
+import { AlarmClock, AlertTriangle, ArrowDown, Brain, ChevronRight, Clock, FileText, ListChecks, LoaderCircle, MousePointerClick } from "lucide-react"
 import { useParams } from "@tanstack/react-router"
 import type { AttachedFile } from "~/shared/attachments"
 import { lazy, memo, type ReactNode, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
@@ -347,6 +347,9 @@ function UserAttachments({
 }
 
 /** Memoized: the chat page re-renders on every synced-state change, but the transcript only on its own. */
+/** How a scheduled prompt starts in the transcript (see runScheduledPrompt). */
+const SCHEDULED_PREFIX = "[Scheduled task] "
+
 export interface Speaker {
   readonly name: string
   /** Their face, 24px. */
@@ -456,6 +459,17 @@ export const MessageList = memo(function MessageList({
           {items.map((item, index) => {
             switch (item.kind) {
               case "user":
+                // A prompt that ran on a schedule: the chat reaching out on its own, not something you said.
+                if (item.text?.startsWith(SCHEDULED_PREFIX)) {
+                  return (
+                    <div key={item.id} className="flex animate-fade items-center justify-center gap-1.5 text-xs text-zinc-500">
+                      <AlarmClock className="size-3.5 shrink-0" />
+                      <span className="truncate" title={item.text.slice(SCHEDULED_PREFIX.length)}>
+                        Scheduled: {item.text.slice(SCHEDULED_PREFIX.length)}
+                      </span>
+                    </div>
+                  )
+                }
                 return (
                   <div key={item.id} className="flex animate-rise justify-end">
                     <div className="max-w-[85%] rounded-2xl rounded-br-md bg-zinc-800 px-4 py-2.5 text-sm whitespace-pre-wrap text-zinc-100 [overflow-wrap:anywhere]">

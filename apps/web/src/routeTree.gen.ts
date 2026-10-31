@@ -20,6 +20,7 @@ import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppUsageRouteImport } from './routes/_app.usage'
 import { Route as ApiAttachmentsRouteImport } from './routes/api.attachments'
 import { Route as ApiMcpRouteImport } from './routes/api.mcp'
+import { Route as ApiSidekicksRouteImport } from './routes/api.sidekicks'
 import { Route as ApiVersionRouteImport } from './routes/api.version'
 import { Route as AuthDevRouteImport } from './routes/auth.dev'
 import { Route as AuthLogoutRouteImport } from './routes/auth.logout'
@@ -101,6 +102,11 @@ const ApiAttachmentsRoute = ApiAttachmentsRouteImport.update({
 const ApiMcpRoute = ApiMcpRouteImport.update({
   id: '/api/mcp',
   path: '/api/mcp',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSidekicksRoute = ApiSidekicksRouteImport.update({
+  id: '/api/sidekicks',
+  path: '/api/sidekicks',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiVersionRoute = ApiVersionRouteImport.update({
@@ -256,6 +262,7 @@ export interface FileRoutesByFullPath {
   '/usage': typeof AppUsageRoute
   '/api/attachments': typeof ApiAttachmentsRoute
   '/api/mcp': typeof ApiMcpRoute
+  '/api/sidekicks': typeof ApiSidekicksRoute
   '/api/version': typeof ApiVersionRoute
   '/auth/dev': typeof AuthDevRoute
   '/auth/logout': typeof AuthLogoutRoute
@@ -296,6 +303,7 @@ export interface FileRoutesByTo {
   '/usage': typeof AppUsageRoute
   '/api/attachments': typeof ApiAttachmentsRoute
   '/api/mcp': typeof ApiMcpRoute
+  '/api/sidekicks': typeof ApiSidekicksRoute
   '/api/version': typeof ApiVersionRoute
   '/auth/dev': typeof AuthDevRoute
   '/auth/logout': typeof AuthLogoutRoute
@@ -338,6 +346,7 @@ export interface FileRoutesById {
   '/_app/usage': typeof AppUsageRoute
   '/api/attachments': typeof ApiAttachmentsRoute
   '/api/mcp': typeof ApiMcpRoute
+  '/api/sidekicks': typeof ApiSidekicksRoute
   '/api/version': typeof ApiVersionRoute
   '/auth/dev': typeof AuthDevRoute
   '/auth/logout': typeof AuthLogoutRoute
@@ -380,6 +389,7 @@ export interface FileRouteTypes {
     | '/usage'
     | '/api/attachments'
     | '/api/mcp'
+    | '/api/sidekicks'
     | '/api/version'
     | '/auth/dev'
     | '/auth/logout'
@@ -420,6 +430,7 @@ export interface FileRouteTypes {
     | '/usage'
     | '/api/attachments'
     | '/api/mcp'
+    | '/api/sidekicks'
     | '/api/version'
     | '/auth/dev'
     | '/auth/logout'
@@ -461,6 +472,7 @@ export interface FileRouteTypes {
     | '/_app/usage'
     | '/api/attachments'
     | '/api/mcp'
+    | '/api/sidekicks'
     | '/api/version'
     | '/auth/dev'
     | '/auth/logout'
@@ -497,6 +509,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   ApiAttachmentsRoute: typeof ApiAttachmentsRoute
   ApiMcpRoute: typeof ApiMcpRoute
+  ApiSidekicksRoute: typeof ApiSidekicksRoute
   ApiVersionRoute: typeof ApiVersionRoute
   AuthDevRoute: typeof AuthDevRoute
   AuthLogoutRoute: typeof AuthLogoutRoute
@@ -589,6 +602,13 @@ declare module '@tanstack/react-router' {
       path: '/api/mcp'
       fullPath: '/api/mcp'
       preLoaderRoute: typeof ApiMcpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/sidekicks': {
+      id: '/api/sidekicks'
+      path: '/api/sidekicks'
+      fullPath: '/api/sidekicks'
+      preLoaderRoute: typeof ApiSidekicksRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/version': {
@@ -855,6 +875,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   ApiAttachmentsRoute: ApiAttachmentsRoute,
   ApiMcpRoute: ApiMcpRoute,
+  ApiSidekicksRoute: ApiSidekicksRoute,
   ApiVersionRoute: ApiVersionRoute,
   AuthDevRoute: AuthDevRoute,
   AuthLogoutRoute: AuthLogoutRoute,

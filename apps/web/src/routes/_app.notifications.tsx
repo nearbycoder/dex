@@ -8,6 +8,8 @@ import { useDex } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
 import { disablePush, enablePush, notificationPermission, pushSupport, thisDeviceId } from "~/client/lib/push"
 import { NOTIFY_KINDS, type NotifyKind, type PushDevice } from "~/shared/notifications"
+import { NOTIFY_LABELS, NOTIFY_LEVELS, type SidekickNotify } from "~/shared/characters"
+import { CharacterAvatar } from "~/client/components/agent-avatar"
 
 /** Opt-in push notifications: per device, per kind of update. */
 export const Route = createFileRoute("/_app/notifications")({ component: NotificationsPage })
@@ -154,7 +156,7 @@ function NotificationsPage() {
               <Row
                 key={other.id}
                 icon={<Smartphone className="size-4" />}
-                label={other.label}
+                label={`${other.label}${other.platform === "ios" ? " · iPhone app" : other.platform === "android" ? " · Android app" : ""}`}
                 detail={
                   <>
                     {other.kinds.length}/{NOTIFY_KINDS.length} kinds · {other.lastSentAt ? `sent ${timeAgo(other.lastSentAt)}` : "nothing sent yet"}
@@ -171,6 +173,38 @@ function NotificationsPage() {
                 >
                   <Trash2 className="size-4" />
                 </button>
+              </Row>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {state.characters.length > 0 && (
+        <Section title="Sidekicks" info="Which of each sidekick's messages notify you. Devices also need Sidekicks turned on above.">
+          <div className="divide-y divide-zinc-800/80">
+            {state.characters.map((character) => (
+              <Row
+                key={character.id}
+                icon={<CharacterAvatar character={character} size={22} />}
+                label={
+                  <Link to="/sidekicks/$characterId" params={{ characterId: character.id }} className="hover:underline">
+                    {character.name}
+                  </Link>
+                }
+                detail={NOTIFY_LABELS[character.notify ?? "all"].description}
+              >
+                <select
+                  value={character.notify ?? "all"}
+                  aria-label={`Notifications from ${character.name}`}
+                  onChange={(event) => void stub.saveCharacter({ ...character, notify: event.target.value as SidekickNotify })}
+                  className="rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1 text-xs text-zinc-200"
+                >
+                  {NOTIFY_LEVELS.map((level) => (
+                    <option key={level} value={level}>
+                      {NOTIFY_LABELS[level].label}
+                    </option>
+                  ))}
+                </select>
               </Row>
             ))}
           </div>

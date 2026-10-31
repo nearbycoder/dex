@@ -147,6 +147,9 @@ export const EXCLUDED: Readonly<Record<string, string>> = {
   connectGitHub: "Credentials are entered only in Settings, never through a chat or an external agent.",
   disconnectGitHub: "Credentials are managed only in Settings.",
   pushSubscribe: "A browser subscribes itself to push; there is nothing for an agent to do.",
+  registerNativePush: "The iPhone and Android apps register their own push tokens; there is nothing for an agent to do.",
+  markSessionRead: "Unread is what you have seen on your own screens; an agent reading a chat must not mark it read.",
+  markSessionUnread: "Unread is what you have seen on your own screens, kept by the apps you look at.",
   vmTouch: "Heartbeat from the Machine page while you control the desktop.",
   vmDesktopUrl: "A desktop URL lets whoever holds it control the VM; only the signed-in app opens one.",
   createAccessToken: "Access is granted only by the signed-in user, so no token can mint more access.",
@@ -208,6 +211,11 @@ const characterFields = {
   model: Type.Optional(modelId),
   thinking: Type.Optional(thinking),
   mcp_servers: Type.Optional(Type.Array(id("MCP server id"), { maxItems: 20 })),
+  notify: Type.Optional(
+    Type.Union([Type.Literal("all"), Type.Literal("reachouts"), Type.Literal("off")], {
+      description: "Which of their messages notify the user: all, reachouts (only ones they start themselves, like check-ins), or off."
+    })
+  ),
   color
 }
 
@@ -288,6 +296,7 @@ const characterDraft = (args: Static<typeof createCharacterParams>, existing?: C
   model: args.model ?? existing?.model ?? "",
   thinking: (args.thinking ?? existing?.thinking ?? "medium") as ThinkingLevel,
   mcpServers: args.mcp_servers ?? existing?.mcpServers ?? [],
+  notify: args.notify ?? existing?.notify ?? "all",
   color: (args.color ?? existing?.color ?? "violet") as CharacterProfile["color"]
 })
 

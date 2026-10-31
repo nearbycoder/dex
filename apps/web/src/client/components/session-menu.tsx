@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from "@tanstack/react-router"
-import { AlarmClock, AlarmClockOff, CheckCheck, Inbox, MoreHorizontal, Sparkles, Trash2 } from "lucide-react"
+import { AlarmClock, AlarmClockOff, CheckCheck, CircleDot, Inbox, MoreHorizontal, Sparkles, Trash2 } from "lucide-react"
 import { type ReactNode, type Ref, useEffect, useImperativeHandle, useRef, useState, useSyncExternalStore } from "react"
 import { createPortal } from "react-dom"
 import { useDex } from "~/client/lib/dex"
@@ -188,6 +188,11 @@ export function SessionMenu({
             <MenuItem icon={<Sparkles className="size-4" />} onClick={() => run(() => regenerateTitle(stub, session.id))}>
               Regenerate title
             </MenuItem>
+            {!session.unread && session.repliedAt != null && (
+              <MenuItem icon={<CircleDot className="size-4" />} onClick={() => run(() => stub.markSessionUnread(session.id))}>
+                Mark as unread
+              </MenuItem>
+            )}
             {state === "settled" ? (
               <MenuItem icon={<Inbox className="size-4" />} onClick={() => run(() => stub.triageSession(session.id, { settled: false }))}>
                 Move to inbox

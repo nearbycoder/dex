@@ -59,9 +59,20 @@ function Hint({ count, dot, title }: { count?: number; dot?: string; title?: str
   )
 }
 
+/** Unread chats in the tab's title and on the installed app's icon. */
+function useUnreadBadge(count: number) {
+  useEffect(() => {
+    const base = document.title.replace(/^\(\d+\) /, "")
+    document.title = count ? `(${count}) ${base}` : base
+    const nav = navigator as Navigator & { setAppBadge?: (count?: number) => Promise<void>; clearAppBadge?: () => Promise<void> }
+    void (count ? nav.setAppBadge?.(count) : nav.clearAppBadge?.())?.catch(() => undefined)
+  }, [count])
+}
+
 export function Sidebar() {
   const { drawerOpen: open, closeDrawer: onClose, collapsed, toggleCollapsed, holdOpen } = useNav()
   const { state, viewer, connected } = useDex()
+  useUnreadBadge(state?.sessions.filter((session) => session.unread).length ?? 0)
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const params = useParams({ strict: false })
@@ -326,6 +337,8 @@ function Characters({
       {characters.map((character) => {
         const session = byId.get(character.sessionId)
         const active = activeId !== undefined && byId.get(activeId)?.characterId === character.id
+        // Something they said that you haven't seen (not while you're looking at it).
+        const unread = Boolean(session?.unread) && !active
         return (
           <Link
             key={character.id}
@@ -340,17 +353,18 @@ function Characters({
             </span>
             <span className="min-w-0 flex-1">
               <span className="flex items-baseline gap-2">
-                <span className="truncate text-sm">{character.name}</span>
+                <span className={`truncate text-sm ${unread ? "font-semibold text-zinc-50" : ""}`}>{character.name}</span>
                 {session && !session.busy && (
-                  <span className="ml-auto shrink-0 text-[11px] text-zinc-600" title={new Date(session.updatedAt).toLocaleString()}>
+                  <span className={`ml-auto shrink-0 text-[11px] ${unread ? "text-sky-300" : "text-zinc-600"}`} title={new Date(session.updatedAt).toLocaleString()}>
                     {session.updatedAt > session.createdAt + 1_000 ? timeAgo(session.updatedAt) : ""}
                   </span>
                 )}
               </span>
-              <span className={`block truncate text-[11px] ${session?.busy ? "text-emerald-400" : "text-zinc-500"}`}>
-                {session?.busy ? "typing…" : character.tagline || "Say hi"}
+              <span className={`block truncate text-[11px] ${session?.busy ? "text-emerald-400" : unread ? "text-zinc-300" : "text-zinc-500"}`}>
+                {session?.busy ? "typing…" : unread && session?.lastReply ? session.lastReply : character.tagline || "Say hi"}
               </span>
             </span>
+            {unread && <span className="size-2 shrink-0 rounded-full bg-sky-400" aria-label="Unread" />}
           </Link>
         )
       })}
@@ -394,7 +408,10 @@ function ChatRow({ session, group, active, onPick }: { session: SessionMeta; gro
               : "text-zinc-300 hover:bg-zinc-900/60 hover:text-zinc-100"
         }`}
       >
-        <div className={`truncate text-sm ${naming ? "animate-pulse text-zinc-400" : ""}`}>{session.title}</div>
+        <div className="flex items-center gap-2">
+          <div className={`truncate text-sm ${naming ? "animate-pulse text-zinc-400" : session.unread && !active ? "font-semibold text-zinc-50" : ""}`}>{session.title}</div>
+          {session.unread && !active && <span className="ml-auto size-2 shrink-0 rounded-full bg-sky-400" aria-label="Unread" />}
+        </div>
         <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-zinc-500">
           {(() => {
             const agent = session.agentId ? state.agents.find((candidate) => candidate.id === session.agentId) : undefined
