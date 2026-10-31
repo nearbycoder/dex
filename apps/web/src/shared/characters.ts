@@ -2,7 +2,7 @@ import type { AgentColor } from "./agents"
 import type { ThinkingLevel } from "./models"
 
 /**
- * A character: a named companion with one long conversation of their own, pinned in the sidebar. Its conversation is
+ * A sidekick (`character` in code and the protocol): a named companion with one long conversation of their own, pinned in the sidebar. Its conversation is
  * an ordinary chat (`SessionMeta.characterId`), so everything a chat can do, theirs can.
  */
 export interface CharacterProfile {
@@ -37,7 +37,7 @@ export type CharacterDraft = Omit<CharacterProfile, "id" | "sessionId" | "create
 }
 
 /** A character's own notes about you, in the workspace. */
-export const characterMemoryPath = (id: string) => `/workspace/characters/${id}/MEMORY.md`
+export const characterMemoryPath = (id: string) => `/workspace/sidekicks/${id}/MEMORY.md`
 
 export const MAX_CHARACTER_MEMORY_CHARS = 8_000
 

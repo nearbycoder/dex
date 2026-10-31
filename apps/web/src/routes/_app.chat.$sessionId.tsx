@@ -139,7 +139,7 @@ function Chat() {
         <MenuButton />
         {character && (
           <Link
-            to="/characters/$characterId"
+            to="/sidekicks/$characterId"
             params={{ characterId: character.id }}
             title={`About ${character.name}`}
             className="-my-1 flex min-w-0 items-center gap-2.5 rounded-lg py-1 pr-2 hover:bg-zinc-900"

@@ -40,7 +40,7 @@ import { ChatListSkeleton } from "./skeleton"
 import { useNow } from "./vm-status"
 
 /** Configuration pages: on these the sidebar shows the settings links instead of the chats. */
-const SETTINGS_AREA = ["/settings", "/notifications", "/machine", "/projects", "/agents", "/characters", "/skills", "/secrets", "/mcp", "/files", "/usage", "/access"]
+const SETTINGS_AREA = ["/settings", "/notifications", "/machine", "/projects", "/agents", "/sidekicks", "/skills", "/secrets", "/mcp", "/files", "/usage", "/access"]
 const inSettingsArea = (pathname: string) => SETTINGS_AREA.some((path) => pathname === path || pathname.startsWith(`${path}/`))
 
 const linkClass =
@@ -117,7 +117,7 @@ export function Sidebar() {
     },
     { to: "/projects", label: "Projects", icon: <FolderGit2 className="size-4" /> },
     { to: "/agents", label: "Agents", icon: <Bot className="size-4" /> },
-    { to: "/characters", label: "Characters", icon: <Drama className="size-4" />, hint: <Hint count={state?.characters.length} /> },
+    { to: "/sidekicks", label: "Sidekicks", icon: <Drama className="size-4" />, hint: <Hint count={state?.characters.length} /> },
     { to: "/skills", label: "Skills", icon: <Sparkles className="size-4" /> },
     {
       to: "/mcp",
@@ -255,7 +255,7 @@ export function Sidebar() {
 }
 
 /**
- * Characters, pinned above the chats: each opens their conversation. Shown once you have one; until then a single
+ * Sidekicks, pinned above the chats: each opens their conversation. Shown once you have one; until then a single
  * quiet row offers to make one.
  */
 function Characters({
@@ -271,13 +271,13 @@ function Characters({
 }) {
   const header = (
     <div className="flex items-center px-2 pb-1">
-      <span className="text-[11px] font-medium tracking-wide text-zinc-600 uppercase">Characters</span>
+      <span className="text-[11px] font-medium tracking-wide text-zinc-600 uppercase">Sidekicks</span>
       <Link
-        to="/characters/$characterId"
+        to="/sidekicks/$characterId"
         params={{ characterId: "new" }}
         onClick={onPick}
-        title="New character"
-        aria-label="New character"
+        title="New sidekick"
+        aria-label="New sidekick"
         className="-my-1 -mr-1 ml-auto rounded-md p-1 text-zinc-600 hover:bg-zinc-900 hover:text-zinc-200"
       >
         <Plus className="size-3.5" />
@@ -289,7 +289,7 @@ function Characters({
       <div className="mb-4">
         {header}
         <Link
-          to="/characters/$characterId"
+          to="/sidekicks/$characterId"
           params={{ characterId: "new" }}
           onClick={onPick}
           className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs text-zinc-500 hover:bg-zinc-900/60 hover:text-zinc-300"
@@ -297,7 +297,7 @@ function Characters({
           <span className="flex size-7 items-center justify-center rounded-full border border-dashed border-zinc-700">
             <Plus className="size-3.5" />
           </span>
-          Make a character to talk to
+          Make a sidekick to talk to
         </Link>
       </div>
     )

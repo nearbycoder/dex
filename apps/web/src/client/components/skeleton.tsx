@@ -269,7 +269,7 @@ export function ChatListSkeleton() {
 
 // ── Lists of cards ──────────────────────────────────────────────────────────
 
-/** An agent, character, or project card: avatar, name, description, details, and its Start chat / Edit buttons. */
+/** An agent, sidekick, or project card: avatar, name, description, details, and its Start chat / Edit buttons. */
 function ProfileCard({ index, project, round = false }: { index: number; project: boolean; round?: boolean }) {
   return (
     <div className="flex flex-col rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
@@ -1017,14 +1017,14 @@ export function RouteSkeleton({ pathname }: { pathname: string }) {
   if (pathname === "/usage") return <UsagePageSkeleton />
   if (pathname === "/files") return <FilesSkeleton />
   if (/^\/agents\/[^/]+/.test(pathname)) return <EditorSkeleton kind="agent" />
-  if (/^\/characters\/[^/]+/.test(pathname)) return <EditorSkeleton kind="character" />
+  if (/^\/sidekicks\/[^/]+/.test(pathname)) return <EditorSkeleton kind="character" />
   if (/^\/projects\/[^/]+/.test(pathname)) return <EditorSkeleton kind="project" />
   if (/^\/mcp\/[^/]+/.test(pathname)) return <EditorSkeleton kind="mcp" />
   if (/^\/skills\/[^/]+/.test(pathname)) return <SkillEditorSkeleton />
   if (pathname === "/skills") return <SkillsPageSkeleton />
   if (pathname === "/secrets") return <SecretsSkeleton />
   if (pathname === "/agents") return <ListPageSkeleton kind="agent" />
-  if (pathname === "/characters") return <ListPageSkeleton kind="character" />
+  if (pathname === "/sidekicks") return <ListPageSkeleton kind="character" />
   if (pathname === "/projects") return <ListPageSkeleton kind="project" />
   if (pathname === "/mcp") return <ListPageSkeleton kind="mcp" />
   if (pathname === "/notifications") return <NotificationsSkeleton />

@@ -124,7 +124,7 @@ ${AUDIO_UNLOCK_SCRIPT}
 - Show rich interactive UI with render_ui. Call load_ui_guide once per chat before your first render_ui.
 - Schedule prompts for yourself to run later (schedule_prompt); recurring schedules go through app_call (app_schedule_prompt) and need the user's confirmation.
 - Use tools from MCP servers the user attached to this chat (named <server>__<tool>), when any are.
-- Manage Dex itself with app_operations and app_call: start chats (optionally with an agent, a project, and a first message) and hand work to them, message, read, and stop other chats, create agents, characters, and projects, manage MCP servers, VMs, settings, and notifications, and read usage. Admin operations (deleting things, changing settings, existing agents, characters, and projects, or MCP servers) ask the user to confirm in this chat: after requesting one, end your turn and wait for their answer.`
+- Manage Dex itself with app_operations and app_call: start chats (optionally with an agent, a project, and a first message) and hand work to them, message, read, and stop other chats, create agents, sidekicks, and projects, manage MCP servers, VMs, settings, and notifications, and read usage. Admin operations (deleting things, changing settings, existing agents, sidekicks, and projects, or MCP servers) ask the user to confirm in this chat: after requesting one, end your turn and wait for their answer.`
 
 const PREAMBLE = `You are Dex, a capable personal agent. You run durably on Cloudflare: your chats, files, and schedules persist across restarts.
 
@@ -536,6 +536,13 @@ export class DexAgent extends Agent<Env, DexState> {
     void this.backfillUsage()
     this.seedAgents()
     this.refreshAgents()
+    // One-time: sidekicks' memory moved from /workspace/characters (their first name) to /workspace/sidekicks.
+    if (!this.ctx.storage.sql.exec(`SELECT 1 FROM dex_meta WHERE key = 'sidekick_memory_moved'`).toArray().length) {
+      this.ctx.storage.sql.exec(
+        `UPDATE OR IGNORE dex_files SET path = '/workspace/sidekicks/' || substr(path, 23) WHERE path LIKE '/workspace/characters/%'`
+      )
+      this.ctx.storage.sql.exec(`INSERT INTO dex_meta (key, value) VALUES ('sidekick_memory_moved', '1')`)
+    }
     this.refreshCharacters()
     this.skills.refresh()
     this.accountSecrets.refresh()
@@ -1724,9 +1731,9 @@ export class DexAgent extends Agent<Env, DexState> {
   @callable()
   async saveCharacter(draft: CharacterDraft): Promise<CharacterProfile> {
     const name = String(draft.name ?? "").trim().slice(0, 40)
-    if (!name) throw new Error("Give the character a name.")
+    if (!name) throw new Error("Give your sidekick a name.")
     const existing = draft.id ? this.characterById(draft.id) : undefined
-    if (draft.id && !existing) throw new Error("That character no longer exists.")
+    if (draft.id && !existing) throw new Error("That sidekick no longer exists.")
     if (draft.image != null && !isProjectImage(draft.image)) throw new Error("Pick a smaller picture (PNG, JPEG, WebP, GIF, or SVG under 48 KB).")
     const model = findModel(draft.model) ? draft.model : (existing?.model ?? this.state.settings.defaultModel)
     const data: Omit<CharacterProfile, "id" | "sessionId" | "createdAt" | "updatedAt"> = {
@@ -1782,7 +1789,7 @@ export class DexAgent extends Agent<Env, DexState> {
   @callable()
   async restartCharacter(id: string): Promise<CharacterProfile> {
     const character = this.characterById(id)
-    if (!character) throw new Error("That character no longer exists.")
+    if (!character) throw new Error("That sidekick no longer exists.")
     const sessionId = await this.openCharacterSession(id, character)
     const now = Date.now()
     this.ctx.storage.sql.exec(`UPDATE dex_characters SET session_id = ?, updated_at = ? WHERE id = ?`, sessionId, now, id)
@@ -1795,14 +1802,14 @@ export class DexAgent extends Agent<Env, DexState> {
 
   @callable()
   async characterMemory(id: string): Promise<string> {
-    if (!this.characterById(id)) throw new Error("That character no longer exists.")
+    if (!this.characterById(id)) throw new Error("That sidekick no longer exists.")
     return this.workspace.readText(characterMemoryPath(id)) ?? ""
   }
 
   /** Replaces a character's memory; empty clears it. */
   @callable()
   async saveCharacterMemory(id: string, text: string) {
-    if (!this.characterById(id)) throw new Error("That character no longer exists.")
+    if (!this.characterById(id)) throw new Error("That sidekick no longer exists.")
     const content = String(text ?? "").slice(0, 64_000)
     if (content.trim()) this.workspace.write(characterMemoryPath(id), content)
     else this.workspace.remove(characterMemoryPath(id))

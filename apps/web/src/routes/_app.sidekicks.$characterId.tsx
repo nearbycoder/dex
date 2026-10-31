@@ -12,7 +12,7 @@ import { AGENT_COLORS, type AgentColor } from "~/shared/agents"
 import { CHARACTER_TEMPLATES, type CharacterDraft, characterMemoryPath } from "~/shared/characters"
 import { DEFAULT_MODEL_ID, DEFAULT_THINKING } from "~/shared/models"
 
-export const Route = createFileRoute("/_app/characters/$characterId")({ component: CharacterEditorPage })
+export const Route = createFileRoute("/_app/sidekicks/$characterId")({ component: CharacterEditorPage })
 
 const blank = (model: string, thinking: CharacterDraft["thinking"]): CharacterDraft => ({
   name: "",
@@ -92,9 +92,9 @@ function CharacterEditor() {
   if (!isNew && !existing) {
     return (
       <div className="p-8 text-sm text-zinc-500">
-        This character no longer exists.{" "}
-        <Link to="/characters" className="text-emerald-400 hover:underline">
-          Back to characters
+        This sidekick no longer exists.{" "}
+        <Link to="/sidekicks" className="text-emerald-400 hover:underline">
+          Back to sidekicks
         </Link>
       </div>
     )
@@ -136,14 +136,14 @@ function CharacterEditor() {
   return (
     <div className="scrollbar-thin flex-1 overflow-y-auto">
       <div className="mx-auto max-w-2xl px-4 pt-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] md:pt-10">
-        <Link to="/characters" className="mb-4 inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-200">
-          <ArrowLeft className="size-4" /> Characters
+        <Link to="/sidekicks" className="mb-4 inline-flex items-center gap-1.5 text-sm text-zinc-500 hover:text-zinc-200">
+          <ArrowLeft className="size-4" /> Sidekicks
         </Link>
 
         <div className="mb-6 flex items-center gap-4">
           <CharacterAvatar character={{ ...draft, name: draft.name || "?", image: draft.image ?? null }} size={64} />
           <div className="min-w-0">
-            <h1 className="truncate text-2xl font-semibold tracking-tight">{draft.name || (isNew ? "New character" : "Untitled")}</h1>
+            <h1 className="truncate text-2xl font-semibold tracking-tight">{draft.name || (isNew ? "New sidekick" : "Untitled")}</h1>
             <p className="truncate text-sm text-zinc-400">{draft.tagline || "Who are they to you?"}</p>
           </div>
         </div>
@@ -371,7 +371,7 @@ function CharacterEditor() {
                   onClick={async () => {
                     if (!confirm(`Delete ${existing.name}? Your conversations with them stay, as ordinary chats.`)) return
                     await stub.deleteCharacter(existing.id)
-                    await navigate({ to: "/characters" })
+                    await navigate({ to: "/sidekicks" })
                   }}
                   className="ml-auto flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm text-zinc-500 hover:text-red-400"
                 >

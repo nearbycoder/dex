@@ -26,8 +26,6 @@ import { Route as AuthLogoutRouteImport } from './routes/auth.logout'
 import { Route as AuthPasswordRouteImport } from './routes/auth.password'
 import { Route as AppAgentsIndexRouteImport } from './routes/_app.agents.index'
 import { Route as AppAgentsAgentIdRouteImport } from './routes/_app.agents.$agentId'
-import { Route as AppCharactersIndexRouteImport } from './routes/_app.characters.index'
-import { Route as AppCharactersCharacterIdRouteImport } from './routes/_app.characters.$characterId'
 import { Route as AppChatIndexRouteImport } from './routes/_app.chat.index'
 import { Route as AppChatSessionIdRouteImport } from './routes/_app.chat.$sessionId'
 import { Route as AppMachineIndexRouteImport } from './routes/_app.machine.index'
@@ -36,6 +34,8 @@ import { Route as AppMcpIndexRouteImport } from './routes/_app.mcp.index'
 import { Route as AppMcpServerIdRouteImport } from './routes/_app.mcp.$serverId'
 import { Route as AppProjectsIndexRouteImport } from './routes/_app.projects.index'
 import { Route as AppProjectsProjectIdRouteImport } from './routes/_app.projects.$projectId'
+import { Route as AppSidekicksIndexRouteImport } from './routes/_app.sidekicks.index'
+import { Route as AppSidekicksCharacterIdRouteImport } from './routes/_app.sidekicks.$characterId'
 import { Route as AppSkillsIndexRouteImport } from './routes/_app.skills.index'
 import { Route as AppSkillsSkillIdRouteImport } from './routes/_app.skills.$skillId'
 import { Route as ApiMediaSplatRouteImport } from './routes/api.media.$'
@@ -133,17 +133,6 @@ const AppAgentsAgentIdRoute = AppAgentsAgentIdRouteImport.update({
   path: '/agents/$agentId',
   getParentRoute: () => AppRoute,
 } as any)
-const AppCharactersIndexRoute = AppCharactersIndexRouteImport.update({
-  id: '/characters/',
-  path: '/characters/',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppCharactersCharacterIdRoute =
-  AppCharactersCharacterIdRouteImport.update({
-    id: '/characters/$characterId',
-    path: '/characters/$characterId',
-    getParentRoute: () => AppRoute,
-  } as any)
 const AppChatIndexRoute = AppChatIndexRouteImport.update({
   id: '/chat/',
   path: '/chat/',
@@ -182,6 +171,16 @@ const AppProjectsIndexRoute = AppProjectsIndexRouteImport.update({
 const AppProjectsProjectIdRoute = AppProjectsProjectIdRouteImport.update({
   id: '/projects/$projectId',
   path: '/projects/$projectId',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSidekicksIndexRoute = AppSidekicksIndexRouteImport.update({
+  id: '/sidekicks/',
+  path: '/sidekicks/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSidekicksCharacterIdRoute = AppSidekicksCharacterIdRouteImport.update({
+  id: '/sidekicks/$characterId',
+  path: '/sidekicks/$characterId',
   getParentRoute: () => AppRoute,
 } as any)
 const AppSkillsIndexRoute = AppSkillsIndexRouteImport.update({
@@ -262,11 +261,11 @@ export interface FileRoutesByFullPath {
   '/auth/logout': typeof AuthLogoutRoute
   '/auth/password': typeof AuthPasswordRoute
   '/agents/$agentId': typeof AppAgentsAgentIdRoute
-  '/characters/$characterId': typeof AppCharactersCharacterIdRoute
   '/chat/$sessionId': typeof AppChatSessionIdRoute
   '/machine/$vmKey': typeof AppMachineVmKeyRoute
   '/mcp/$serverId': typeof AppMcpServerIdRoute
   '/projects/$projectId': typeof AppProjectsProjectIdRoute
+  '/sidekicks/$characterId': typeof AppSidekicksCharacterIdRoute
   '/skills/$skillId': typeof AppSkillsSkillIdRoute
   '/api/media/$': typeof ApiMediaSplatRoute
   '/api/push/action': typeof ApiPushActionRoute
@@ -278,11 +277,11 @@ export interface FileRoutesByFullPath {
   '/auth/native/start': typeof AuthNativeStartRoute
   '/auth/native/token': typeof AuthNativeTokenRoute
   '/agents/': typeof AppAgentsIndexRoute
-  '/characters/': typeof AppCharactersIndexRoute
   '/chat/': typeof AppChatIndexRoute
   '/machine/': typeof AppMachineIndexRoute
   '/mcp/': typeof AppMcpIndexRoute
   '/projects/': typeof AppProjectsIndexRoute
+  '/sidekicks/': typeof AppSidekicksIndexRoute
   '/skills/': typeof AppSkillsIndexRoute
   '/auth/github/connect/callback': typeof AuthGithubConnectCallbackRoute
 }
@@ -302,11 +301,11 @@ export interface FileRoutesByTo {
   '/auth/logout': typeof AuthLogoutRoute
   '/auth/password': typeof AuthPasswordRoute
   '/agents/$agentId': typeof AppAgentsAgentIdRoute
-  '/characters/$characterId': typeof AppCharactersCharacterIdRoute
   '/chat/$sessionId': typeof AppChatSessionIdRoute
   '/machine/$vmKey': typeof AppMachineVmKeyRoute
   '/mcp/$serverId': typeof AppMcpServerIdRoute
   '/projects/$projectId': typeof AppProjectsProjectIdRoute
+  '/sidekicks/$characterId': typeof AppSidekicksCharacterIdRoute
   '/skills/$skillId': typeof AppSkillsSkillIdRoute
   '/api/media/$': typeof ApiMediaSplatRoute
   '/api/push/action': typeof ApiPushActionRoute
@@ -318,11 +317,11 @@ export interface FileRoutesByTo {
   '/auth/native/start': typeof AuthNativeStartRoute
   '/auth/native/token': typeof AuthNativeTokenRoute
   '/agents': typeof AppAgentsIndexRoute
-  '/characters': typeof AppCharactersIndexRoute
   '/chat': typeof AppChatIndexRoute
   '/machine': typeof AppMachineIndexRoute
   '/mcp': typeof AppMcpIndexRoute
   '/projects': typeof AppProjectsIndexRoute
+  '/sidekicks': typeof AppSidekicksIndexRoute
   '/skills': typeof AppSkillsIndexRoute
   '/auth/github/connect/callback': typeof AuthGithubConnectCallbackRoute
 }
@@ -344,11 +343,11 @@ export interface FileRoutesById {
   '/auth/logout': typeof AuthLogoutRoute
   '/auth/password': typeof AuthPasswordRoute
   '/_app/agents/$agentId': typeof AppAgentsAgentIdRoute
-  '/_app/characters/$characterId': typeof AppCharactersCharacterIdRoute
   '/_app/chat/$sessionId': typeof AppChatSessionIdRoute
   '/_app/machine/$vmKey': typeof AppMachineVmKeyRoute
   '/_app/mcp/$serverId': typeof AppMcpServerIdRoute
   '/_app/projects/$projectId': typeof AppProjectsProjectIdRoute
+  '/_app/sidekicks/$characterId': typeof AppSidekicksCharacterIdRoute
   '/_app/skills/$skillId': typeof AppSkillsSkillIdRoute
   '/api/media/$': typeof ApiMediaSplatRoute
   '/api/push/action': typeof ApiPushActionRoute
@@ -360,11 +359,11 @@ export interface FileRoutesById {
   '/auth/native/start': typeof AuthNativeStartRoute
   '/auth/native/token': typeof AuthNativeTokenRoute
   '/_app/agents/': typeof AppAgentsIndexRoute
-  '/_app/characters/': typeof AppCharactersIndexRoute
   '/_app/chat/': typeof AppChatIndexRoute
   '/_app/machine/': typeof AppMachineIndexRoute
   '/_app/mcp/': typeof AppMcpIndexRoute
   '/_app/projects/': typeof AppProjectsIndexRoute
+  '/_app/sidekicks/': typeof AppSidekicksIndexRoute
   '/_app/skills/': typeof AppSkillsIndexRoute
   '/auth/github/connect/callback': typeof AuthGithubConnectCallbackRoute
 }
@@ -386,11 +385,11 @@ export interface FileRouteTypes {
     | '/auth/logout'
     | '/auth/password'
     | '/agents/$agentId'
-    | '/characters/$characterId'
     | '/chat/$sessionId'
     | '/machine/$vmKey'
     | '/mcp/$serverId'
     | '/projects/$projectId'
+    | '/sidekicks/$characterId'
     | '/skills/$skillId'
     | '/api/media/$'
     | '/api/push/action'
@@ -402,11 +401,11 @@ export interface FileRouteTypes {
     | '/auth/native/start'
     | '/auth/native/token'
     | '/agents/'
-    | '/characters/'
     | '/chat/'
     | '/machine/'
     | '/mcp/'
     | '/projects/'
+    | '/sidekicks/'
     | '/skills/'
     | '/auth/github/connect/callback'
   fileRoutesByTo: FileRoutesByTo
@@ -426,11 +425,11 @@ export interface FileRouteTypes {
     | '/auth/logout'
     | '/auth/password'
     | '/agents/$agentId'
-    | '/characters/$characterId'
     | '/chat/$sessionId'
     | '/machine/$vmKey'
     | '/mcp/$serverId'
     | '/projects/$projectId'
+    | '/sidekicks/$characterId'
     | '/skills/$skillId'
     | '/api/media/$'
     | '/api/push/action'
@@ -442,11 +441,11 @@ export interface FileRouteTypes {
     | '/auth/native/start'
     | '/auth/native/token'
     | '/agents'
-    | '/characters'
     | '/chat'
     | '/machine'
     | '/mcp'
     | '/projects'
+    | '/sidekicks'
     | '/skills'
     | '/auth/github/connect/callback'
   id:
@@ -467,11 +466,11 @@ export interface FileRouteTypes {
     | '/auth/logout'
     | '/auth/password'
     | '/_app/agents/$agentId'
-    | '/_app/characters/$characterId'
     | '/_app/chat/$sessionId'
     | '/_app/machine/$vmKey'
     | '/_app/mcp/$serverId'
     | '/_app/projects/$projectId'
+    | '/_app/sidekicks/$characterId'
     | '/_app/skills/$skillId'
     | '/api/media/$'
     | '/api/push/action'
@@ -483,11 +482,11 @@ export interface FileRouteTypes {
     | '/auth/native/start'
     | '/auth/native/token'
     | '/_app/agents/'
-    | '/_app/characters/'
     | '/_app/chat/'
     | '/_app/machine/'
     | '/_app/mcp/'
     | '/_app/projects/'
+    | '/_app/sidekicks/'
     | '/_app/skills/'
     | '/auth/github/connect/callback'
   fileRoutesById: FileRoutesById
@@ -634,20 +633,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAgentsAgentIdRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/characters/': {
-      id: '/_app/characters/'
-      path: '/characters'
-      fullPath: '/characters/'
-      preLoaderRoute: typeof AppCharactersIndexRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/characters/$characterId': {
-      id: '/_app/characters/$characterId'
-      path: '/characters/$characterId'
-      fullPath: '/characters/$characterId'
-      preLoaderRoute: typeof AppCharactersCharacterIdRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/_app/chat/': {
       id: '/_app/chat/'
       path: '/chat'
@@ -702,6 +687,20 @@ declare module '@tanstack/react-router' {
       path: '/projects/$projectId'
       fullPath: '/projects/$projectId'
       preLoaderRoute: typeof AppProjectsProjectIdRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/sidekicks/': {
+      id: '/_app/sidekicks/'
+      path: '/sidekicks'
+      fullPath: '/sidekicks/'
+      preLoaderRoute: typeof AppSidekicksIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/sidekicks/$characterId': {
+      id: '/_app/sidekicks/$characterId'
+      path: '/sidekicks/$characterId'
+      fullPath: '/sidekicks/$characterId'
+      preLoaderRoute: typeof AppSidekicksCharacterIdRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/skills/': {
@@ -799,18 +798,18 @@ interface AppRouteChildren {
   AppSettingsRoute: typeof AppSettingsRoute
   AppUsageRoute: typeof AppUsageRoute
   AppAgentsAgentIdRoute: typeof AppAgentsAgentIdRoute
-  AppCharactersCharacterIdRoute: typeof AppCharactersCharacterIdRoute
   AppChatSessionIdRoute: typeof AppChatSessionIdRoute
   AppMachineVmKeyRoute: typeof AppMachineVmKeyRoute
   AppMcpServerIdRoute: typeof AppMcpServerIdRoute
   AppProjectsProjectIdRoute: typeof AppProjectsProjectIdRoute
+  AppSidekicksCharacterIdRoute: typeof AppSidekicksCharacterIdRoute
   AppSkillsSkillIdRoute: typeof AppSkillsSkillIdRoute
   AppAgentsIndexRoute: typeof AppAgentsIndexRoute
-  AppCharactersIndexRoute: typeof AppCharactersIndexRoute
   AppChatIndexRoute: typeof AppChatIndexRoute
   AppMachineIndexRoute: typeof AppMachineIndexRoute
   AppMcpIndexRoute: typeof AppMcpIndexRoute
   AppProjectsIndexRoute: typeof AppProjectsIndexRoute
+  AppSidekicksIndexRoute: typeof AppSidekicksIndexRoute
   AppSkillsIndexRoute: typeof AppSkillsIndexRoute
 }
 
@@ -822,18 +821,18 @@ const AppRouteChildren: AppRouteChildren = {
   AppSettingsRoute: AppSettingsRoute,
   AppUsageRoute: AppUsageRoute,
   AppAgentsAgentIdRoute: AppAgentsAgentIdRoute,
-  AppCharactersCharacterIdRoute: AppCharactersCharacterIdRoute,
   AppChatSessionIdRoute: AppChatSessionIdRoute,
   AppMachineVmKeyRoute: AppMachineVmKeyRoute,
   AppMcpServerIdRoute: AppMcpServerIdRoute,
   AppProjectsProjectIdRoute: AppProjectsProjectIdRoute,
+  AppSidekicksCharacterIdRoute: AppSidekicksCharacterIdRoute,
   AppSkillsSkillIdRoute: AppSkillsSkillIdRoute,
   AppAgentsIndexRoute: AppAgentsIndexRoute,
-  AppCharactersIndexRoute: AppCharactersIndexRoute,
   AppChatIndexRoute: AppChatIndexRoute,
   AppMachineIndexRoute: AppMachineIndexRoute,
   AppMcpIndexRoute: AppMcpIndexRoute,
   AppProjectsIndexRoute: AppProjectsIndexRoute,
+  AppSidekicksIndexRoute: AppSidekicksIndexRoute,
   AppSkillsIndexRoute: AppSkillsIndexRoute,
 }
 
