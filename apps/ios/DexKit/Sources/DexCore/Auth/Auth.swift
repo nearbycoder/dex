@@ -143,13 +143,17 @@ public struct AuthClient: Sendable {
     }
 }
 
-/// Keeps credentials in the Keychain, this device only.
+/// Keeps credentials in the Keychain, this device only. With an access group (the App Group), the app's widgets can
+/// read them too.
 public struct CredentialStore: Sendable {
     public let service: String
-    public init(service: String = "dev.trydex.app.session") { self.service = service }
+    public let accessGroup: String?
+    public init(service: String = "dev.trydex.app.session", accessGroup: String? = nil) { self.service = service; self.accessGroup = accessGroup }
 
     private var query: [String: Any] {
-        [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: "credentials"]
+        var query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: "credentials"]
+        if let accessGroup { query[kSecAttrAccessGroup as String] = accessGroup }
+        return query
     }
 
     public func load() -> Credentials? {

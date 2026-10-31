@@ -60,7 +60,9 @@ struct AccountPage: View {
         }
         .navigationTitle("Account")
         .confirmationDialog("Sign out of Dex on this device?", isPresented: $confirmSignOut, titleVisibility: .visible) {
-            Button("Sign Out", role: .destructive) { model.signOut() }
+            Button("Sign Out", role: .destructive) {
+                Task { await model.signOut(unregistering: client) }
+            }
         }
         .confirmationDialog("Sign out of Dex on every device, including this one?", isPresented: $confirmEverywhere, titleVisibility: .visible) {
             Button("Sign Out Everywhere", role: .destructive) { Task { await signOutEverywhere() } }
@@ -73,6 +75,7 @@ struct AccountPage: View {
     /// Like the web: ask the agent to end every session (its sockets close with 4001), then forget this one either way.
     private func signOutEverywhere() async {
         signingOutEverywhere = true
+        await PushRegistration.shared.unregister(client)
         _ = try? await client.run("signOutEverywhere")
         model.signOut(message: "You signed out on every device. Sign in again to continue.")
     }

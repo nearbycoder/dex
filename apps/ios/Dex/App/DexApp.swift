@@ -21,6 +21,14 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         if LaunchOptions.current.isUITest { UIView.setAnimationsEnabled(true) }
         return true
     }
+
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        PushRegistration.shared.didRegister(deviceToken)
+    }
+
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        PushRegistration.shared.didFail(error)
+    }
 }
 
 /// The window's content: sign-in, or the app for the signed-in user.
@@ -79,12 +87,16 @@ struct SignedInView: View {
             client = made
             made.start()
             if let chat = model.launch.openChat { router.openChat(chat) }
+            // A notification tapped to launch the app.
+            if let url = Notifications.shared.takePending() { _ = router.handle(url) }
         }
         .onDisappear { client?.stop() }
         .onChange(of: scenePhase) { _, phase in client?.setVisible(phase == .active) }
+        // dex:// links: widgets, notifications, other apps.
         .onOpenURL { url in _ = router.handle(url) }
-        .onReceive(NotificationCenter.default.publisher(for: Notifications.openChat)) { note in
-            if let id = note.object as? String { router.openChat(id) }
+        .onReceive(NotificationCenter.default.publisher(for: Notifications.openURL)) { _ in
+            // The first window to take it opens it.
+            if let url = Notifications.shared.takePending() { _ = router.handle(url) }
         }
     }
 }

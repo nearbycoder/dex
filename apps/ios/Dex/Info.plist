@@ -31,6 +31,8 @@
 			</array>
 		</dict>
 	</array>
+	<key>DexApsEnvironment</key>
+	<string>$(APS_ENVIRONMENT)</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Take a photo to attach to a message.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>

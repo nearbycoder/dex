@@ -1,6 +1,6 @@
 import XCTest
 
-/// Characters on the mock agent (Muse, with a conversation going and an earlier one, and Atlas, just made): pinned above
+/// Characters on the mock agent (Muse, with a conversation going and an earlier one, and Atlas, with a check-in): pinned above
 /// the chats, their conversation (greeting, header, placeholder), their page (from the chat and from Library), making
 /// one from a template, editing, Start over, and Delete.
 final class CharactersUITests: ChatTestCase {

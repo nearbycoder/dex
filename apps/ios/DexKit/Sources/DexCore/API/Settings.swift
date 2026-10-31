@@ -135,3 +135,25 @@ public extension PushDevice {
 public extension NotifyKinds {
     static let defaults: [String] = all.map(\.id)
 }
+
+// MARK: Push to the app (APNs)
+
+public extension DexClient {
+    /// Registers (or refreshes) this app's APNs token and returns its device id. `environment` is "sandbox" for builds
+    /// from Xcode, "production" for TestFlight and the App Store. It upserts: call it on every launch.
+    func registerNativePush(token: String, environment: String, label: String) async throws -> String {
+        try await call("registerNativePush", "ios", .string(token), .string(environment), .string(label))
+    }
+}
+
+public enum PushToken {
+    /// An APNs device token as the hex string APNs addresses it by.
+    public static func hex(_ token: Data) -> String { token.map { String(format: "%02x", $0) }.joined() }
+
+    /// "Josh's iPhone · iPhone app": iOS keeps the device's own name private, so its model stands in.
+    public static func label(name: String?, model: String) -> String {
+        let first = name?.split(separator: " ").first.map(String.init) ?? ""
+        let device = first.isEmpty ? model : "\(first)'s \(model)"
+        return String("\(device) · \(model) app".prefix(60))
+    }
+}

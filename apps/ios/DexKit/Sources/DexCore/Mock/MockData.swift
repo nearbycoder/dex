@@ -29,7 +29,9 @@ public enum MockData {
         state.settings = DexSettings(defaultModel: "cline-pass/glm-5.3", defaultThinking: "low", instructions: "Answer briefly.", vmSize: "small", vmMinutes: 5)
         state.sessions = [
             SessionMeta(id: welcomeId, title: "Plan a weekend in Lisbon", model: "cline-pass/glm-5.3", thinking: "low", createdAt: now - 2 * hour, updatedAt: now - 5 * minute),
-            SessionMeta(id: chartChatId, title: "Site traffic this week", model: "cline-pass/kimi-k3", thinking: "high", createdAt: now - day, updatedAt: now - 3 * hour, agentId: "data-analyst"),
+            // Its reply came in while you were away: unread.
+            SessionMeta(id: chartChatId, title: "Site traffic this week", model: "cline-pass/kimi-k3", thinking: "high", createdAt: now - day, updatedAt: now - 3 * hour, agentId: "data-analyst",
+                        unread: true, lastReply: "Friday was the busiest day.", repliedAt: now - 3 * hour),
             SessionMeta(id: vmChatId, title: "Fix the flaky test in dex", model: "cline-pass/glm-5.3", thinking: "high", createdAt: now - 3 * hour, updatedAt: now - 20 * minute, agentId: "pr-author", projectId: "p-dex"),
             SessionMeta(id: "s-snoozed", title: "Renew the domain", model: "cline-pass/glm-5.3", thinking: "low", createdAt: now - 3 * day, updatedAt: now - 2 * day, snoozedUntil: now + day),
             SessionMeta(id: "s-settled", title: "Compare note-taking apps", model: "cline-pass/qwen3.8-max", thinking: "medium", createdAt: now - 5 * day, updatedAt: now - 4 * day, agentId: "researcher", settledAt: now - 4 * day)
@@ -67,7 +69,8 @@ public enum MockData {
             ],
             pending: []
         )
-        state.push = PushStatus(configured: true, publicKey: "BMock", devices: [PushDevice(id: "d-1", label: "Mac · Safari", kinds: ["reply", "error"], onlyWhenAway: true, createdAt: now - 20 * day, lastSentAt: now - day)])
+        state.push = PushStatus(configured: true, publicKey: "BMock", devices: [PushDevice(id: "d-1", label: "Mac · Safari", kinds: ["reply", "error"], onlyWhenAway: true, createdAt: now - 20 * day, lastSentAt: now - day)],
+                                native: NativePush(ios: true, android: true))
         state.build = "2026-10-19T12:00:00.000Z"
         state.models = ModelListVersion(version: "mock-1", updatedAt: now - hour)
         return state

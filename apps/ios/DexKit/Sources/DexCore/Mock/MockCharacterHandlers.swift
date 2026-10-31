@@ -1,14 +1,17 @@
 import Foundation
 
-/// The mock agent's sidekicks: Muse (a conversation going, and an earlier one from before Start over) and Atlas (just
-/// made: only his greeting so far), each wearing their ready-made look, and their methods, as DexAgent has them
-/// (apps/web/src/agent/dex-agent.ts).
+/// The mock agent's sidekicks: Muse (a conversation going, and an earlier one from before Start over) and Atlas (made
+/// two days ago: his greeting, then a check-in he scheduled himself that you haven't read yet), each wearing their
+/// ready-made look, and their methods, as DexAgent has them (apps/web/src/agent/dex-agent.ts).
 extension MockAgent {
     public static let museId = "muse"
     public static let museChatId = "s-muse"
     public static let museEarlierChatId = "s-muse-earlier"
     public static let atlasId = "atlas"
     public static let atlasChatId = "s-atlas"
+    /// The prompt Atlas scheduled for himself, and what he said when it ran.
+    public static let atlasSchedule = "Check in on how the week's plan is going"
+    public static let atlasCheckIn = "Morning! Quick check-in: you wanted the studio lease signed by Friday. Still on track, or should we move something?"
 
     func installCharacterHandlers() {
         installCharacterFixtures()
@@ -33,7 +36,10 @@ extension MockAgent {
                 look: draft.pictureChanged ? draft.look : existing?.look, image: draft.pictureChanged ? draft.image : existing?.image,
                 color: AgentColorNames.contains(draft.color) ? draft.color : "violet", model: model,
                 thinking: self.catalog.model(model)?.clampThinking(draft.thinking) ?? draft.thinking,
-                mcpServers: draft.mcpServers.filter { id in self.state.mcp.contains { $0.id == id } }, sessionId: existing?.sessionId ?? "",
+                mcpServers: draft.mcpServers.filter { id in self.state.mcp.contains { $0.id == id } },
+                // Left out, the setting stays.
+                notify: draft.notify.flatMap(SidekickNotify.init(rawValue:))?.rawValue ?? existing?.notify ?? SidekickNotify.all.rawValue,
+                sessionId: existing?.sessionId ?? "",
                 createdAt: existing?.createdAt ?? now, updatedAt: now
             )
             if let index = self.state.sessions.firstIndex(where: { $0.id == character.sessionId }) {
@@ -115,13 +121,14 @@ extension MockAgent {
                              look: muse.look?.look, image: muse.look?.image, color: muse.color, model: "cline-pass/kimi-k3", thinking: "high", sessionId: Self.museChatId,
                              createdAt: now - 20 * day, updatedAt: now - 6 * day),
             CharacterProfile(id: Self.atlasId, name: atlas.name, tagline: atlas.tagline, persona: atlas.persona, instructions: atlas.instructions, greeting: atlas.greeting,
-                             look: atlas.look?.look, image: atlas.look?.image, color: atlas.color, model: "cline-pass/glm-5.3", thinking: "low", sessionId: Self.atlasChatId,
+                             look: atlas.look?.look, image: atlas.look?.image, color: atlas.color, model: "cline-pass/glm-5.3", thinking: "low", notify: SidekickNotify.reachouts.rawValue, sessionId: Self.atlasChatId,
                              createdAt: now - 2 * day, updatedAt: now - 2 * day)
         ])
         state.sessions.append(contentsOf: [
             SessionMeta(id: Self.museChatId, title: "Muse", model: "cline-pass/kimi-k3", thinking: "high", createdAt: now - 6 * day, updatedAt: now - 40 * minute, characterId: Self.museId),
             SessionMeta(id: Self.museEarlierChatId, title: "Muse", model: "cline-pass/kimi-k3", thinking: "high", createdAt: now - 20 * day, updatedAt: now - 7 * day, characterId: Self.museId),
-            SessionMeta(id: Self.atlasChatId, title: "Atlas", model: "cline-pass/glm-5.3", thinking: "low", createdAt: now - 2 * day, updatedAt: now - 2 * day, characterId: Self.atlasId)
+            SessionMeta(id: Self.atlasChatId, title: "Atlas", model: "cline-pass/glm-5.3", thinking: "low", createdAt: now - 2 * day, updatedAt: now - 25 * minute,
+                        characterId: Self.atlasId, unread: true, lastReply: Self.atlasCheckIn, repliedAt: now - 25 * minute)
         ])
         func assistant(_ text: String, at: Double) -> PiMessage {
             .assistant(AssistantMessage(content: [.text(text)], model: "cline-pass/kimi-k3", provider: "clinepass", usage: Usage(input: 900, output: 120, totalTokens: 1020), stopReason: "stop", timestamp: at, durationMs: 2_500))
@@ -146,7 +153,12 @@ extension MockAgent {
             EntryRecord(id: "1", kind: "pi.user", model: [.user(UserMessage(text: "Give me a story prompt about a lighthouse.", timestamp: e))]),
             EntryRecord(id: "2", kind: "pi.assistant", model: [assistant("A lighthouse keeper starts getting letters from the ships she guides. One of them is dated next year.", at: e + 2_000)])
         ]
-        entries[Self.atlasChatId] = []
+        // Atlas reached out on his own: a schedule he set ran, and he wrote while you were away.
+        let a = now - 26 * minute
+        entries[Self.atlasChatId] = [
+            EntryRecord(id: "1", kind: "pi.user", model: [.user(UserMessage(text: "[Scheduled task] \(Self.atlasSchedule)", timestamp: a))]),
+            EntryRecord(id: "2", kind: "pi.assistant", model: [.assistant(AssistantMessage(content: [.text(Self.atlasCheckIn)], model: "cline-pass/glm-5.3", provider: "clinepass", usage: Usage(input: 700, output: 60, totalTokens: 760), stopReason: "stop", timestamp: a + 60_000 - 2_000, durationMs: 2_000))])
+        ]
         store["memory:\(Self.museId)"] = "# About you\n- Opening a pottery studio: Mud Club\n- Likes playful names\n"
     }
 }

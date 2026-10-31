@@ -324,6 +324,31 @@ struct CharacterEditor: View {
             }
 
             if let existing {
+                // Saved as you pick it, apart from the rest of the page.
+                Section {
+                    Picker(selection: Binding(get: { existing.notifyLevel }, set: { level in
+                        client.perform { try await client.setCharacterNotify(existing, level) }
+                    })) {
+                        ForEach(SidekickNotify.allCases) { level in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(level.label)
+                                Text(level.description).font(.caption).foregroundStyle(.secondary)
+                            }
+                            .tag(level)
+                            .accessibilityIdentifier("character.notify.\(level.rawValue)")
+                        }
+                    } label: {
+                        EmptyView()
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                    .accessibilityIdentifier("character.notify")
+                } header: {
+                    Text("Notify Me")
+                } footer: {
+                    Text("Notifications from \(existing.name) reach your devices that get Sidekicks notifications (Settings → Notifications).")
+                }
+
                 CharacterMemorySection(id: existing.id, name: existing.name)
                     .id(existing.id)
 

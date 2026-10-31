@@ -24,6 +24,7 @@ extension MockAgent {
             at: 0
         )
         state.push.devices.append(PushDevice(id: "d-2", label: "iPhone · Home Screen app", kinds: ["reply", "error", "scheduled", "machine"], onlyWhenAway: false, createdAt: now - 3 * 86_400_000, lastSentAt: nil, error: "Gone: the browser unsubscribed"))
+        state.push.devices.append(PushDevice(id: "d-3", platform: "android", label: "Mona's Pixel · Android app", kinds: NotifyKinds.defaults, onlyWhenAway: true, createdAt: now - 6 * 86_400_000, lastSentAt: now - 2 * 3_600_000))
         store["schedules"] = (try? JSONValue(encoding: [
             ScheduledPrompt(id: "sch-1", prompt: "Summarize my open pull requests", sessionId: nil, when: Self.iso(now + 3_600_000 * 15), cron: "0 9 * * 1-5"),
             ScheduledPrompt(id: "sch-2", prompt: "Remind me to renew the domain", sessionId: "s-snoozed", when: Self.iso(now + 86_400_000 * 2), cron: nil)
@@ -208,6 +209,26 @@ extension MockAgent {
         register("pushSubscribe") { [unowned self] args, _ in
             let id = "d-\(UUID().uuidString.prefix(6).lowercased())"
             self.state.push.devices.append(PushDevice(id: id, label: args.string(1) ?? "Device", kinds: NotifyKinds.defaults, onlyWhenAway: true, createdAt: .nowMs))
+            self.publish()
+            return .string(id)
+        }
+        // The app's token (a made-up one in mock mode: nothing reaches APNs). Upserts by token, as the agent does.
+        register("registerNativePush") { [unowned self] args, _ in
+            let platform = args.string(0) ?? ""
+            guard platform == "ios" || platform == "android" else { throw AgentError.remote("Unknown platform.") }
+            guard platform == "ios" ? self.state.push.native.ios : self.state.push.native.android else {
+                throw AgentError.remote("Push to the app isn't set up on this deployment.")
+            }
+            let token = args.string(1) ?? ""
+            guard token.count >= 20 else { throw AgentError.remote("That isn't a push token.") }
+            let id = "d-\(platform)-\(token.prefix(8))"
+            let label = String((args.string(3) ?? "Device").prefix(60))
+            if let index = self.state.push.devices.firstIndex(where: { $0.id == id }) {
+                self.state.push.devices[index].label = label
+                self.state.push.devices[index].error = nil
+            } else {
+                self.state.push.devices.append(PushDevice(id: id, platform: platform, label: label, kinds: NotifyKinds.defaults, onlyWhenAway: true, createdAt: .nowMs))
+            }
             self.publish()
             return .string(id)
         }

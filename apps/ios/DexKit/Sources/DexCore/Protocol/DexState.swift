@@ -34,19 +34,29 @@ public struct SessionMeta: Codable, Sendable, Hashable, Identifiable {
     public var projectId: String?
     /// The character this is a conversation with, if any: it lives under them, not in the chat list.
     public var characterId: String?
+    /// A reply came in since you last looked at it (false from agents before unread).
+    public var unread: Bool
+    /// The latest reply, shortened (for lists, widgets, and notifications).
+    public var lastReply: String?
+    /// When the latest reply finished.
+    public var repliedAt: Double?
     public var muted: Bool
     public var settledAt: Double?
     public var snoozedUntil: Double?
 
     public init(id: String, title: String, model: String, thinking: ThinkingLevel, createdAt: Double, updatedAt: Double,
                 busy: Bool = false, agentId: String? = nil, mcpServers: [String] = [], projectId: String? = nil, characterId: String? = nil,
+                unread: Bool = false, lastReply: String? = nil, repliedAt: Double? = nil,
                 muted: Bool = false, settledAt: Double? = nil, snoozedUntil: Double? = nil) {
         self.id = id; self.title = title; self.model = model; self.thinking = thinking; self.createdAt = createdAt
         self.updatedAt = updatedAt; self.busy = busy; self.agentId = agentId; self.mcpServers = mcpServers
-        self.projectId = projectId; self.characterId = characterId; self.muted = muted; self.settledAt = settledAt; self.snoozedUntil = snoozedUntil
+        self.projectId = projectId; self.characterId = characterId; self.unread = unread; self.lastReply = lastReply; self.repliedAt = repliedAt
+        self.muted = muted; self.settledAt = settledAt; self.snoozedUntil = snoozedUntil
     }
 
-    enum CodingKeys: String, CodingKey { case id, title, model, thinking, createdAt, updatedAt, busy, agentId, mcpServers, projectId, characterId, muted, settledAt, snoozedUntil }
+    enum CodingKeys: String, CodingKey {
+        case id, title, model, thinking, createdAt, updatedAt, busy, agentId, mcpServers, projectId, characterId, unread, lastReply, repliedAt, muted, settledAt, snoozedUntil
+    }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -61,6 +71,9 @@ public struct SessionMeta: Codable, Sendable, Hashable, Identifiable {
         mcpServers = c.value(.mcpServers, default: [])
         projectId = c.value(.projectId, default: nil)
         characterId = c.value(.characterId, default: nil)
+        unread = c.value(.unread, default: false)
+        lastReply = c.value(.lastReply, default: nil)
+        repliedAt = c.value(.repliedAt, default: nil)
         muted = c.value(.muted, default: false)
         settledAt = c.value(.settledAt, default: nil)
         snoozedUntil = c.value(.snoozedUntil, default: nil)
@@ -305,19 +318,22 @@ public struct CharacterProfile: Codable, Sendable, Hashable, Identifiable {
     public var model: String
     public var thinking: ThinkingLevel
     public var mcpServers: [String]
+    /// Which of their messages notify you: "all", "reachouts" (only ones they start themselves, like check-ins), or
+    /// "off" (`SidekickNotify`). Missing from older agents: all.
+    public var notify: String
     public var sessionId: String
     public var createdAt: Double
     public var updatedAt: Double
 
     public init(id: String, name: String, tagline: String = "", persona: String = "", instructions: String = "", greeting: String = "", avatar: String = "",
                 look: JSONValue? = nil, image: String? = nil, color: String = "violet", model: String = "", thinking: ThinkingLevel = "low", mcpServers: [String] = [],
-                sessionId: String, createdAt: Double = 0, updatedAt: Double = 0) {
+                notify: String = "all", sessionId: String, createdAt: Double = 0, updatedAt: Double = 0) {
         self.id = id; self.name = name; self.tagline = tagline; self.persona = persona; self.instructions = instructions; self.greeting = greeting
         self.avatar = avatar; self.look = look; self.image = image; self.color = color; self.model = model; self.thinking = thinking; self.mcpServers = mcpServers
-        self.sessionId = sessionId; self.createdAt = createdAt; self.updatedAt = updatedAt
+        self.notify = notify; self.sessionId = sessionId; self.createdAt = createdAt; self.updatedAt = updatedAt
     }
 
-    enum CodingKeys: String, CodingKey { case id, name, tagline, persona, instructions, greeting, avatar, look, image, color, model, thinking, mcpServers, sessionId, createdAt, updatedAt }
+    enum CodingKeys: String, CodingKey { case id, name, tagline, persona, instructions, greeting, avatar, look, image, color, model, thinking, mcpServers, notify, sessionId, createdAt, updatedAt }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
@@ -334,10 +350,14 @@ public struct CharacterProfile: Codable, Sendable, Hashable, Identifiable {
         model = c.value(.model, default: "")
         thinking = c.value(.thinking, default: "low")
         mcpServers = c.value(.mcpServers, default: [])
+        notify = c.value(.notify, default: "all")
         sessionId = c.value(.sessionId, default: "")
         createdAt = c.value(.createdAt, default: 0)
         updatedAt = c.value(.updatedAt, default: 0)
     }
+
+    /// Their notification setting; an unknown one reads as every message, as the agent treats it.
+    public var notifyLevel: SidekickNotify { SidekickNotify(rawValue: notify) ?? .all }
 
     /// What the avatar shows without a picture: the emoji, else the name's first letter.
     public var glyph: String {
@@ -504,28 +524,74 @@ public struct SkillInfo: Codable, Sendable, Hashable, Identifiable {
     }
 }
 
+/// A browser (Web Push) or an installed app (APNs, Firebase) that gets push notifications.
 public struct PushDevice: Codable, Sendable, Hashable, Identifiable {
     public var id: String
+    /// "web", "ios", or "android". Missing on devices saved before the apps had push: web.
+    public var platform: String
     public var label: String
     public var kinds: [String]
     public var onlyWhenAway: Bool
     public var createdAt: Double
     public var lastSentAt: Double?
     public var error: String?
-    public init(id: String, label: String, kinds: [String], onlyWhenAway: Bool, createdAt: Double, lastSentAt: Double? = nil, error: String? = nil) {
-        self.id = id; self.label = label; self.kinds = kinds; self.onlyWhenAway = onlyWhenAway; self.createdAt = createdAt; self.lastSentAt = lastSentAt; self.error = error
+    public init(id: String, platform: String = "web", label: String, kinds: [String], onlyWhenAway: Bool, createdAt: Double, lastSentAt: Double? = nil, error: String? = nil) {
+        self.id = id; self.platform = platform; self.label = label; self.kinds = kinds; self.onlyWhenAway = onlyWhenAway; self.createdAt = createdAt
+        self.lastSentAt = lastSentAt; self.error = error
+    }
+
+    enum CodingKeys: String, CodingKey { case id, platform, label, kinds, onlyWhenAway, createdAt, lastSentAt, error }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        platform = c.value(.platform, default: "web")
+        label = c.value(.label, default: "Device")
+        kinds = c.value(.kinds, default: [])
+        onlyWhenAway = c.value(.onlyWhenAway, default: true)
+        createdAt = c.value(.createdAt, default: 0)
+        lastSentAt = c.value(.lastSentAt, default: nil)
+        error = c.value(.error, default: nil)
+    }
+}
+
+/// Which apps this deployment can push to: APNs for iPhone and iPad, Firebase for Android.
+public struct NativePush: Codable, Sendable, Hashable {
+    public var ios: Bool
+    public var android: Bool
+    public init(ios: Bool = false, android: Bool = false) { self.ios = ios; self.android = android }
+
+    enum CodingKeys: String, CodingKey { case ios, android }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        ios = c.value(.ios, default: false)
+        android = c.value(.android, default: false)
     }
 }
 
 public struct PushStatus: Codable, Sendable, Hashable {
+    /// Whether this deployment has VAPID keys (Web Push, for browsers).
     public var configured: Bool
     public var publicKey: String?
     public var devices: [PushDevice]
-    public init(configured: Bool = false, publicKey: String? = nil, devices: [PushDevice] = []) { self.configured = configured; self.publicKey = publicKey; self.devices = devices }
+    /// Missing from agents before the apps had push: neither.
+    public var native: NativePush
+    public init(configured: Bool = false, publicKey: String? = nil, devices: [PushDevice] = [], native: NativePush = .init()) {
+        self.configured = configured; self.publicKey = publicKey; self.devices = devices; self.native = native
+    }
+
+    enum CodingKeys: String, CodingKey { case configured, publicKey, devices, native }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        configured = c.value(.configured, default: false)
+        publicKey = c.value(.publicKey, default: nil)
+        devices = c.value(.devices, default: [])
+        native = c.value(.native, default: .init())
+    }
 }
 
 public enum NotifyKinds {
     public static let all: [(id: String, label: String, description: String)] = [
+        ("sidekick", "Sidekicks", "When a sidekick messages you (each sidekick's own setting decides which messages)."),
         ("reply", "Replies", "When Dex finishes answering in a chat."),
         ("error", "Problems", "When a reply fails."),
         ("scheduled", "Scheduled tasks", "When a scheduled prompt has run."),
@@ -620,6 +686,9 @@ public struct DexState: Codable, Sendable, Hashable {
 
     /// Ordinary chats: everything but characters' conversations, which live under them.
     public var chats: [SessionMeta] { sessions.filter { $0.characterId == nil } }
+
+    /// Chats (sidekicks' conversations too) with a reply you haven't seen: the app icon's badge, as the agent counts it.
+    public var unreadCount: Int { sessions.filter(\.unread).count }
 
     /// A character's conversations, the newest first (the current one, and any from before Start over).
     public func conversations(of characterId: String) -> [SessionMeta] {

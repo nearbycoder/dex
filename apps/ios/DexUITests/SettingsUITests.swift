@@ -330,14 +330,39 @@ final class SettingsUITests: DexUITestCase {
         let deadline = Date.now.addingTimeInterval(10)
         while !isOn("notify.enabled"), Date.now < deadline { usleep(250_000) }
         XCTAssertTrue(isOn("notify.enabled"))
-        // The kinds show while notifications are on (lower rows appear once scrolled to).
+        // This device registers for push (with a made-up token on the mock agent); then its kinds show.
+        XCTAssertTrue(element("notify.registered").waitForExistence(timeout: 10), "push is on for this device")
+        XCTAssertTrue(app.switches["notify.kind.sidekick"].firstMatch.waitForExistence(timeout: 5), "sidekicks are a kind of their own")
+        snapshot("notifications")
         let kind = app.switches["notify.kind.scheduled"].firstMatch
         reveal(kind)
         XCTAssertTrue(kind.waitForExistence(timeout: 10))
         let wasOn = isOn("notify.kind.scheduled")
         flip("notify.kind.scheduled")
+        let deadline2 = Date.now.addingTimeInterval(5)
+        while isOn("notify.kind.scheduled") == wasOn, Date.now < deadline2 { usleep(250_000) }
         XCTAssertNotEqual(isOn("notify.kind.scheduled"), wasOn)
-        snapshot("notifications")
+        XCTAssertTrue(app.switches["notify.onlyWhenAway"].firstMatch.exists)
+
+        // Each sidekick's own setting.
+        let atlas = element("notify.sidekick.atlas")
+        reveal(atlas)
+        XCTAssertTrue(atlas.waitForExistence(timeout: 5))
+        XCTAssertTrue("\(atlas.label) \(atlas.value ?? "")".contains("When they reach out"), "Atlas notifies only when he reaches out: \(atlas.label) \(atlas.value ?? "")")
+        snapshot("notifications-sidekicks")
+        atlas.tap()
+        let off = app.buttons["Off"].firstMatch
+        XCTAssertTrue(off.waitForExistence(timeout: 5))
+        off.tap()
+        let changed = NSPredicate(format: "label CONTAINS 'Off' OR value CONTAINS 'Off'")
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: changed, evaluatedWith: atlas)], timeout: 10), .completed)
+
+        // Other devices, with their platform.
+        let android = element("push.d-3")
+        reveal(android)
+        XCTAssertTrue(android.waitForExistence(timeout: 5))
+        XCTAssertTrue(android.label.contains("Android app"), android.label)
+        snapshot("notifications-devices")
 
         // Another device, registered for Web Push.
         let device = element("push.d-2")

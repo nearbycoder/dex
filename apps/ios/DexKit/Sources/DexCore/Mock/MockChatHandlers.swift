@@ -150,6 +150,17 @@ extension MockAgent {
             self.publish()
             return .null
         }
+        register("markSessionRead") { [unowned self] args, _ in
+            self.markRead(args.string(0))
+            return .null
+        }
+        register("markSessionUnread") { [unowned self] args, _ in
+            guard let id = args.string(0), let index = self.state.sessions.firstIndex(where: { $0.id == id }) else { return .null }
+            self.state.sessions[index].unread = true
+            if self.state.sessions[index].repliedAt == nil { self.state.sessions[index].repliedAt = self.state.sessions[index].updatedAt }
+            self.publish()
+            return .null
+        }
         register("transcriptImage") { _, _ in
             ["data": .string(Self.desktopPNG), "mimeType": "image/png"]
         }
@@ -258,6 +269,24 @@ extension MockAgent {
             state.sessions[index].updatedAt = .nowMs
         }
         publish()
+    }
+
+    /// You've seen the chat's latest.
+    func markRead(_ id: String?) {
+        guard let index = state.sessions.firstIndex(where: { $0.id == id }), state.sessions[index].unread else { return }
+        state.sessions[index].unread = false
+        publish()
+    }
+
+    /// Whether the app shows this chat in a visible window (presence), as the agent's `isWatching`.
+    func isWatching(_ id: String) -> Bool { connections.contains { $0.presence.visible && $0.presence.sessionId == id } }
+
+    /// A reply finished: the chat's latest words, unread unless someone is looking (notifyRunEnd).
+    func recordReply(_ id: String, text: String) {
+        guard let index = state.sessions.firstIndex(where: { $0.id == id }) else { return }
+        state.sessions[index].lastReply = String(ChatAlerts.summarize(text).prefix(280))
+        state.sessions[index].repliedAt = .nowMs
+        if !isWatching(id) { state.sessions[index].unread = true }
     }
 
     func stopRun(_ id: String, stopReason: String) {
@@ -391,6 +420,7 @@ extension MockAgent {
             let failed = EntryRecord(id: entryId(), kind: "pi.assistant", model: [.assistant(AssistantMessage(content: blocks, model: "cline-pass/glm-5.3", provider: "clinepass", stopReason: "error", errorMessage: "The provider returned 500: upstream overloaded.", timestamp: start, durationMs: Double.nowMs - start))])
             entries[id, default: []].append(failed)
             events(id, [["type": "message_end", "entry": (try? JSONValue(encoding: failed)) ?? .null]])
+            recordReply(id, text: "Problem: The provider returned 500: upstream overloaded.")
             stopRun(id, stopReason: "error")
             return
         }
@@ -406,6 +436,7 @@ extension MockAgent {
         let final = EntryRecord(id: entryId(), kind: "pi.assistant", model: [.assistant(AssistantMessage(content: blocks, model: "cline-pass/glm-5.3", provider: "clinepass", usage: Usage(input: 1200, output: 80, totalTokens: 1280), stopReason: "stop", timestamp: start, durationMs: Double.nowMs - start))])
         entries[id, default: []].append(final)
         events(id, [["type": "message_end", "entry": (try? JSONValue(encoding: final)) ?? .null]])
+        recordReply(id, text: answer)
         stopRun(id, stopReason: "stop")
         // The next queued message goes once a run ends (unless the queue is held).
         if !heldQueues.contains(id), let next = queues[id]?.first {

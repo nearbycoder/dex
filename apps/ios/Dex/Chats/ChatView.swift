@@ -30,6 +30,22 @@ struct ChatView: View {
         .onAppear {
             if feed == nil { feed = client.chat(sessionId) }
             Notifications.shared.clear(sessionId: sessionId)
+            // Presence marks it read on the agent; this is the backup (and covers a socket that's still connecting).
+            Task { await client.markRead(sessionId) }
+            // The first time you open a sidekick: they can reach out, so it's a good moment to ask.
+            if client.state?.session(sessionId)?.characterId != nil { Notifications.shared.requestPermissionIfNeeded() }
+        }
+        // Read while it's open (a reply that came in as the socket reconnected).
+        .onChange(of: client.state?.session(sessionId)?.unread) { _, unread in
+            if unread == true, client.watchedChat == sessionId { Task { await client.markRead(sessionId) } }
+        }
+        // A widget's Message button: the caret in the box once it's there.
+        .task(id: router.composeRequest) {
+            guard router.composeRequest == sessionId else { return }
+            try? await Task.sleep(for: .milliseconds(450))
+            guard !Task.isCancelled else { return }
+            composer.focusRequest += 1
+            router.composeRequest = nil
         }
     }
 
@@ -109,6 +125,10 @@ struct ChatToolbar: ToolbarContent {
                 CharacterHeader(character: character, session: session, typing: feed.transcript.running)
             }
             .sharedBackgroundVisibility(.hidden)
+            // Whether their messages notify you: every one ↔ none (their page has "when they reach out" too).
+            ToolbarItem(placement: .topBarTrailing) {
+                SidekickBell(character: character)
+            }
         }
         if sizeClass != .compact, let session, session.projectId != nil || session.agentId != nil {
             ToolbarItem(placement: .topBarLeading) {
@@ -136,7 +156,8 @@ struct ChatToolbar: ToolbarContent {
                         .accessibilityIdentifier("chat.machine")
                     }
                 }
-                if showsMute {
+                // A sidekick's chat has their bell instead.
+                if showsMute, character == nil {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
                             client.perform { try await feed.setMuted(!session.muted) }
@@ -169,7 +190,7 @@ struct ChatToolbar: ToolbarContent {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 if let character {
-                    CharacterChatMenu(feed: feed, session: session, character: character, includeMute: sizeClass == .compact || !showsMute, compact: sizeClass == .compact)
+                    CharacterChatMenu(feed: feed, session: session, character: character, compact: sizeClass == .compact)
                 } else {
                     ChatMenu(feed: feed, session: session, includeMute: sizeClass == .compact || !showsMute, compact: sizeClass == .compact)
                 }
@@ -180,6 +201,31 @@ struct ChatToolbar: ToolbarContent {
     /// Mute matters once some device gets notifications: a browser with push on, or this one.
     private var showsMute: Bool {
         (client.state?.push.devices.isEmpty == false) || Notifications.shared.authorized
+    }
+}
+
+/// A sidekick's bell: their messages notify you (every one, or only their reach-outs), or not. Tapping switches between
+/// every message and none.
+struct SidekickBell: View {
+    @Environment(DexClient.self) private var client
+    let character: CharacterProfile
+
+    var body: some View {
+        let level = character.notifyLevel
+        Button {
+            let next = level.toggled
+            if next != .off { Notifications.shared.requestPermissionIfNeeded() }
+            client.perform { try await client.setCharacterNotify(character, next) }
+        } label: {
+            Label(level == .off ? "Notifications Off" : "Notifications On", systemImage: level.symbol)
+        }
+        .tint(level == .off ? Color.secondary : nil)
+        .contentTransition(.symbolEffect(.replace))
+        .accessibilityLabel(level == .off ? "Notifications from \(character.name) are off" : "Notifications from \(character.name): \(level.label.lowercased())")
+        .accessibilityHint(level == .off ? "Turns on notifications for every message" : "Turns notifications off")
+        .accessibilityValue(level.rawValue)
+        .accessibilityIdentifier("chat.notify")
+        .sensoryFeedback(.selection, trigger: level)
     }
 }
 

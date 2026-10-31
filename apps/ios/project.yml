@@ -32,10 +32,13 @@ targets:
     sources:
       - path: Dex
         type: syncedFolder
+      # Compiled into the app and the widgets: the widgets' views (the app renders them for previews and tests).
+      - path: Shared
     dependencies:
       - package: DexKit
         product: DexCore
       - package: Markdown
+      - target: DexWidgets
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.trydex.Dex
@@ -44,9 +47,40 @@ targets:
         INFOPLIST_FILE: Dex/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        # Push notifications (aps-environment) and the App Group shared with the widgets.
         CODE_SIGN_ENTITLEMENTS: Dex/Dex.entitlements
         SUPPORTS_MACCATALYST: "NO"
         GENERATE_INFOPLIST_FILE: "NO"
+      configs:
+        # APNs' sandbox for builds from Xcode, production for TestFlight and the App Store. The app reads it back from
+        # its Info.plist (DexApsEnvironment) to tell the agent which one its token belongs to.
+        Debug:
+          APS_ENVIRONMENT: development
+        Release:
+          APS_ENVIRONMENT: production
+  DexWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: DexWidgets
+        type: syncedFolder
+      - path: Shared
+    dependencies:
+      - package: DexKit
+        product: DexCore
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.trydex.Dex.Widgets
+        PRODUCT_NAME: DexWidgets
+        TARGETED_DEVICE_FAMILY: "1,2"
+        INFOPLIST_FILE: DexWidgets/Info.plist
+        CODE_SIGN_ENTITLEMENTS: DexWidgets/DexWidgets.entitlements
+        GENERATE_INFOPLIST_FILE: "NO"
+        SKIP_INSTALL: "YES"
+        # WidgetKit and App Intents call the provider and queries off the main actor.
+        SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
   DexTests:
     type: bundle.unit-test
     platform: iOS

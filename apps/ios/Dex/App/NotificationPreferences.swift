@@ -3,11 +3,11 @@ import Foundation
 import Observation
 import UserNotifications
 
-/// This device's notification choices, kept on the device (Settings → Notifications): on or off, which kinds
-/// (NOTIFY_KINDS), and whether to skip the chat you're looking at. The app posts local notifications while it runs;
-/// whoever posts one asks `allows(kind:)` first.
+/// This device's choices for the local notifications the app posts while it runs, when its Dex can't push to it
+/// (Settings → Notifications): on or off, which kinds (NOTIFY_KINDS), and whether to skip the chat you're looking at.
+/// With push, the agent keeps the same choices for the device instead (`pushUpdate`). Whoever posts one asks first.
 ///
-///     if NotificationPreferences.shared.allows(kind: "reply", sessionId: id, visibleChat: router.chat) { … }
+///     if NotificationPreferences.shared.allowsLocal(kind: "reply") { … }
 @MainActor
 @Observable
 final class NotificationPreferences {
@@ -24,9 +24,18 @@ final class NotificationPreferences {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         choice = defaults.object(forKey: Self.enabledKey) as? Bool
-        kinds = Set(defaults.stringArray(forKey: Self.kindsKey) ?? NotifyKinds.defaults)
+        var saved = Set(defaults.stringArray(forKey: Self.kindsKey) ?? NotifyKinds.defaults)
+        // Sidekicks' messages became a kind of their own: kinds chosen before then, with replies, want them too (as the
+        // agent does for its devices).
+        if defaults.object(forKey: Self.sidekickKindKey) == nil {
+            if saved.contains("reply") { saved.insert("sidekick") }
+            defaults.set(true, forKey: Self.sidekickKindKey)
+        }
+        kinds = saved
         onlyWhenAway = defaults.object(forKey: Self.awayKey) as? Bool ?? true
     }
+
+    private static let sidekickKindKey = "dex.notify.hasSidekickKind"
 
     /// Your choice, if you made one; until then notifications follow iOS's permission.
     private var choice: Bool? {
@@ -60,6 +69,12 @@ final class NotificationPreferences {
         guard allows(kind: kind) else { return false }
         if onlyWhenAway, let sessionId, sessionId == visibleChat { return false }
         return true
+    }
+
+    /// Whether a local notification of `kind` may be posted (iOS has the last word on whether it shows): you haven't
+    /// turned them off here, and want the kind.
+    func allowsLocal(kind: String) -> Bool {
+        (choice ?? true) && kinds.contains(kind)
     }
 
     func setKind(_ kind: String, on: Bool) {

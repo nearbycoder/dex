@@ -82,6 +82,7 @@ final class ThemeStore {
         didSet {
             UserDefaults.standard.set(theme.id, forKey: Self.themeKey)
             applyToWindows()
+            shareWithWidgets()
         }
     }
 
@@ -109,6 +110,12 @@ final class ThemeStore {
         }
         theme = Theme.named(defaults.string(forKey: Self.themeKey))
         appearance = Appearance(rawValue: defaults.string(forKey: Self.appearanceKey) ?? "") ?? .system
+        shareWithWidgets()
+    }
+
+    /// The widgets draw in the theme's accent too.
+    private func shareWithWidgets() {
+        WidgetSync.shared.savePalette(light: theme.accentLight, dark: theme.accentDark)
     }
 
     /// Tints every window (and sets its light or dark style) to match.

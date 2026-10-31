@@ -62,6 +62,14 @@ public enum ChatAlerts {
 /// Text a user message carries besides what you typed.
 public enum UserText {
     static let uiNotesHeader = "[Done in this chat's UI since my last message]"
+    static let scheduledPrefix = "[Scheduled task] "
+
+    /// A scheduled prompt's text, when this "message" is one Dex sent itself on a schedule (`[Scheduled task] <prompt>`,
+    /// from the agent's scheduled runs): shown as a note, not as something you said.
+    public static func scheduledPrompt(_ text: String) -> String? {
+        guard text.hasPrefix(scheduledPrefix) else { return nil }
+        return String(text.dropFirst(scheduledPrefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     /// What you did in a chat's UI since your last message (Dex puts it in front of the next one), and the message.
     public static func splitUiNotes(_ text: String) -> (notes: [String], text: String) {

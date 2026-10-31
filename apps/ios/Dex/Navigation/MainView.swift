@@ -74,9 +74,9 @@ struct MainView: View {
         .overlay { ConnectionOverlay() }
     }
 
-    /// Chats with something new: busy ones, in the inbox.
+    /// Chats with something new: working on it, or a reply you haven't seen.
     private var inboxBadge: Int {
-        client.state?.sessions.filter { $0.busy }.count ?? 0
+        client.state?.sessions.filter { $0.busy || $0.unread }.count ?? 0
     }
 }
 

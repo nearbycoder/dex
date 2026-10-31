@@ -202,9 +202,11 @@ struct ChatRow: View {
             .opacity(place == .settled ? 0.6 : 1)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
+                    // Before the title, apart from the machine's status dot at the end of the row.
+                    if session.unread { UnreadDot() }
                     Text(session.title)
-                        .font(.body.weight(place == .inbox ? .medium : .regular))
-                        .foregroundStyle(place == .settled ? .secondary : .primary)
+                        .font(.body.weight(session.unread ? .semibold : place == .inbox ? .medium : .regular))
+                        .foregroundStyle(place == .settled && !session.unread ? .secondary : .primary)
                         .lineLimit(1)
                         .namingPulse(naming)
                     if session.muted {
@@ -237,6 +239,7 @@ struct ChatRow: View {
                 if place == .settled { Label("Inbox", systemImage: "tray.and.arrow.up") } else { Label("Settle", systemImage: "checkmark.circle") }
             }
             .tint(place == .settled ? .blue : .green)
+            UnreadSwipeButton(session: session)
         }
         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             // Not `.destructive`: List would animate the row away before the confirmation (taking the dialog with it).
@@ -308,6 +311,7 @@ struct ChatRow: View {
                 renaming = true
             } label: { Label("Rename", systemImage: "pencil") }
         }
+        MarkUnreadButton(session: session)
         if place == .settled {
             Button { client.perform { try await ChatActions.settle(session.id, false, client: client) } } label: { Label("Move to Inbox", systemImage: "tray.and.arrow.up") }
         } else {
@@ -337,6 +341,45 @@ struct ChatRow: View {
         }
         Divider()
         Button(role: .destructive) { confirmDelete = true } label: { Label("Delete", systemImage: "trash") }
+    }
+}
+
+/// The dot on a chat (or sidekick) with a reply you haven't seen.
+struct UnreadDot: View {
+    var body: some View {
+        Circle()
+            .fill(Color.dexAccent)
+            .frame(width: 9, height: 9)
+            .accessibilityLabel("Unread")
+    }
+}
+
+/// "Mark as Unread" (to come back to it later), or "Mark as Read".
+struct MarkUnreadButton: View {
+    @Environment(DexClient.self) private var client
+    let session: SessionMeta
+
+    var body: some View {
+        if session.unread {
+            Button { Task { await client.markRead(session.id) } } label: { Label("Mark as Read", systemImage: "envelope.open") }
+        } else {
+            Button { client.perform { try await client.markUnread(session.id) } } label: { Label("Mark as Unread", systemImage: "envelope.badge") }
+        }
+    }
+}
+
+/// The swipe action beside Settle: unread ↔ read.
+struct UnreadSwipeButton: View {
+    @Environment(DexClient.self) private var client
+    let session: SessionMeta
+
+    var body: some View {
+        Button {
+            if session.unread { Task { await client.markRead(session.id) } } else { client.perform { try await client.markUnread(session.id) } }
+        } label: {
+            if session.unread { Label("Read", systemImage: "envelope.open") } else { Label("Unread", systemImage: "envelope.badge") }
+        }
+        .tint(.blue)
     }
 }
 

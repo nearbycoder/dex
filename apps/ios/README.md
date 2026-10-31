@@ -19,6 +19,8 @@ apps/ios/
       Mock/          MockAgent: an in-process agent speaking the real protocol, for tests and demos
     Tests/           Swift Testing: protocol, reducer, connection, cache, and opt-in live-server tests
   Dex/               the app: App, Navigation, SignIn, Chats, Machines, Files, Library, Settings, OpenUI, DesignSystem
+  DexWidgets/        the WidgetKit extension (dev.trydex.Dex.Widgets): the Sidekick and Sidekicks widgets
+  Shared/            compiled into the app and the widgets: the widgets' views, agent colors, the widgets' palette
   DexTests/          app-level unit tests
   DexUITests/        XCUITests for every screen, on the mock agent
   scripts/           test.sh, build-openui-engine.mjs
@@ -71,7 +73,7 @@ UI tests run on the mock agent (`-DexMock -DexReset -DexFast`) and save screensh
 Once per deployment:
 
 1. Put your team ID in the gitignored `apps/ios/.deploy.vars`: `DEVELOPMENT_TEAM=ABCDE12345` (`project.yml` leaves it empty so anyone can build their own).
-2. In [App Store Connect](https://appstoreconnect.apple.com/apps), add a new iOS app with the bundle ID `dev.trydex.Dex` (the first run of the script registers it if it isn't already). The name must be unique on the App Store.
+2. In [App Store Connect](https://appstoreconnect.apple.com/apps), add a new iOS app with the bundle ID `dev.trydex.Dex` (the first run of the script registers it if it isn't already, with the widgets' `dev.trydex.Dex.Widgets`, the App Group `group.dev.trydex.Dex`, and the Push Notifications capability). The name must be unique on the App Store.
 3. Either sign in to Xcode (Settings → Accounts) with that team, or create an App Store Connect API key (Users and Access → Integrations, App Manager role) and add `ASC_KEY_ID`, `ASC_ISSUER_ID`, and `ASC_KEY_PATH` to `.deploy.vars`.
 
 Then:
@@ -89,4 +91,19 @@ iPhone (SE to Pro Max), the foldable iPhone Duo, and iPad. Compact width gets th
 
 ## Notifications
 
-While the app runs (or for a short while in the background) it posts local notifications for replies and failures in chats you're not looking at. A closed app isn't notified: the server sends only Web Push, which can't reach a native app. That needs an APNs sender on the server (and Apple push credentials for the deployment).
+Dex pushes to the app through APNs (`apps/web/src/agent/native-push.ts`, with the deployment's APNs key in Cloudflare secrets), so sidekicks' messages, replies, failures, and the rest arrive with the app closed. The app asks for permission at a moment it makes sense (the first message you send, the first time you open a sidekick, or Settings → Notifications), never at launch; then it registers its token with `registerNativePush("ios", token, environment, "Mona's iPhone · iPhone app")` on every launch (it upserts). The environment comes from the build: `APS_ENVIRONMENT` in `project.yml` sets the `aps-environment` entitlement (development for Debug, production for Release and TestFlight) and the Info.plist's `DexApsEnvironment`, which the app reads back ("sandbox" or "production"). Signing out unsubscribes the device first.
+
+- **Tapping** a notification opens what it's about (its `url`: `/chat/<id>`, `/machine/<key>`, `/notifications`; `PushRoute` maps it to a `dex://` link for `Router.handle`). In the foreground it shows as a banner, except for the chat on screen.
+- **Unread**: the agent marks a chat read while presence says it's on screen (the app reports it only while the Chats tab shows the chat, and not visible in the background) and when it opens (`markSessionRead`, a backup). Unread chats and sidekicks are bold with a dot (a sidekick shows what they said); Mark as Unread / Read is in their menus and swipe actions. The app icon's badge is the unread count, from pushes and from the state while the app runs.
+- **Settings → Notifications**: this device (permission, push, the kinds including Sidekicks, Only when I'm away, Send a Test), each sidekick's setting (Every message / When they reach out / Off; also on their page, and the bell in their chat toggles every message ↔ off), other devices with their platform, muted chats.
+- **Without push** (a deployment without APNs keys, or an older agent: `push.native.ios` is false) the app posts local notifications while it runs or for a short while in the background, with choices kept on the device, as before. With push it posts none of its own, so nothing arrives twice. Mock mode makes up a token and registers it with the mock agent only.
+- Scheduled prompts (`[Scheduled task] …` user messages) show as a small "⏰ Scheduled: …" note in every chat, not as a message from you.
+
+## Widgets
+
+`DexWidgets` (bundle id `dev.trydex.Dex.Widgets`) has two widgets:
+
+- **Sidekick** (small, medium, and the Lock Screen's circular and rectangular): pick one of your sidekicks (an App Intent whose entities come from the kept snapshot). Their round picture on their color, name, an unread dot, and their latest words (medium) or tagline; tapping opens their chat, and the medium one's Message button opens it with the caret in the box (`dex://chat/<id>?compose=1`).
+- **Sidekicks** (medium, large): up to 4 or 8 sidekicks in a grid with unread dots and the total unread count, each opening their chat.
+
+They fetch `GET /api/sidekicks` (with `?images=0` while the pictures they keep are recent and cover everyone) with the app's session, which the app copies into the Keychain under the App Group `group.dev.trydex.Dex` as its access group (never plain defaults). The snapshot and pictures (files) are kept in the App Group's container for when Dex can't be reached, and the theme's accent in its defaults. They refresh about every 15 minutes; while the app runs it writes the snapshot from its own state and reloads them when sidekicks or chats change (debounced), when a push arrives, and when the theme changes. Signing out clears all of it. `DexTests/WidgetSnapshotTests` draws every widget, light and dark, into `artifacts/widgets/` (WidgetKit's previews can't be captured).

@@ -19,6 +19,9 @@ public struct CharacterDraft: Codable, Sendable, Hashable {
     public var model: String
     public var thinking: ThinkingLevel
     public var mcpServers: [String]
+    /// Their notification setting ("all", "reachouts", "off"). Left out (nil), the server keeps it: it's set only to
+    /// change it (`withNotify`), so saving the editor never undoes a change made from their chat's bell meanwhile.
+    public var notify: String?
     /// A look was picked, a photo chosen, or the picture removed: send `look` and `image`.
     public var pictureChanged = false
 
@@ -72,7 +75,14 @@ public struct CharacterDraft: Codable, Sendable, Hashable {
         return name.trimmingCharacters(in: .whitespacesAndNewlines).first.map { String($0).uppercased() } ?? "?"
     }
 
-    enum CodingKeys: String, CodingKey { case id, name, tagline, persona, instructions, greeting, avatar, look, image, color, model, thinking, mcpServers }
+    enum CodingKeys: String, CodingKey { case id, name, tagline, persona, instructions, greeting, avatar, look, image, color, model, thinking, mcpServers, notify }
+
+    /// A sidekick as they are, with only their notification setting changed (their picture left out, so it's kept).
+    public static func withNotify(_ character: CharacterProfile, _ level: SidekickNotify) -> CharacterDraft {
+        var draft = CharacterDraft(character)
+        draft.notify = level.rawValue
+        return draft
+    }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -85,6 +95,7 @@ public struct CharacterDraft: Codable, Sendable, Hashable {
         }
         try c.encode(color, forKey: .color); try c.encode(model, forKey: .model); try c.encode(thinking, forKey: .thinking)
         try c.encode(mcpServers, forKey: .mcpServers)
+        try c.encodeIfPresent(notify, forKey: .notify)
     }
 
     /// As the agent reads it (the mock agent): a picture that's there, even null, changed.
@@ -98,7 +109,42 @@ public struct CharacterDraft: Codable, Sendable, Hashable {
         pictureChanged = c.contains(.look) || c.contains(.image)
         color = c.value(.color, default: "violet"); model = c.value(.model, default: ""); thinking = c.value(.thinking, default: "low")
         mcpServers = c.value(.mcpServers, default: [])
+        notify = c.value(.notify, default: nil)
     }
+}
+
+/// Which of a sidekick's messages notify you (NOTIFY_LEVELS in apps/web/src/shared/characters.ts).
+public enum SidekickNotify: String, CaseIterable, Sendable, Hashable, Identifiable {
+    case all, reachouts, off
+    public var id: String { rawValue }
+
+    public var label: String {
+        switch self {
+        case .all: "Every message"
+        case .reachouts: "When they reach out"
+        case .off: "Off"
+        }
+    }
+
+    public var description: String {
+        switch self {
+        case .all: "Whenever they reply or reach out, while you're away."
+        case .reachouts: "Only messages they start themselves, like check-ins and reminders."
+        case .off: "No notifications; their messages still show as unread."
+        }
+    }
+
+    /// The bell in their chat.
+    public var symbol: String {
+        switch self {
+        case .all: "bell"
+        case .reachouts: "bell.badge"
+        case .off: "bell.slash"
+        }
+    }
+
+    /// What the bell in their chat switches to: off, or back to every message.
+    public var toggled: SidekickNotify { self == .off ? .all : .off }
 }
 
 /// One of the twelve ready-made sidekick looks (assets/sidekicks, bundled): its parts, its background color, and its
@@ -184,4 +230,9 @@ public extension DexClient {
     func characterMemory(_ id: String) async throws -> String { try await call("characterMemory", .string(id)) }
     /// Replaces a character's memory; empty clears it.
     func saveCharacterMemory(_ id: String, _ text: String) async throws { try await run("saveCharacterMemory", .string(id), .string(text)) }
+    /// Changes which of a sidekick's messages notify you, keeping everything else (their picture too).
+    @discardableResult
+    func setCharacterNotify(_ character: CharacterProfile, _ level: SidekickNotify) async throws -> CharacterProfile {
+        try await saveCharacter(.withNotify(character, level))
+    }
 }

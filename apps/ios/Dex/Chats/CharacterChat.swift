@@ -81,11 +81,22 @@ struct CharacterChatMenu: View {
             }
             Button { confirmRestart = true } label: { Label("Start Over…", systemImage: "arrow.counterclockwise") }
                 .accessibilityIdentifier("chat.menu.startOver")
-            if includeMute {
-                Button { client.perform { try await feed.setMuted(!session.muted) } } label: {
-                    session.muted ? Label("Unmute Notifications", systemImage: "bell") : Label("Mute Notifications", systemImage: "bell.slash")
+            // Their own setting (the bell switches all ↔ off; here's "when they reach out" too).
+            Picker(selection: Binding(get: { character.notifyLevel }, set: { level in
+                client.perform { try await client.setCharacterNotify(character, level) }
+            })) {
+                ForEach(SidekickNotify.allCases) { level in
+                    Text(level.label).tag(level)
                 }
-                .accessibilityIdentifier("chat.menu.mute")
+            } label: {
+                Label { Text("Notify Me"); Text(character.notifyLevel.label) } icon: { Image(systemName: character.notifyLevel.symbol) }
+            }
+            .pickerStyle(.menu)
+            .accessibilityIdentifier("chat.menu.notify")
+            // Muting a sidekick's chat is from before their setting: only undoing it is offered.
+            if includeMute, session.muted {
+                Button { client.perform { try await feed.setMuted(false) } } label: { Label("Unmute Notifications", systemImage: "bell") }
+                    .accessibilityIdentifier("chat.menu.mute")
             }
         } label: {
             Label("More", systemImage: "ellipsis")

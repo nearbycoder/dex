@@ -53,7 +53,12 @@ struct TranscriptView: View {
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                     switch item {
                     case .user(_, let text, let images, let files, let imageParts):
-                        UserBubble(text: text, images: images, feed: feed, files: files, imageParts: imageParts, onEdit: { composer.fill(text) })
+                        // A prompt Dex ran on a schedule (a sidekick's check-in, a reminder) isn't something you said.
+                        if let prompt = UserText.scheduledPrompt(text) {
+                            ScheduledNote(prompt: prompt)
+                        } else {
+                            UserBubble(text: text, images: images, feed: feed, files: files, imageParts: imageParts, onEdit: { composer.fill(text) })
+                        }
                     case .assistant(_, let messages, let streaming, let endedAt):
                         let reply = ReplyView(feed: feed, messages: messages, streaming: streaming, running: transcript.running && index == items.count - 1,
                                               endedAt: endedAt, results: results, tools: transcript.tools,
@@ -263,6 +268,31 @@ struct UserBubble: View {
     static func styled(_ text: String) -> Text {
         guard let skill = Format.invokedSkill(text), let range = text.range(of: "/\(skill)") else { return Text(text) }
         return Text(text[..<range.lowerBound]) + Text("/\(skill)").font(.body.monospaced().weight(.semibold)) + Text(text[range.upperBound...])
+    }
+}
+
+/// A scheduled prompt that ran in this chat: a small centered note ("⏰ Scheduled: …") where a message of yours would be.
+struct ScheduledNote: View {
+    let prompt: String
+
+    var body: some View {
+        Label {
+            Text("Scheduled: \(prompt)")
+        } icon: {
+            Image(systemName: "alarm")
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+        .lineLimit(3)
+        .padding(.horizontal, 24)
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Scheduled: \(prompt)")
+        .accessibilityIdentifier("chat.scheduled")
+        .contextMenu {
+            Button { UIPasteboard.general.string = prompt } label: { Label("Copy", systemImage: "doc.on.doc") }
+        }
     }
 }
 

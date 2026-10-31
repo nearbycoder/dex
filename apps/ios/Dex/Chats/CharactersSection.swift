@@ -58,7 +58,8 @@ extension CharactersSection {
     }
 }
 
-/// One character in the chat list: their face, name, and tagline, or "typing…" while they answer; when you last talked.
+/// One character in the chat list: their face, name, and tagline, "typing…" while they answer, or (unread, bold with a
+/// dot) what they said that you haven't seen; when you last talked.
 struct CharacterChatRow: View {
     @Environment(DexClient.self) private var client
     @Environment(Router.self) private var router
@@ -68,24 +69,30 @@ struct CharacterChatRow: View {
     var body: some View {
         let session = client.state?.session(character.sessionId)
         let busy = session?.busy == true
+        let unread = session?.unread == true
         HStack(spacing: 12) {
             CharacterAvatar(character, size: 36, typing: busy)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
+                    if unread { UnreadDot() }
                     Text(character.name)
-                        .font(.body.weight(.medium))
+                        .font(.body.weight(unread ? .semibold : .medium))
                         .lineLimit(1)
-                    if session?.muted == true {
-                        Image(systemName: "bell.slash.fill").font(.caption2).foregroundStyle(.secondary).accessibilityLabel("Muted")
+                    if session?.muted == true || character.notifyLevel == .off {
+                        Image(systemName: "bell.slash.fill").font(.caption2).foregroundStyle(.secondary).accessibilityLabel("Notifications off")
                     }
                     Spacer(minLength: 4)
                     // Once you've talked: when they last said something.
                     if let session, !busy, session.updatedAt > session.createdAt + 1_000 {
-                        Text(Format.ago(session.updatedAt)).font(.caption).foregroundStyle(.secondary).fixedSize()
+                        Text(Format.ago(session.repliedAt ?? session.updatedAt)).font(.caption).foregroundStyle(unread ? Color.dexAccent : .secondary).fixedSize()
                     }
                 }
                 if busy {
                     Text("typing…").font(.caption).foregroundStyle(Color.dexAccent)
+                } else if unread, let reply = session?.lastReply, !reply.isEmpty {
+                    // What they said while you were away.
+                    // One line, as the tagline: the pinned rows don't jump when someone writes.
+                    Text(reply).font(.caption).foregroundStyle(.primary).lineLimit(1)
                 } else {
                     Text(character.tagline.isEmpty ? "Say hi" : character.tagline).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
@@ -96,16 +103,30 @@ struct CharacterChatRow: View {
         .hoverEffect(.highlight)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("character.row.\(character.id)")
+        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+            if let session { UnreadSwipeButton(session: session) }
+        }
         .contextMenu {
             Section(character.name) {
                 Button { router.characterSheet = .character(character.id) } label: { Label("About \(character.name)", systemImage: "person.text.rectangle") }
                 Button { confirmRestart = true } label: { Label("Start Over", systemImage: "arrow.counterclockwise") }
             }
-            if let session {
+            if let session { MarkUnreadButton(session: session) }
+            Picker(selection: Binding(get: { character.notifyLevel }, set: { level in
+                client.perform { try await client.setCharacterNotify(character, level) }
+            })) {
+                ForEach(SidekickNotify.allCases) { level in
+                    Text(level.label).tag(level)
+                }
+            } label: {
+                Label { Text("Notify Me"); Text(character.notifyLevel.label) } icon: { Image(systemName: character.notifyLevel.symbol) }
+            }
+            .pickerStyle(.menu)
+            if let session, session.muted {
                 Button {
-                    client.perform { try await ChatActions.mute(session.id, !session.muted, client: client) }
+                    client.perform { try await ChatActions.mute(session.id, false, client: client) }
                 } label: {
-                    session.muted ? Label("Unmute", systemImage: "bell") : Label("Mute", systemImage: "bell.slash")
+                    Label("Unmute", systemImage: "bell")
                 }
             }
         }

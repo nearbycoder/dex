@@ -23,6 +23,7 @@ public final class DexClient {
 
     @ObservationIgnored private var subscriptions: [AgentConnection.Subscription] = []
     @ObservationIgnored private var visible = true
+    @ObservationIgnored private var chatOnScreen = true
     @ObservationIgnored private var feeds: [String: ChatFeed] = [:]
     @ObservationIgnored private var saveStateTask: Task<Void, Never>?
     @ObservationIgnored private var fetchingModels = false
@@ -132,15 +133,40 @@ public final class DexClient {
 
     // MARK: Presence
 
-    /// Whether this window is in the foreground; notifications skip the chat you're looking at.
+    /// Whether this window is in the foreground; notifications skip the chat you're looking at, and the agent marks it
+    /// read while it's visible.
     public func setVisible(_ visible: Bool) {
         self.visible = visible
         if visible { connection.reconnectNow() }
         reportPresence()
     }
 
+    /// Whether the open chat is on screen (not behind another tab): presence names it only then, so a reply that comes
+    /// in while you're elsewhere in the app stays unread.
+    public func setChatOnScreen(_ shown: Bool) {
+        guard shown != chatOnScreen else { return }
+        chatOnScreen = shown
+        reportPresence()
+    }
+
+    /// The chat presence says you're looking at.
+    public var watchedChat: String? { visible && chatOnScreen ? activeChat?.sessionId : nil }
+
     private func reportPresence() {
-        connection.send(.presence(visible: visible, sessionId: activeChat?.sessionId))
+        connection.send(.presence(visible: visible, sessionId: chatOnScreen ? activeChat?.sessionId : nil))
+    }
+
+    // MARK: Unread
+
+    /// You've seen this chat's latest (presence does it too, while a chat is on screen). Older agents don't have it.
+    public func markRead(_ sessionId: String) async {
+        guard state?.session(sessionId)?.unread == true else { return }
+        _ = try? await run("markSessionRead", .string(sessionId))
+    }
+
+    /// Brings a chat back as unread, to come back to later.
+    public func markUnread(_ sessionId: String) async throws {
+        try await run("markSessionUnread", .string(sessionId))
     }
 
     // MARK: Calls

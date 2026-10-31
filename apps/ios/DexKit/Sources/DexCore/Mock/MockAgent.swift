@@ -127,6 +127,8 @@ public final class MockAgent {
             connection.subscribed = nil
         case "dex.presence":
             connection.presence = (frame["visible"]?.bool ?? true, frame["sessionId"]?.string)
+            // A chat on screen in a visible window has been seen.
+            if connection.presence.visible { markRead(connection.presence.sessionId) }
         default:
             break
         }

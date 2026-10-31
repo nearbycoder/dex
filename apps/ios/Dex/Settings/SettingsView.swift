@@ -31,7 +31,7 @@ struct SettingsView: View {
                 }
                 Section("Access") {
                     row(.access, badge: client.state?.access.pending.filter { $0.isWaiting() }.count ?? 0)
-                    row(.notifications, detail: NotificationPreferences.shared.enabled ? "On" : "Off")
+                    row(.notifications, detail: NotificationsPage.summary(client))
                     row(.usage)
                 }
                 Section {
@@ -45,7 +45,7 @@ struct SettingsView: View {
             .tint(.selectionAccent)
             .navigationTitle("Settings")
             .confirmationDialog("Sign out of Dex on this device?", isPresented: $confirmSignOut, titleVisibility: .visible) {
-                Button("Sign Out", role: .destructive) { model.signOut() }
+                Button("Sign Out", role: .destructive) { Task { await model.signOut(unregistering: client) } }
             } message: {
                 Text("Chats keep running on your Dex. Sign in again any time.")
             }

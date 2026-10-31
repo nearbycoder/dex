@@ -44,7 +44,13 @@ final class AppModel {
             phase = launch.signedOut ? .signedOut : .signedIn(Self.mockCredentials)
         } else {
             mockAgent = nil
-            if let saved = store.load(), !saved.isExpired() { phase = .signedIn(saved) } else { phase = .signedOut }
+            if let saved = store.load(), !saved.isExpired() {
+                phase = .signedIn(saved)
+                // Signed in before the widgets existed, or refreshed since: they fetch with the same session.
+                WidgetSync.shared.share(saved)
+            } else {
+                phase = .signedOut
+            }
         }
     }
 
@@ -83,6 +89,7 @@ final class AppModel {
         let code = try AuthClient.code(fromCallback: callback)
         let credentials = try await AuthClient(server: server).exchange(code: code, verifier: pkce.verifier)
         store.save(credentials)
+        WidgetSync.shared.share(credentials)
         lastServer = server.absoluteString
         signInMessage = nil
         phase = .signedIn(credentials)
@@ -100,6 +107,7 @@ final class AppModel {
         do {
             let fresh = try await AuthClient(server: credentials.server).refresh(token: credentials.token)
             store.save(fresh)
+            WidgetSync.shared.share(fresh)
             phase = .signedIn(fresh)
         } catch AuthError.server(let message) where message == "Sign in again" {
             signOut(message: "Your session ended. Sign in again to continue.")
@@ -108,7 +116,7 @@ final class AppModel {
         }
     }
 
-    /// Forgets the session and everything kept on this device.
+    /// Forgets the session and everything kept on this device (the widgets' copy too).
     func signOut(message: String? = nil) {
         store.clear()
         cache.clear()
@@ -116,6 +124,13 @@ final class AppModel {
         phase = .signedOut
         WKWebsiteDataStore.default().removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) {}
         Notifications.shared.clearAll()
+        WidgetSync.shared.signedOut()
+    }
+
+    /// Signing out from this device: Dex stops pushing to it first (a moment at most), then everything is forgotten.
+    func signOut(unregistering client: DexClient) async {
+        await PushRegistration.shared.unregister(client)
+        signOut()
     }
 }
 

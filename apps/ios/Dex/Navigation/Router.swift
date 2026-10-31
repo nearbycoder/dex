@@ -124,6 +124,8 @@ final class Router {
     var searchText = ""
     /// A character's page over the chats (from the chat list or a character's conversation).
     var characterSheet: CharacterSheet?
+    /// A chat whose message box should take the caret once it's open (a widget's Message button).
+    var composeRequest: String?
 
     enum CharacterSheet: Hashable, Identifiable {
         case new
@@ -229,14 +231,25 @@ final class Router {
         }
     }
 
-    /// Opens what a `dex://` link points at: `dex://chat/<id>`, `dex://machine/<key>`, `dex://file/<path>`.
+    /// Opens what a `dex://` link points at: `dex://chat/<id>` (`?compose=1` puts the caret in its message box, from a
+    /// widget's Message button), `dex://machine/<key>`, `dex://file/<path>`, `dex://settings/<page>`,
+    /// `dex://sidekicks/new`, `dex://new`.
     func handle(_ url: URL) -> Bool {
         guard url.scheme == "dex", let host = url.host() else { return false }
         let rest = url.path().split(separator: "/").map(String.init).joined(separator: "/")
         switch host {
-        case "chat" where !rest.isEmpty: openChat(rest)
+        case "chat" where !rest.isEmpty:
+            openChat(rest)
+            let compose = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.contains { $0.name == "compose" && $0.value != "0" } == true
+            composeRequest = compose ? rest : nil
         case "machine" where !rest.isEmpty: openMachine(rest)
         case "file" where !rest.isEmpty: openFile("/" + rest)
+        case "settings":
+            guard let page = SettingsPage(rawValue: rest) else { return false }
+            openSettings(page)
+        case "sidekicks" where rest == "new":
+            tab = .chats
+            characterSheet = .new
         case "new": newChat()
         default: return false
         }

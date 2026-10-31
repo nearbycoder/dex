@@ -372,6 +372,9 @@ final class ScreenTourUITests: DexUITestCase {
             let memory = element("character.memory")
             for _ in 0..<6 where !(memory.exists && memory.isHittable) { app.collectionViews.allElementsBoundByIndex.last { $0.isHittable }?.swipeUp() }
             shot("character-page-memory", settle: 1)
+            let notify = element("character.notify")
+            for _ in 0..<4 where !(notify.exists && notify.isHittable) { app.collectionViews.allElementsBoundByIndex.last { $0.isHittable }?.swipeDown() }
+            if notify.exists { shot("character-page-notify", settle: 1) } else { missing("character-page-notify") }
             tap(element("character.cancel"))
             sleep(1)
         } else { missing("character-page") }
@@ -431,6 +434,11 @@ final class ScreenTourUITests: DexUITestCase {
             }
             guard tap(row, timeout: 3) else { missing("settings-\(page)"); continue }
             shot("settings-\(page)", settle: 2)
+            if page == "notifications" {
+                // Each sidekick's setting and the other devices, below this device's.
+                app.collectionViews.allElementsBoundByIndex.last { $0.isHittable }?.swipeUp()
+                shot("settings-notifications-sidekicks", settle: 1)
+            }
             if !regular {
                 goBack()
                 sleep(1)
