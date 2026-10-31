@@ -125,6 +125,8 @@ extension MockAgent {
             self.state.sessions.removeAll { $0.id == id }
             self.state.vms.removeAll { $0.key == id }
             self.entries[id] = nil
+            // A character always has a conversation: deleting theirs starts a new one.
+            if let character = self.state.characters.first(where: { $0.sessionId == id }) { self.restart(character) }
             self.publish()
             return .null
         }

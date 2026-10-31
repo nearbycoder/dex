@@ -171,6 +171,7 @@ final class ScreenTourUITests: DexUITestCase {
     func testTour() {
         signIn()
         chats()
+        characters()
         machines()
         files()
         library()
@@ -314,7 +315,7 @@ final class ScreenTourUITests: DexUITestCase {
 
     private func library() {
         ensureForeground()
-        let pages = [("agents", "Agents", "agent.row.pr-reviewer"), ("projects", "Projects", "project.row.p-dex"), ("skills", "Skills", nil), ("mcp", "MCP Servers", "mcp.row.m-linear")]
+        let pages = [("agents", "Agents", "agent.row.pr-reviewer"), ("characters", "Sidekicks", "character.item.muse"), ("projects", "Projects", "project.row.p-dex"), ("skills", "Skills", nil), ("mcp", "MCP Servers", "mcp.row.m-linear")]
         if !regular {
             guard go("library", "Library") else { return missing("library") }
             shot("library")
@@ -341,6 +342,52 @@ final class ScreenTourUITests: DexUITestCase {
             }
             if !regular { goBack(); sleep(1) }
         }
+    }
+
+    /// Characters only, in portrait and landscape (`TEST=testCharacters scripts/tour.sh`).
+    func testCharacters() {
+        characters()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        sleep(2)
+        if openChatAtLaunch("s-muse") { shot("landscape-character-chat", settle: 2) } else { missing("landscape-character-chat") }
+        if openCharacterPage(), element("character.name").waitForExistence(timeout: 10) { shot("landscape-character-page", settle: 2) } else { missing("landscape-character-page") }
+        XCUIDevice.shared.orientation = .portrait
+        sleep(2)
+    }
+
+    /// A character's page from their conversation: the header, or the ⋯ menu where the title bar hides (the foldable's
+    /// cover screen).
+    private func openCharacterPage() -> Bool {
+        let header = element("chat.character")
+        if header.waitForExistence(timeout: 3), header.isHittable { header.tap(); return true }
+        guard tap(element("chat.menu")) else { return false }
+        return tap(element("chat.menu.about"))
+    }
+
+    /// The pinned characters, a conversation (greeting, replies with their face), an earlier one, their page, and a new one.
+    private func characters() {
+        if openChatAtLaunch("s-muse") { shot("character-chat", settle: 2) } else { return missing("character-chat") }
+        if openCharacterPage(), element("character.name").waitForExistence(timeout: 10) {
+            shot("character-page", settle: 2)
+            let memory = element("character.memory")
+            for _ in 0..<6 where !(memory.exists && memory.isHittable) { app.collectionViews.allElementsBoundByIndex.last { $0.isHittable }?.swipeUp() }
+            shot("character-page-memory", settle: 1)
+            tap(element("character.cancel"))
+            sleep(1)
+        } else { missing("character-page") }
+        if openChatAtLaunch("s-atlas") { shot("character-greeting", settle: 2) } else { missing("character-greeting") }
+        if openChatAtLaunch("s-muse-earlier") { shot("character-earlier", settle: 2) } else { missing("character-earlier") }
+        app.terminate()
+        app.launchArguments = ["-DexMock", "-DexReset", "-DexFast"]
+        app.launch()
+        if element("character.row.muse").waitForExistence(timeout: 10) { shot("characters-list") } else { missing("characters-list") }
+        if tap(element("characters.new")), element("character.template.muse").waitForExistence(timeout: 10) {
+            shot("character-new", settle: 2)
+            tap(element("character.template.rex"))
+            shot("character-new-rex", settle: 1)
+            tap(element("character.cancel"))
+            sleep(1)
+        } else { missing("character-new") }
     }
 
     private func search() {

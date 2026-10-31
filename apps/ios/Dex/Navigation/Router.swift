@@ -5,7 +5,7 @@ import SwiftUI
 /// The app's places. On iPhone (compact width) the tab bar shows Chats, Machines, Files, Library, and Settings; on iPad
 /// and an unfolded foldable the sidebar lists every place, with Library's pages listed on their own.
 enum AppTab: String, Hashable, CaseIterable, Codable {
-    case chats, machines, files, library, agents, projects, skills, mcp, settings, search
+    case chats, machines, files, library, agents, characters, projects, skills, mcp, settings, search
 
     var title: String {
         switch self {
@@ -14,6 +14,7 @@ enum AppTab: String, Hashable, CaseIterable, Codable {
         case .files: "Files"
         case .library: "Library"
         case .agents: "Agents"
+        case .characters: "Sidekicks"
         case .projects: "Projects"
         case .skills: "Skills"
         case .mcp: "MCP Servers"
@@ -29,6 +30,7 @@ enum AppTab: String, Hashable, CaseIterable, Codable {
         case .files: "folder"
         case .library: "books.vertical"
         case .agents: "person.crop.square.on.square.angled"
+        case .characters: "theatermasks"
         case .projects: "shippingbox"
         case .skills: "wand.and.sparkles"
         case .mcp: "point.3.connected.trianglepath.dotted"
@@ -38,7 +40,7 @@ enum AppTab: String, Hashable, CaseIterable, Codable {
     }
 
     /// Library's pages, which compact width shows inside the Library tab.
-    static let libraryPages: [AppTab] = [.agents, .projects, .skills, .mcp]
+    static let libraryPages: [AppTab] = [.agents, .characters, .projects, .skills, .mcp]
 }
 
 enum ChatSelection: Hashable {
@@ -50,6 +52,8 @@ enum ChatSelection: Hashable {
 enum LibraryRoute: Hashable {
     case agent(String)
     case newAgent
+    case character(String)
+    case newCharacter
     case project(String)
     case newProject
     case skill(String)
@@ -113,10 +117,19 @@ final class Router {
     var settingsPage: SettingsPage?
     var libraryPath: [LibraryRoute] = []
     var agentsPath: [LibraryRoute] = []
+    var charactersPath: [LibraryRoute] = []
     var projectsPath: [LibraryRoute] = []
     var skillsPath: [LibraryRoute] = []
     var mcpPath: [LibraryRoute] = []
     var searchText = ""
+    /// A character's page over the chats (from the chat list or a character's conversation).
+    var characterSheet: CharacterSheet?
+
+    enum CharacterSheet: Hashable, Identifiable {
+        case new
+        case character(String)
+        var id: Self { self }
+    }
 
     struct NewChatDraft: Equatable {
         var agentId: String?
@@ -161,6 +174,7 @@ final class Router {
     func open(_ route: LibraryRoute, compact: Bool) {
         let page: AppTab = switch route {
         case .agent, .newAgent: .agents
+        case .character, .newCharacter: .characters
         case .project, .newProject: .projects
         case .skill, .skillSearch, .newSkill: .skills
         case .mcpServer, .newMcpServer, .mcpSearch: .mcp
@@ -174,6 +188,7 @@ final class Router {
             if case .page = route { return }
             switch page {
             case .agents: agentsPath = [route]
+            case .characters: charactersPath = [route]
             case .projects: projectsPath = [route]
             case .skills: skillsPath = [route]
             case .mcp: mcpPath = [route]
@@ -189,6 +204,7 @@ final class Router {
             let page = tab
             let inner: [LibraryRoute] = switch page {
             case .agents: agentsPath
+            case .characters: charactersPath
             case .projects: projectsPath
             case .skills: skillsPath
             default: mcpPath
@@ -203,6 +219,7 @@ final class Router {
             let inner = Array(libraryPath.dropFirst())
             switch page {
             case .agents: agentsPath = inner
+            case .characters: charactersPath = inner
             case .projects: projectsPath = inner
             case .skills: skillsPath = inner
             case .mcp: mcpPath = inner

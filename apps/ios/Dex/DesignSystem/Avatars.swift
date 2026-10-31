@@ -96,6 +96,62 @@ struct AgentAvatar: View {
     }
 }
 
+/// A sidekick's face: their picture (the PNG of their look, or a photo), else their emoji (or initial) on their color.
+/// Round, unlike agents and projects, so a sidekick reads as someone rather than something.
+struct CharacterAvatar: View {
+    let glyph: String
+    let color: String
+    var image: String? = nil
+    var size: CGFloat = 32
+    /// A dot at the bottom right while they're answering.
+    var typing = false
+
+    init(glyph: String, color: String, image: String? = nil, size: CGFloat = 32, typing: Bool = false) {
+        self.glyph = glyph; self.color = color; self.image = image; self.size = size; self.typing = typing
+    }
+
+    init(_ character: CharacterProfile, size: CGFloat = 32, typing: Bool = false) {
+        self.init(glyph: character.glyph, color: character.color, image: character.image, size: size, typing: typing)
+    }
+
+    var body: some View {
+        let tint = AgentColors.color(color)
+        Group {
+            if let picture = image.flatMap(AgentAvatar.decode) {
+                // Their look (its PNG) or a photo, on their color.
+                Image(uiImage: picture)
+                    .resizable()
+                    .scaledToFill()
+                    .background(tint.opacity(0.2))
+            } else {
+                // An emoji (from before looks) is drawn larger than a letter of the same point size reads.
+                let emoji = glyph.unicodeScalars.contains { $0.properties.isEmojiPresentation || $0.properties.generalCategory == .otherSymbol }
+                Text(glyph)
+                    .font(.system(size: size * (emoji ? 0.52 : 0.44), weight: .semibold, design: .rounded))
+                    .foregroundStyle(tint)
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(1)
+                    .frame(width: size, height: size)
+                    .background(tint.opacity(0.2).gradient)
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(.circle)
+        .overlay(Circle().strokeBorder(.primary.opacity(0.08)))
+        .overlay(alignment: .bottomTrailing) {
+            if typing {
+                Circle()
+                    .fill(Color.dexAccent)
+                    .frame(width: max(8, size * 0.28), height: max(8, size * 0.28))
+                    .overlay(Circle().strokeBorder(Color(.systemBackground), lineWidth: 2))
+                    .phaseAnimator([1.0, 0.4]) { view, phase in view.opacity(phase) }
+                    .offset(x: 1, y: 1)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
 /// The signed-in user's GitHub avatar, or their initial.
 struct UserAvatar: View {
     let viewer: Viewer?

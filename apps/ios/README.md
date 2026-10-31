@@ -26,6 +26,8 @@ apps/ios/
 
 The wire protocol is `apps/web/src/shared/protocol.ts`; the Swift models decode older and newer agents alike (missing fields get the defaults `withStateDefaults` gives them, unknown events and messages are ignored).
 
+Sidekicks' ready-made looks (`assets/sidekicks` at the repo root, exported by the web app) are bundled as `DexKit/Sources/DexCore/Resources/Sidekicks`: copy them over again when they change.
+
 ## Run it
 
 Xcode 27 (iOS 26 SDK or later). Open `Dex.xcodeproj` and run the Dex scheme, or regenerate the project after changing `project.yml`:

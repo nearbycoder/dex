@@ -1,7 +1,7 @@
 import DexCore
 import SwiftUI
 
-/// Compact width's Library tab: Agents, Projects, Skills, and MCP servers, each pushing its list and items.
+/// Compact width's Library tab: Agents, Sidekicks (characters), Projects, Skills, and MCP servers, each pushing its list and items.
 struct LibraryView: View {
     @Environment(DexClient.self) private var client
     @Environment(Router.self) private var router
@@ -45,6 +45,7 @@ struct LibraryView: View {
         guard let state = client.state else { return nil }
         return switch page {
         case .agents: state.agents.count
+        case .characters: state.characters.count
         case .projects: state.projects.count
         case .skills: state.skills.count
         case .mcp: state.mcp.count
@@ -55,6 +56,7 @@ struct LibraryView: View {
     static func tint(_ page: AppTab) -> Color {
         switch page {
         case .agents: .purple
+        case .characters: .pink
         case .projects: .blue
         case .skills: .orange
         default: .teal
@@ -64,6 +66,7 @@ struct LibraryView: View {
     static func blurb(_ page: AppTab) -> String {
         switch page {
         case .agents: "Presets for a job: instructions, a model, tools"
+        case .characters: "Companions with one long conversation each"
         case .projects: "Repos and a setup script, ready on a VM"
         case .skills: "Instructions for particular tasks"
         default: "Remote tools for Dex"
@@ -102,6 +105,7 @@ struct LibraryPageStack: View {
     private var path: Binding<[LibraryRoute]> {
         switch page {
         case .agents: Binding(get: { router.agentsPath }, set: { router.agentsPath = $0 })
+        case .characters: Binding(get: { router.charactersPath }, set: { router.charactersPath = $0 })
         case .projects: Binding(get: { router.projectsPath }, set: { router.projectsPath = $0 })
         case .skills: Binding(get: { router.skillsPath }, set: { router.skillsPath = $0 })
         default: Binding(get: { router.mcpPath }, set: { router.mcpPath = $0 })
@@ -132,6 +136,7 @@ struct LibraryPageList: View {
     var body: some View {
         switch page {
         case .agents: AgentsList(selection: selection)
+        case .characters: CharactersList(selection: selection)
         case .projects: ProjectsList(selection: selection)
         case .skills: SkillsList(selection: selection)
         default: McpList(selection: selection)
@@ -146,6 +151,7 @@ struct LibraryPlaceholder: View {
     var body: some View {
         switch page {
         case .agents: ContentUnavailableView("No Agent Selected", systemImage: page.symbol, description: Text("Pick an agent to edit it, or press ⌘N for a new one."))
+        case .characters: ContentUnavailableView("No Sidekick Selected", systemImage: page.symbol, description: Text("Pick a sidekick to edit them, or press ⌘N for a new one."))
         case .projects: ContentUnavailableView("No Project Selected", systemImage: page.symbol, description: Text("Pick a project to edit it, or press ⌘N for a new one."))
         case .skills: ContentUnavailableView("No Skill Selected", systemImage: page.symbol, description: Text("Pick a skill to read it, or search skills.sh for more."))
         default: ContentUnavailableView("No Server Selected", systemImage: page.symbol, description: Text("Pick a server to see its tools, or find one to add."))
@@ -162,6 +168,8 @@ struct LibraryDestination: View {
         case .page(let page): LibraryPageList(page: page)
         case .agent(let id): AgentEditor(agentId: id).id(id)
         case .newAgent: AgentEditor(agentId: nil)
+        case .character(let id): CharacterEditor(characterId: id).id(id)
+        case .newCharacter: CharacterEditor(characterId: nil)
         case .project(let id): ProjectEditor(projectId: id).id(id)
         case .newProject: ProjectEditor(projectId: nil)
         case .skill(let id): SkillDetailView(skillId: id).id(id)

@@ -2,7 +2,8 @@ import DexCore
 import SwiftUI
 
 /// One chat: its header (agent and project, title, machine, mute, settle, menu), its transcript (pinned to the latest
-/// message), the queue, and the composer.
+/// message), the queue, and the composer. A character's conversation has their face and name in the header instead,
+/// their greeting first, and no inbox triage (it isn't in the inbox).
 struct ChatView: View {
     @Environment(DexClient.self) private var client
     @Environment(Router.self) private var router
@@ -35,21 +36,23 @@ struct ChatView: View {
     @ViewBuilder
     private func content(_ feed: ChatFeed) -> some View {
         let session = client.state?.session(sessionId)
+        let character = client.state?.character(session?.characterId)
         if client.state != nil, session == nil {
             EmptyStateView(title: "Chat not found", symbol: "bubble.left.and.exclamationmark.bubble.right", message: "This chat no longer exists.")
         } else {
-            TranscriptView(feed: feed, composer: composer, send: { text in sendNow(text, feed: feed) })
+            TranscriptView(feed: feed, composer: composer, speaker: character, send: { text in sendNow(text, feed: feed) })
                 .environment(\.chatFeed, feed)
                 .environment(\.markdownMedia, ChatMediaView.resolver(server: client.server))
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    ChatComposerArea(feed: feed, session: session, composer: composer) { text, attachments in
+                    ChatComposerArea(feed: feed, session: session, character: character, composer: composer) { text, attachments in
                         try await send(text, attachments: attachments, feed: feed)
                     }
                 }
-                .navigationTitle(session?.title ?? "")
-                .navigationSubtitle(subtitle(session))
+                .navigationTitle(character?.name ?? session?.title ?? "")
+                .navigationSubtitle(character == nil ? subtitle(session) : "")
                 .navigationBarTitleDisplayMode(.inline)
-                .toolbarTitleMenu {
+                // A character's conversation is titled with their name: nothing to rename (and no menu's chevron).
+                .toolbarTitleMenu(if: character == nil) {
                     if let session {
                         ChatTitleMenu(session: session) {
                             draft = session.title
@@ -57,7 +60,7 @@ struct ChatView: View {
                         }
                     }
                 }
-                .toolbar { ChatToolbar(feed: feed, session: session) }
+                .toolbar { ChatToolbar(feed: feed, session: session, character: character) }
                 .alert("Rename Chat", isPresented: $renaming) {
                     TextField("Title", text: $draft).accessibilityIdentifier("chat.rename.field")
                     Button("Save") { client.perform { try await feed.rename(draft) } }
@@ -98,8 +101,15 @@ struct ChatToolbar: ToolbarContent {
     @Environment(\.horizontalSizeClass) private var sizeClass
     let feed: ChatFeed
     let session: SessionMeta?
+    var character: CharacterProfile? = nil
 
     var body: some ToolbarContent {
+        if let character, let session {
+            ToolbarItem(placement: .principal) {
+                CharacterHeader(character: character, session: session, typing: feed.transcript.running)
+            }
+            .sharedBackgroundVisibility(.hidden)
+        }
         if sizeClass != .compact, let session, session.projectId != nil || session.agentId != nil {
             ToolbarItem(placement: .topBarLeading) {
                 ChatAvatars(session: session)
@@ -138,20 +148,31 @@ struct ChatToolbar: ToolbarContent {
                         .accessibilityIdentifier("chat.mute")
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        client.perform { try await feed.settle(session.settledAt == nil) }
-                    } label: {
-                        Label(session.settledAt == nil ? "Settle" : "Move to Inbox", systemImage: session.settledAt == nil ? "checkmark.circle" : "checkmark.circle.fill")
+                // A character's conversation isn't in the inbox: Start over instead of Settle.
+                if let character {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        StartOverButton(character: character)
                     }
-                    .tint(session.settledAt == nil ? nil : .green)
-                    .accessibilityLabel(session.settledAt == nil ? "Settle: done for now" : "Settled. Move it back to the inbox")
-                    .accessibilityIdentifier("chat.settle")
-                    .sensoryFeedback(.success, trigger: session.settledAt != nil) { _, new in new }
+                } else {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            client.perform { try await feed.settle(session.settledAt == nil) }
+                        } label: {
+                            Label(session.settledAt == nil ? "Settle" : "Move to Inbox", systemImage: session.settledAt == nil ? "checkmark.circle" : "checkmark.circle.fill")
+                        }
+                        .tint(session.settledAt == nil ? nil : .green)
+                        .accessibilityLabel(session.settledAt == nil ? "Settle: done for now" : "Settled. Move it back to the inbox")
+                        .accessibilityIdentifier("chat.settle")
+                        .sensoryFeedback(.success, trigger: session.settledAt != nil) { _, new in new }
+                    }
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                ChatMenu(feed: feed, session: session, includeMute: sizeClass == .compact || !showsMute, compact: sizeClass == .compact)
+                if let character {
+                    CharacterChatMenu(feed: feed, session: session, character: character, includeMute: sizeClass == .compact || !showsMute, compact: sizeClass == .compact)
+                } else {
+                    ChatMenu(feed: feed, session: session, includeMute: sizeClass == .compact || !showsMute, compact: sizeClass == .compact)
+                }
             }
         }
     }
@@ -299,11 +320,24 @@ struct ChatComposerArea: View {
     @Environment(Router.self) private var router
     let feed: ChatFeed
     let session: SessionMeta?
+    var character: CharacterProfile? = nil
     let composer: ComposerModel
     let send: (String, [ChatAttachment]) async throws -> Void
 
     var body: some View {
         VStack(spacing: 8) {
+            // A conversation from before they started over: still theirs, no longer the one in the list.
+            if let character, character.sessionId != feed.sessionId {
+                Button {
+                    router.openChat(character.sessionId)
+                } label: {
+                    Label("An earlier conversation with \(character.name). Go to the current one", systemImage: "clock.arrow.circlepath")
+                        .font(.caption)
+                        .multilineTextAlignment(.leading)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityIdentifier("chat.character.current")
+            }
             if let session, let state = client.state, state.connectedProviders[client.catalog.provider(of: session.model)] != true {
                 Button {
                     router.openSettings(.models)
@@ -319,7 +353,7 @@ struct ChatComposerArea: View {
             QueuePanel(feed: feed)
             Composer(
                 model: composer,
-                placeholder: feed.transcript.running ? "Queue a follow-up…" : "Message Dex, or / for skills…",
+                placeholder: feed.transcript.running ? "Queue a follow-up…" : character.map { "Message \($0.name)…" } ?? "Message Dex, or / for skills…",
                 running: feed.transcript.running,
                 disabled: !client.isConnected,
                 onSend: send,
@@ -340,5 +374,13 @@ struct ChatComposerArea: View {
         .padding(.bottom, 8)
         .frame(maxWidth: 800)
         .frame(maxWidth: .infinity)
+    }
+}
+
+extension View {
+    /// The title's menu, only where there is one: an empty menu still shows its chevron.
+    @ViewBuilder
+    func toolbarTitleMenu<Content: View>(if enabled: Bool, @ViewBuilder content: () -> Content) -> some View {
+        if enabled { toolbarTitleMenu(content: content) } else { self }
     }
 }

@@ -13,7 +13,8 @@ let package = Package(
     targets: [
         .target(
             name: "DexCore",
-            resources: [.copy("Resources/openui-engine.js"), .copy("Resources/openui-spec.json")]
+            // Sidekicks: the ready-made looks (assets/sidekicks at the repo root), as PNGs with presets.json.
+            resources: [.copy("Resources/openui-engine.js"), .copy("Resources/openui-spec.json"), .copy("Resources/Sidekicks")]
         ),
         .testTarget(
             name: "DexCoreTests",

@@ -2,11 +2,14 @@ import DexCore
 import SwiftUI
 
 /// The messages, following the bottom while you're there. Only scrolling up yourself lets go; reaching the bottom
-/// again (or sending) takes it back. A round button brings you down when you've scrolled up.
+/// again (or sending) takes it back. A round button brings you down when you've scrolled up. A character's
+/// conversation opens with their greeting, and their face sits beside each reply.
 struct TranscriptView: View {
     @Environment(DexClient.self) private var client
     let feed: ChatFeed
     let composer: ComposerModel
+    /// Who answers, when it isn't Dex.
+    var speaker: CharacterProfile? = nil
     /// Sends a message (a retry, or a UI card's).
     let send: (String) -> Void
     @State private var position = ScrollPosition(edge: .bottom)
@@ -36,18 +39,33 @@ struct TranscriptView: View {
             LazyVStack(alignment: .leading, spacing: 20) {
                 if !transcript.loaded {
                     TranscriptSkeleton()
+                } else if let speaker, !speaker.greeting.isEmpty {
+                    GreetingRow(character: speaker)
                 } else if items.isEmpty, feed.pending.isEmpty, !transcript.running {
-                    EmptyStateView(title: "New chat", symbol: "sparkles", message: "Ask Dex anything. It can browse, run code on its own VM, and answer with live UI.")
-                        .padding(.top, 60)
+                    if let speaker {
+                        EmptyStateView(title: "Say hi to \(speaker.name)", symbol: "hand.wave", message: speaker.tagline.isEmpty ? nil : speaker.tagline)
+                            .padding(.top, 60)
+                    } else {
+                        EmptyStateView(title: "New chat", symbol: "sparkles", message: "Ask Dex anything. It can browse, run code on its own VM, and answer with live UI.")
+                            .padding(.top, 60)
+                    }
                 }
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                     switch item {
                     case .user(_, let text, let images, let files, let imageParts):
                         UserBubble(text: text, images: images, feed: feed, files: files, imageParts: imageParts, onEdit: { composer.fill(text) })
                     case .assistant(_, let messages, let streaming, let endedAt):
-                        ReplyView(feed: feed, messages: messages, streaming: streaming, running: transcript.running && index == items.count - 1,
-                                  endedAt: endedAt, results: results, tools: transcript.tools,
-                                  onRetry: index == items.count - 1 ? lastUser.flatMap(Self.text).map { text in { send(text) } } : nil)
+                        let reply = ReplyView(feed: feed, messages: messages, streaming: streaming, running: transcript.running && index == items.count - 1,
+                                              endedAt: endedAt, results: results, tools: transcript.tools,
+                                              onRetry: index == items.count - 1 ? lastUser.flatMap(Self.text).map { text in { send(text) } } : nil)
+                        if let speaker {
+                            HStack(alignment: .top, spacing: 10) {
+                                CharacterAvatar(speaker, size: 28)
+                                reply
+                            }
+                        } else {
+                            reply
+                        }
                     case .divider(_, let label):
                         DividerRow(label: label)
                     }
@@ -56,7 +74,14 @@ struct TranscriptView: View {
                     UserBubble(text: pending.text, images: 0, pending: true)
                 }
                 if transcript.running, !(items.last.map(Self.isAssistant) ?? false) {
-                    WorkingPlaceholder()
+                    if let speaker {
+                        HStack(spacing: 10) {
+                            CharacterAvatar(speaker, size: 28)
+                            WorkingPlaceholder(text: "\(speaker.name) is typing…")
+                        }
+                    } else {
+                        WorkingPlaceholder()
+                    }
                 }
                 if let retry = transcript.retry {
                     Label("Retrying after an error: \(retry.error)", systemImage: "arrow.clockwise")
@@ -255,10 +280,12 @@ struct DividerRow: View {
 
 /// The chat is running but nothing has come back yet.
 struct WorkingPlaceholder: View {
+    var text = "Working…"
+
     var body: some View {
         HStack(spacing: 8) {
             ProgressView().controlSize(.small)
-            Text("Working…").font(.subheadline).foregroundStyle(.secondary)
+            Text(text).font(.subheadline).foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("chat.thinking")

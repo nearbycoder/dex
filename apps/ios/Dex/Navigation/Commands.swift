@@ -8,7 +8,7 @@ struct DexCommands: Commands {
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            // On a Library page, ⌘N makes a new item there (agent, project, skill, server).
+            // On a Library page, ⌘N makes a new item there (agent, character, project, skill, server).
             // (Decided when pressed: the menu's title can lag behind the page on screen.)
             Button(router?.libraryNewItem?.title ?? "New Chat") {
                 guard let router else { return }
@@ -25,6 +25,7 @@ struct DexCommands: Commands {
             Button("Machines") { router?.tab = .machines }.keyboardShortcut("2", modifiers: .command)
             Button("Files") { router?.tab = .files }.keyboardShortcut("3", modifiers: .command)
             Button("Agents") { router?.open(.page(.agents), compact: false) }.keyboardShortcut("4", modifiers: .command)
+            Button("Sidekicks") { router?.open(.page(.characters), compact: false) }
             Button("Projects") { router?.open(.page(.projects), compact: false) }.keyboardShortcut("5", modifiers: .command)
             Button("Skills") { router?.open(.page(.skills), compact: false) }.keyboardShortcut("6", modifiers: .command)
             Button("MCP Servers") { router?.open(.page(.mcp), compact: false) }.keyboardShortcut("7", modifiers: .command)
@@ -38,7 +39,8 @@ struct DexCommands: Commands {
                 client.perform { try await ChatActions.settle(id, !settled, client: client) }
             }
             .keyboardShortcut("e", modifiers: .command)
-            .disabled(router?.chat == nil)
+            // A character's conversation isn't in the inbox: nothing to settle.
+            .disabled(router?.chat == nil || router.flatMap { client?.state?.session($0.chat ?? "")?.characterId } != nil)
             Button("Stop") {
                 guard let router, let client, let id = router.chat else { return }
                 client.perform { try await client.run("abort", .string(id)) }

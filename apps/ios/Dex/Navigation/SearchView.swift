@@ -1,7 +1,7 @@
 import DexCore
 import SwiftUI
 
-/// The Search tab: find a chat by title, or a skill, agent, or project. The field sits under the title, the results
+/// The Search tab: find a chat by title, or a character, skill, agent, or project. The field sits under the title, the results
 /// keep a readable width on a wide iPad, and opening one (or leaving the tab) ends the search, so the keyboard and the
 /// search's hidden tab bar don't follow you to the next page.
 struct SearchView: View {
@@ -16,14 +16,15 @@ struct SearchView: View {
         NavigationStack {
             let state = client.state
             let chats = (state?.sessions ?? []).filter { matches($0.title) }
+            let characters = (state?.characters ?? []).filter { matches($0.name) || matches($0.tagline) }
             let agents = (state?.agents ?? []).filter { matches($0.name) || matches($0.description) }
             let projects = (state?.projects ?? []).filter { matches($0.name) || matches($0.description) }
             let skills = (state?.skills ?? []).filter { matches($0.id) || matches($0.description) }
             List {
                 if query.isEmpty {
-                    ContentUnavailableView("Search Dex", systemImage: "magnifyingglass", description: Text("Find chats, agents, projects, and skills."))
+                    ContentUnavailableView("Search Dex", systemImage: "magnifyingglass", description: Text("Find chats, sidekicks, agents, projects, and skills."))
                         .listRowBackground(Color.clear)
-                } else if chats.isEmpty, agents.isEmpty, projects.isEmpty, skills.isEmpty {
+                } else if chats.isEmpty, characters.isEmpty, agents.isEmpty, projects.isEmpty, skills.isEmpty {
                     ContentUnavailableView.search(text: query)
                 }
                 if !query.isEmpty, !chats.isEmpty {
@@ -36,6 +37,16 @@ struct SearchView: View {
                                 }
                             }
                             .accessibilityIdentifier("search.chat.\(session.id)")
+                        }
+                    }
+                }
+                if !query.isEmpty, !characters.isEmpty {
+                    Section("Sidekicks") {
+                        ForEach(characters) { character in
+                            Button { open { router.openChat(character.sessionId) } } label: {
+                                Label { Text(character.name).foregroundStyle(.primary) } icon: { CharacterAvatar(character, size: 26) }
+                            }
+                            .accessibilityIdentifier("search.character.\(character.id)")
                         }
                     }
                 }
@@ -72,7 +83,7 @@ struct SearchView: View {
             .contentMargins(.horizontal, max(0, (width - 720) / 2), for: .scrollContent)
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
             .navigationTitle("Search")
-            .searchable(text: $query, isPresented: $searching, placement: .navigationBarDrawer(displayMode: .always), prompt: "Chats, agents, projects, skills")
+            .searchable(text: $query, isPresented: $searching, placement: .navigationBarDrawer(displayMode: .always), prompt: "Chats, sidekicks, agents, projects, skills")
             // Searching keeps the title and the tab bar, so the other tabs stay a tap away.
             .searchPresentationToolbarBehavior(.avoidHidingContent)
         }

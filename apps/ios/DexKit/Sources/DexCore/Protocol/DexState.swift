@@ -32,19 +32,21 @@ public struct SessionMeta: Codable, Sendable, Hashable, Identifiable {
     public var agentId: String?
     public var mcpServers: [String]
     public var projectId: String?
+    /// The character this is a conversation with, if any: it lives under them, not in the chat list.
+    public var characterId: String?
     public var muted: Bool
     public var settledAt: Double?
     public var snoozedUntil: Double?
 
     public init(id: String, title: String, model: String, thinking: ThinkingLevel, createdAt: Double, updatedAt: Double,
-                busy: Bool = false, agentId: String? = nil, mcpServers: [String] = [], projectId: String? = nil,
+                busy: Bool = false, agentId: String? = nil, mcpServers: [String] = [], projectId: String? = nil, characterId: String? = nil,
                 muted: Bool = false, settledAt: Double? = nil, snoozedUntil: Double? = nil) {
         self.id = id; self.title = title; self.model = model; self.thinking = thinking; self.createdAt = createdAt
         self.updatedAt = updatedAt; self.busy = busy; self.agentId = agentId; self.mcpServers = mcpServers
-        self.projectId = projectId; self.muted = muted; self.settledAt = settledAt; self.snoozedUntil = snoozedUntil
+        self.projectId = projectId; self.characterId = characterId; self.muted = muted; self.settledAt = settledAt; self.snoozedUntil = snoozedUntil
     }
 
-    enum CodingKeys: String, CodingKey { case id, title, model, thinking, createdAt, updatedAt, busy, agentId, mcpServers, projectId, muted, settledAt, snoozedUntil }
+    enum CodingKeys: String, CodingKey { case id, title, model, thinking, createdAt, updatedAt, busy, agentId, mcpServers, projectId, characterId, muted, settledAt, snoozedUntil }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -58,6 +60,7 @@ public struct SessionMeta: Codable, Sendable, Hashable, Identifiable {
         agentId = c.value(.agentId, default: nil)
         mcpServers = c.value(.mcpServers, default: [])
         projectId = c.value(.projectId, default: nil)
+        characterId = c.value(.characterId, default: nil)
         muted = c.value(.muted, default: false)
         settledAt = c.value(.settledAt, default: nil)
         snoozedUntil = c.value(.snoozedUntil, default: nil)
@@ -274,6 +277,72 @@ public struct AgentProfile: Codable, Sendable, Hashable, Identifiable {
         mcpServers = c.value(.mcpServers, default: [])
         createdAt = c.value(.createdAt, default: 0)
         updatedAt = c.value(.updatedAt, default: 0)
+    }
+}
+
+/// A sidekick (`character` in code and on the wire): a named companion with one long conversation of their own, pinned
+/// above the chats. Their conversation is an ordinary chat (`SessionMeta.characterId`); `sessionId` is the current one
+/// (Start over replaces it).
+public struct CharacterProfile: Codable, Sendable, Hashable, Identifiable {
+    public var id: String
+    public var name: String
+    /// One line under the name in the chat list.
+    public var tagline: String
+    /// Who they are: personality, voice, backstory ("character profile").
+    public var persona: String
+    /// What they do for you, and their rules ("prompt").
+    public var instructions: String
+    /// Their first words, shown at the top of the conversation.
+    public var greeting: String
+    /// An emoji, from before sidekicks had looks; empty shows the name's initial.
+    public var avatar: String
+    /// Their little character, drawn from parts ({ body, skin, eyes, mouth, extra, blush }). The web draws it; the
+    /// app shows `image`, the PNG saved with it. Missing on ones saved before looks.
+    public var look: JSONValue?
+    /// A picture as a data: URL: the PNG of their look, or a photo. Shown instead of the emoji.
+    public var image: String?
+    public var color: String
+    public var model: String
+    public var thinking: ThinkingLevel
+    public var mcpServers: [String]
+    public var sessionId: String
+    public var createdAt: Double
+    public var updatedAt: Double
+
+    public init(id: String, name: String, tagline: String = "", persona: String = "", instructions: String = "", greeting: String = "", avatar: String = "",
+                look: JSONValue? = nil, image: String? = nil, color: String = "violet", model: String = "", thinking: ThinkingLevel = "low", mcpServers: [String] = [],
+                sessionId: String, createdAt: Double = 0, updatedAt: Double = 0) {
+        self.id = id; self.name = name; self.tagline = tagline; self.persona = persona; self.instructions = instructions; self.greeting = greeting
+        self.avatar = avatar; self.look = look; self.image = image; self.color = color; self.model = model; self.thinking = thinking; self.mcpServers = mcpServers
+        self.sessionId = sessionId; self.createdAt = createdAt; self.updatedAt = updatedAt
+    }
+
+    enum CodingKeys: String, CodingKey { case id, name, tagline, persona, instructions, greeting, avatar, look, image, color, model, thinking, mcpServers, sessionId, createdAt, updatedAt }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = c.value(.name, default: "")
+        tagline = c.value(.tagline, default: "")
+        persona = c.value(.persona, default: "")
+        instructions = c.value(.instructions, default: "")
+        greeting = c.value(.greeting, default: "")
+        avatar = c.value(.avatar, default: "")
+        // Only an object is a look (null, or anything else, is none).
+        look = c.value(.look, default: JSONValue?.none).flatMap { if case .object = $0 { $0 } else { nil } }
+        image = c.value(.image, default: nil)
+        color = c.value(.color, default: "violet")
+        model = c.value(.model, default: "")
+        thinking = c.value(.thinking, default: "low")
+        mcpServers = c.value(.mcpServers, default: [])
+        sessionId = c.value(.sessionId, default: "")
+        createdAt = c.value(.createdAt, default: 0)
+        updatedAt = c.value(.updatedAt, default: 0)
+    }
+
+    /// What the avatar shows without a picture: the emoji, else the name's first letter.
+    public var glyph: String {
+        if !avatar.isEmpty { return avatar }
+        return name.trimmingCharacters(in: .whitespacesAndNewlines).first.map { String($0).uppercased() } ?? "?"
     }
 }
 
@@ -495,6 +564,8 @@ public struct DexState: Codable, Sendable, Hashable {
     public var github: GitHubStatus
     public var push: PushStatus
     public var agents: [AgentProfile]
+    /// Characters, pinned above the chats. Missing in state an older agent saved.
+    public var characters: [CharacterProfile]
     public var mcp: [McpServerInfo]
     public var access: AccessState
     public var secrets: [SavedSecret]
@@ -504,14 +575,14 @@ public struct DexState: Codable, Sendable, Hashable {
 
     public init(cline: ClineStatus = .init(), opencode: ClineStatus = .init(), chatgpt: ClineStatus = .init(), boat: BoatStatus = .init(), settings: DexSettings = .init(),
                 sessions: [SessionMeta] = [], vms: [VmInfo] = [], vmConfigured: Bool = false, projects: [ProjectProfile] = [],
-                github: GitHubStatus = .init(), push: PushStatus = .init(), agents: [AgentProfile] = [], mcp: [McpServerInfo] = [],
+                github: GitHubStatus = .init(), push: PushStatus = .init(), agents: [AgentProfile] = [], characters: [CharacterProfile] = [], mcp: [McpServerInfo] = [],
                 access: AccessState = .init(), secrets: [SavedSecret] = [], skills: [SkillInfo] = [], build: String? = nil, models: ModelListVersion? = nil) {
         self.cline = cline; self.opencode = opencode; self.chatgpt = chatgpt; self.boat = boat; self.settings = settings; self.sessions = sessions; self.vms = vms
-        self.vmConfigured = vmConfigured; self.projects = projects; self.github = github; self.push = push; self.agents = agents; self.mcp = mcp
+        self.vmConfigured = vmConfigured; self.projects = projects; self.github = github; self.push = push; self.agents = agents; self.characters = characters; self.mcp = mcp
         self.access = access; self.secrets = secrets; self.skills = skills; self.build = build; self.models = models
     }
 
-    enum CodingKeys: String, CodingKey { case cline, opencode, chatgpt, boat, settings, sessions, vms, vmConfigured, projects, github, push, agents, mcp, access, secrets, skills, build, models }
+    enum CodingKeys: String, CodingKey { case cline, opencode, chatgpt, boat, settings, sessions, vms, vmConfigured, projects, github, push, agents, characters, mcp, access, secrets, skills, build, models }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         cline = c.value(.cline, default: .init())
@@ -526,6 +597,7 @@ public struct DexState: Codable, Sendable, Hashable {
         github = c.value(.github, default: .init())
         push = c.value(.push, default: .init())
         agents = c.value(.agents, default: [])
+        characters = c.value(.characters, default: [])
         mcp = c.value(.mcp, default: [])
         access = c.value(.access, default: .init())
         secrets = c.value(.secrets, default: [])
@@ -544,4 +616,13 @@ public struct DexState: Codable, Sendable, Hashable {
     public func vm(_ key: String) -> VmInfo? { vms.first { $0.key == key } }
     public func agent(_ id: String?) -> AgentProfile? { id.flatMap { id in agents.first { $0.id == id } } }
     public func project(_ id: String?) -> ProjectProfile? { id.flatMap { id in projects.first { $0.id == id } } }
+    public func character(_ id: String?) -> CharacterProfile? { id.flatMap { id in characters.first { $0.id == id } } }
+
+    /// Ordinary chats: everything but characters' conversations, which live under them.
+    public var chats: [SessionMeta] { sessions.filter { $0.characterId == nil } }
+
+    /// A character's conversations, the newest first (the current one, and any from before Start over).
+    public func conversations(of characterId: String) -> [SessionMeta] {
+        sessions.filter { $0.characterId == characterId }.sorted { $0.createdAt > $1.createdAt }
+    }
 }

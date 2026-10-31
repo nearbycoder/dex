@@ -1,8 +1,8 @@
 import DexCore
 import SwiftUI
 
-/// The chat list as an inbox: chats needing you, then Snoozed (soonest first) and Settled (most recent first), both
-/// collapsible (remembered per device). A chat leaves those groups by itself when something new happens in it or its
+/// The chat list as an inbox: characters pinned at the top, then chats needing you, then Snoozed (soonest first) and
+/// Settled (most recent first), both collapsible (remembered per device). Characters' conversations live under them. A chat leaves those groups by itself when something new happens in it or its
 /// snooze ends. Swipe to settle, snooze, or delete; long-press (or right-click) for the chat's menu; ↑/↓ move
 /// through the list on a hardware keyboard.
 struct ChatListView: View {
@@ -26,14 +26,19 @@ struct ChatListView: View {
 
     var body: some View {
         @Bindable var router = router
-        let sessions = client.state?.sessions ?? []
+        // A character's conversations live under them, not in the inbox.
+        let sessions = client.state?.chats ?? []
         let filtered = filter.isEmpty ? sessions : sessions.filter { $0.title.localizedCaseInsensitiveContains(filter) }
         let groups = Inbox.groups(filtered, now: now.timeIntervalSince1970 * 1000)
+        let characters = CharactersSection.matching(client.state?.characters ?? [], filter)
+        // Under the pinned characters, the chats get a heading of their own.
+        let pinned = client.state != nil && (filter.isEmpty || !characters.isEmpty)
         // The open chat stays visible even if its group is collapsed; a search shows everything it finds.
         let showSnoozed = snoozedOpen || !filter.isEmpty || groups.snoozed.contains { $0.id == router.chat }
         let showSettled = settledOpen || !filter.isEmpty || groups.settled.contains { $0.id == router.chat }
 
         List(selection: $router.chatSelection) {
+            CharactersSection(filter: filter)
             if client.state == nil {
                 ForEach(0..<7, id: \.self) { _ in ChatRowSkeleton() }
             } else if sessions.isEmpty {
@@ -42,7 +47,7 @@ struct ChatListView: View {
                 }
                 .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
-            } else if !filter.isEmpty, filtered.isEmpty {
+            } else if !filter.isEmpty, filtered.isEmpty, characters.isEmpty {
                 ContentUnavailableView.search(text: filter).listRowBackground(Color.clear)
             }
             if !sessions.isEmpty, filter.isEmpty || !groups.inbox.isEmpty {
@@ -57,6 +62,8 @@ struct ChatListView: View {
                     ForEach(groups.inbox) { session in
                         ChatRow(session: session, place: .inbox).tag(ChatSelection.chat(session.id))
                     }
+                } header: {
+                    if pinned { Text("Chats").accessibilityIdentifier("inbox.chats") }
                 }
             }
             if !groups.snoozed.isEmpty {
