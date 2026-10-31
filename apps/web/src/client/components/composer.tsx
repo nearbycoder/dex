@@ -207,9 +207,10 @@ export function Composer(props: {
         // Dictation can finish without a change event; catch up when it ends or the box is left.
         onCompositionEnd={(event) => setText(event.currentTarget.value)}
         onPaste={(event) => {
-          // A pasted screenshot or copied file attaches; pasted text stays text.
+          // A pasted screenshot or copied file attaches. Anything with text pastes as text: on iPhone, copied text
+          // (and what voice-to-text keyboards paste) can carry other forms too, and taking those as files lost it.
           const files = event.clipboardData.files
-          if (files.length === 0 || props.disabled) return
+          if (files.length === 0 || props.disabled || event.clipboardData.getData("text/plain").trim()) return
           event.preventDefault()
           add(files)
         }}
