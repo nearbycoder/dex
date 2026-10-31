@@ -85,7 +85,13 @@ final class UnreadUITests: ChatTestCase {
     func testSidekickBell() {
         launch(["-DexOpenChat", "s-muse"])
         let bell = element("chat.notify")
-        XCTAssertTrue(bell.waitForExistence(timeout: 15), "a sidekick's chat has their bell")
+        // The foldable's cover screen hides the title bar once the chat is scrolled down: a drag down shows it again.
+        if !(bell.waitForExistence(timeout: 8) && bell.isHittable) {
+            let transcript = element("chat.transcript")
+            let start = transcript.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4))
+            start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: 120)), withVelocity: .slow, thenHoldForDuration: 0.2)
+        }
+        XCTAssertTrue(bell.waitForExistence(timeout: 10), "a sidekick's chat has their bell")
         XCTAssertTrue(bell.label.contains("every message"), bell.label)
         bell.tap()
         XCTAssertTrue(wait(bell, "label CONTAINS 'are off'"), "off: \(bell.label)")
