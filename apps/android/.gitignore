@@ -11,3 +11,6 @@ captures/
 
 # Recorded locally with ./gradlew :app:recordRoborazziDebug
 app/src/test/screenshots/
+
+# Per deployment: your Firebase project's config (push). The build skips Firebase without it.
+/app/google-services.json

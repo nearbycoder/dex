@@ -168,7 +168,8 @@ export class FcmSender {
       })
       if (response.ok) return { ok: true }
       const error = ((await response.json().catch(() => ({}))) as { error?: { status?: string; message?: string } }).error
-      const gone = response.status === 404 || error?.status === "NOT_FOUND" || error?.status === "UNREGISTERED"
+      const gone =
+        response.status === 404 || error?.status === "NOT_FOUND" || error?.status === "UNREGISTERED" || /registration token/i.test(error?.message ?? "")
       return { ok: false, gone, error: `FCM: ${error?.status ?? response.status} ${error?.message ?? ""}`.trim().slice(0, 200) }
     } catch (error) {
       return { ok: false, gone: false, error: `FCM: ${error instanceof Error ? error.message : String(error)}` }
