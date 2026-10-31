@@ -7,6 +7,7 @@ import {
   CheckCheck,
   ChevronLeft,
   ChevronRight,
+  Drama,
   FolderGit2,
   FolderOpen,
   KeyRound,
@@ -16,6 +17,7 @@ import {
   Monitor,
   PanelLeftClose,
   Plug,
+  Plus,
   Settings,
   Sparkles,
   SlidersHorizontal,
@@ -28,8 +30,9 @@ import { timeAgo } from "~/client/lib/format"
 import { useNav } from "~/client/lib/mobile-nav"
 import { UpdateButton } from "~/client/lib/updates"
 import { findModel } from "~/shared/models"
+import type { CharacterProfile } from "~/shared/characters"
 import { connectedProviders, type SessionMeta } from "~/shared/protocol"
-import { AgentAvatar } from "./agent-avatar"
+import { AgentAvatar, CharacterAvatar } from "./agent-avatar"
 import { mcpNeedsAttention } from "./mcp-picker"
 import { ModelLogo } from "./model-logo"
 import { inboxState, SessionMenu, type SessionMenuHandle, snoozedLabel, useNaming } from "./session-menu"
@@ -37,7 +40,7 @@ import { ChatListSkeleton } from "./skeleton"
 import { useNow } from "./vm-status"
 
 /** Configuration pages: on these the sidebar shows the settings links instead of the chats. */
-const SETTINGS_AREA = ["/settings", "/notifications", "/machine", "/projects", "/agents", "/skills", "/secrets", "/mcp", "/files", "/usage", "/access"]
+const SETTINGS_AREA = ["/settings", "/notifications", "/machine", "/projects", "/agents", "/characters", "/skills", "/secrets", "/mcp", "/files", "/usage", "/access"]
 const inSettingsArea = (pathname: string) => SETTINGS_AREA.some((path) => pathname === path || pathname.startsWith(`${path}/`))
 
 const linkClass =
@@ -114,6 +117,7 @@ export function Sidebar() {
     },
     { to: "/projects", label: "Projects", icon: <FolderGit2 className="size-4" /> },
     { to: "/agents", label: "Agents", icon: <Bot className="size-4" /> },
+    { to: "/characters", label: "Characters", icon: <Drama className="size-4" />, hint: <Hint count={state?.characters.length} /> },
     { to: "/skills", label: "Skills", icon: <Sparkles className="size-4" /> },
     {
       to: "/mcp",
@@ -201,11 +205,13 @@ export function Sidebar() {
               </Link>
             </div>
             <nav className="scrollbar-thin mt-4 flex-1 space-y-0.5 overflow-y-auto px-3">
+              {state && <Characters characters={state.characters} sessions={state.sessions} activeId={activeId} onPick={onClose} />}
               <div className="px-2 pb-1 text-[11px] font-medium tracking-wide text-zinc-600 uppercase">Chats</div>
               {!state && <ChatListSkeleton />}
               {state && (
                 <ChatGroups
-                  sessions={state.sessions}
+                  // A character's conversations live under them, not in the inbox.
+                  sessions={state.sessions.filter((session) => !session.characterId)}
                   activeId={activeId}
                   onPick={onClose}
                   renderRow={(session, group) => (
@@ -245,6 +251,93 @@ export function Sidebar() {
         </div>
       </aside>
     </>
+  )
+}
+
+/**
+ * Characters, pinned above the chats: each opens their conversation. Shown once you have one; until then a single
+ * quiet row offers to make one.
+ */
+function Characters({
+  characters,
+  sessions,
+  activeId,
+  onPick
+}: {
+  characters: ReadonlyArray<CharacterProfile>
+  sessions: ReadonlyArray<SessionMeta>
+  activeId: string | undefined
+  onPick: () => void
+}) {
+  const header = (
+    <div className="flex items-center px-2 pb-1">
+      <span className="text-[11px] font-medium tracking-wide text-zinc-600 uppercase">Characters</span>
+      <Link
+        to="/characters/$characterId"
+        params={{ characterId: "new" }}
+        onClick={onPick}
+        title="New character"
+        aria-label="New character"
+        className="-my-1 -mr-1 ml-auto rounded-md p-1 text-zinc-600 hover:bg-zinc-900 hover:text-zinc-200"
+      >
+        <Plus className="size-3.5" />
+      </Link>
+    </div>
+  )
+  if (characters.length === 0) {
+    return (
+      <div className="mb-4">
+        {header}
+        <Link
+          to="/characters/$characterId"
+          params={{ characterId: "new" }}
+          onClick={onPick}
+          className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs text-zinc-500 hover:bg-zinc-900/60 hover:text-zinc-300"
+        >
+          <span className="flex size-7 items-center justify-center rounded-full border border-dashed border-zinc-700">
+            <Plus className="size-3.5" />
+          </span>
+          Make a character to talk to
+        </Link>
+      </div>
+    )
+  }
+  const byId = new Map(sessions.map((session) => [session.id, session]))
+  return (
+    <div className="mb-4">
+      {header}
+      {characters.map((character) => {
+        const session = byId.get(character.sessionId)
+        const active = activeId !== undefined && byId.get(activeId)?.characterId === character.id
+        return (
+          <Link
+            key={character.id}
+            to="/chat/$sessionId"
+            params={{ sessionId: character.sessionId }}
+            onClick={onPick}
+            className={`flex animate-fade items-center gap-2.5 rounded-lg px-2.5 py-1.5 ${active ? "bg-zinc-900 text-zinc-100" : "text-zinc-300 hover:bg-zinc-900/60 hover:text-zinc-100"}`}
+          >
+            <span className="relative shrink-0">
+              <CharacterAvatar character={character} size={28} />
+              {session?.busy && <span className="absolute -right-0.5 -bottom-0.5 size-2.5 animate-pulse rounded-full bg-emerald-500 ring-2 ring-zinc-950" />}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="flex items-baseline gap-2">
+                <span className="truncate text-sm">{character.name}</span>
+                {session && !session.busy && (
+                  <span className="ml-auto shrink-0 text-[11px] text-zinc-600" title={new Date(session.updatedAt).toLocaleString()}>
+                    {session.updatedAt > session.createdAt + 1_000 ? timeAgo(session.updatedAt) : ""}
+                  </span>
+                )}
+              </span>
+              <span className={`block truncate text-[11px] ${session?.busy ? "text-emerald-400" : "text-zinc-500"}`}>
+                {session?.busy ? "typing…" : character.tagline || "Say hi"}
+              </span>
+            </span>
+          </Link>
+        )
+      })}
+    </div>
   )
 }
 

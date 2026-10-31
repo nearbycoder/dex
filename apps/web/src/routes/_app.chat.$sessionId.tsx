@@ -1,13 +1,13 @@
-import { createFileRoute, Link } from "@tanstack/react-router"
-import { Bell, BellOff, Check, CheckCheck, FolderOpen, KeyRound, Monitor, Pencil, X } from "lucide-react"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
+import { Bell, BellOff, Check, CheckCheck, FolderOpen, History, KeyRound, Monitor, Pencil, RotateCcw, X } from "lucide-react"
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Composer } from "~/client/components/composer"
 import { ChatArtifactsContext, type ChatArtifacts } from "~/client/components/media"
-import { MessageList } from "~/client/components/message-list"
+import { MessageList, type Speaker } from "~/client/components/message-list"
 import { McpPicker } from "~/client/components/mcp-picker"
 import { QueuePanel } from "~/client/components/queue-panel"
 import { ModelPicker } from "~/client/components/model-picker"
-import { AgentAvatar } from "~/client/components/agent-avatar"
+import { AgentAvatar, CharacterAvatar } from "~/client/components/agent-avatar"
 import { SessionMenu, useNaming } from "~/client/components/session-menu"
 import { VmPreview } from "~/client/components/vm-preview"
 import { Bone, ChatSkeleton, VmFilesSkeleton } from "~/client/components/skeleton"
@@ -38,6 +38,21 @@ function Chat() {
   const naming = useNaming(sessionId)
   const agent = session?.agentId ? state?.agents.find((candidate) => candidate.id === session.agentId) : undefined
   const project = session?.projectId ? state?.projects.find((candidate) => candidate.id === session.projectId) : undefined
+  const character = session?.characterId ? state?.characters.find((candidate) => candidate.id === session.characterId) : undefined
+  // A character's conversation from before they started over: still theirs, no longer the one in the sidebar.
+  const earlier = Boolean(character && character.sessionId !== sessionId)
+  const navigate = useNavigate()
+  // Kept stable across state updates, so finished replies don't re-render.
+  const speaker = useMemo<Speaker | undefined>(
+    () =>
+      character && {
+        name: character.name,
+        avatar: <CharacterAvatar character={character} size={24} />,
+        greeting: character.greeting || undefined
+      },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [character?.name, character?.avatar, character?.image, character?.color, character?.greeting]
+  )
 
   // What you just sent shows at once while the agent records it (a round trip, longer when it's waking up). Each
   // pending message is matched to the next message the agent records, not by text: skills and secrets change it.
@@ -122,6 +137,22 @@ function Chat() {
       <div className={`${filesOpen ? "hidden xl:flex" : "flex"} min-h-0 min-w-0 flex-1 flex-col`}>
       <header className="dex-chrome dex-topbar flex h-12 shrink-0 items-center gap-3 border-b border-zinc-900 px-4">
         <MenuButton />
+        {character && (
+          <Link
+            to="/characters/$characterId"
+            params={{ characterId: character.id }}
+            title={`About ${character.name}`}
+            className="-my-1 flex min-w-0 items-center gap-2.5 rounded-lg py-1 pr-2 hover:bg-zinc-900"
+          >
+            <CharacterAvatar character={character} size={30} />
+            <span className="min-w-0 leading-tight">
+              <span className="block truncate text-sm font-medium text-zinc-100">{character.name}</span>
+              <span className={`block truncate text-[11px] ${transcript.running ? "text-emerald-400" : "text-zinc-500"}`}>
+                {transcript.running ? "typing…" : earlier ? `Earlier conversation · ${new Date(session!.createdAt).toLocaleDateString()}` : character.tagline}
+              </span>
+            </span>
+          </Link>
+        )}
         {project && (
           <Link to="/projects/$projectId" params={{ projectId: project.id }} title={`${project.name} project`} className="shrink-0">
             <AgentAvatar icon={project.icon} color={project.color} image={project.image} size={24} />
@@ -132,7 +163,7 @@ function Chat() {
             <AgentAvatar icon={agent.icon} color={agent.color} size={24} />
           </Link>
         )}
-        {editing === null ? (
+        {character ? null : editing === null ? (
           <button type="button" onClick={() => setEditing(session?.title ?? "")} className="group flex min-w-0 items-center gap-2">
             {session ? (
               <span className={`truncate text-sm font-medium ${naming ? "animate-pulse text-zinc-400" : ""}`} title={naming ? "Writing a new title…" : undefined}>
@@ -205,7 +236,22 @@ function Chat() {
               {session.muted ? <BellOff className="size-4" /> : <Bell className="size-4" />}
             </button>
           )}
-          {session && (
+          {character && (
+            <button
+              type="button"
+              onClick={async () => {
+                if (!confirm(`Start a new conversation with ${character.name}? They keep their memory, and this one stays on their page.`)) return
+                const next = await stub.restartCharacter(character.id)
+                await navigate({ to: "/chat/$sessionId", params: { sessionId: next.sessionId } })
+              }}
+              title={`Start a new conversation with ${character.name}`}
+              aria-label="Start over"
+              className="shrink-0 rounded-md p-1.5 text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200"
+            >
+              <RotateCcw className="size-4" />
+            </button>
+          )}
+          {session && !character && (
             <>
               {/* Settle: done with this chat for now; it moves under Settled until something new happens in it. */}
               <button
@@ -226,7 +272,7 @@ function Chat() {
       <ChatSecretsContext.Provider value={storeSecret}>
         <OpenUIHostContext.Provider value={uiHost}>
           <ChatArtifactsContext.Provider value={artifacts}>
-            {transcript.loaded ? <MessageList key={sessionId} transcript={transcript} onSend={send} pending={pendingTexts} /> : <ChatSkeleton />}
+            {transcript.loaded ? <MessageList key={sessionId} transcript={transcript} onSend={send} pending={pendingTexts} speaker={speaker} /> : <ChatSkeleton />}
           </ChatArtifactsContext.Provider>
         </OpenUIHostContext.Provider>
       </ChatSecretsContext.Provider>
@@ -237,6 +283,15 @@ function Chat() {
             <KeyRound className="size-3.5" /> Connect {MODEL_PROVIDERS[providerOf(session.model)].name} to get answers, or pick another model
           </Link>
         )}
+        {character && earlier && (
+          <Link
+            to="/chat/$sessionId"
+            params={{ sessionId: character.sessionId }}
+            className="mb-2 flex items-center gap-2 text-xs text-zinc-400 hover:text-zinc-200 hover:underline"
+          >
+            <History className="size-3.5" /> An earlier conversation with {character.name}. Go to the current one
+          </Link>
+        )}
         <QueuePanel sessionId={sessionId} items={transcript.queue} held={transcript.queueHeld} running={transcript.running} />
         <Composer
           autoFocus
@@ -244,7 +299,7 @@ function Chat() {
           running={transcript.running}
           onSend={send}
           onStop={() => void stub.abort(sessionId)}
-          placeholder={transcript.running ? "Queue a follow-up…" : "Message Dex, or / for skills…"}
+          placeholder={transcript.running ? "Queue a follow-up…" : `Message ${character?.name ?? "Dex"}, or / for skills…`}
           toolbar={
             session && (
               <div className="flex min-w-0 items-center gap-1">

@@ -3,6 +3,7 @@ import type { AgentEvent, SnapshotEvent } from "@earendil-works/pi-durable"
 import { Predicate } from "effect"
 import { type AccessState, NO_ACCESS } from "./access"
 import type { AgentProfile } from "./agents"
+import type { CharacterProfile } from "./characters"
 import type { McpServerInfo } from "./mcp"
 import type { ChatArtifact } from "./media"
 import type { SkillInfo } from "./skills"
@@ -27,6 +28,8 @@ export interface SessionMeta {
   readonly mcpServers: ReadonlyArray<string>
   /** The project this chat works on, if any: its repos are cloned on the chat's VM. */
   readonly projectId: string | null
+  /** The character this is a conversation with, if any: it lives under them, not in the chat list. */
+  readonly characterId: string | null
   /** No push notifications for this chat. */
   readonly muted: boolean
   /** When you settled it (done for now): it sits under Settled until something new happens in it. */
@@ -156,6 +159,7 @@ export const withStateDefaults = (state: DexState): DexState => ({
   github: state.github ?? { connected: false, login: null },
   push: state.push ?? { configured: false, publicKey: null, devices: [] },
   agents: (state.agents ?? []).map((agent) => ({ ...agent, mcpServers: agent.mcpServers ?? [] })),
+  characters: state.characters ?? [],
   mcp: state.mcp ?? [],
   access: state.access ?? NO_ACCESS,
   skills: state.skills ?? [],
@@ -165,6 +169,7 @@ export const withStateDefaults = (state: DexState): DexState => ({
     agentId: session.agentId ?? null,
     mcpServers: session.mcpServers ?? [],
     projectId: session.projectId ?? null,
+    characterId: session.characterId ?? null,
     muted: session.muted ?? false,
     settledAt: session.settledAt ?? null,
     snoozedUntil: session.snoozedUntil ?? null
@@ -194,6 +199,8 @@ export interface DexState {
   readonly github: GitHubStatus
   readonly push: PushStatus
   readonly agents: ReadonlyArray<AgentProfile>
+  /** Characters, pinned in the sidebar, each with a conversation of their own. Missing in state an older agent saved. */
+  readonly characters: ReadonlyArray<CharacterProfile>
   readonly mcp: ReadonlyArray<McpServerInfo>
   /** MCP access tokens, the audit log of app operations, and admin operations waiting for confirmation. */
   readonly access: AccessState

@@ -4,7 +4,7 @@ import { Link } from "@tanstack/react-router"
 import { AlertTriangle, ArrowDown, Brain, ChevronRight, Clock, FileText, ListChecks, LoaderCircle, MousePointerClick } from "lucide-react"
 import { useParams } from "@tanstack/react-router"
 import type { AttachedFile } from "~/shared/attachments"
-import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { lazy, memo, type ReactNode, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { displayItems, type LiveTool, toolResults, type TranscriptState } from "~/client/lib/transcript"
 import { invokedSkill } from "~/shared/skills"
 import { splitUiNotes } from "~/shared/ui-notes"
@@ -347,15 +347,25 @@ function UserAttachments({
 }
 
 /** Memoized: the chat page re-renders on every synced-state change, but the transcript only on its own. */
+export interface Speaker {
+  readonly name: string
+  /** Their face, 24px. */
+  readonly avatar: ReactNode
+  readonly greeting?: string
+}
+
 export const MessageList = memo(function MessageList({
   transcript,
   onSend,
-  pending = []
+  pending = [],
+  speaker
 }: {
   transcript: TranscriptState
   onSend: (text: string) => void
   /** Messages just sent that the agent hasn't recorded yet, shown at once (see the chat page). */
   pending?: readonly string[]
+  /** Who answers, when it isn't Dex (a character): their face beside replies, and their greeting first. */
+  speaker?: Speaker
 }) {
   const items = useMemo(() => displayItems(transcript), [transcript])
   const results = useMemo(() => toolResults(transcript.entries), [transcript.entries])
@@ -437,6 +447,12 @@ export const MessageList = memo(function MessageList({
         }}
       >
         <div ref={content} onClickCapture={() => (clickedAt.current = Date.now())} className="mx-auto max-w-3xl space-y-5 px-4 py-6">
+          {speaker?.greeting && (
+            <div className="flex animate-rise gap-3">
+              <span className="mt-0.5 shrink-0" title={speaker.name}>{speaker.avatar}</span>
+              <div className="min-w-0 flex-1 pt-0.5 text-sm leading-relaxed whitespace-pre-wrap text-zinc-200 [overflow-wrap:anywhere]">{speaker.greeting}</div>
+            </div>
+          )}
           {items.map((item, index) => {
             switch (item.kind) {
               case "user":
@@ -451,7 +467,7 @@ export const MessageList = memo(function MessageList({
               case "assistant":
                 return (
                   <div key={item.id} className="flex animate-rise gap-3">
-                    <img src="/favicon.svg" alt="Dex" className="mt-0.5 size-6 shrink-0" />
+                    {speaker ? <span className="mt-0.5 shrink-0" title={speaker.name}>{speaker.avatar}</span> : <img src="/favicon.svg" alt="Dex" className="mt-0.5 size-6 shrink-0" />}
                     <AssistantTurn
                       messages={item.messages}
                       streaming={item.streaming}

@@ -26,6 +26,8 @@ import { Route as AuthLogoutRouteImport } from './routes/auth.logout'
 import { Route as AuthPasswordRouteImport } from './routes/auth.password'
 import { Route as AppAgentsIndexRouteImport } from './routes/_app.agents.index'
 import { Route as AppAgentsAgentIdRouteImport } from './routes/_app.agents.$agentId'
+import { Route as AppCharactersIndexRouteImport } from './routes/_app.characters.index'
+import { Route as AppCharactersCharacterIdRouteImport } from './routes/_app.characters.$characterId'
 import { Route as AppChatIndexRouteImport } from './routes/_app.chat.index'
 import { Route as AppChatSessionIdRouteImport } from './routes/_app.chat.$sessionId'
 import { Route as AppMachineIndexRouteImport } from './routes/_app.machine.index'
@@ -131,6 +133,17 @@ const AppAgentsAgentIdRoute = AppAgentsAgentIdRouteImport.update({
   path: '/agents/$agentId',
   getParentRoute: () => AppRoute,
 } as any)
+const AppCharactersIndexRoute = AppCharactersIndexRouteImport.update({
+  id: '/characters/',
+  path: '/characters/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppCharactersCharacterIdRoute =
+  AppCharactersCharacterIdRouteImport.update({
+    id: '/characters/$characterId',
+    path: '/characters/$characterId',
+    getParentRoute: () => AppRoute,
+  } as any)
 const AppChatIndexRoute = AppChatIndexRouteImport.update({
   id: '/chat/',
   path: '/chat/',
@@ -249,6 +262,7 @@ export interface FileRoutesByFullPath {
   '/auth/logout': typeof AuthLogoutRoute
   '/auth/password': typeof AuthPasswordRoute
   '/agents/$agentId': typeof AppAgentsAgentIdRoute
+  '/characters/$characterId': typeof AppCharactersCharacterIdRoute
   '/chat/$sessionId': typeof AppChatSessionIdRoute
   '/machine/$vmKey': typeof AppMachineVmKeyRoute
   '/mcp/$serverId': typeof AppMcpServerIdRoute
@@ -264,6 +278,7 @@ export interface FileRoutesByFullPath {
   '/auth/native/start': typeof AuthNativeStartRoute
   '/auth/native/token': typeof AuthNativeTokenRoute
   '/agents/': typeof AppAgentsIndexRoute
+  '/characters/': typeof AppCharactersIndexRoute
   '/chat/': typeof AppChatIndexRoute
   '/machine/': typeof AppMachineIndexRoute
   '/mcp/': typeof AppMcpIndexRoute
@@ -287,6 +302,7 @@ export interface FileRoutesByTo {
   '/auth/logout': typeof AuthLogoutRoute
   '/auth/password': typeof AuthPasswordRoute
   '/agents/$agentId': typeof AppAgentsAgentIdRoute
+  '/characters/$characterId': typeof AppCharactersCharacterIdRoute
   '/chat/$sessionId': typeof AppChatSessionIdRoute
   '/machine/$vmKey': typeof AppMachineVmKeyRoute
   '/mcp/$serverId': typeof AppMcpServerIdRoute
@@ -302,6 +318,7 @@ export interface FileRoutesByTo {
   '/auth/native/start': typeof AuthNativeStartRoute
   '/auth/native/token': typeof AuthNativeTokenRoute
   '/agents': typeof AppAgentsIndexRoute
+  '/characters': typeof AppCharactersIndexRoute
   '/chat': typeof AppChatIndexRoute
   '/machine': typeof AppMachineIndexRoute
   '/mcp': typeof AppMcpIndexRoute
@@ -327,6 +344,7 @@ export interface FileRoutesById {
   '/auth/logout': typeof AuthLogoutRoute
   '/auth/password': typeof AuthPasswordRoute
   '/_app/agents/$agentId': typeof AppAgentsAgentIdRoute
+  '/_app/characters/$characterId': typeof AppCharactersCharacterIdRoute
   '/_app/chat/$sessionId': typeof AppChatSessionIdRoute
   '/_app/machine/$vmKey': typeof AppMachineVmKeyRoute
   '/_app/mcp/$serverId': typeof AppMcpServerIdRoute
@@ -342,6 +360,7 @@ export interface FileRoutesById {
   '/auth/native/start': typeof AuthNativeStartRoute
   '/auth/native/token': typeof AuthNativeTokenRoute
   '/_app/agents/': typeof AppAgentsIndexRoute
+  '/_app/characters/': typeof AppCharactersIndexRoute
   '/_app/chat/': typeof AppChatIndexRoute
   '/_app/machine/': typeof AppMachineIndexRoute
   '/_app/mcp/': typeof AppMcpIndexRoute
@@ -367,6 +386,7 @@ export interface FileRouteTypes {
     | '/auth/logout'
     | '/auth/password'
     | '/agents/$agentId'
+    | '/characters/$characterId'
     | '/chat/$sessionId'
     | '/machine/$vmKey'
     | '/mcp/$serverId'
@@ -382,6 +402,7 @@ export interface FileRouteTypes {
     | '/auth/native/start'
     | '/auth/native/token'
     | '/agents/'
+    | '/characters/'
     | '/chat/'
     | '/machine/'
     | '/mcp/'
@@ -405,6 +426,7 @@ export interface FileRouteTypes {
     | '/auth/logout'
     | '/auth/password'
     | '/agents/$agentId'
+    | '/characters/$characterId'
     | '/chat/$sessionId'
     | '/machine/$vmKey'
     | '/mcp/$serverId'
@@ -420,6 +442,7 @@ export interface FileRouteTypes {
     | '/auth/native/start'
     | '/auth/native/token'
     | '/agents'
+    | '/characters'
     | '/chat'
     | '/machine'
     | '/mcp'
@@ -444,6 +467,7 @@ export interface FileRouteTypes {
     | '/auth/logout'
     | '/auth/password'
     | '/_app/agents/$agentId'
+    | '/_app/characters/$characterId'
     | '/_app/chat/$sessionId'
     | '/_app/machine/$vmKey'
     | '/_app/mcp/$serverId'
@@ -459,6 +483,7 @@ export interface FileRouteTypes {
     | '/auth/native/start'
     | '/auth/native/token'
     | '/_app/agents/'
+    | '/_app/characters/'
     | '/_app/chat/'
     | '/_app/machine/'
     | '/_app/mcp/'
@@ -607,6 +632,20 @@ declare module '@tanstack/react-router' {
       path: '/agents/$agentId'
       fullPath: '/agents/$agentId'
       preLoaderRoute: typeof AppAgentsAgentIdRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/characters/': {
+      id: '/_app/characters/'
+      path: '/characters'
+      fullPath: '/characters/'
+      preLoaderRoute: typeof AppCharactersIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/characters/$characterId': {
+      id: '/_app/characters/$characterId'
+      path: '/characters/$characterId'
+      fullPath: '/characters/$characterId'
+      preLoaderRoute: typeof AppCharactersCharacterIdRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/chat/': {
@@ -760,12 +799,14 @@ interface AppRouteChildren {
   AppSettingsRoute: typeof AppSettingsRoute
   AppUsageRoute: typeof AppUsageRoute
   AppAgentsAgentIdRoute: typeof AppAgentsAgentIdRoute
+  AppCharactersCharacterIdRoute: typeof AppCharactersCharacterIdRoute
   AppChatSessionIdRoute: typeof AppChatSessionIdRoute
   AppMachineVmKeyRoute: typeof AppMachineVmKeyRoute
   AppMcpServerIdRoute: typeof AppMcpServerIdRoute
   AppProjectsProjectIdRoute: typeof AppProjectsProjectIdRoute
   AppSkillsSkillIdRoute: typeof AppSkillsSkillIdRoute
   AppAgentsIndexRoute: typeof AppAgentsIndexRoute
+  AppCharactersIndexRoute: typeof AppCharactersIndexRoute
   AppChatIndexRoute: typeof AppChatIndexRoute
   AppMachineIndexRoute: typeof AppMachineIndexRoute
   AppMcpIndexRoute: typeof AppMcpIndexRoute
@@ -781,12 +822,14 @@ const AppRouteChildren: AppRouteChildren = {
   AppSettingsRoute: AppSettingsRoute,
   AppUsageRoute: AppUsageRoute,
   AppAgentsAgentIdRoute: AppAgentsAgentIdRoute,
+  AppCharactersCharacterIdRoute: AppCharactersCharacterIdRoute,
   AppChatSessionIdRoute: AppChatSessionIdRoute,
   AppMachineVmKeyRoute: AppMachineVmKeyRoute,
   AppMcpServerIdRoute: AppMcpServerIdRoute,
   AppProjectsProjectIdRoute: AppProjectsProjectIdRoute,
   AppSkillsSkillIdRoute: AppSkillsSkillIdRoute,
   AppAgentsIndexRoute: AppAgentsIndexRoute,
+  AppCharactersIndexRoute: AppCharactersIndexRoute,
   AppChatIndexRoute: AppChatIndexRoute,
   AppMachineIndexRoute: AppMachineIndexRoute,
   AppMcpIndexRoute: AppMcpIndexRoute,

@@ -140,6 +140,7 @@
   - Starting a project chat boots its VM, signs in to GitHub, clones the repos into `~/work`, and runs the setup script before the model's VM tools go ahead.
 - **GitHub:** Connect with GitHub (OAuth) or paste a fine-grained token. Every new VM signs the GitHub CLI and git in with it, so agents can push and open pull requests. Disconnecting an OAuth connection revokes the token at GitHub.
 - **Custom agents:** presets with a name, icon, color, instructions, starter prompt, model, thinking level, and MCP servers. Dex starts with PR Author, PR Reviewer, Researcher, Data Analyst, and Changelog Writer, and agents combine with projects.
+- **Characters:** named companions you talk to directly, pinned at the top of the sidebar. Each has a name, an emoji or picture, a tagline, a character profile (personality, voice, backstory), a prompt (what they do for you), a greeting, a model, and MCP servers, and one long conversation that never ends: it's compacted as it grows, and the character keeps their own memory of you (`/workspace/characters/<id>/MEMORY.md`), which you can edit on their page. They answer as themselves instead of as Dex, keep every tool, and can check in on their own with scheduled prompts. Start over begins a new conversation and keeps the memory; templates (Muse, Atlas, Sage, Rex) get you going. See [docs/characters.md](docs/characters.md).
 
 ### Inline media
 
@@ -182,7 +183,7 @@ Neither is in the App Store or Play Store yet: build them from their folders wit
 ### Chats and external agents can run Dex
 
 - Every app capability is an operation in one registry (`src/agent/operations.ts`):
-  - Chats, agents, projects, skills, MCP servers, VMs, schedules, the workspace, the queue, notifications, settings, and usage.
+  - Chats, agents, characters, projects, skills, MCP servers, VMs, schedules, the workspace, the queue, notifications, settings, and usage.
 - **Chats** use them through `app_operations` / `app_call`, so "start a chat per repo and have each open a PR" just works.
 - **External agents** connect over MCP at `/api/mcp` with a token from Settings → Access & API. Each token is Read, Read & write, or Full, and has an expiry.
 - **Admin operations** (deleting things, settings, editing existing agents or projects, MCP servers, installing skills) need a Full token, or your tap on a Confirm card in the chat.

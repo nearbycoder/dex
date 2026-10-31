@@ -269,12 +269,12 @@ export function ChatListSkeleton() {
 
 // ── Lists of cards ──────────────────────────────────────────────────────────
 
-/** An agent or project card: avatar, name, description, details, and its Start chat / Edit buttons. */
-function ProfileCard({ index, project }: { index: number; project: boolean }) {
+/** An agent, character, or project card: avatar, name, description, details, and its Start chat / Edit buttons. */
+function ProfileCard({ index, project, round = false }: { index: number; project: boolean; round?: boolean }) {
   return (
     <div className="flex flex-col rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
       <div className="flex items-start gap-3">
-        <Bone className="size-10 shrink-0 rounded-[11px]" />
+        <Bone className={`size-10 shrink-0 ${round ? "rounded-full" : "rounded-[11px]"}`} />
         <div className="min-w-0 flex-1">
           <LineBone size="base" width={widthAt(index, [55, 68, 45])} />
           <div className="mt-0.5">
@@ -358,7 +358,7 @@ function MachineCard({ index }: { index: number }) {
   )
 }
 
-export type CardKind = "agent" | "project" | "mcp" | "machine"
+export type CardKind = "agent" | "character" | "project" | "mcp" | "machine"
 
 /** Cards shaped like the ones the list shows once loaded. */
 export function CardGridSkeleton({ kind, count = 4, columns = "sm:grid-cols-2" }: { kind: CardKind; count?: number; columns?: string }) {
@@ -371,7 +371,7 @@ export function CardGridSkeleton({ kind, count = 4, columns = "sm:grid-cols-2" }
           ) : kind === "machine" ? (
             <MachineCard key={index} index={index} />
           ) : (
-            <ProfileCard key={index} index={index} project={kind === "project"} />
+            <ProfileCard key={index} index={index} project={kind === "project"} round={kind === "character"} />
           )
         )}
       </div>
@@ -634,7 +634,7 @@ function ColorsField() {
   )
 }
 
-export type EditorKind = "agent" | "project" | "mcp"
+export type EditorKind = "agent" | "character" | "project" | "mcp"
 
 /** The Agent, Project, and MCP server editors: back link, avatar (or title) and status, then that editor's fields. */
 export function EditorSkeleton({ kind }: { kind: EditorKind }) {
@@ -656,7 +656,7 @@ export function EditorSkeleton({ kind }: { kind: EditorKind }) {
             </div>
           ) : (
             <div className="mb-6 flex items-center gap-4">
-              <Bone className="size-14 shrink-0 rounded-[16px]" />
+              <Bone className={`shrink-0 ${kind === "character" ? "size-16 rounded-full" : "size-14 rounded-[16px]"}`} />
               <div className="min-w-0 flex-1">
                 <div className="flex h-8 items-center">
                   <Bone className="h-6 w-44" />
@@ -675,6 +675,30 @@ export function EditorSkeleton({ kind }: { kind: EditorKind }) {
                 <FieldBones height={76} label="28%" />
                 <FieldBones height={236} label="25%" />
                 <FieldBones height={42} label="30%" />
+              </>
+            )}
+            {kind === "character" && (
+              <>
+                <TwoFields height={42} />
+                {/* Look: emoji, then colors and the picture button. */}
+                <div>
+                  <LineBone size="sm" width="10%" />
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {Array.from({ length: 21 }, (_, index) => (
+                      <Bone key={index} className="size-9 rounded-lg" />
+                    ))}
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {Array.from({ length: 8 }, (_, index) => (
+                      <Bone key={index} className="size-9 rounded-full" />
+                    ))}
+                    <Bone className="h-9 w-24 rounded-lg" />
+                  </div>
+                </div>
+                <FieldBones height={146} label="30%" />
+                <FieldBones height={170} label="16%" />
+                <FieldBones height={62} label="20%" />
+                <FieldBones height={27} label="40%" />
               </>
             )}
             {kind === "project" && (
@@ -993,12 +1017,14 @@ export function RouteSkeleton({ pathname }: { pathname: string }) {
   if (pathname === "/usage") return <UsagePageSkeleton />
   if (pathname === "/files") return <FilesSkeleton />
   if (/^\/agents\/[^/]+/.test(pathname)) return <EditorSkeleton kind="agent" />
+  if (/^\/characters\/[^/]+/.test(pathname)) return <EditorSkeleton kind="character" />
   if (/^\/projects\/[^/]+/.test(pathname)) return <EditorSkeleton kind="project" />
   if (/^\/mcp\/[^/]+/.test(pathname)) return <EditorSkeleton kind="mcp" />
   if (/^\/skills\/[^/]+/.test(pathname)) return <SkillEditorSkeleton />
   if (pathname === "/skills") return <SkillsPageSkeleton />
   if (pathname === "/secrets") return <SecretsSkeleton />
   if (pathname === "/agents") return <ListPageSkeleton kind="agent" />
+  if (pathname === "/characters") return <ListPageSkeleton kind="character" />
   if (pathname === "/projects") return <ListPageSkeleton kind="project" />
   if (pathname === "/mcp") return <ListPageSkeleton kind="mcp" />
   if (pathname === "/notifications") return <NotificationsSkeleton />

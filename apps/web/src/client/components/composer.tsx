@@ -98,8 +98,15 @@ export function Composer(props: {
   /** Shown above the text box, inside the composer (e.g. the selected agent). */
   header?: ReactNode
 }) {
+  // The text box owns its text and `text` follows it; React never writes it back on a re-render. A controlled box
+  // would: iOS dictation puts words in the box before telling React, so any re-render then (a reply streaming in)
+  // put the old text back and threw the dictation away. Changes from code go through `replaceText`.
   const [text, setText] = useState("")
   const ref = useRef<HTMLTextAreaElement>(null)
+  const replaceText = (value: string) => {
+    if (ref.current) ref.current.value = value
+    setText(value)
+  }
   const picker = useRef<HTMLInputElement>(null)
   const { drafts, add, remove, clear } = useDraftAttachments()
   const [dragging, setDragging] = useState(false)
@@ -121,7 +128,7 @@ export function Composer(props: {
 
   useEffect(() => {
     if (!props.draft) return
-    setText(props.draft.text)
+    replaceText(props.draft.text)
     const element = ref.current
     if (!element) return
     element.focus()
@@ -137,9 +144,10 @@ export function Composer(props: {
   }, [text])
 
   const submit = () => {
-    const value = text.trim()
-    if (!canSend) return
-    setText("")
+    // The box itself, in case dictation hasn't reported its last words yet.
+    const value = (ref.current?.value ?? text).trim()
+    if (!(value || ready.length) || uploading || failed.length > 0 || props.disabled) return
+    replaceText("")
     clear()
     void props.onSend(value, ready)
     // Still inside the tap, so iOS keeps the keyboard up.
@@ -172,7 +180,7 @@ export function Composer(props: {
           query={slash}
           onClose={() => setMenuClosed(true)}
           onPick={(name) => {
-            setText(`/${name} `)
+            replaceText(`/${name} `)
             ref.current?.focus()
           }}
         />
@@ -191,11 +199,13 @@ export function Composer(props: {
       <textarea
         ref={ref}
         rows={1}
-        value={text}
+        defaultValue=""
         autoFocus={props.autoFocus}
         placeholder={props.placeholder ?? "Ask Dex to do anything…"}
         className="block w-full resize-none bg-transparent px-4 pt-3.5 pb-1 text-base text-zinc-100 md:text-sm placeholder:text-zinc-500 focus:outline-none"
         onChange={(event) => setText(event.target.value)}
+        // Dictation can finish without a change event; catch up when it ends or the box is left.
+        onCompositionEnd={(event) => setText(event.currentTarget.value)}
         onPaste={(event) => {
           // A pasted screenshot or copied file attaches; pasted text stays text.
           const files = event.clipboardData.files
@@ -203,8 +213,9 @@ export function Composer(props: {
           event.preventDefault()
           add(files)
         }}
-        onBlur={() => {
+        onBlur={(event) => {
           blurredAt.current = Date.now()
+          setText(event.currentTarget.value)
         }}
         onKeyDown={(event) => {
           if (menuOpen && !event.nativeEvent.isComposing && menu.current?.handleKey(event)) {

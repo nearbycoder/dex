@@ -26,6 +26,7 @@ import {
   Wrench
 } from "lucide-react"
 import { AGENT_COLORS, type AgentColor, type AgentIcon } from "~/shared/agents"
+import type { CharacterProfile } from "~/shared/characters"
 
 export const AGENT_ICON_COMPONENTS: Record<AgentIcon, LucideIcon> = {
   bot: Bot,
@@ -89,6 +90,38 @@ export function AgentAvatar({
       style={{ width: size, height: size, borderRadius: Math.round(size * 0.28), background, color: foreground }}
     >
       <Icon style={{ width: size * 0.56, height: size * 0.56 }} strokeWidth={2} />
+    </span>
+  )
+}
+
+/**
+ * A character's face: their picture, or their emoji (else their initial) on their color. Round, unlike agents and
+ * projects, so a character reads as someone rather than something.
+ */
+export function CharacterAvatar({
+  character,
+  size = 32,
+  className = ""
+}: {
+  character: Pick<CharacterProfile, "name" | "avatar" | "image" | "color">
+  size?: number
+  className?: string
+}) {
+  const [background, foreground] = AGENT_COLORS[character.color] ?? AGENT_COLORS.violet
+  if (character.image) {
+    return (
+      <span className={`inline-flex shrink-0 overflow-hidden rounded-full ring-1 ring-zinc-800 ring-inset ${className}`} style={{ width: size, height: size, background }}>
+        <img src={character.image} alt="" className="size-full object-cover" draggable={false} />
+      </span>
+    )
+  }
+  return (
+    <span
+      aria-hidden="true"
+      className={`inline-flex shrink-0 items-center justify-center rounded-full leading-none font-semibold select-none ${className}`}
+      style={{ width: size, height: size, background, color: foreground, fontSize: Math.round(size * (character.avatar ? 0.55 : 0.45)) }}
+    >
+      {character.avatar || character.name.trim().charAt(0).toUpperCase() || "?"}
     </span>
   )
 }

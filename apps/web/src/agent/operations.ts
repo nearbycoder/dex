@@ -2,6 +2,7 @@ import { Type } from "@earendil-works/pi-ai"
 import type { Static, TSchema } from "typebox"
 import type { AccessRisk } from "~/shared/access"
 import { AGENT_COLORS, AGENT_ICONS, type AgentProfile } from "~/shared/agents"
+import type { CharacterProfile } from "~/shared/characters"
 import { MODEL_PROVIDERS, MODELS, supportedThinkingLevels, THINKING_LEVELS, type ThinkingLevel } from "~/shared/models"
 import type { McpAuth, McpTransport } from "~/shared/mcp"
 import { NOTIFY_KINDS, type NotifyKind } from "~/shared/notifications"
@@ -51,6 +52,11 @@ export type OperationHost = Pick<
   | "runCommand"
   | "saveAgent"
   | "deleteAgent"
+  | "saveCharacter"
+  | "deleteCharacter"
+  | "restartCharacter"
+  | "characterMemory"
+  | "saveCharacterMemory"
   | "saveProject"
   | "projectImageCandidates"
   | "deleteProject"
@@ -176,6 +182,19 @@ const agentFields = {
   color
 }
 
+const characterFields = {
+  name: Type.String({ minLength: 1, maxLength: 40 }),
+  tagline: Type.Optional(Type.String({ maxLength: 120, description: "One line under the name in the sidebar." })),
+  persona: Type.Optional(Type.String({ maxLength: 20_000, description: "Who they are: personality, voice, backstory." })),
+  instructions: Type.Optional(Type.String({ maxLength: 20_000, description: "What they do for the user, and their rules." })),
+  greeting: Type.Optional(Type.String({ maxLength: 2_000, description: "Their first words, shown while the conversation is empty." })),
+  avatar: Type.Optional(Type.String({ maxLength: 16, description: "One emoji." })),
+  model: Type.Optional(modelId),
+  thinking: Type.Optional(thinking),
+  mcp_servers: Type.Optional(Type.Array(id("MCP server id"), { maxItems: 20 })),
+  color
+}
+
 const repo = Type.Object({
   url: Type.String({ minLength: 1, maxLength: 300, description: "GitHub owner/repo or an https git URL." }),
   branch: Type.Optional(Type.String({ maxLength: 120 })),
@@ -218,6 +237,7 @@ const sessionSummary = (state: DexState) => (session: DexState["sessions"][numbe
   muted: session.muted,
   agent: session.agentId ? (state.agents.find((agent) => agent.id === session.agentId)?.name ?? session.agentId) : null,
   project: session.projectId ? (state.projects.find((project) => project.id === session.projectId)?.name ?? session.projectId) : null,
+  character: session.characterId ? (state.characters.find((character) => character.id === session.characterId)?.name ?? session.characterId) : null,
   mcpServers: session.mcpServers,
   vm: state.vms.find((vm) => vm.key === session.id)?.status ?? "none",
   inbox: inboxState(session),
@@ -238,6 +258,28 @@ const agentDraft = (args: Static<typeof createAgentParams>, existing?: AgentProf
   icon: (args.icon ?? existing?.icon ?? "bot") as AgentProfile["icon"],
   color: (args.color ?? existing?.color ?? "emerald") as AgentProfile["color"]
 })
+
+const characterDraft = (args: Static<typeof createCharacterParams>, existing?: CharacterProfile) => ({
+  id: existing?.id,
+  name: args.name ?? existing?.name ?? "",
+  tagline: args.tagline ?? existing?.tagline ?? "",
+  persona: args.persona ?? existing?.persona ?? "",
+  instructions: args.instructions ?? existing?.instructions ?? "",
+  greeting: args.greeting ?? existing?.greeting ?? "",
+  avatar: args.avatar ?? existing?.avatar ?? "",
+  model: args.model ?? existing?.model ?? "",
+  thinking: (args.thinking ?? existing?.thinking ?? "medium") as ThinkingLevel,
+  mcpServers: args.mcp_servers ?? existing?.mcpServers ?? [],
+  color: (args.color ?? existing?.color ?? "violet") as CharacterProfile["color"]
+})
+
+/** Characters as operations return them: without the picture (a data: URL), with where to message them. */
+const characterSummary = (character: CharacterProfile) => {
+  const { image, sessionId, ...rest } = character
+  return { ...rest, session_id: sessionId, hasImage: Boolean(image) }
+}
+
+const characterName = (state: DexState, id: string) => state.characters.find((character) => character.id === id)?.name ?? id
 
 /** Projects as operations return them: a picture is a data: URL, too big to be worth a model's context. */
 const projectSummary = (project: ProjectProfile) => {
@@ -272,6 +314,7 @@ const projectDraft = (args: Static<typeof createProjectParams>, existing?: Proje
 })
 
 const createAgentParams = Type.Object(agentFields)
+const createCharacterParams = Type.Object(characterFields)
 const createProjectParams = Type.Object(projectFields)
 
 /** A chat may start chats, and those may start chats, but no deeper: no runaway trees of agents. */
@@ -283,7 +326,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
   // Overview and reading
   define({
     name: "app_overview",
-    description: "A summary of this Dex: counts of chats, agents, projects, MCP servers, and VMs; what's connected; and the settings.",
+    description: "A summary of this Dex: counts of chats, agents, characters, projects, MCP servers, and VMs; what's connected; and the settings.",
     risk: "read",
     parameters: Type.Object({}),
     covers: [],
@@ -293,6 +336,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
       return {
         chats: { total: state.sessions.length, busy: state.sessions.filter((session) => session.busy).length },
         agents: state.agents.length,
+        characters: state.characters.map((character) => ({ id: character.id, name: character.name, session_id: character.sessionId })),
         projects: state.projects.length,
         mcpServers: state.mcp.map((server) => ({ id: server.id, name: server.name, status: server.status })),
         vms: { configured: state.vmConfigured, running: state.vms.filter((vm) => vm.status === "running").length, total: state.vms.length },
@@ -890,6 +934,83 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     run: async (host, args) => {
       await host.deleteAgent(args.agent_id)
       return { deleted: args.agent_id }
+    }
+  }),
+
+  // Characters
+  define({
+    name: "app_list_characters",
+    description:
+      "List characters: named companions pinned in the user's sidebar, each with a persona, instructions, and one long conversation of their own. Message one with app_send_message on its session_id.",
+    risk: "read",
+    parameters: Type.Object({}),
+    covers: [],
+    summarize: () => "List characters",
+    run: async (host) => host.appState().characters.map(characterSummary)
+  }),
+  define({
+    name: "app_create_character",
+    description:
+      "Create a character: a named companion (persona, instructions, greeting, emoji, model) with a conversation of their own, pinned in the sidebar. Returns it with its session_id.",
+    risk: "write",
+    parameters: createCharacterParams,
+    covers: ["saveCharacter"],
+    summarize: (args) => `Create character ${quote(args.name)}`,
+    run: async (host, args) => characterSummary(await host.saveCharacter(characterDraft(args)))
+  }),
+  define({
+    name: "app_update_character",
+    description: "Change a character. Only the fields you give change; their conversation moves to the new model and MCP servers.",
+    risk: "admin",
+    parameters: Type.Object({ character_id: id("The character's id."), ...characterFields, name: Type.Optional(characterFields.name) }),
+    covers: ["saveCharacter"],
+    summarize: (args, state) => `Update character ${quote(characterName(state, args.character_id))}`,
+    run: async (host, args) => {
+      const existing = host.appState().characters.find((character) => character.id === args.character_id)
+      if (!existing) throw new Error(`No character ${args.character_id}.`)
+      return characterSummary(await host.saveCharacter(characterDraft({ ...args, name: args.name ?? existing.name }, existing)))
+    }
+  }),
+  define({
+    name: "app_restart_character",
+    description: "Start a new conversation with a character (they keep their memory). The old one stays readable on their page.",
+    risk: "write",
+    parameters: Type.Object({ character_id: id("The character's id.") }),
+    covers: ["restartCharacter"],
+    summarize: (args, state) => `Start over with ${quote(characterName(state, args.character_id))}`,
+    run: async (host, args) => characterSummary(await host.restartCharacter(args.character_id))
+  }),
+  define({
+    name: "app_delete_character",
+    description: "Delete a character. Their conversations stay as ordinary chats, and their memory file stays in the workspace.",
+    risk: "admin",
+    parameters: Type.Object({ character_id: id("The character's id.") }),
+    covers: ["deleteCharacter"],
+    summarize: (args, state) => `Delete character ${quote(characterName(state, args.character_id))}`,
+    run: async (host, args) => {
+      await host.deleteCharacter(args.character_id)
+      return { deleted: args.character_id }
+    }
+  }),
+  define({
+    name: "app_read_character_memory",
+    description: "Read a character's memory: their own notes about the user, which they read every turn.",
+    risk: "read",
+    parameters: Type.Object({ character_id: id("The character's id.") }),
+    covers: ["characterMemory"],
+    summarize: (args, state) => `Read ${quote(characterName(state, args.character_id))}'s memory`,
+    run: async (host, args) => ({ memory: await host.characterMemory(args.character_id) })
+  }),
+  define({
+    name: "app_set_character_memory",
+    description: "Replace a character's memory (Markdown). Empty clears it.",
+    risk: "admin",
+    parameters: Type.Object({ character_id: id("The character's id."), memory: Type.String({ maxLength: 64_000 }) }),
+    covers: ["saveCharacterMemory"],
+    summarize: (args, state) => `Replace ${quote(characterName(state, args.character_id))}'s memory`,
+    run: async (host, args) => {
+      await host.saveCharacterMemory(args.character_id, args.memory)
+      return { saved: args.character_id }
     }
   }),
 
