@@ -3,6 +3,7 @@ import type { Static, TSchema } from "typebox"
 import type { AccessRisk } from "~/shared/access"
 import { AGENT_COLORS, AGENT_ICONS, type AgentProfile } from "~/shared/agents"
 import type { CharacterProfile } from "~/shared/characters"
+import { BODIES, EXTRAS, EYES, LOOK_PRESETS, MOUTHS, type SidekickLook, SKINS } from "~/shared/sidekick-look"
 import { MODEL_PROVIDERS, MODELS, supportedThinkingLevels, THINKING_LEVELS, type ThinkingLevel } from "~/shared/models"
 import type { McpAuth, McpTransport } from "~/shared/mcp"
 import { NOTIFY_KINDS, type NotifyKind } from "~/shared/notifications"
@@ -188,7 +189,22 @@ const characterFields = {
   persona: Type.Optional(Type.String({ maxLength: 20_000, description: "Who they are: personality, voice, backstory." })),
   instructions: Type.Optional(Type.String({ maxLength: 20_000, description: "What they do for the user, and their rules." })),
   greeting: Type.Optional(Type.String({ maxLength: 2_000, description: "Their first words, shown while the conversation is empty." })),
-  avatar: Type.Optional(Type.String({ maxLength: 16, description: "One emoji." })),
+  look: Type.Optional(
+    Type.Union(
+      [
+        Type.Object({
+          body: Type.Union(BODIES.map((value) => Type.Literal(value))),
+          skin: Type.Union(Object.keys(SKINS).map((value) => Type.Literal(value)), { description: "Body color." }),
+          eyes: Type.Union(EYES.map((value) => Type.Literal(value))),
+          mouth: Type.Union(MOUTHS.map((value) => Type.Literal(value))),
+          extra: Type.Union(EXTRAS.map((value) => Type.Literal(value)), { description: "Headwear or glasses." }),
+          blush: Type.Boolean()
+        }),
+        Type.Null()
+      ],
+      { description: `Their little character, drawn from parts. Ready-made ones: ${LOOK_PRESETS.map((preset) => `${preset.key} ${JSON.stringify(preset.look)}`).join("; ")}.` }
+    )
+  ),
   model: Type.Optional(modelId),
   thinking: Type.Optional(thinking),
   mcp_servers: Type.Optional(Type.Array(id("MCP server id"), { maxItems: 20 })),
@@ -266,7 +282,9 @@ const characterDraft = (args: Static<typeof createCharacterParams>, existing?: C
   persona: args.persona ?? existing?.persona ?? "",
   instructions: args.instructions ?? existing?.instructions ?? "",
   greeting: args.greeting ?? existing?.greeting ?? "",
-  avatar: args.avatar ?? existing?.avatar ?? "",
+  avatar: existing?.avatar ?? "",
+  // A new look drops the old one's picture (the app draws a fresh one); left out, both stay.
+  ...(args.look !== undefined ? { look: (args.look ?? null) as SidekickLook | null, image: null } : {}),
   model: args.model ?? existing?.model ?? "",
   thinking: (args.thinking ?? existing?.thinking ?? "medium") as ThinkingLevel,
   mcpServers: args.mcp_servers ?? existing?.mcpServers ?? [],
@@ -275,7 +293,7 @@ const characterDraft = (args: Static<typeof createCharacterParams>, existing?: C
 
 /** Sidekicks as operations return them: without the picture (a data: URL), with where to message them. */
 const characterSummary = (character: CharacterProfile) => {
-  const { image, sessionId, ...rest } = character
+  const { image, sessionId, avatar: _avatar, ...rest } = character
   return { ...rest, session_id: sessionId, hasImage: Boolean(image) }
 }
 

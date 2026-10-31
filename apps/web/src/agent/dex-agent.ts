@@ -55,6 +55,7 @@ import { githubFullName, isProjectImage, normalizeRepoUrl, type ProjectDraft, ty
 import { CLOUDFLARE_RATES, type CloudflareLine, type OpenCodeLimits, type UsageRange, type UsageReport } from "~/shared/usage"
 import { AGENT_COLORS, AGENT_ICONS, type AgentDraft, type AgentProfile, STARTER_AGENTS } from "~/shared/agents"
 import { type CharacterDraft, characterMemoryPath, type CharacterProfile, MAX_CHARACTER_MEMORY_CHARS } from "~/shared/characters"
+import { cleanLook, LOOK_PRESETS, randomLook } from "~/shared/sidekick-look"
 import { type AccessRisk, type CreatedAccessToken, NO_ACCESS, type UiOperationResult } from "~/shared/access"
 import { extensionOf, MAX_MEDIA_BYTES, vmMediaLinks, vmMediaSource } from "~/shared/media"
 import type { McpCheckReport, RegistryServer, RegistrySource } from "~/shared/mcp-registry"
@@ -543,6 +544,7 @@ export class DexAgent extends Agent<Env, DexState> {
       )
       this.ctx.storage.sql.exec(`INSERT INTO dex_meta (key, value) VALUES ('sidekick_memory_moved', '1')`)
     }
+    this.giveSidekicksLooks()
     this.refreshCharacters()
     this.skills.refresh()
     this.accountSecrets.refresh()
@@ -1700,7 +1702,7 @@ export class DexAgent extends Agent<Env, DexState> {
 
   private toCharacter(row: CharacterRow): CharacterProfile {
     const data = JSON.parse(row.data) as Omit<CharacterProfile, "id" | "sessionId" | "createdAt" | "updatedAt">
-    return { ...data, mcpServers: data.mcpServers ?? [], image: data.image ?? null, id: row.id, sessionId: row.session_id, createdAt: row.created_at, updatedAt: row.updated_at }
+    return { ...data, mcpServers: data.mcpServers ?? [], image: data.image ?? null, look: data.look ?? null, id: row.id, sessionId: row.session_id, createdAt: row.created_at, updatedAt: row.updated_at }
   }
 
   private characterById(id: string): CharacterProfile | undefined {
@@ -1712,6 +1714,24 @@ export class DexAgent extends Agent<Env, DexState> {
   private characterForSession(sessionId: string): CharacterProfile | undefined {
     const id = this.ctx.storage.sql.exec<{ character_id: string | null }>(`SELECT character_id FROM dex_sessions WHERE id = ?`, sessionId).toArray()[0]?.character_id
     return id ? this.characterById(id) : undefined
+  }
+
+  /**
+   * Once: sidekicks from before looks (an emoji, no photo) get one: their template's for its emoji, else one picked
+   * from their id. The web app draws the picture the iPhone and Android apps show the next time it opens.
+   */
+  private giveSidekicksLooks() {
+    if (this.ctx.storage.sql.exec(`SELECT 1 FROM dex_meta WHERE key = 'sidekick_looks'`).toArray().length) return
+    const byEmoji: Record<string, string> = { "🎨": "muse", "🧭": "atlas", "🌿": "sage", "🔥": "rex" }
+    for (const row of this.ctx.storage.sql.exec<CharacterRow>(`SELECT * FROM dex_characters`).toArray()) {
+      const data = JSON.parse(row.data) as Partial<CharacterProfile>
+      if (data.look || data.image) continue
+      const preset = LOOK_PRESETS.find((candidate) => candidate.key === byEmoji[data.avatar ?? ""])
+      let seed = [...row.id].reduce((hash, char) => (hash * 31 + char.charCodeAt(0)) >>> 0, 7)
+      const look = preset?.look ?? randomLook(() => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32))
+      this.ctx.storage.sql.exec(`UPDATE dex_characters SET data = ? WHERE id = ?`, JSON.stringify({ ...data, look, avatar: "" }), row.id)
+    }
+    this.ctx.storage.sql.exec(`INSERT INTO dex_meta (key, value) VALUES ('sidekick_looks', '1')`)
   }
 
   private refreshCharacters() {
@@ -1744,6 +1764,7 @@ export class DexAgent extends Agent<Env, DexState> {
       greeting: String(draft.greeting ?? "").trim().slice(0, 2_000),
       avatar: firstGrapheme(String(draft.avatar ?? "")),
       image: draft.image === undefined ? (existing?.image ?? null) : draft.image,
+      look: draft.look === undefined ? (existing?.look ?? null) : cleanLook(draft.look),
       color: draft.color in AGENT_COLORS ? draft.color : "violet",
       model,
       thinking: clampThinking(findModel(model), draft.thinking),

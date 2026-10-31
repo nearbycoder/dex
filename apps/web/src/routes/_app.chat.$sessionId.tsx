@@ -51,7 +51,7 @@ function Chat() {
         greeting: character.greeting || undefined
       },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [character?.name, character?.avatar, character?.image, character?.color, character?.greeting]
+    [character?.name, character?.avatar, character?.image, character?.color, character?.greeting, JSON.stringify(character?.look ?? null)]
   )
 
   // What you just sent shows at once while the agent records it (a round trip, longer when it's waking up). Each

@@ -27,6 +27,7 @@ import {
 } from "lucide-react"
 import { AGENT_COLORS, type AgentColor, type AgentIcon } from "~/shared/agents"
 import type { CharacterProfile } from "~/shared/characters"
+import { lookUrl } from "~/client/lib/sidekick-art"
 
 export const AGENT_ICON_COMPONENTS: Record<AgentIcon, LucideIcon> = {
   bot: Bot,
@@ -95,23 +96,23 @@ export function AgentAvatar({
 }
 
 /**
- * A character's face: their picture, or their emoji (else their initial) on their color. Round, unlike agents and
- * projects, so a character reads as someone rather than something.
+ * A sidekick's face: their little character, else their photo, else their emoji (or initial) on their color. Round,
+ * unlike agents and projects, so a sidekick reads as someone rather than something.
  */
 export function CharacterAvatar({
   character,
   size = 32,
   className = ""
 }: {
-  character: Pick<CharacterProfile, "name" | "avatar" | "image" | "color">
+  character: Pick<CharacterProfile, "name" | "avatar" | "image" | "color" | "look">
   size?: number
   className?: string
 }) {
   const [background, foreground] = AGENT_COLORS[character.color] ?? AGENT_COLORS.violet
-  if (character.image) {
+  if (character.look || character.image) {
     return (
-      <span className={`inline-flex shrink-0 overflow-hidden rounded-full ring-1 ring-zinc-800 ring-inset ${className}`} style={{ width: size, height: size, background }}>
-        <img src={character.image} alt="" className="size-full object-cover" draggable={false} />
+      <span className={`inline-flex shrink-0 overflow-hidden rounded-full ${className}`} style={{ width: size, height: size, background }}>
+        <img src={character.look ? lookUrl(character.look, background) : character.image!} alt="" className="size-full object-cover" draggable={false} />
       </span>
     )
   }

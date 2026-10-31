@@ -1,14 +1,17 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
-import { ArrowLeft, Check, ImagePlus, LoaderCircle, MessageCircle, Plug, RotateCcw, Trash2, X } from "lucide-react"
+import { ArrowLeft, Check, LoaderCircle, MessageCircle, Plug, RotateCcw, Trash2 } from "lucide-react"
 import { type ReactNode, useEffect, useRef, useState } from "react"
 import { CharacterAvatar } from "~/client/components/agent-avatar"
+import { SidekickLookPicker } from "~/client/components/sidekick-look-picker"
+import { lookPng } from "~/client/lib/sidekick-art"
+import { randomLook } from "~/shared/sidekick-look"
 import { InfoTip } from "~/client/components/info-tip"
 import { McpStatusDot } from "~/client/components/mcp-picker"
 import { ModelPicker } from "~/client/components/model-picker"
 import { EditorSkeleton } from "~/client/components/skeleton"
 import { useDex } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
-import { AGENT_COLORS, type AgentColor } from "~/shared/agents"
+import { AGENT_COLORS } from "~/shared/agents"
 import { CHARACTER_TEMPLATES, type CharacterDraft, characterMemoryPath } from "~/shared/characters"
 import { DEFAULT_MODEL_ID, DEFAULT_THINKING } from "~/shared/models"
 
@@ -21,6 +24,7 @@ const blank = (model: string, thinking: CharacterDraft["thinking"]): CharacterDr
   instructions: "",
   greeting: "",
   avatar: "",
+  look: randomLook(),
   image: null,
   color: "violet",
   model,
@@ -28,10 +32,6 @@ const blank = (model: string, thinking: CharacterDraft["thinking"]): CharacterDr
   mcpServers: []
 })
 
-const EMOJI = ["🎨", "🧭", "🌿", "🔥", "🦊", "🐙", "🤖", "👾", "🧙", "🦉", "🐉", "🌙", "⚡", "🎧", "📚", "🧠", "💼", "🍵", "🎮", "🚀"]
-
-/** What was just typed into the emoji box, so typing a new one replaces the old. */
-const lastGrapheme = (text: string) => [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text.trim())].at(-1)?.segment ?? ""
 
 const field = "w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-base text-zinc-100 placeholder:text-zinc-600 focus:border-emerald-600 focus:outline-none md:text-sm"
 
@@ -110,7 +110,9 @@ function CharacterEditor() {
     setSaving(true)
     setError(null)
     try {
-      const result = await stub.saveCharacter(draft)
+      // The apps show a picture rather than drawing looks: send one along.
+      const image = draft.look ? await lookPng(draft.look, AGENT_COLORS[draft.color][0]) : draft.image
+      const result = await stub.saveCharacter({ ...draft, image })
       setDraft({ ...result })
       setSaved(true)
       // A new character: straight to saying hi.
@@ -125,7 +127,8 @@ function CharacterEditor() {
   const pickPicture = async (file: File | undefined) => {
     if (!file) return
     try {
-      update({ image: await avatarDataUrl(file) })
+      // A photo instead of a look.
+      update({ image: await avatarDataUrl(file), look: null, avatar: "" })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Couldn't read that picture.")
     }
@@ -141,7 +144,7 @@ function CharacterEditor() {
         </Link>
 
         <div className="mb-6 flex items-center gap-4">
-          <CharacterAvatar character={{ ...draft, name: draft.name || "?", image: draft.image ?? null }} size={64} />
+          <CharacterAvatar character={{ ...draft, name: draft.name || "?", image: draft.image ?? null }} size={72} />
           <div className="min-w-0">
             <h1 className="truncate text-2xl font-semibold tracking-tight">{draft.name || (isNew ? "New sidekick" : "Untitled")}</h1>
             <p className="truncate text-sm text-zinc-400">{draft.tagline || "Who are they to you?"}</p>
@@ -207,81 +210,15 @@ function CharacterEditor() {
             </Field>
           </div>
 
-          <Field as="div" label="Look">
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center gap-1.5">
-                {/* No emoji: their initial. */}
-                <button
-                  type="button"
-                  title="Their initial"
-                  aria-label="Their initial"
-                  aria-pressed={!draft.avatar}
-                  onClick={() => update({ avatar: "" })}
-                  className={`flex size-9 items-center justify-center rounded-lg border text-sm font-semibold ${
-                    !draft.avatar ? "border-emerald-500 bg-emerald-950/40 text-zinc-100" : "border-zinc-800 text-zinc-400 hover:border-zinc-700"
-                  }`}
-                >
-                  {draft.name.trim().charAt(0).toUpperCase() || "A"}
-                </button>
-                {EMOJI.map((emoji) => (
-                  <button
-                    key={emoji}
-                    type="button"
-                    aria-pressed={draft.avatar === emoji}
-                    onClick={() => update({ avatar: emoji })}
-                    className={`flex size-9 items-center justify-center rounded-lg border text-lg ${
-                      draft.avatar === emoji ? "border-emerald-500 bg-emerald-950/40" : "border-zinc-800 hover:border-zinc-700"
-                    }`}
-                  >
-                    {emoji}
-                  </button>
-                ))}
-                {/* Any other emoji: type or paste it. */}
-                <input
-                  value={draft.avatar && !EMOJI.includes(draft.avatar) ? draft.avatar : ""}
-                  onChange={(event) => update({ avatar: lastGrapheme(event.target.value) })}
-                  aria-label="Another emoji"
-                  title="Type or paste any emoji"
-                  placeholder="Other"
-                  className={`h-9 w-16 rounded-lg border border-dashed bg-zinc-950 text-center text-base placeholder:text-xs placeholder:text-zinc-500 focus:border-emerald-600 focus:outline-none ${
-                    draft.avatar && !EMOJI.includes(draft.avatar) ? "border-emerald-500" : "border-zinc-700"
-                  }`}
-                />
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {(Object.keys(AGENT_COLORS) as AgentColor[]).map((color) => {
-                  const [background, foreground] = AGENT_COLORS[color]
-                  const selected = color === draft.color
-                  return (
-                    <button
-                      key={color}
-                      type="button"
-                      title={color}
-                      aria-label={color}
-                      aria-pressed={selected}
-                      onClick={() => update({ color })}
-                      className={`flex size-9 items-center justify-center rounded-full ring-offset-2 ring-offset-zinc-950 ${selected ? "ring-2 ring-zinc-200" : ""}`}
-                      style={{ background }}
-                    >
-                      <span className="size-3.5 rounded-full" style={{ background: foreground }} />
-                    </button>
-                  )
-                })}
-                <input ref={pictureInput} type="file" accept="image/*" className="hidden" onChange={(event) => void pickPicture(event.target.files?.[0])} />
-                <button
-                  type="button"
-                  onClick={() => pictureInput.current?.click()}
-                  className="flex items-center gap-1.5 rounded-lg border border-zinc-800 px-3 py-2 text-sm text-zinc-300 hover:border-zinc-700 hover:text-zinc-100 sm:ml-2"
-                >
-                  <ImagePlus className="size-4" /> {draft.image ? "Change picture" : "Picture"}
-                </button>
-                {draft.image && (
-                  <button type="button" onClick={() => update({ image: null })} className="flex items-center gap-1 rounded-lg px-2 py-2 text-sm text-zinc-500 hover:text-zinc-200">
-                    <X className="size-4" /> Remove
-                  </button>
-                )}
-              </div>
-            </div>
+          <Field as="div" label="Look" hint="Pick a ready-made sidekick or make your own; Shuffle rolls a new one.">
+            <input ref={pictureInput} type="file" accept="image/*" className="hidden" onChange={(event) => void pickPicture(event.target.files?.[0])} />
+            <SidekickLookPicker
+              look={draft.look ?? null}
+              color={draft.color}
+              hasPhoto={Boolean(draft.image)}
+              onChange={(patch) => update({ ...patch, avatar: "" })}
+              onPhoto={() => pictureInput.current?.click()}
+            />
           </Field>
 
           <Field label="Character profile" hint="Who they are: personality, voice, backstory, how they talk to you. They become this instead of Dex.">

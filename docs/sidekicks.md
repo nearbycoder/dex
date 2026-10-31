@@ -10,7 +10,7 @@ In code and on the wire they're `characters` (`CharacterProfile`, `characterId`,
 |---|---|
 | Name | "Muse". Also the title of its conversation. |
 | Tagline | One line under the name in the sidebar ("Your creative sparring partner"). |
-| Avatar | An emoji on one of the agent colors, or a picture (a small data: URL, at most 48 KB) instead. Sidekicks are round; agents and projects are rounded squares. |
+| Look | A little character drawn from parts (`look`: body, body color, eyes, mouth, extra, cheeks) on one of the agent colors: one of 12 ready-made ones, a mix of your own, or Shuffle. A photo can replace it. Apps that don't draw looks show the PNG saved with it (`image`, at most 48 KB); the web app draws one for any look set without one (from a chat or MCP). Sidekicks are round; agents and projects are rounded squares. Ones from before looks had an emoji (`avatar`) and were given a look once. |
 | Character profile (`persona`) | Who they are: personality, voice, backstory, how they talk to you. |
 | Prompt (`instructions`) | What they do for you, and their rules. |
 | Greeting | Their first words, shown when the conversation is empty. |
@@ -42,4 +42,4 @@ Operations: `app_list_sidekicks` and `app_read_sidekick_memory` (read), `app_cre
 ## Apps
 
 - **Web:** Sidekicks in the sidebar and under Settings → Sidekicks; the editor at `/sidekicks/<id>` (with templates for a new one); a sidekick's chat shows their avatar and name in the header, their greeting when empty, and "Message <name>…" in the composer.
-- **iOS and Android:** a pinned Sidekicks section at the top of the chat list (and the iPad / tablet sidebar), the same chat header, greeting, and placeholder, and an editor (Library → Sidekicks) with templates, Start over, and Delete.
+- **iOS and Android:** they show `image`; their editors pick from the ready-made looks bundled from `assets/sidekicks` (saving its `look` and PNG). Also a pinned Sidekicks section at the top of the chat list (and the iPad / tablet sidebar), the same chat header, greeting, and placeholder, and an editor (Library → Sidekicks) with templates, Start over, and Delete.
