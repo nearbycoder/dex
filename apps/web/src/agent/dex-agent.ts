@@ -70,6 +70,7 @@ import { CLINEPASS_PROVIDER_ID, ClinePassClient, clinePassProvider } from "./cli
 import { type ChatGPTCredential, ChatGPTClient, type ChatGPTPending, chatGPTProvider, CHATGPT_REDIRECT_URI, parseChatGPTCallback, startChatGPTSignIn } from "./chatgpt"
 import { catalogChanges, catalogVersion, fetchModelCatalog } from "./model-catalog"
 import { OpenCodeGoClient, openCodeGoProvider } from "./opencode-go"
+import { CommandCodeError, commandCodeProvider, type CommandCodeListed, listCommandCodeModels, planModels } from "./commandcode"
 import { isMcpExtension, type McpCallResult, mcpExtension, mcpExtensionName, type McpToolSpec, toToolResult } from "./mcp-tools"
 import { AccessCenter, parseAccessToken } from "./access"
 import { MediaCenter, type SharedMedia } from "./media"
@@ -302,7 +303,7 @@ const keyHint = (key: string) => (key.length > 8 ? `${key.slice(0, 4)}…${key.s
 
 /**
  * One per user. Hosts Pi Durable through PiHarness: each chat is a Pi
- * session in this object's SQLite, model calls go to ClinePass, OpenCode Go, or ChatGPT, and runs
+ * session in this object's SQLite, model calls go to ClinePass, OpenCode Go, ChatGPT, or Command Code, and runs
  * resume on their own after an eviction or deploy.
  */
 export class DexAgent extends Agent<Env, DexState> {
@@ -310,6 +311,7 @@ export class DexAgent extends Agent<Env, DexState> {
     cline: { connected: false, source: null, keyHint: null, verifiedAt: null },
     opencode: { connected: false, source: null, keyHint: null, verifiedAt: null },
     chatgpt: { connected: false, source: null, keyHint: null, verifiedAt: null },
+    commandcode: { connected: false, source: null, keyHint: null, verifiedAt: null },
     boat: { connected: false, source: null, keyHint: null },
     settings: DEFAULT_SETTINGS,
     sessions: [],
@@ -583,6 +585,7 @@ export class DexAgent extends Agent<Env, DexState> {
     await this.refreshClineStatus()
     this.refreshOpenCodeStatus()
     this.refreshChatGPTStatus()
+    this.refreshCommandCodeStatus()
     await this.refreshSessions()
     for (const vm of this.vms.values()) void vm.refresh()
     this.ctx.waitUntil(this.reapOrphanVms())
@@ -1026,6 +1029,82 @@ export class DexAgent extends Agent<Env, DexState> {
     this.refreshOpenCodeStatus()
   }
 
+  // ── Command Code connection ───────────────────────────────────────────────
+
+  private async resolveCommandCodeKey(): Promise<{ key: string; source: string } | undefined> {
+    const stored = this.secret("commandcode_api_key")
+    if (!stored) return undefined
+    const key = await this.runtime.runPromise(Keys.use((keys) => keys.decrypt(stored)).pipe(Effect.option))
+    return Option.isSome(key) ? { key: key.value, source: "Command Code (connected)" } : undefined
+  }
+
+  private refreshCommandCodeStatus() {
+    const connected = Boolean(this.secret("commandcode_api_key"))
+    const verifiedAt = Number(this.secret("commandcode_verified_at") ?? 0) || null
+    this.publish({
+      commandcode: { connected, source: connected ? "user" : null, keyHint: connected ? (this.secret("commandcode_key_hint") ?? null) : null, verifiedAt: connected ? verifiedAt : null }
+    })
+  }
+
+  /**
+   * What Command Code lists for the connected key and which of those its plan covers, for the model list. The plan
+   * check (a quick refused request per model) is kept for 12 hours, or until the key or the list changes. "keep"
+   * when Command Code can't be read, so its models stay as they were; undefined when no key is connected.
+   */
+  private async commandCodeCatalog(force = false): Promise<{ listed: CommandCodeListed[]; covered: ReadonlySet<string> } | "keep" | undefined> {
+    const resolved = await this.resolveCommandCodeKey()
+    if (!resolved) return undefined
+    try {
+      const listed = await listCommandCodeModels(resolved.key)
+      const hint = this.secret("commandcode_key_hint") ?? ""
+      const raw = this.ctx.storage.sql.exec<{ value: string }>(`SELECT value FROM dex_meta WHERE key = 'commandcode_plan'`).toArray()[0]?.value
+      const cached = raw ? (JSON.parse(raw) as { at: number; hint: string; listed: string[]; covered: string[] }) : undefined
+      const sameList = cached && listed.every((model) => cached.listed.includes(model.id))
+      if (cached && !force && cached.hint === hint && sameList && Date.now() - cached.at < 12 * 60 * 60_000) {
+        return { listed, covered: new Set(cached.covered) }
+      }
+      const covered = await planModels(resolved.key, listed)
+      this.ctx.storage.sql.exec(
+        `INSERT OR REPLACE INTO dex_meta (key, value) VALUES ('commandcode_plan', ?)`,
+        JSON.stringify({ at: Date.now(), hint, listed: listed.map((model) => model.id), covered: [...covered] })
+      )
+      return { listed, covered }
+    } catch {
+      return "keep"
+    }
+  }
+
+  @callable()
+  async connectCommandCode(apiKey: string): Promise<ConnectClineResult> {
+    const key = apiKey.trim()
+    if (!key) return { ok: false, error: "Paste your Command Code API key." }
+    if (key.length > 512 || /\s/.test(key)) return { ok: false, error: "That doesn't look like a Command Code API key." }
+    let listed: CommandCodeListed[]
+    try {
+      listed = await listCommandCodeModels(key)
+    } catch (error) {
+      return { ok: false, error: error instanceof CommandCodeError ? error.message : String(error) }
+    }
+    const sealed = await this.runtime.runPromise(Keys.use((keys) => keys.encrypt(key)))
+    const upsert = `INSERT INTO dex_secrets (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value`
+    this.ctx.storage.sql.exec(upsert, "commandcode_api_key", sealed)
+    this.ctx.storage.sql.exec(upsert, "commandcode_key_hint", keyHint(key))
+    this.ctx.storage.sql.exec(upsert, "commandcode_verified_at", String(Date.now()))
+    this.refreshCommandCodeStatus()
+    // Its models join the menu once the plan check is done (a few seconds).
+    const added = await this.refreshModels({ force: true }).catch(() => ({ added: [], retired: [] }))
+    const count = modelsOf("commandcode").length
+    return { ok: true, note: count ? `${count} models on your plan are in the model menu.` : added.added.length ? undefined : "Connected. Its models appear in the model menu shortly." }
+  }
+
+  @callable()
+  async disconnectCommandCode() {
+    this.ctx.storage.sql.exec(`DELETE FROM dex_secrets WHERE name IN ('commandcode_api_key', 'commandcode_key_hint', 'commandcode_verified_at')`)
+    this.ctx.storage.sql.exec(`DELETE FROM dex_meta WHERE key = 'commandcode_plan'`)
+    this.refreshCommandCodeStatus()
+    await this.refreshModels({ force: true }).catch(() => undefined)
+  }
+
   // ── ChatGPT sign-in ───────────────────────────────────────────────────────
 
   /**
@@ -1369,6 +1448,7 @@ export class DexAgent extends Agent<Env, DexState> {
     models.setProvider(clinePassProvider(() => this.resolveClineKey()))
     models.setProvider(openCodeGoProvider(() => this.resolveOpenCodeKey()))
     models.setProvider(chatGPTProvider(() => this.resolveChatGPTToken()))
+    models.setProvider(commandCodeProvider(() => this.resolveCommandCodeKey()))
   }
 
   private storedCatalog(): (ModelCatalog & { build?: string }) | undefined {
@@ -1397,7 +1477,7 @@ export class DexAgent extends Agent<Env, DexState> {
     this.modelsAttemptedAt = Date.now()
     this.modelsRefresh = (async () => {
       const before = [...MODELS]
-      const models = await fetchModelCatalog(before, await this.chatGPTModelIds())
+      const models = await fetchModelCatalog(before, await this.chatGPTModelIds(), await this.commandCodeCatalog(force))
       const catalog = { version: catalogVersion(models), updatedAt: Date.now(), models }
       this.ctx.storage.sql.exec(
         `INSERT OR REPLACE INTO dex_meta (key, value) VALUES ('model_catalog', ?)`,
@@ -1461,9 +1541,14 @@ export class DexAgent extends Agent<Env, DexState> {
     const session = this.state.sessions.find((candidate) => candidate.id === sessionId)
     const own = providerOf(session?.model ?? DEFAULT_MODEL_ID)
     const provider = connected[own] ? own : (Object.keys(connected) as Array<keyof typeof connected>).find((candidate) => connected[candidate])
-    if (!provider) throw new Error("Connect ClinePass, OpenCode Go, or ChatGPT in Settings first.")
+    if (!provider) throw new Error("Connect ClinePass, OpenCode Go, ChatGPT, or Command Code in Settings first.")
     // A fast, cheap model per subscription, or its cheapest one if that's been retired.
-    const preferred = { clinepass: "cline-pass/deepseek-v4.1-flash", "opencode-go": "opencode-go/deepseek-v4.1-flash", chatgpt: "chatgpt/gpt-6-luna" }[provider]
+    const preferred = {
+      clinepass: "cline-pass/deepseek-v4.1-flash",
+      "opencode-go": "opencode-go/deepseek-v4.1-flash",
+      chatgpt: "chatgpt/gpt-6-luna",
+      commandcode: "commandcode/deepseek/deepseek-v4.1-flash"
+    }[provider]
     const fast = findModel(preferred) ?? modelsOf(provider).toSorted((a, b) => a.cost.output - b.cost.output)[0]
     const model = fast && this.models().getModel(PI_PROVIDER_IDS[provider], fast.apiId)
     if (!model) throw new Error("The title model isn't available.")

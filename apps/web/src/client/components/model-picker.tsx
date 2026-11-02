@@ -52,7 +52,7 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
   const [checking, setChecking] = useState(false)
   const connected: Record<ModelProvider, boolean> = state
     ? connectedProviders(state)
-    : { clinepass: true, "opencode-go": true, chatgpt: true }
+    : { clinepass: true, "opencode-go": true, chatgpt: true, commandcode: true }
   // Connected subscriptions first; a model matches on its name, maker, or subscription.
   const providers = (Object.keys(MODEL_PROVIDERS) as ModelProvider[]).sort((a, b) => Number(connected[b]) - Number(connected[a]))
   const needle = query.trim().toLowerCase()

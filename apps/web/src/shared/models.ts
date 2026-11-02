@@ -7,6 +7,9 @@
  *   models Go lists and serves.
  * - ChatGPT (Sign in with ChatGPT: a Plus or Pro plan on OpenAI's Responses API). From pi-ai's openai catalog,
  *   limited to the models ChatGPT plans offer.
+ * - Command Code (https://commandcode.ai/docs/provider): its plans' models over an OpenAI-compatible API (Claude over
+ *   Anthropic Messages). It has no built-in list: the agent builds it from Command Code's own list, limited to the
+ *   models the connected key's plan covers, with details from models.dev.
  * `id` is unique across all three (it's what chats store); `apiId` is what the provider's API calls the model.
  * In a thinking map, `null` marks a level the model rejects; a missing key uses the provider's default.
  *
@@ -17,25 +20,37 @@
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const
 export type ThinkingLevel = (typeof THINKING_LEVELS)[number]
 
-export type ModelProvider = "clinepass" | "opencode-go" | "chatgpt"
+export type ModelProvider = "clinepass" | "opencode-go" | "chatgpt" | "commandcode"
 
 /** The subscriptions models run on, as Settings and the model menu name them. */
 export const MODEL_PROVIDERS: Readonly<Record<ModelProvider, { readonly name: string; readonly short: string }>> = {
   clinepass: { name: "ClinePass", short: "Cline" },
   "opencode-go": { name: "OpenCode Go", short: "OpenCode" },
-  chatgpt: { name: "ChatGPT", short: "ChatGPT" }
+  chatgpt: { name: "ChatGPT", short: "ChatGPT" },
+  commandcode: { name: "Command Code", short: "Command" }
 }
 
 /** Each subscription's id in pi-ai: ChatGPT's is `openai`, which is how pi-ai knows to send a ChatGPT token. */
-export const PI_PROVIDER_IDS: Readonly<Record<ModelProvider, string>> = { clinepass: "clinepass", "opencode-go": "opencode-go", chatgpt: "openai" }
+export const PI_PROVIDER_IDS: Readonly<Record<ModelProvider, string>> = {
+  clinepass: "clinepass",
+  "opencode-go": "opencode-go",
+  chatgpt: "openai",
+  commandcode: "commandcode"
+}
 
 /** The Dex subscription for a pi-ai provider id (what responses and pi's usage records carry). */
 export const dexProvider = (piProvider: string | undefined): ModelProvider =>
-  piProvider === "opencode-go" ? "opencode-go" : piProvider === "openai" || piProvider === "chatgpt" ? "chatgpt" : "clinepass"
+  piProvider === "opencode-go"
+    ? "opencode-go"
+    : piProvider === "openai" || piProvider === "chatgpt"
+      ? "chatgpt"
+      : piProvider === "commandcode"
+        ? "commandcode"
+        : "clinepass"
 
 export type ModelMaker =
   | "zai" | "moonshot" | "deepseek" | "qwen" | "minimax" | "xiaomi" | "meta"
-  | "anthropic" | "openai" | "xai" | "google" | "meituan" | "tencent" | "stepfun" | "opencode"
+  | "anthropic" | "openai" | "xai" | "google" | "meituan" | "tencent" | "stepfun" | "opencode" | "commandcode"
 
 /** Who makes each model family, with a logo under /public/models. */
 export const MODEL_MAKERS: Readonly<Record<ModelMaker, { readonly name: string; readonly logo: string }>> = {
@@ -53,7 +68,9 @@ export const MODEL_MAKERS: Readonly<Record<ModelMaker, { readonly name: string; 
   meituan: { name: "Meituan", logo: "/models/meituan.svg" },
   tencent: { name: "Tencent", logo: "/models/tencent.svg" },
   stepfun: { name: "StepFun", logo: "/models/stepfun.svg" },
-  opencode: { name: "OpenCode", logo: "/models/opencode.svg" }
+  opencode: { name: "OpenCode", logo: "/models/opencode.svg" },
+  /** Other makers Command Code serves (Mistral, NVIDIA, Sakana, …), under its mark. */
+  commandcode: { name: "Command Code", logo: "/models/commandcode.svg" }
 }
 
 type ThinkingMap = Readonly<Partial<Record<ThinkingLevel | "max", string | null>>>
@@ -210,7 +227,8 @@ export const defaultModelId = () => (findModel(DEFAULT_MODEL_ID) ? DEFAULT_MODEL
 
 /** Which subscription a chat's model runs on (a stored id that's no longer listed goes by its prefix, else ClinePass). */
 export const providerOf = (id: string): ModelProvider =>
-  findModel(id)?.provider ?? (id.startsWith("opencode-go/") ? "opencode-go" : id.startsWith("chatgpt/") ? "chatgpt" : "clinepass")
+  findModel(id)?.provider ??
+  (id.startsWith("opencode-go/") ? "opencode-go" : id.startsWith("chatgpt/") ? "chatgpt" : id.startsWith("commandcode/") ? "commandcode" : "clinepass")
 
 /** The same model on the other provider, when it offers it (switching providers keeps a chat's model). */
 export const counterpart = (id: string, provider: ModelProvider) => {

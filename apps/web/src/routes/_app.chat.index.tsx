@@ -111,7 +111,7 @@ function NewChat() {
               className="mb-4 flex items-center gap-3 rounded-xl border border-amber-900/60 bg-amber-950/30 px-4 py-3 text-sm text-amber-200 hover:bg-amber-950/50"
             >
               <KeyRound className="size-4 shrink-0" />
-              Connect ClinePass, OpenCode Go, or ChatGPT in Settings so Dex can think.
+              Connect ClinePass, OpenCode Go, ChatGPT, or Command Code in Settings so Dex can think.
             </Link>
           )}
 

@@ -1,5 +1,6 @@
 import { BUILT_IN_MODELS, type DexModel, type ModelApi, type ModelMaker, type ModelProvider } from "~/shared/models"
 import { CHATGPT_BASE_URL } from "./chatgpt"
+import { COMMANDCODE_BASE_URL, type CommandCodeListed } from "./commandcode"
 import { OPENCODE_GO_BASE_URL } from "./opencode-go"
 
 /**
@@ -9,6 +10,8 @@ import { OPENCODE_GO_BASE_URL } from "./opencode-go"
  * - OpenCode Go's own model list (`/v1/models`, public): which models it serves right now. It decides what's listed.
  * - The signed-in ChatGPT account's model list (OpenAI's `/v1/models`, read by the agent with its token, when one is
  *   connected): which chat models the plan offers. It decides ChatGPT's list.
+ * - Command Code's own model list (read with the connected key), limited to what the key's plan covers (the agent
+ *   checks; see commandcode.ts). It decides Command Code's list.
  * - models.dev, the open catalog pi-ai's is generated from: names, limits, prices, input types, thinking levels, and
  *   each OpenCode Go model's API style. Cline publishes no ClinePass list, so its ClinePass section decides those.
  *
@@ -49,7 +52,7 @@ const MAKERS: ReadonlyArray<readonly [RegExp, ModelMaker]> = [
   [/^mimo/, "xiaomi"], [/^muse/, "meta"], [/^claude/, "anthropic"], [/^(gpt|o\d)/, "openai"], [/^grok/, "xai"],
   [/^gemini/, "google"], [/^longcat/, "meituan"], [/^hy\d/, "tencent"], [/^step/, "stepfun"]
 ]
-const makerOf = (slug: string): ModelMaker => MAKERS.find(([pattern]) => pattern.test(slug))?.[1] ?? "opencode"
+const makerOf = (slug: string, fallback: ModelMaker = "opencode"): ModelMaker => MAKERS.find(([pattern]) => pattern.test(slug))?.[1] ?? fallback
 
 const slugOf = (model: Pick<DexModel, "apiId">) => model.apiId.replace(/^cline-pass\//, "")
 
@@ -157,6 +160,49 @@ const newClinePassModel = (apiId: string, entry: DevModel, names: ReadonlyMap<st
   }
 }
 
+/**
+ * A Command Code model, from its own list and (when it has one) its models.dev entry. Claude runs on Anthropic
+ * Messages, everything else on Chat Completions (which every non-Claude model it lists serves).
+ */
+const commandCodeModel = (listed: CommandCodeListed, entry: DevModel | undefined): DexModel => {
+  const api: ModelApi = listed.endpoints.includes("/chat/completions") ? "openai-completions" : "anthropic-messages"
+  const slug = listed.id.split("/").pop()!.toLowerCase()
+  const maker = makerOf(slug, "commandcode")
+  const thinkingLevelMap = entry && thinkingMap(entry, api)
+  const compat =
+    api === "openai-completions"
+      ? {
+          supportsStore: false,
+          supportsDeveloperRole: false,
+          maxTokensField: "max_tokens",
+          ...(maker === "deepseek" && { requiresReasoningContentOnAssistantMessages: true, thinkingFormat: "deepseek" })
+        }
+      : { forceAdaptiveThinking: true, supportsTemperature: false }
+  return {
+    id: `commandcode/${listed.id}`,
+    apiId: listed.id,
+    provider: "commandcode",
+    name: entry?.name ?? listed.name,
+    maker,
+    api,
+    baseUrl: api === "anthropic-messages" ? COMMANDCODE_BASE_URL : `${COMMANDCODE_BASE_URL}/v1`,
+    input: entry ? input(entry) : ["text"],
+    contextWindow: listed.contextLength ?? entry?.limit?.context ?? 128_000,
+    maxTokens: entry?.limit?.output ?? 32_768,
+    cost: cost(entry?.cost),
+    ...(thinkingLevelMap && { thinkingLevelMap }),
+    compat,
+    ...(/contributor|:free$|-free$/.test(listed.id) && { trainsOnData: true })
+  }
+}
+
+/** Command Code's list, grouped by maker in the order it lists them. */
+const commandCodeList = (listed: ReadonlyArray<CommandCodeListed>, covered: ReadonlySet<string>, entries: Readonly<Record<string, DevModel>>) => {
+  const models = listed.filter((model) => covered.has(model.id)).map((model) => commandCodeModel(model, entries[model.id]))
+  const makers = [...new Set(models.map((model) => model.maker))]
+  return models.toSorted((a, b) => makers.indexOf(a.maker) - makers.indexOf(b.maker))
+}
+
 /** OpenAI lists every model the account can call; chats need the text ones that reason over the Responses API. */
 const CHATGPT_CHAT_MODEL = /^(gpt-\d|o\d)/
 const CHATGPT_NOT_CHAT = /(realtime|audio|tts|transcribe|image|search|embedding|moderation|instruct|chat-latest|-\d{4}-\d{2}-\d{2}$)/
@@ -232,7 +278,12 @@ export const catalogChanges = (before: ReadonlyArray<DexModel>, after: ReadonlyA
  * when `chatgptServed` (the signed-in account's model ids) is missing. Throws only when neither public source
  * answered, so a refresh that learned nothing doesn't count as checked.
  */
-export async function fetchModelCatalog(current: ReadonlyArray<DexModel>, chatgptServed?: ReadonlySet<string>): Promise<DexModel[]> {
+export async function fetchModelCatalog(
+  current: ReadonlyArray<DexModel>,
+  chatgptServed?: ReadonlySet<string>,
+  /** What Command Code lists and the key's plan covers; "keep" when it couldn't be read; missing when not connected. */
+  commandCode?: { readonly listed: ReadonlyArray<CommandCodeListed>; readonly covered: ReadonlySet<string> } | "keep"
+): Promise<DexModel[]> {
   const [dev, served] = await Promise.allSettled([
     getJson(MODELS_DEV) as Promise<Readonly<Record<string, DevProvider>>>,
     getJson(OPENCODE_GO_LIST).then((body) => new Set(((body as { data?: Array<{ id?: unknown }> }).data ?? []).map((model) => String(model.id))))
@@ -258,10 +309,15 @@ export async function fetchModelCatalog(current: ReadonlyArray<DexModel>, chatgp
   const chatgptChat = new Set([...(chatgptServed ?? [])].filter((id) => CHATGPT_CHAT_MODEL.test(id) && !CHATGPT_NOT_CHAT.test(id)))
   const chatgpt = chatgptChat.size > 0 ? providerList("chatgpt", chatgptChat, openAIEntries, newChatGPTModel) : keep("chatgpt")
 
+  // Command Code: only with a connected key (its plan decides the list).
+  const commandCodeModels =
+    commandCode === "keep" ? keep("commandcode") : commandCode ? commandCodeList(commandCode.listed, commandCode.covered, catalog["commandcode"]?.models ?? {}) : []
+
   return [
     ...(cline.length > 0 ? cline : keep("clinepass")),
     ...(openCode.length > 0 ? openCode : keep("opencode-go")),
-    ...(chatgpt.length > 0 ? chatgpt : BUILT_IN_MODELS.filter((model) => model.provider === "chatgpt"))
+    ...(chatgpt.length > 0 ? chatgpt : BUILT_IN_MODELS.filter((model) => model.provider === "chatgpt")),
+    ...commandCodeModels
   ]
 }
 
