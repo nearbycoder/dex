@@ -1031,19 +1031,25 @@ export class DexAgent extends Agent<Env, DexState> {
 
   // ── Command Code connection ───────────────────────────────────────────────
 
+  /** The user's own Command Code key, else the deployment's COMMANDCODE_API_KEY for its owner only (like OPENCODE_API_KEY). */
   private async resolveCommandCodeKey(): Promise<{ key: string; source: string } | undefined> {
     const stored = this.secret("commandcode_api_key")
-    if (!stored) return undefined
-    const key = await this.runtime.runPromise(Keys.use((keys) => keys.decrypt(stored)).pipe(Effect.option))
-    return Option.isSome(key) ? { key: key.value, source: "Command Code (connected)" } : undefined
+    if (stored) {
+      const key = await this.runtime.runPromise(Keys.use((keys) => keys.decrypt(stored)).pipe(Effect.option))
+      if (Option.isSome(key)) return { key: key.value, source: "Command Code (connected)" }
+    }
+    const shared = this.isOwner() ? (this.env as unknown as Record<string, string | undefined>).COMMANDCODE_API_KEY : undefined
+    return shared ? { key: shared, source: "COMMANDCODE_API_KEY" } : undefined
   }
 
   private refreshCommandCodeStatus() {
-    const connected = Boolean(this.secret("commandcode_api_key"))
-    const verifiedAt = Number(this.secret("commandcode_verified_at") ?? 0) || null
-    this.publish({
-      commandcode: { connected, source: connected ? "user" : null, keyHint: connected ? (this.secret("commandcode_key_hint") ?? null) : null, verifiedAt: connected ? verifiedAt : null }
-    })
+    if (this.secret("commandcode_api_key")) {
+      const verifiedAt = Number(this.secret("commandcode_verified_at") ?? 0) || null
+      this.publish({ commandcode: { connected: true, source: "user", keyHint: this.secret("commandcode_key_hint") ?? null, verifiedAt } })
+      return
+    }
+    const shared = this.isOwner() && Boolean((this.env as unknown as Record<string, string | undefined>).COMMANDCODE_API_KEY)
+    this.publish({ commandcode: { connected: shared, source: shared ? "server" : null, keyHint: null, verifiedAt: null } })
   }
 
   /**
@@ -1056,7 +1062,7 @@ export class DexAgent extends Agent<Env, DexState> {
     if (!resolved) return undefined
     try {
       const listed = await listCommandCodeModels(resolved.key)
-      const hint = this.secret("commandcode_key_hint") ?? ""
+      const hint = this.secret("commandcode_key_hint") ?? resolved.source
       const raw = this.ctx.storage.sql.exec<{ value: string }>(`SELECT value FROM dex_meta WHERE key = 'commandcode_plan'`).toArray()[0]?.value
       const cached = raw ? (JSON.parse(raw) as { at: number; hint: string; listed: string[]; covered: string[] }) : undefined
       const sameList = cached && listed.every((model) => cached.listed.includes(model.id))

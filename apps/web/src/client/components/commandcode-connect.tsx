@@ -12,8 +12,8 @@ export function CommandCodeConnect() {
   return (
     <SecretConnect
       connected={commandcode?.connected ?? false}
-      status={<span className="font-mono">{commandcode?.keyHint}</span>}
-      placeholder={commandcode?.connected ? "New Command Code API key" : "Command Code API key"}
+      status={commandcode?.source === "user" ? <span className="font-mono">{commandcode.keyHint}</span> : "This deployment's account"}
+      placeholder={commandcode?.source === "user" ? "New Command Code API key" : "Command Code API key"}
       help={
         <>
           Create a key in{" "}
@@ -32,7 +32,7 @@ export function CommandCodeConnect() {
         const result = await stub.connectCommandCode(key)
         return result.ok ? { ok: true, message: result.note } : result
       }}
-      onDisconnect={commandcode?.connected ? () => stub.disconnectCommandCode() : undefined}
+      onDisconnect={commandcode?.source === "user" ? () => stub.disconnectCommandCode() : undefined}
     />
   )
 }

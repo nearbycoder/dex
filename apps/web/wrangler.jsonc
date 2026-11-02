@@ -40,4 +40,5 @@
   // OWNER_PASSWORD, BOAT_API_KEY (the owner's VMs only: the first ALLOWED_GITHUB_USERS login), CLOUDFLARE_API_TOKEN (Account Analytics: Read), VAPID_PRIVATE_KEY (Web Push).
   // Push to the native apps (see src/agent/native-push.ts): APNS_KEY (.p8 text), APNS_KEY_ID, APNS_TEAM_ID, optional
   // APNS_TOPIC (the iOS bundle ID; default dev.trydex.Dex); FCM_SERVICE_ACCOUNT (a Firebase service account key's JSON).
+  // Optional: COMMANDCODE_API_KEY, a Command Code key for the owner's chats (everyone else connects their own in Settings).
 }
