@@ -18,7 +18,9 @@ import dev.trydex.core.model.McpServerInfo
 import dev.trydex.core.model.McpStatus
 import dev.trydex.core.model.McpToolInfo
 import dev.trydex.core.model.ModelCatalog
+import dev.trydex.core.model.ModelListVersion
 import dev.trydex.core.model.PendingAction
+import dev.trydex.core.model.ProviderStatus
 import dev.trydex.core.model.PushDevice
 import dev.trydex.core.model.ScheduledNote
 import dev.trydex.core.model.WidgetSnapshot
@@ -40,7 +42,6 @@ import dev.trydex.core.model.VmActivity
 import dev.trydex.core.model.VmInfo
 import dev.trydex.core.model.VmSetup
 import dev.trydex.core.model.VmStatus
-import dev.trydex.core.model.BuiltInModels
 import dev.trydex.core.model.DailySpend
 import dev.trydex.core.model.TokenUsage
 import dev.trydex.core.model.ModelUsageRow
@@ -277,6 +278,9 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
         connections.forEach { it.send(message) }
     }
 
+    /** The state after the model list changed: its version and when it was checked. */
+    private fun DexState.withModelList() = copy(models = ModelListVersion(FakeData.modelsVersion(this), clock()))
+
     private fun broadcast(message: JsonObject) = connections.forEach { it.send(message) }
 
     private fun markRead(sessionId: String) {
@@ -346,8 +350,8 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
 
     @Suppress("CyclomaticComplexMethod")
     private fun rpc(connection: Connection, method: String, args: JsonArray): JsonElement? = when (method) {
-        "modelCatalog" -> encode(ModelCatalog.serializer(), ModelCatalog("builtin", clock(), BuiltInModels.list))
-        "refreshModelList" -> buildJsonObject { put("added", JsonArray(emptyList())); put("retired", JsonArray(emptyList())); put("count", BuiltInModels.list.size) }
+        "modelCatalog" -> encode(ModelCatalog.serializer(), ModelCatalog(FakeData.modelsVersion(state), state.models?.updatedAt ?: clock(), FakeData.models(state)))
+        "refreshModelList" -> buildJsonObject { put("added", JsonArray(emptyList())); put("retired", JsonArray(emptyList())); put("count", FakeData.models(state).size) }
         "createSession" -> {
             val options = args.o(0)
             val agent = state.agents.firstOrNull { it.id == options["agentId"].str }
@@ -465,6 +469,18 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
             }
         }
         "disconnectChatGPT" -> { update { it.copy(chatgpt = it.chatgpt.copy(connected = false, source = null, keyHint = null)) }; null }
+        // Command Code's models join the list with a key and leave it without one: a new list version, as the agent's refresh makes.
+        "connectCommandCode" -> {
+            val key = args.s(0).trim()
+            if (key.isEmpty()) buildJsonObject { put("ok", false); put("error", "Paste your Command Code API key.") }
+            else if (key == "bad" || key.any { it.isWhitespace() }) buildJsonObject { put("ok", false); put("error", "Command Code didn't accept that key.") }
+            else {
+                val hint = if (key.length > 8) key.take(4) + "…" + key.takeLast(4) else "••••"
+                update { s -> s.copy(commandcode = ProviderStatus(connected = true, source = "user", keyHint = hint, verifiedAt = clock())).withModelList() }
+                buildJsonObject { put("ok", true); put("note", "${FakeData.commandCodeModels.size} models on your plan are in the model menu.") }
+            }
+        }
+        "disconnectCommandCode" -> { update { it.copy(commandcode = ProviderStatus()).withModelList() }; null }
         "disconnectBoat" -> {
             if (state.vms.any { it.id != null }) buildJsonObject { put("ok", false); put("error", "Delete your ${state.vms.size} VMs on the Machines page first: they belong to the boat.dev account you're using now.") }
             else { update { it.copy(boat = it.boat.copy(connected = false, source = null, keyHint = null), vmConfigured = false) }; buildJsonObject { put("ok", true) } }

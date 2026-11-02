@@ -247,8 +247,21 @@ fun GeneralSettingsScreen() {
                     tag = "opencode",
                 )
             }
-            SectionCard(title = "ChatGPT", info = "Models marked ChatGPT in the model menu run on your ChatGPT Plus or Pro plan. Connect any or all of these.") {
+            SectionCard(title = "ChatGPT", info = "Models marked ChatGPT in the model menu run on your ChatGPT Plus or Pro plan.") {
                 ChatGPTConnect(current.chatgpt)
+            }
+            SectionCard(title = "Command Code", info = "Models marked Command in the model menu run on your Command Code plan. Connect any or all of these.") {
+                SecretConnect(
+                    connected = current.commandcode.connected,
+                    status = current.commandcode.keyHint ?: "",
+                    monospace = true,
+                    placeholder = if (current.commandcode.connected) "New Command Code API key" else "Command Code API key",
+                    help = "Create a key in Command Code Studio. Works with Command Code's paid plans (Goat, Pro, Max). The model menu lists only the models your plan covers, and refreshes that list a few times a day. Dex checks the key with Command Code, then stores it encrypted in your agent; it's never sent to this device.",
+                    helpLink = "https://commandcode.ai/studio/" to "Command Code Studio",
+                    onConnect = { repository.api.connectCommandCode(it) },
+                    onDisconnect = if (current.commandcode.connected) ({ repository.api.disconnectCommandCode(); ConnectResult(ok = true) }) else null,
+                    tag = "commandcode",
+                )
             }
             SectionCard(title = "Cloud VMs", info = "Chats run code, browsers, and servers on VMs in your boat.dev account.") {
                 val user = current.boat.source == "user"

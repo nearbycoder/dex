@@ -22,6 +22,9 @@
     "cline-pass/glm-5.3",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/glm-5.3",
+    "cline-pass/glm-5.3",
+    "cline-pass/glm-5.3",
+    "chatgpt/gpt-6.1-sol",
     "cline-pass/glm-5.3"
    ]
   },
@@ -47,6 +50,9 @@
     "cline-pass/glm-5.3-flash",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/glm-5.3-flash",
+    "cline-pass/glm-5.3-flash",
+    "cline-pass/glm-5.3-flash",
+    "chatgpt/gpt-6.1-sol",
     "cline-pass/glm-5.3-flash"
    ]
   },
@@ -70,6 +76,9 @@
     "cline-pass/kimi-k3",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/kimi-k3",
+    "cline-pass/kimi-k3",
+    "cline-pass/kimi-k3",
+    "chatgpt/gpt-6.1-sol",
     "cline-pass/kimi-k3"
    ]
   },
@@ -95,6 +104,9 @@
     "cline-pass/deepseek-v4-pro",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/deepseek-v4-pro",
+    "cline-pass/deepseek-v4-pro",
+    "cline-pass/deepseek-v4-pro",
+    "chatgpt/gpt-6.1-sol",
     "cline-pass/deepseek-v4-pro"
    ]
   },
@@ -120,6 +132,9 @@
     "cline-pass/deepseek-v4.1-flash",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/deepseek-v4.1-flash",
+    "cline-pass/deepseek-v4.1-flash",
+    "cline-pass/deepseek-v4.1-flash",
+    "chatgpt/gpt-6.1-sol",
     "cline-pass/deepseek-v4.1-flash"
    ]
   },
@@ -145,6 +160,9 @@
     "cline-pass/qwen3.8-max",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/qwen3.8-max",
+    "cline-pass/qwen3.8-max",
+    "cline-pass/qwen3.8-max",
+    "chatgpt/gpt-6.1-sol",
     "cline-pass/qwen3.8-max"
    ]
   },
@@ -171,6 +189,9 @@
     "cline-pass/qwen3.7-max",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/glm-5.3",
+    "cline-pass/qwen3.7-max",
+    "cline-pass/qwen3.7-max",
+    "chatgpt/gpt-6.1-sol",
     "cline-pass/qwen3.7-max"
    ]
   },
@@ -197,6 +218,9 @@
     "cline-pass/qwen3.7-plus",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/qwen3.7-plus",
+    "cline-pass/qwen3.7-plus",
+    "cline-pass/qwen3.7-plus",
+    "chatgpt/gpt-6.1-sol",
     "cline-pass/qwen3.7-plus"
    ]
   },
@@ -223,6 +247,9 @@
     "cline-pass/minimax-m3",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/minimax-m3",
+    "cline-pass/minimax-m3",
+    "cline-pass/minimax-m3",
+    "chatgpt/gpt-6.1-sol",
     "cline-pass/minimax-m3"
    ]
   },
@@ -249,6 +276,9 @@
     "cline-pass/mimo-v2.5-pro",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/mimo-v2.5-pro",
+    "cline-pass/mimo-v2.5-pro",
+    "cline-pass/mimo-v2.5-pro",
+    "chatgpt/gpt-6.1-sol",
     "cline-pass/mimo-v2.5-pro"
    ]
   },
@@ -275,6 +305,9 @@
     "cline-pass/mimo-v2.5",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/mimo-v2.5",
+    "cline-pass/mimo-v2.5",
+    "cline-pass/mimo-v2.5",
+    "chatgpt/gpt-6.1-sol",
     "cline-pass/mimo-v2.5"
    ]
   },
@@ -302,6 +335,9 @@
     "cline-pass/muse-spark-1.3-contributor",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/muse-spark-1.3-contributor",
+    "cline-pass/muse-spark-1.3-contributor",
+    "cline-pass/muse-spark-1.3-contributor",
+    "chatgpt/gpt-6.1-sol",
     "cline-pass/muse-spark-1.3-contributor"
    ]
   },
@@ -327,6 +363,9 @@
     "opencode-go/glm-5.3",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/glm-5.3",
+    "opencode-go/glm-5.3",
+    "opencode-go/glm-5.3",
+    "chatgpt/gpt-6.1-sol",
     "opencode-go/glm-5.3"
    ]
   },
@@ -352,6 +391,9 @@
     "opencode-go/glm-5.3-flash",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/glm-5.3-flash",
+    "opencode-go/glm-5.3-flash",
+    "opencode-go/glm-5.3-flash",
+    "chatgpt/gpt-6.1-sol",
     "opencode-go/glm-5.3-flash"
    ]
   },
@@ -376,6 +418,9 @@
     "opencode-go/glm-5.2",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/glm-5.2",
+    "opencode-go/glm-5.2",
+    "opencode-go/glm-5.2",
+    "chatgpt/gpt-6.1-sol",
     "opencode-go/glm-5.2"
    ]
   },
@@ -399,6 +444,9 @@
     "opencode-go/kimi-k3",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/kimi-k3",
+    "opencode-go/kimi-k3",
+    "opencode-go/kimi-k3",
+    "chatgpt/gpt-6.1-sol",
     "opencode-go/kimi-k3"
    ]
   },
@@ -426,6 +474,9 @@
     "opencode-go/kimi-k2.7-code",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/kimi-k2.7-code",
+    "opencode-go/kimi-k2.7-code",
+    "opencode-go/kimi-k2.7-code",
+    "chatgpt/gpt-6.1-sol",
     "opencode-go/kimi-k2.7-code"
    ]
   },
@@ -451,6 +502,9 @@
     "opencode-go/deepseek-v4-pro",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/deepseek-v4-pro",
+    "opencode-go/deepseek-v4-pro",
+    "opencode-go/deepseek-v4-pro",
+    "chatgpt/gpt-6.1-sol",
     "opencode-go/deepseek-v4-pro"
    ]
   },
@@ -476,6 +530,9 @@
     "opencode-go/deepseek-v4.1-flash",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/deepseek-v4.1-flash",
+    "opencode-go/deepseek-v4.1-flash",
+    "opencode-go/deepseek-v4.1-flash",
+    "chatgpt/gpt-6.1-sol",
     "opencode-go/deepseek-v4.1-flash"
    ]
   },
@@ -503,6 +560,9 @@
     "opencode-go/qwen3.8-max",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/qwen3.8-max",
+    "opencode-go/qwen3.8-max",
+    "opencode-go/qwen3.8-max",
+    "chatgpt/gpt-6.1-sol",
     "opencode-go/qwen3.8-max"
    ]
   },
@@ -530,6 +590,9 @@
     "opencode-go/qwen3.8-flash",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/qwen3.8-flash",
+    "opencode-go/qwen3.8-flash",
+    "opencode-go/qwen3.8-flash",
+    "chatgpt/gpt-6.1-sol",
     "opencode-go/qwen3.8-flash"
    ]
   },
@@ -557,6 +620,9 @@
     "opencode-go/qwen3.7-plus",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/qwen3.7-plus",
+    "opencode-go/qwen3.7-plus",
+    "opencode-go/qwen3.7-plus",
+    "chatgpt/gpt-6.1-sol",
     "opencode-go/qwen3.7-plus"
    ]
   },
@@ -584,6 +650,9 @@
     "opencode-go/minimax-m3",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/minimax-m3",
+    "opencode-go/minimax-m3",
+    "opencode-go/minimax-m3",
+    "chatgpt/gpt-6.1-sol",
     "opencode-go/minimax-m3"
    ]
   },
@@ -611,6 +680,9 @@
     "opencode-go/mimo-v2.6-pro",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/mimo-v2.6-pro",
+    "opencode-go/mimo-v2.6-pro",
+    "opencode-go/mimo-v2.6-pro",
+    "chatgpt/gpt-6.1-sol",
     "opencode-go/mimo-v2.6-pro"
    ]
   },
@@ -638,6 +710,9 @@
     "opencode-go/mimo-v2.6-flash",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/mimo-v2.6-flash",
+    "opencode-go/mimo-v2.6-flash",
+    "opencode-go/mimo-v2.6-flash",
+    "chatgpt/gpt-6.1-sol",
     "opencode-go/mimo-v2.6-flash"
    ]
   },
@@ -665,6 +740,9 @@
     "opencode-go/mimo-v2.5-pro",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/mimo-v2.5-pro",
+    "opencode-go/mimo-v2.5-pro",
+    "opencode-go/mimo-v2.5-pro",
+    "chatgpt/gpt-6.1-sol",
     "opencode-go/mimo-v2.5-pro"
    ]
   },
@@ -692,6 +770,9 @@
     "opencode-go/mimo-v2.5",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/mimo-v2.5",
+    "opencode-go/mimo-v2.5",
+    "opencode-go/mimo-v2.5",
+    "chatgpt/gpt-6.1-sol",
     "opencode-go/mimo-v2.5"
    ]
   },
@@ -720,6 +801,9 @@
     "opencode-go/claude-haiku-5-5",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/claude-haiku-5-5",
+    "opencode-go/claude-haiku-5-5",
+    "opencode-go/claude-haiku-5-5",
+    "chatgpt/gpt-6.1-sol",
     "opencode-go/claude-haiku-5-5"
    ]
   },
@@ -747,6 +831,9 @@
     "opencode-go/gpt-6-luna",
     "chatgpt/gpt-6-luna",
     "opencode-go/gpt-6-luna",
+    "opencode-go/gpt-6-luna",
+    "opencode-go/gpt-6-luna",
+    "chatgpt/gpt-6-luna",
     "opencode-go/gpt-6-luna"
    ]
   },
@@ -773,6 +860,9 @@
     "opencode-go/gpt-5.6-luna",
     "chatgpt/gpt-5.6-luna",
     "opencode-go/gpt-5.6-luna",
+    "opencode-go/gpt-5.6-luna",
+    "opencode-go/gpt-5.6-luna",
+    "chatgpt/gpt-5.6-luna",
     "opencode-go/gpt-5.6-luna"
    ]
   },
@@ -799,6 +889,9 @@
     "opencode-go/grok-4.7",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/grok-4.7",
+    "opencode-go/grok-4.7",
+    "opencode-go/grok-4.7",
+    "chatgpt/gpt-6.1-sol",
     "opencode-go/grok-4.7"
    ]
   },
@@ -824,6 +917,9 @@
     "opencode-go/gemini-4-argon-contributor",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/gemini-4-argon-contributor",
+    "opencode-go/gemini-4-argon-contributor",
+    "opencode-go/gemini-4-argon-contributor",
+    "chatgpt/gpt-6.1-sol",
     "opencode-go/gemini-4-argon-contributor"
    ]
   },
@@ -851,6 +947,9 @@
     "opencode-go/muse-spark-1.3-contributor",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/muse-spark-1.3-contributor",
+    "opencode-go/muse-spark-1.3-contributor",
+    "opencode-go/muse-spark-1.3-contributor",
+    "chatgpt/gpt-6.1-sol",
     "opencode-go/muse-spark-1.3-contributor"
    ]
   },
@@ -878,6 +977,9 @@
     "opencode-go/muse-spark-1.2-contributor",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/muse-spark-1.2-contributor",
+    "opencode-go/muse-spark-1.2-contributor",
+    "opencode-go/muse-spark-1.2-contributor",
+    "chatgpt/gpt-6.1-sol",
     "opencode-go/muse-spark-1.2-contributor"
    ]
   },
@@ -905,6 +1007,9 @@
     "opencode-go/longcat-2.0",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/longcat-2.0",
+    "opencode-go/longcat-2.0",
+    "opencode-go/longcat-2.0",
+    "chatgpt/gpt-6.1-sol",
     "opencode-go/longcat-2.0"
    ]
   },
@@ -932,6 +1037,9 @@
     "opencode-go/longcat-2.5-preview-free",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/longcat-2.5-preview-free",
+    "opencode-go/longcat-2.5-preview-free",
+    "opencode-go/longcat-2.5-preview-free",
+    "chatgpt/gpt-6.1-sol",
     "opencode-go/longcat-2.5-preview-free"
    ]
   },
@@ -956,6 +1064,9 @@
     "opencode-go/hy4-preview",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/hy4-preview",
+    "opencode-go/hy4-preview",
+    "opencode-go/hy4-preview",
+    "chatgpt/gpt-6.1-sol",
     "opencode-go/hy4-preview"
    ]
   },
@@ -981,6 +1092,9 @@
     "opencode-go/hy3",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/hy3",
+    "opencode-go/hy3",
+    "opencode-go/hy3",
+    "chatgpt/gpt-6.1-sol",
     "opencode-go/hy3"
    ]
   },
@@ -1006,6 +1120,9 @@
     "opencode-go/step-5-preview",
     "chatgpt/gpt-6.1-sol",
     "opencode-go/step-5-preview",
+    "opencode-go/step-5-preview",
+    "opencode-go/step-5-preview",
+    "chatgpt/gpt-6.1-sol",
     "opencode-go/step-5-preview"
    ]
   },
@@ -1029,6 +1146,9 @@
     "cline-pass/glm-5.3",
     "cline-pass/glm-5.3",
     "opencode-go/glm-5.3",
+    "chatgpt/gpt-6.1-sol",
+    "chatgpt/gpt-6.1-sol",
+    "chatgpt/gpt-6.1-sol",
     "chatgpt/gpt-6.1-sol",
     "chatgpt/gpt-6.1-sol",
     "chatgpt/gpt-6.1-sol",
@@ -1059,6 +1179,9 @@
     "chatgpt/gpt-6.1-terra",
     "chatgpt/gpt-6.1-terra",
     "chatgpt/gpt-6.1-terra",
+    "chatgpt/gpt-6.1-terra",
+    "chatgpt/gpt-6.1-terra",
+    "chatgpt/gpt-6.1-terra",
     "chatgpt/gpt-6.1-terra"
    ]
   },
@@ -1086,6 +1209,9 @@
     "chatgpt/gpt-6-sol",
     "chatgpt/gpt-6-sol",
     "chatgpt/gpt-6-sol",
+    "chatgpt/gpt-6-sol",
+    "chatgpt/gpt-6-sol",
+    "chatgpt/gpt-6-sol",
     "chatgpt/gpt-6-sol"
    ]
   },
@@ -1109,6 +1235,9 @@
     "cline-pass/glm-5.3",
     "cline-pass/glm-5.3",
     "opencode-go/glm-5.3",
+    "chatgpt/gpt-6-astra",
+    "chatgpt/gpt-6-astra",
+    "chatgpt/gpt-6-astra",
     "chatgpt/gpt-6-astra",
     "chatgpt/gpt-6-astra",
     "chatgpt/gpt-6-astra",
@@ -1139,6 +1268,9 @@
     "chatgpt/gpt-6-luna",
     "chatgpt/gpt-6-luna",
     "chatgpt/gpt-6-luna",
+    "chatgpt/gpt-6-luna",
+    "chatgpt/gpt-6-luna",
+    "chatgpt/gpt-6-luna",
     "chatgpt/gpt-6-luna"
    ]
   },
@@ -1163,6 +1295,9 @@
     "cline-pass/glm-5.3",
     "cline-pass/glm-5.3",
     "opencode-go/glm-5.3",
+    "chatgpt/gpt-5.6-sol",
+    "chatgpt/gpt-5.6-sol",
+    "chatgpt/gpt-5.6-sol",
     "chatgpt/gpt-5.6-sol",
     "chatgpt/gpt-5.6-sol",
     "chatgpt/gpt-5.6-sol",
@@ -1193,6 +1328,9 @@
     "chatgpt/gpt-5.6-terra",
     "chatgpt/gpt-5.6-terra",
     "chatgpt/gpt-5.6-terra",
+    "chatgpt/gpt-5.6-terra",
+    "chatgpt/gpt-5.6-terra",
+    "chatgpt/gpt-5.6-terra",
     "chatgpt/gpt-5.6-terra"
    ]
   },
@@ -1217,6 +1355,9 @@
     "cline-pass/glm-5.3",
     "cline-pass/glm-5.3",
     "opencode-go/gpt-5.6-luna",
+    "chatgpt/gpt-5.6-luna",
+    "chatgpt/gpt-5.6-luna",
+    "chatgpt/gpt-5.6-luna",
     "chatgpt/gpt-5.6-luna",
     "chatgpt/gpt-5.6-luna",
     "chatgpt/gpt-5.6-luna",
@@ -1247,6 +1388,9 @@
     "chatgpt/gpt-5.5",
     "chatgpt/gpt-5.5",
     "chatgpt/gpt-5.5",
+    "chatgpt/gpt-5.5",
+    "chatgpt/gpt-5.5",
+    "chatgpt/gpt-5.5",
     "chatgpt/gpt-5.5"
    ]
   },
@@ -1273,6 +1417,9 @@
     "chatgpt/gpt-5.3-codex-spark",
     "chatgpt/gpt-5.3-codex-spark",
     "chatgpt/gpt-5.3-codex-spark",
+    "chatgpt/gpt-5.3-codex-spark",
+    "chatgpt/gpt-5.3-codex-spark",
+    "chatgpt/gpt-5.3-codex-spark",
     "chatgpt/gpt-5.3-codex-spark"
    ]
   }
@@ -1286,6 +1433,9 @@
    "opencode-go/retired",
    "chatgpt/gpt-6.1-sol",
    "opencode-go/retired",
+   "opencode-go/retired",
+   "opencode-go/retired",
+   "chatgpt/gpt-6.1-sol",
    "opencode-go/retired"
   ],
   "chatgptUsable": [
@@ -1295,44 +1445,84 @@
    "chatgpt/retired",
    "chatgpt/retired",
    "chatgpt/retired",
+   "chatgpt/retired",
+   "chatgpt/retired",
+   "chatgpt/retired",
    "chatgpt/retired"
+  ],
+  "commandcodeUsable": [
+   "cline-pass/glm-5.3",
+   "cline-pass/glm-5.3",
+   "opencode-go/glm-5.3",
+   "commandcode/deepseek/retired",
+   "chatgpt/gpt-6.1-sol",
+   "opencode-go/glm-5.3",
+   "cline-pass/glm-5.3",
+   "commandcode/deepseek/retired",
+   "commandcode/deepseek/retired",
+   "commandcode/deepseek/retired"
   ]
  },
  "connections": [
   {
    "clinepass": true,
    "opencode-go": true,
-   "chatgpt": false
+   "chatgpt": false,
+   "commandcode": false
   },
   {
    "clinepass": true,
    "opencode-go": false,
-   "chatgpt": false
+   "chatgpt": false,
+   "commandcode": false
   },
   {
    "clinepass": false,
    "opencode-go": true,
-   "chatgpt": false
+   "chatgpt": false,
+   "commandcode": false
   },
   {
    "clinepass": false,
    "opencode-go": false,
-   "chatgpt": false
+   "chatgpt": false,
+   "commandcode": false
   },
   {
    "clinepass": false,
    "opencode-go": false,
-   "chatgpt": true
+   "chatgpt": true,
+   "commandcode": false
   },
   {
    "clinepass": false,
    "opencode-go": true,
-   "chatgpt": true
+   "chatgpt": true,
+   "commandcode": false
   },
   {
    "clinepass": true,
    "opencode-go": true,
-   "chatgpt": true
+   "chatgpt": true,
+   "commandcode": false
+  },
+  {
+   "clinepass": false,
+   "opencode-go": false,
+   "chatgpt": false,
+   "commandcode": true
+  },
+  {
+   "clinepass": false,
+   "opencode-go": false,
+   "chatgpt": true,
+   "commandcode": true
+  },
+  {
+   "clinepass": true,
+   "opencode-go": true,
+   "chatgpt": true,
+   "commandcode": true
   }
  ]
 }

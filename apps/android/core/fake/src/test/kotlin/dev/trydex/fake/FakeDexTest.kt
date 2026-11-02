@@ -14,6 +14,8 @@ import dev.trydex.core.model.CharacterProfile
 import dev.trydex.core.model.Characters
 import dev.trydex.core.model.ClientMessages
 import dev.trydex.core.model.DisplayItem
+import dev.trydex.core.model.ModelProvider
+import dev.trydex.core.model.ModelRegistry
 import dev.trydex.core.model.ProjectProfile
 import dev.trydex.core.model.ProjectRepo
 import dev.trydex.core.model.ServerMessage
@@ -267,6 +269,45 @@ class FakeDexTest {
         assertThat(runCatching { api.registerNativePush("android", "short", null, "x") }.exceptionOrNull()!!.message).isEqualTo("That isn't a push token.")
         api.pushUnsubscribe(id)
         until { it.push.devices.none { device -> device.id == id } }
+        connection.stop()
+    }
+
+    @Test fun commandCodeConnectsAndItsModelsFollowTheKey() = runBlocking {
+        val url = fake.start()
+        val connection = AgentConnection(OkHttpClient(), url, FakeData.USER_ID, { fake.token }, scope)
+        val api = DexApi(connection.asRpc())
+        connection.start()
+        withTimeout(5_000) { connection.status.first { it == ConnectionStatus.Connected } }
+        suspend fun until(check: (dev.trydex.core.model.DexState) -> Boolean) = withTimeout(5_000) { while (!check(connection.state.value!!)) kotlinx.coroutines.delay(10) }
+        // Not connected in the demo, so its models aren't listed.
+        val seeded = connection.state.value!!
+        assertThat(seeded.commandcode.connected).isFalse()
+        assertThat(seeded.connectedProviders[ModelProvider.CommandCode]).isFalse()
+        assertThat(api.modelCatalog().models.none { it.provider == "commandcode" }).isTrue()
+
+        assertThat(api.connectCommandCode("  ").error).isEqualTo("Paste your Command Code API key.")
+        assertThat(api.connectCommandCode("bad").ok).isFalse()
+        val connected = api.connectCommandCode("cc_live_0123456789abcd")
+        assertThat(connected.ok).isTrue()
+        assertThat(connected.note).isEqualTo("3 models on your plan are in the model menu.")
+        until { it.commandcode.connected }
+        val state = connection.state.value!!
+        assertThat(state.commandcode.keyHint).isEqualTo("cc_l…abcd")
+        assertThat(state.models!!.version).isNotEqualTo(seeded.models!!.version)
+        val catalog = api.modelCatalog()
+        assertThat(catalog.version).isEqualTo(state.models!!.version)
+        val registry = ModelRegistry()
+        assertThat(registry.install(catalog)).isTrue()
+        assertThat(registry.of(ModelProvider.CommandCode).map { it.name }).containsExactly("DeepSeek V4.1 Flash", "Claude Haiku 5.5", "Devstral 3").inOrder()
+        assertThat(registry.providerOf("commandcode/deepseek/deepseek-v4.1-flash")).isEqualTo(ModelProvider.CommandCode)
+
+        api.disconnectCommandCode()
+        until { !it.commandcode.connected }
+        assertThat(connection.state.value!!.commandcode.keyHint).isNull()
+        val after = api.modelCatalog()
+        assertThat(after.models.none { it.provider == "commandcode" }).isTrue()
+        assertThat(registry.install(after)).isTrue()
+        assertThat(registry.of(ModelProvider.CommandCode)).isEmpty()
         connection.stop()
     }
 

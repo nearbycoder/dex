@@ -55,13 +55,17 @@ write("format.json", {
 // ── Models ───────────────────────────────────────────────────────────────────
 
 const connections = [
-  { clinepass: true, "opencode-go": true, chatgpt: false },
-  { clinepass: true, "opencode-go": false, chatgpt: false },
-  { clinepass: false, "opencode-go": true, chatgpt: false },
-  { clinepass: false, "opencode-go": false, chatgpt: false },
-  { clinepass: false, "opencode-go": false, chatgpt: true },
-  { clinepass: false, "opencode-go": true, chatgpt: true },
-  { clinepass: true, "opencode-go": true, chatgpt: true }
+  { clinepass: true, "opencode-go": true, chatgpt: false, commandcode: false },
+  { clinepass: true, "opencode-go": false, chatgpt: false, commandcode: false },
+  { clinepass: false, "opencode-go": true, chatgpt: false, commandcode: false },
+  { clinepass: false, "opencode-go": false, chatgpt: false, commandcode: false },
+  { clinepass: false, "opencode-go": false, chatgpt: true, commandcode: false },
+  { clinepass: false, "opencode-go": true, chatgpt: true, commandcode: false },
+  { clinepass: true, "opencode-go": true, chatgpt: true, commandcode: false },
+  // Command Code has no built-in models, so a chat moved onto it alone keeps its model.
+  { clinepass: false, "opencode-go": false, chatgpt: false, commandcode: true },
+  { clinepass: false, "opencode-go": false, chatgpt: true, commandcode: true },
+  { clinepass: true, "opencode-go": true, chatgpt: true, commandcode: true }
 ]
 write("models.json", {
   models: BUILT_IN_MODELS.map((model) => ({
@@ -70,7 +74,9 @@ write("models.json", {
     clamped: Object.fromEntries(THINKING_LEVELS.map((level) => [level, clampThinking(model, level)])),
     usable: connections.map((connected) => usableModel(model.id, connected))
   })),
-  unknown: { supported: supportedThinkingLevels(findModel("nope/none")), usable: connections.map((connected) => usableModel("opencode-go/retired", connected)), chatgptUsable: connections.map((connected) => usableModel("chatgpt/retired", connected)) },
+  unknown: { supported: supportedThinkingLevels(findModel("nope/none")), usable: connections.map((connected) => usableModel("opencode-go/retired", connected)), chatgptUsable: connections.map((connected) => usableModel("chatgpt/retired", connected)),
+    // Command Code's apiIds carry their maker, so its ids have two slashes; an unlisted one goes by its prefix.
+    commandcodeUsable: connections.map((connected) => usableModel("commandcode/deepseek/retired", connected)) },
   connections
 })
 

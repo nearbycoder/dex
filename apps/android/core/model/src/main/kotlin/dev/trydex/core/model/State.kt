@@ -13,6 +13,8 @@ data class DexState(
     val opencode: ProviderStatus = ProviderStatus(),
     /** Sign in with ChatGPT; `keyHint` is the account's email. Missing in state an older agent saved. */
     val chatgpt: ProviderStatus = ProviderStatus(),
+    /** The Command Code key its models run on (same shape). Missing in state an older agent saved. */
+    val commandcode: ProviderStatus = ProviderStatus(),
     val boat: BoatStatus = BoatStatus(),
     val settings: DexSettings = DexSettings(),
     val sessions: List<SessionMeta> = emptyList(),
@@ -37,9 +39,10 @@ data class DexState(
             ModelProvider.ClinePass to cline.connected,
             ModelProvider.OpenCodeGo to opencode.connected,
             ModelProvider.ChatGPT to chatgpt.connected,
+            ModelProvider.CommandCode to commandcode.connected,
         )
 
-    val anyProviderConnected: Boolean get() = cline.connected || opencode.connected || chatgpt.connected
+    val anyProviderConnected: Boolean get() = cline.connected || opencode.connected || chatgpt.connected || commandcode.connected
 
     fun session(id: String): SessionMeta? = sessions.firstOrNull { it.id == id }
     fun agent(id: String?): AgentProfile? = id?.let { key -> agents.firstOrNull { it.id == key } }

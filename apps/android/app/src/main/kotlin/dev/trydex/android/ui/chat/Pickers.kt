@@ -152,7 +152,7 @@ private fun ThinkingPicker(thinking: ThinkingLevel, levels: List<ThinkingLevel>,
     }
 }
 
-/** The searchable model menu: All / ClinePass / OpenCode Go / ChatGPT, with badges, grouped by subscription. */
+/** The searchable model menu: All / ClinePass / OpenCode Go / ChatGPT / Command Code, with badges, grouped by subscription. */
 @Composable
 private fun ModelSheet(selected: String, onDismiss: () -> Unit, onSelect: (String) -> Unit) {
     val app = LocalApp.current
@@ -187,6 +187,7 @@ private fun ModelSheet(selected: String, onDismiss: () -> Unit, onSelect: (Strin
                         onClick = { tab = provider },
                         label = { Text("${provider.displayName} ${registry.of(provider).size}") },
                         leadingIcon = if (connected[provider] != true) ({ StatusDot(MaterialTheme.colorScheme.outline, label = "Not connected") }) else null,
+                        modifier = Modifier.testTag("model-tab-${provider.id}"),
                     )
                 }
             }
@@ -215,7 +216,17 @@ private fun ModelSheet(selected: String, onDismiss: () -> Unit, onSelect: (Strin
                         ModelRow(model, model.id == selected, enabled) { onSelect(model.id) }
                     }
                 }
-                if (!any) item {
+                // A subscription that lists models only once connected (Command Code: its plan decides them) has none yet.
+                val unlisted = tab?.takeIf { connected[it] != true && registry.of(it).isEmpty() }
+                if (!any && unlisted != null && needle.isEmpty()) item {
+                    Column(Modifier.padding(24.dp).testTag("model-sheet-unlisted"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Connect ${unlisted.displayName} in Settings to see the models your plan covers.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        TextButton(onClick = {
+                            onDismiss()
+                            app.navigator.open(GeneralSettings)
+                        }, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 0.dp)) { Text("Connect in Settings") }
+                    }
+                } else if (!any) item {
                     Text(if (needle.isNotEmpty()) "No model matches “$needle”." else "No models.", modifier = Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }

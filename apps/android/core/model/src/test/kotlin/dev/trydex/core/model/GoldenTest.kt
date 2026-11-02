@@ -53,6 +53,7 @@ class GoldenTest {
                 ModelProvider.ClinePass to (connection["clinepass"].bool == true),
                 ModelProvider.OpenCodeGo to (connection["opencode-go"].bool == true),
                 ModelProvider.ChatGPT to (connection["chatgpt"].bool == true),
+                ModelProvider.CommandCode to (connection["commandcode"].bool == true),
             )
         }
         for (case in golden.items("models")) {
@@ -77,6 +78,9 @@ class GoldenTest {
         }
         unknown["chatgptUsable"]!!.jsonArray.forEachIndexed { index, expected ->
             assertThat(registry.usableModel("chatgpt/retired", connections[index])).isEqualTo(expected.str)
+        }
+        unknown["commandcodeUsable"]!!.jsonArray.forEachIndexed { index, expected ->
+            assertWithMessage("commandcode #$index").that(registry.usableModel("commandcode/deepseek/retired", connections[index])).isEqualTo(expected.str)
         }
     }
 

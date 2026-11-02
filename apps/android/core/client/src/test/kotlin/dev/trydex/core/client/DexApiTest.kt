@@ -137,4 +137,19 @@ class DexApiTest {
         val states: Map<String, JsonElement> = api.uiStates("s1")
         assertThat(states.keys).containsExactly("card-1")
     }
+
+    @Test fun commandCode() = runBlocking<Unit> {
+        result = """{"ok":true,"note":"12 models on your plan are in the model menu."}"""
+        val connected = api.connectCommandCode("cc_live_0123456789")
+        assertThat(connected.ok).isTrue()
+        assertThat(connected.note).isEqualTo("12 models on your plan are in the model menu.")
+        result = """{"ok":false,"error":"Command Code didn't accept that key."}"""
+        assertThat(api.connectCommandCode("nope").error).isEqualTo("Command Code didn't accept that key.")
+        result = "null"
+        api.disconnectCommandCode()
+        assertThat(calls.map { it.method }).containsExactly("connectCommandCode", "connectCommandCode", "disconnectCommandCode").inOrder()
+        assertThat(calls.map { it.args }).containsExactly("""["cc_live_0123456789"]""", """["nope"]""", "[]").inOrder()
+        // Both wait for the model list to refresh, which takes longer than an ordinary call.
+        assertThat(calls.map { it.timeout }.distinct()).containsExactly(60_000L)
+    }
 }

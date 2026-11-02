@@ -158,6 +158,9 @@ class DexApi(private val rpc: AgentRpc) {
     suspend fun startChatGPTSignIn(): ChatGPTSignInStart = typed(ChatGPTSignInStart.serializer(), "startChatGPTSignIn")
     suspend fun finishChatGPTSignIn(callbackUrl: String): ConnectResult = typed(ConnectResult.serializer(), "finishChatGPTSignIn", callbackUrl)
     suspend fun disconnectChatGPT() { raw("disconnectChatGPT") }
+    /** Both refresh the model list before answering (connecting also checks which models the key's plan covers): a list refresh's time. */
+    suspend fun connectCommandCode(key: String): ConnectResult = typed(ConnectResult.serializer(), "connectCommandCode", key, timeout = 60_000)
+    suspend fun disconnectCommandCode() { raw("disconnectCommandCode", timeout = 60_000) }
     suspend fun connectBoat(key: String): ConnectResult = typed(ConnectResult.serializer(), "connectBoat", key)
     suspend fun disconnectBoat(): ConnectResult = typed(ConnectResult.serializer(), "disconnectBoat")
     suspend fun connectGitHub(token: String): ConnectResult = typed(ConnectResult.serializer(), "connectGitHub", token, "token")

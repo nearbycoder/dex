@@ -119,7 +119,7 @@ fun NewChatScreen(route: NewChat) {
     val mcp = mcpChoice ?: current?.mcp.orEmpty().filter { it.defaultOn }.map { it.id }
 
     // With no agent, the model follows Settings.
-    LaunchedEffect(current?.settings?.defaultModel, current?.settings?.defaultThinking, current?.cline?.connected, current?.opencode?.connected, current?.chatgpt?.connected, agentId) {
+    LaunchedEffect(current?.settings?.defaultModel, current?.settings?.defaultThinking, current?.cline?.connected, current?.opencode?.connected, current?.chatgpt?.connected, current?.commandcode?.connected, agentId) {
         val s = current ?: return@LaunchedEffect
         if (agentId == null) {
             model = registry.usableModel(s.settings.defaultModel, connected(s))
@@ -219,7 +219,7 @@ fun NewChatScreen(route: NewChat) {
                             ) {
                                 Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Outlined.Key, contentDescription = null)
-                                    Text("Connect ClinePass, OpenCode Go, or ChatGPT in Settings so Dex can think.", style = MaterialTheme.typography.bodyMedium)
+                                    Text("Connect ClinePass, OpenCode Go, ChatGPT, or Command Code in Settings so Dex can think.", style = MaterialTheme.typography.bodyMedium)
                                 }
                             }
                         }

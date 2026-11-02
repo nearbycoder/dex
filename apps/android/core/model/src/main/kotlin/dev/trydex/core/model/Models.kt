@@ -7,12 +7,15 @@ import kotlinx.serialization.json.JsonObject
 import kotlin.math.abs
 import kotlin.math.roundToLong
 
-/** The models Dex runs, from ClinePass, OpenCode Go, and ChatGPT (apps/web/src/shared/models.ts). */
+/** The models Dex runs, from ClinePass, OpenCode Go, ChatGPT, and Command Code (apps/web/src/shared/models.ts). */
 @Serializable
 enum class ModelProvider(val id: String, val displayName: String, val short: String) {
     @SerialName("clinepass") ClinePass("clinepass", "ClinePass", "Cline"),
     @SerialName("opencode-go") OpenCodeGo("opencode-go", "OpenCode Go", "OpenCode"),
-    @SerialName("chatgpt") ChatGPT("chatgpt", "ChatGPT", "ChatGPT");
+    @SerialName("chatgpt") ChatGPT("chatgpt", "ChatGPT", "ChatGPT"),
+
+    /** Only from the live catalog (no built-ins), and only while a key is connected. Its ids are `commandcode/<apiId>`, and an apiId can hold a slash. */
+    @SerialName("commandcode") CommandCode("commandcode", "Command Code", "Command");
 
     companion object {
         fun fromId(id: String): ModelProvider? = entries.firstOrNull { it.id == id }
@@ -35,7 +38,10 @@ enum class ModelMaker(val id: String, val displayName: String) {
     Meituan("meituan", "Meituan"),
     Tencent("tencent", "Tencent"),
     StepFun("stepfun", "StepFun"),
-    OpenCode("opencode", "OpenCode");
+    OpenCode("opencode", "OpenCode"),
+
+    /** Other makers Command Code serves (Mistral, NVIDIA, Sakana, …), under its ⌘ mark. */
+    CommandCode("commandcode", "Command Code");
 
     companion object {
         fun fromId(id: String): ModelMaker? = entries.firstOrNull { it.id == id }
@@ -114,6 +120,7 @@ class ModelRegistry(initial: List<DexModel> = BuiltInModels.list) {
         find(id)?.modelProvider ?: when {
             id.startsWith("opencode-go/") -> ModelProvider.OpenCodeGo
             id.startsWith("chatgpt/") -> ModelProvider.ChatGPT
+            id.startsWith("commandcode/") -> ModelProvider.CommandCode
             else -> ModelProvider.ClinePass
         }
 

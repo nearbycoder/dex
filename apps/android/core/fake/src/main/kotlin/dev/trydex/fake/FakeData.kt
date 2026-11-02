@@ -5,8 +5,10 @@ import dev.trydex.core.model.AccessToken
 import dev.trydex.core.model.AgentProfile
 import dev.trydex.core.model.AuditEntry
 import dev.trydex.core.model.BoatStatus
+import dev.trydex.core.model.BuiltInModels
 import dev.trydex.core.model.CharacterProfile
 import dev.trydex.core.model.Characters
+import dev.trydex.core.model.DexModel
 import dev.trydex.core.model.DexSettings
 import dev.trydex.core.model.DexState
 import dev.trydex.core.model.GitHubStatus
@@ -14,6 +16,7 @@ import dev.trydex.core.model.McpLocal
 import dev.trydex.core.model.McpServerInfo
 import dev.trydex.core.model.McpStatus
 import dev.trydex.core.model.McpToolInfo
+import dev.trydex.core.model.ModelCost
 import dev.trydex.core.model.ModelListVersion
 import dev.trydex.core.model.PendingAction
 import dev.trydex.core.model.ProjectProfile
@@ -28,6 +31,9 @@ import dev.trydex.core.model.SkillInfo
 import dev.trydex.core.model.ThinkingLevel
 import dev.trydex.core.model.VmInfo
 import dev.trydex.core.model.VmSetup
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import dev.trydex.core.model.VmStatus
 
 /**
@@ -40,6 +46,31 @@ object FakeData {
 
     /** Atlas's scheduled check-in, unread in the demo. */
     const val ATLAS_CHECK_IN = "Morning! Thursday's here: the Android release notes are due today. Want me to draft them from this week's commits?"
+
+    /**
+     * What a Command Code plan covers, as the agent lists it once a key is connected (it has no built-ins). Ids are
+     * `commandcode/<apiId>`, and Command Code's apiIds carry the maker: `deepseek/deepseek-v4.1-flash`.
+     */
+    val commandCodeModels: List<DexModel> = listOf(
+        DexModel(
+            "commandcode/deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4.1-flash", "commandcode", "DeepSeek V4.1 Flash", "deepseek",
+            listOf("text", "image"), 1_000_000, 384_000, ModelCost(0.15, 0.6, 0.003),
+            JsonObject(mapOf("off" to JsonNull, "minimal" to JsonNull, "low" to JsonPrimitive("low"), "medium" to JsonNull, "high" to JsonPrimitive("high"), "xhigh" to JsonNull, "max" to JsonPrimitive("max"))),
+        ),
+        DexModel(
+            "commandcode/anthropic/claude-haiku-5-5", "anthropic/claude-haiku-5-5", "commandcode", "Claude Haiku 5.5", "anthropic",
+            listOf("text", "image"), 1_000_000, 128_000, ModelCost(0.1, 0.5, 0.01, 0.125),
+            JsonObject(mapOf("xhigh" to JsonPrimitive("xhigh"), "max" to JsonPrimitive("max"))),
+        ),
+        // A maker Dex has no logo for: shown under Command Code's mark.
+        DexModel("commandcode/mistralai/devstral-3", "mistralai/devstral-3", "commandcode", "Devstral 3", "commandcode", listOf("text"), 256_000, 64_000, ModelCost(0.2, 0.8)),
+    )
+
+    /** The model list the agent sends: the built-in one, plus Command Code's while a key is connected. */
+    fun models(state: DexState): List<DexModel> = BuiltInModels.list + if (state.commandcode.connected) commandCodeModels else emptyList()
+
+    /** The list's version, which changes when Command Code's models join or leave it (apps fetch the list again then). */
+    fun modelsVersion(state: DexState): String = if (state.commandcode.connected) "builtin+commandcode" else "builtin"
 
     fun state(now: Long): DexState {
         val minute = 60_000L
