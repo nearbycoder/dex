@@ -57,6 +57,16 @@ extension MockAgent {
         return nil
     }
 
+    /// Puts `models` in the catalog as Command Code's and announces a new list version, so apps fetch it again
+    /// (the agent's `refreshModels` after a connect or disconnect).
+    func listCommandCodeModels(_ models: [DexModel]) {
+        let now = Double.nowMs
+        catalog.models = catalog.models.filter { $0.provider != "commandcode" } + models
+        catalog.version = "mock-\(Int(now))-\(models.count)"
+        catalog.updatedAt = now
+        state.models = ModelListVersion(version: catalog.version, updatedAt: now)
+    }
+
     private func installConnectionHandlers() {
         register("connectCline") { [unowned self] args, _ in
             let key = args.string(0) ?? ""
@@ -79,6 +89,20 @@ extension MockAgent {
         }
         register("disconnectOpenCode") { [unowned self] _, _ in
             self.state.opencode = ClineStatus(connected: false)
+            self.publish()
+            return .null
+        }
+        register("connectCommandCode") { [unowned self] args, _ in
+            let key = args.string(0) ?? ""
+            if let problem = Self.keyProblem(key, service: "Command Code") { return ["ok": false, "error": .string(problem)] }
+            self.state.commandcode = ClineStatus(connected: true, source: "user", keyHint: Self.hint(key), verifiedAt: .nowMs)
+            self.listCommandCodeModels(MockData.commandCodeModels)
+            self.publish()
+            return ["ok": true, "note": .string("\(MockData.commandCodeModels.count) models on your plan are in the model menu.")]
+        }
+        register("disconnectCommandCode") { [unowned self] _, _ in
+            self.state.commandcode = ClineStatus(connected: false)
+            self.listCommandCodeModels([])
             self.publish()
             return .null
         }

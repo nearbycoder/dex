@@ -179,7 +179,22 @@ struct ModelPickerSheet: View {
                         }
                     }
                 }
-                if !client.catalog.models.contains(where: matches) {
+                if let provider = ModelCatalog.providers.first(where: { $0.id == only }), connected[provider.id] != true,
+                   client.catalog.models(of: provider.id).isEmpty {
+                    // A subscription that lists models only once connected (Command Code: what the key's plan covers).
+                    ContentUnavailableView {
+                        Label("Not Connected", systemImage: "key")
+                    } description: {
+                        Text("Connect \(provider.name) in Settings and the models your plan covers appear here.")
+                    } actions: {
+                        Button("Connect in Settings") {
+                            dismiss()
+                            router.openSettings(.models)
+                        }
+                        .accessibilityIdentifier("model.connect")
+                    }
+                    .listRowBackground(Color.clear)
+                } else if !client.catalog.models.contains(where: matches) {
                     ContentUnavailableView(search.isEmpty ? "No Models" : "No model matches “\(search)”", systemImage: "cpu")
                         .listRowBackground(Color.clear)
                 }

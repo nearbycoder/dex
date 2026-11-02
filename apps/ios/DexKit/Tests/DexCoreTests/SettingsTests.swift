@@ -256,6 +256,21 @@ import Testing
         #expect(try await call(agent, "connectOpenCode", ["bad-key"])["ok"]?.bool == false)
         #expect(try await call(agent, "connectOpenCode", ["sk-good1234"])["ok"]?.bool == true)
         #expect(agent.state.opencode.keyHint == "…1234")
+        // Command Code's models are listed only while its key is connected.
+        #expect(try await call(agent, "modelCatalog").decode(ModelCatalog.self).models(of: "commandcode").isEmpty)
+        #expect(try await call(agent, "connectCommandCode", ["invalid"])["ok"]?.bool == false)
+        #expect(agent.state.commandcode.connected == false)
+        let connected = try await call(agent, "connectCommandCode", ["cc-good5678"])
+        #expect(connected["ok"]?.bool == true && connected["note"]?.string != nil)
+        #expect(agent.state.commandcode == ClineStatus(connected: true, source: "user", keyHint: "…5678", verifiedAt: agent.state.commandcode.verifiedAt))
+        #expect(agent.state.connectedProviders["commandcode"] == true)
+        let listed = try await call(agent, "modelCatalog").decode(ModelCatalog.self)
+        #expect(listed.models(of: "commandcode").map(\.id) == MockData.commandCodeModels.map(\.id))
+        #expect(agent.state.models?.version == listed.version)
+        _ = try await call(agent, "disconnectCommandCode")
+        #expect(agent.state.commandcode.connected == false)
+        #expect(try await call(agent, "modelCatalog").decode(ModelCatalog.self).models(of: "commandcode").isEmpty)
+        #expect(agent.state.models?.version != listed.version)
         // A running VM keeps the boat.dev key.
         #expect(try await call(agent, "disconnectBoat")["ok"]?.bool == false)
 

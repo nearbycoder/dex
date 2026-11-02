@@ -23,6 +23,7 @@ public enum MockData {
         var state = DexState()
         state.cline = ClineStatus(connected: true, source: "user", keyHint: "…a1b2", verifiedAt: now - day)
         state.opencode = ClineStatus(connected: false)
+        state.commandcode = ClineStatus(connected: false)
         state.boat = BoatStatus(connected: true, source: "user", keyHint: "…9f3c")
         state.vmConfigured = true
         state.github = GitHubStatus(connected: true, login: "octocat", via: "oauth", oauthAvailable: true)
@@ -91,6 +92,19 @@ public enum MockData {
         DexModel(id: "chatgpt/gpt-6-luna", apiId: "gpt-6-luna", provider: "chatgpt", name: "GPT-6 Luna", maker: "openai", input: ["text", "image"], contextWindow: 272_000,
                  maxTokens: 128_000, cost: .init(input: 0.1, output: 0.5), thinkingLevelMap: ["off": "none", "minimal": nil, "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": "max"])
     ])
+
+    /// What Command Code's plan covers. Like the real agent, the mock lists them only while a key is connected
+    /// (`connectCommandCode` adds them to the catalog, `disconnectCommandCode` takes them out). Its apiIds name the
+    /// maker too, and a maker Dex has no logo for goes under Command Code's own mark.
+    public static let commandCodeModels: [DexModel] = [
+        DexModel(id: "commandcode/deepseek/deepseek-v4.1-flash", apiId: "deepseek/deepseek-v4.1-flash", provider: "commandcode", name: "DeepSeek V4.1 Flash", maker: "deepseek",
+                 contextWindow: 1_000_000, maxTokens: 65_536, cost: .init(input: 0.2, output: 0.8)),
+        DexModel(id: "commandcode/anthropic/claude-haiku-5.5", apiId: "anthropic/claude-haiku-5.5", provider: "commandcode", name: "Claude Haiku 5.5", maker: "anthropic",
+                 input: ["text", "image"], contextWindow: 200_000, maxTokens: 64_000, cost: .init(input: 1, output: 5),
+                 thinkingLevelMap: ["minimal": nil, "xhigh": "max"]),
+        DexModel(id: "commandcode/mistralai/devstral-3", apiId: "mistralai/devstral-3", provider: "commandcode", name: "Devstral 3", maker: "commandcode",
+                 contextWindow: 256_000, cost: .init(input: 0.4, output: 2))
+    ]
 
     static func assistant(_ blocks: [ContentBlock], at: Double, duration: Double = 4_000, stop: String = "stop") -> PiMessage {
         .assistant(AssistantMessage(content: blocks, model: "cline-pass/glm-5.3", provider: "clinepass", usage: Usage(input: 1200, output: 340, totalTokens: 1540), stopReason: stop, timestamp: at, durationMs: duration))

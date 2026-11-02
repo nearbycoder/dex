@@ -1,7 +1,7 @@
 import DexCore
 import SwiftUI
 
-/// ClinePass, OpenCode Go, and ChatGPT: the subscriptions Dex's models run on.
+/// ClinePass, OpenCode Go, ChatGPT, and Command Code: the subscriptions Dex's models run on.
 struct ModelSubscriptionsPage: View {
     @Environment(DexClient.self) private var client
 
@@ -43,8 +43,23 @@ struct ModelSubscriptionsPage: View {
                 ChatGPTConnectSection(status: state.chatgpt)
                 Section {
                     ExternalLink(title: "About Sign in with ChatGPT", url: "https://developers.openai.com/siwc/token-sharing-open-source")
+                }
+
+                // Command Code's models come from its own list, limited to what the key's plan covers.
+                KeyConnectSection(
+                    id: "commandcode", title: "Command Code", connected: state.commandcode.connected,
+                    status: state.commandcode.keyHint ?? "Connected",
+                    placeholder: state.commandcode.connected ? "New Command Code API key" : "Command Code API key",
+                    footer: footer(state.commandcode, provider: "Command Code"),
+                    onConnect: { key in ConnectResult.from(try await client.run("connectCommandCode", .string(key), timeout: 90)) },
+                    onDisconnect: { ConnectResult.from(try await client.run("disconnectCommandCode", timeout: 60)) }
+                ) {
+                    Text("Create a key in Command Code Studio. Works with Command Code's paid plans (Goat, Pro, Max): the model menu lists only the models your plan covers, and refreshes that list a few times a day. Dex checks the key with Command Code, then stores it encrypted in your agent.")
+                }
+                Section {
+                    ExternalLink(title: "Command Code Studio", url: "https://commandcode.ai/studio/")
                 } footer: {
-                    Text("Models marked Cline, OpenCode, or ChatGPT in the model menu run on that subscription. Connect any or all of them.")
+                    Text("Models marked Cline, OpenCode, ChatGPT, or Command in the model menu run on that subscription. Connect any or all of them.")
                 }
             }
             .navigationTitle("Model Subscriptions")

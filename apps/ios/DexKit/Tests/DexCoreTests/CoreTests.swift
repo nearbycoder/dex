@@ -38,12 +38,25 @@ import Testing
         #expect(state.opencode.connected == false)
         #expect(state.chatgpt.connected == false)
         #expect(state.connectedProviders["chatgpt"] == false)
+        // Command Code came later still: missing means disconnected.
+        #expect(state.commandcode == ClineStatus())
+        #expect(state.connectedProviders["commandcode"] == false)
+        #expect(state.anyProviderConnected)
         #expect(state.vms.isEmpty)
         #expect(state.settings.vmSize == "small")
         #expect(state.settings.vmMinutes == 5)
         #expect(state.sessions[0].mcpServers.isEmpty)
         #expect(state.sessions[0].settledAt == nil)
         #expect(state.sessions[0].muted == false)
+    }
+
+    @Test func decodesCommandCodeStatus() throws {
+        let json = #"{"cline":{"connected":false,"source":null,"keyHint":null,"verifiedAt":null},"commandcode":{"connected":true,"source":"user","keyHint":"cc_a…9f3c","verifiedAt":5}}"#
+        let state = try JSONDecoder.dex.decode(DexState.self, from: Data(json.utf8))
+        #expect(state.commandcode == ClineStatus(connected: true, source: "user", keyHint: "cc_a…9f3c", verifiedAt: 5))
+        #expect(state.connectedProviders == ["clinepass": false, "opencode-go": false, "chatgpt": false, "commandcode": true])
+        #expect(state.anyProviderConnected)
+        #expect(try JSONDecoder.dex.decode(DexState.self, from: JSONEncoder.dex.encode(state)) == state)
     }
 
     @Test func mockStateRoundTrips() throws {
@@ -178,6 +191,22 @@ import Testing
         #expect(catalog.provider(of: "opencode-go/unknown") == "opencode-go")
         #expect(catalog.usableModel("cline-pass/glm-5.3", connected: ["clinepass": false, "opencode-go": false, "chatgpt": true]) == "chatgpt/gpt-6.1-sol")
         #expect(catalog.provider(of: "chatgpt/retired") == "chatgpt")
+    }
+
+    @Test func commandCodeModels() {
+        let catalog = ModelCatalog(version: "v", updatedAt: 1, models: MockData.catalog.models + MockData.commandCodeModels)
+        #expect(ModelCatalog.providers.map(\.id) == ["clinepass", "opencode-go", "chatgpt", "commandcode"])
+        #expect(ModelCatalog.providerName("commandcode") == "Command Code")
+        #expect(ModelCatalog.providers.first { $0.id == "commandcode" }?.short == "Command")
+        #expect(ModelCatalog.makers["commandcode"] == "Command Code")
+        // Its apiIds carry a slash of their own; an id no longer listed still goes by its prefix.
+        #expect(catalog.provider(of: "commandcode/deepseek/deepseek-v4.1-flash") == "commandcode")
+        #expect(catalog.provider(of: "commandcode/mistralai/retired") == "commandcode")
+        #expect(MockData.catalog.provider(of: "commandcode/deepseek/deepseek-v4.1-flash") == "commandcode")
+        #expect(catalog.name(of: "commandcode/mistralai/retired") == "retired")
+        #expect(catalog.models(of: "commandcode").count == MockData.commandCodeModels.count)
+        #expect(catalog.usableModel("cline-pass/glm-5.3", connected: ["clinepass": false, "commandcode": true]) == "commandcode/deepseek/deepseek-v4.1-flash")
+        #expect(catalog.usableModel("commandcode/anthropic/claude-haiku-5.5", connected: ["commandcode": true]) == "commandcode/anthropic/claude-haiku-5.5")
     }
 
     @Test func catalogRoundTripKeepsNulls() throws {

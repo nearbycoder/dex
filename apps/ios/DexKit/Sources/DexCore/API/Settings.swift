@@ -3,7 +3,7 @@ import Foundation
 // Requests and answers for Settings, Secrets, Access & API, and Notifications (the callables in
 // apps/web/src/agent/dex-agent.ts). The synced records themselves live in Protocol/DexState.swift.
 
-/// What `connectCline`, `connectOpenCode`, `connectBoat`, `disconnectBoat`, and `connectGitHub` answer:
+/// What `connectCline`, `connectOpenCode`, `connectCommandCode`, `connectBoat`, `disconnectBoat`, and `connectGitHub` answer:
 /// `{ ok: true, note?, login? }` or `{ ok: false, error }`.
 public struct ConnectResult: Codable, Sendable, Hashable {
     public var ok: Bool

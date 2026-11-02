@@ -132,6 +132,85 @@ final class SettingsUITests: DexUITestCase {
         XCTAssertFalse(element("opencode.status").exists)
     }
 
+    /// Command Code lists models only once its key is connected: the model menu's tab says to connect it, and after a
+    /// connect in Settings the models its plan covers are there.
+    func testCommandCodeKeyListsItsModels() {
+        launch(["-DexOpenChat", "s-welcome"])
+        XCTAssertTrue(element("chat.transcript").waitForExistence(timeout: 15), "the chat opens")
+        openModelTab("commandcode")
+        let connect = element("model.connect")
+        XCTAssertTrue(connect.waitForExistence(timeout: 5), "a subscription with no models listed until connected says so")
+        XCTAssertFalse(element("model.commandcode/deepseek/deepseek-v4.1-flash").exists)
+        snapshot("model-commandcode-not-connected")
+        connect.tap()
+
+        let key = app.secureTextFields["commandcode.key"]
+        reveal(key)
+        XCTAssertTrue(key.waitForExistence(timeout: 5))
+        XCTAssertTrue(text("Command Code Studio").exists, "says where keys come from")
+        key.tap()
+        key.typeText("bad-key")
+        element("commandcode.connect").tap()
+        XCTAssertTrue(element("message.error").waitForExistence(timeout: 5), "A rejected key says why")
+
+        key.tap()
+        key.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 7) + "cc-good5678")
+        element("commandcode.connect").tap()
+        let status = element("commandcode.status")
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        XCTAssertEqual(status.label, "…5678")
+        XCTAssertTrue(text("models on your plan are in the model menu").waitForExistence(timeout: 5))
+        reveal(element("commandcode.disconnect"))
+        snapshot("models-commandcode-connected")
+
+        // Back to the chat.
+        switchTab("Chats")
+        openModelTab("commandcode")
+        let flash = app.buttons["model.commandcode/deepseek/deepseek-v4.1-flash"]
+        XCTAssertTrue(flash.waitForExistence(timeout: 10), "its models are listed once connected")
+        XCTAssertTrue(flash.isEnabled)
+        XCTAssertTrue(app.buttons["model.commandcode/anthropic/claude-haiku-5.5"].exists)
+        XCTAssertFalse(element("model.connect").exists)
+        XCTAssertFalse(app.buttons["model.cline-pass/glm-5.3"].exists, "the tab shows only Command Code's models")
+        snapshot("model-commandcode")
+        flash.tap()
+        let picked = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS 'DeepSeek V4.1 Flash'"), object: app.buttons["composer.model"])
+        XCTAssertEqual(XCTWaiter().wait(for: [picked], timeout: 10), .completed, app.buttons["composer.model"].label)
+
+        // Settings is still on Model Subscriptions.
+        switchTab("Settings")
+        let disconnect = element("commandcode.disconnect")
+        reveal(disconnect)
+        disconnect.tap()
+        app.buttons["Disconnect"].firstMatch.tap()
+        XCTAssertTrue(app.secureTextFields["commandcode.key"].waitForExistence(timeout: 5))
+        XCTAssertFalse(element("commandcode.status").exists)
+    }
+
+    /// Goes to a tab, keeping its page: the tab bar minimizes on scroll, and tapping it brings the tabs back.
+    func switchTab(_ title: String) {
+        let collapsed = app.tabBars.buttons.matching(NSPredicate(format: "value == 'Collapsed'")).firstMatch
+        if !app.tabBars.buttons[title].exists, collapsed.exists { collapsed.tap() }
+        if isRegularWidth { element("tab.\(title.lowercased())").tap() } else { openTab(title) }
+    }
+
+    /// Opens the open chat's model menu on one subscription's tab.
+    func openModelTab(_ provider: String) {
+        let model = app.buttons["composer.model"]
+        XCTAssertTrue(model.waitForExistence(timeout: 10))
+        model.tap()
+        XCTAssertTrue(element("model.sheet").waitForExistence(timeout: 5))
+        let tab = element("model.tab.\(provider)")
+        XCTAssertTrue(tab.waitForExistence(timeout: 5))
+        // The capsules scroll sideways: the last ones start past the edge.
+        var swipes = 0
+        while !tab.isHittable, swipes < 3 {
+            element("model.tabs").swipeLeft()
+            swipes += 1
+        }
+        tab.tap()
+    }
+
     /// The mock agent opens no page: the address is pasted, as when the app can't listen for the callback.
     func testChatGPTSignInByPaste() {
         launch()

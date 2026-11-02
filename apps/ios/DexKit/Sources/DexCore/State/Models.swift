@@ -15,7 +15,7 @@ public struct DexModel: Codable, Sendable, Hashable, Identifiable {
 
     public var id: String
     public var apiId: String
-    /// clinepass, opencode-go, or chatgpt
+    /// clinepass, opencode-go, chatgpt, or commandcode
     public var provider: String
     public var name: String
     public var maker: String
@@ -97,7 +97,8 @@ public struct ModelCatalog: Codable, Sendable, Hashable {
     public static let empty = ModelCatalog(version: "", updatedAt: 0, models: [])
 
     public static let providers: [(id: String, name: String, short: String)] = [
-        ("clinepass", "ClinePass", "Cline"), ("opencode-go", "OpenCode Go", "OpenCode"), ("chatgpt", "ChatGPT", "ChatGPT")
+        ("clinepass", "ClinePass", "Cline"), ("opencode-go", "OpenCode Go", "OpenCode"), ("chatgpt", "ChatGPT", "ChatGPT"),
+        ("commandcode", "Command Code", "Command")
     ]
 
     public static func providerName(_ id: String) -> String { providers.first { $0.id == id }?.name ?? id }
@@ -105,7 +106,9 @@ public struct ModelCatalog: Codable, Sendable, Hashable {
     public static let makers: [String: String] = [
         "zai": "Z.ai", "moonshot": "Moonshot AI", "deepseek": "DeepSeek", "qwen": "Alibaba Qwen", "minimax": "MiniMax", "xiaomi": "Xiaomi",
         "meta": "Meta", "anthropic": "Anthropic", "openai": "OpenAI", "xai": "xAI", "google": "Google", "meituan": "Meituan",
-        "tencent": "Tencent", "stepfun": "StepFun", "opencode": "OpenCode"
+        "tencent": "Tencent", "stepfun": "StepFun", "opencode": "OpenCode",
+        // Other makers Command Code serves (Mistral, NVIDIA, Sakana, …), under its mark.
+        "commandcode": "Command Code"
     ]
 
     public func model(_ id: String) -> DexModel? { models.first { $0.id == id } }
@@ -113,7 +116,7 @@ public struct ModelCatalog: Codable, Sendable, Hashable {
 
     /// Which subscription a chat's model runs on (an unlisted id goes by its prefix, else ClinePass, as on the web).
     public func provider(of id: String) -> String {
-        model(id)?.provider ?? (id.hasPrefix("opencode-go/") ? "opencode-go" : id.hasPrefix("chatgpt/") ? "chatgpt" : "clinepass")
+        model(id)?.provider ?? (id.hasPrefix("opencode-go/") ? "opencode-go" : id.hasPrefix("chatgpt/") ? "chatgpt" : id.hasPrefix("commandcode/") ? "commandcode" : "clinepass")
     }
 
     /// The model's name, or a readable form of its id when it isn't listed.
