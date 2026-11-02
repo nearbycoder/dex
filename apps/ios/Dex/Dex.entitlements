@@ -4,9 +4,10 @@
 <dict>
 	<key>aps-environment</key>
 	<string>$(APS_ENVIRONMENT)</string>
-	<key>com.apple.security.application-groups</key>
+	<key>keychain-access-groups</key>
 	<array>
-		<string>group.dev.trydex.Dex</string>
+		<string>$(AppIdentifierPrefix)dev.trydex.Dex</string>
+		<string>$(AppIdentifierPrefix)dev.trydex.Dex.shared</string>
 	</array>
 </dict>
 </plist>

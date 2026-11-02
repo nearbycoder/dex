@@ -143,31 +143,33 @@ public struct AuthClient: Sendable {
     }
 }
 
-/// Keeps credentials in the Keychain, this device only. With an access group (the App Group), the app's widgets can
-/// read them too.
-public struct CredentialStore: Sendable {
+/// One Codable value in the Keychain (a generic password), this device only, readable after the first unlock. Without
+/// an access group it's saved in the app's default group (its own) and found in any it can read; with one (the
+/// team-prefixed group in `keychain-access-groups`), the app's widgets can read it too.
+public struct KeychainItem<Value: Codable & Sendable>: Sendable {
     public let service: String
+    public let account: String
     public let accessGroup: String?
-    public init(service: String = "dev.trydex.app.session", accessGroup: String? = nil) { self.service = service; self.accessGroup = accessGroup }
+    public init(service: String, account: String, accessGroup: String? = nil) { self.service = service; self.account = account; self.accessGroup = accessGroup }
 
     private var query: [String: Any] {
-        var query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: "credentials"]
+        var query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
         if let accessGroup { query[kSecAttrAccessGroup as String] = accessGroup }
         return query
     }
 
-    public func load() -> Credentials? {
+    public func load() -> Value? {
         var query = self.query
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: AnyObject?
         guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data else { return nil }
-        return try? JSONDecoder().decode(Credentials.self, from: data)
+        return try? JSONDecoder().decode(Value.self, from: data)
     }
 
     @discardableResult
-    public func save(_ credentials: Credentials) -> Bool {
-        guard let data = try? JSONEncoder().encode(credentials) else { return false }
+    public func save(_ value: Value) -> Bool {
+        guard let data = try? JSONEncoder().encode(value) else { return false }
         SecItemDelete(query as CFDictionary)
         var item = query
         item[kSecValueData as String] = data
@@ -178,4 +180,20 @@ public struct CredentialStore: Sendable {
     public func clear() {
         SecItemDelete(query as CFDictionary)
     }
+}
+
+/// Keeps credentials in the Keychain, this device only (the app's own sign-in: no access group).
+public struct CredentialStore: Sendable {
+    public let service: String
+    public let accessGroup: String?
+    public init(service: String = "dev.trydex.app.session", accessGroup: String? = nil) { self.service = service; self.accessGroup = accessGroup }
+
+    private var item: KeychainItem<Credentials> { KeychainItem(service: service, account: "credentials", accessGroup: accessGroup) }
+
+    public func load() -> Credentials? { item.load() }
+
+    @discardableResult
+    public func save(_ credentials: Credentials) -> Bool { item.save(credentials) }
+
+    public func clear() { item.clear() }
 }

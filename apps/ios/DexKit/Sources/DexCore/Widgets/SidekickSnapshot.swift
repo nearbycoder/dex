@@ -1,22 +1,53 @@
+import CryptoKit
 import Foundation
 
-// What the home-screen widgets show, and how they get it: `GET /api/sidekicks` (apps/web/src/routes/api.sidekicks.ts)
-// with the app's session, kept in the App Group the app shares with its widget extension.
+// What the home-screen widgets show, and how they get it: the widget extension fetches `GET /api/sidekicks`
+// (apps/web/src/routes/api.sidekicks.ts) itself, with the session the app shares through the Keychain, and keeps what
+// it got in its own container. No App Group: an App Store Connect API key can't register one.
 
-/// The App Group the app shares with its widgets: the latest snapshot and the sidekicks' pictures (files), the theme's
-/// accent (defaults), and the session (the Keychain, with the group as its access group).
-public enum AppGroup {
-    public static let id = "group.dev.trydex.Dex"
+/// What the app shares with its widgets: one small Keychain item in an access group both targets list in
+/// `keychain-access-groups` (`$(AppIdentifierPrefix)dev.trydex.Dex.shared`; team-prefixed groups need no registration).
+public struct WidgetShare: Codable, Sendable, Hashable {
+    /// The session the widgets fetch with: a copy of the app's. Nil when signed out.
+    public var credentials: Credentials?
+    /// The theme's accent (light and dark, as 0xRRGGBB).
+    public var accent: [UInt32]?
+    /// A digest of the sidekicks' pictures as the app last saw them (`SidekickSnapshot.picturesDigest`): when it isn't
+    /// the one the widgets fetched pictures with, they fetch them again.
+    public var pictures: String?
 
-    /// The group's folder, or nil where the entitlement is missing (tests on macOS, an unsigned build).
-    public static var container: URL? { FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: id) }
-    public static var defaults: UserDefaults? { UserDefaults(suiteName: id) }
+    public init(credentials: Credentials? = nil, accent: [UInt32]? = nil, pictures: String? = nil) {
+        self.credentials = credentials; self.accent = accent; self.pictures = pictures
+    }
 
-    /// The session the widgets fetch with: a copy of the app's, readable by the extension.
-    public static let credentials = CredentialStore(service: "dev.trydex.app.widgets", accessGroup: id)
+    public static let service = "dev.trydex.app.widgets"
+    /// The shared access group without the team's prefix.
+    public static let groupSuffix = "dev.trydex.Dex.shared"
+    /// The Info.plist key both targets set to `$(AppIdentifierPrefix)` ("ABCDE12345.").
+    public static let prefixKey = "DexAppIdentifierPrefix"
 
-    /// The theme's accent (light and dark, as 0xRRGGBB), for the widgets.
-    public static let accentKey = "dex.widget.accent"
+    /// The full access group for a team's prefix, or nil without one (an unsigned simulator build, tests on macOS): the
+    /// item is then the app's own, and the widgets show they're signed out.
+    public static func accessGroup(prefix: String?) -> String? {
+        guard let prefix = prefix?.trimmingCharacters(in: CharacterSet(charactersIn: ". ")), !prefix.isEmpty, !prefix.contains("$") else { return nil }
+        return "\(prefix).\(groupSuffix)"
+    }
+
+    public static var accessGroup: String? { accessGroup(prefix: Bundle.main.object(forInfoDictionaryKey: prefixKey) as? String) }
+
+    public static var keychain: KeychainItem<WidgetShare> { KeychainItem(service: service, account: "share", accessGroup: accessGroup) }
+
+    public static func load() -> WidgetShare? { keychain.load() }
+
+    /// Changes the shared item, saving it only when something changed; true when it did.
+    @discardableResult
+    public static func update(in item: KeychainItem<WidgetShare> = keychain, _ change: (inout WidgetShare) -> Void) -> Bool {
+        let before = item.load() ?? WidgetShare()
+        var after = before
+        change(&after)
+        guard after != before else { return false }
+        return item.save(after)
+    }
 }
 
 /// One sidekick on a widget.
@@ -121,6 +152,18 @@ public struct SidekickSnapshot: Codable, Sendable, Hashable {
         return copy
     }
 
+    /// A digest of who has which picture, to tell the widgets theirs are out of date.
+    public var picturesDigest: String {
+        var hash = SHA256()
+        for sidekick in sidekicks {
+            hash.update(data: Data(sidekick.id.utf8))
+            hash.update(data: Data([0]))
+            hash.update(data: Data((sidekick.image ?? "").utf8))
+            hash.update(data: Data([0]))
+        }
+        return hash.finalize().prefix(16).map { String(format: "%02x", $0) }.joined()
+    }
+
     /// Whether there's no change worth redrawing a widget for (the time it was written aside).
     public func sameContent(as other: SidekickSnapshot?) -> Bool {
         guard let other else { return false }
@@ -128,8 +171,8 @@ public struct SidekickSnapshot: Codable, Sendable, Hashable {
     }
 }
 
-/// The widgets' copy of the snapshot and the pictures, in the App Group container: `snapshot.json` (no pictures) and
-/// one file per sidekick's picture.
+/// The widgets' copy of the snapshot and the pictures, in the extension's own Application Support folder:
+/// `snapshot.json` (no pictures) and one file per sidekick's picture.
 public struct WidgetStore: Sendable {
     public let root: URL
 
@@ -138,18 +181,19 @@ public struct WidgetStore: Sendable {
         try? FileManager.default.createDirectory(at: root.appending(path: "pictures"), withIntermediateDirectories: true)
     }
 
-    /// The store in the App Group, where there is one.
-    public static var shared: WidgetStore? { AppGroup.container.map { WidgetStore(root: $0.appending(path: "Widgets")) } }
+    /// The store in this process's Application Support folder (the widget extension's; the app doesn't keep one).
+    public static var local: WidgetStore { WidgetStore(root: URL.applicationSupportDirectory.appending(path: "Widgets")) }
 
     /// Pictures fetched longer ago than this are fetched again (a sidekick may have a new one).
     public static let pictureLifetime: Double = 6 * 3_600_000
 
     private var snapshotURL: URL { root.appending(path: "snapshot.json") }
-    /// When the pictures were written, and for which sidekicks (some have none).
+    /// When the pictures were written, for which sidekicks (some have none), and the app's digest of them then.
     private var picturesURL: URL { root.appending(path: "pictures.json") }
     private struct Pictures: Codable {
         var at: Double
         var ids: [String]
+        var tag: String?
     }
     private func pictureURL(_ id: String) -> URL {
         root.appending(path: "pictures/\(String(id.map { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" ? $0 : "_" })).img")
@@ -161,8 +205,8 @@ public struct WidgetStore: Sendable {
     }
 
     /// Keeps a snapshot. With `pictures` (it came with them), each sidekick's picture is written, and removed for one
-    /// without; otherwise the pictures already kept stay.
-    public func save(_ snapshot: SidekickSnapshot, pictures: Bool) {
+    /// without, noting `tag` (the app's digest when they were fetched); otherwise the pictures already kept stay.
+    public func save(_ snapshot: SidekickSnapshot, pictures: Bool, tag: String? = nil) {
         if pictures {
             for sidekick in snapshot.sidekicks {
                 let url = pictureURL(sidekick.id)
@@ -172,7 +216,7 @@ public struct WidgetStore: Sendable {
                     try? FileManager.default.removeItem(at: url)
                 }
             }
-            let record = Pictures(at: snapshot.updatedAt, ids: snapshot.sidekicks.map(\.id))
+            let record = Pictures(at: snapshot.updatedAt, ids: snapshot.sidekicks.map(\.id), tag: tag)
             if let data = try? JSONEncoder().encode(record) { try? data.write(to: picturesURL, options: .atomic) }
         }
         if let data = try? JSONEncoder().encode(snapshot.withoutImages) { try? data.write(to: snapshotURL, options: .atomic) }
@@ -183,10 +227,11 @@ public struct WidgetStore: Sendable {
 
     private var pictures: Pictures? { (try? Data(contentsOf: picturesURL)).flatMap { try? JSONDecoder().decode(Pictures.self, from: $0) } }
 
-    /// Whether the kept pictures are recent enough to fetch without them (`?images=0`).
-    public func picturesAreRecent(now: Double = .nowMs) -> Bool {
-        guard let at = pictures?.at else { return false }
-        return now - at < Self.pictureLifetime
+    /// Whether the kept pictures are recent enough to fetch without them (`?images=0`), and (given the app's digest)
+    /// fetched since the app last saw them change.
+    public func picturesAreRecent(now: Double = .nowMs, tag: String? = nil) -> Bool {
+        guard let pictures, now - pictures.at < Self.pictureLifetime else { return false }
+        return tag == nil || pictures.tag == tag
     }
 
     /// Whether the kept pictures cover these sidekicks (a new one needs a fetch with pictures).
@@ -268,22 +313,28 @@ public enum WidgetLoad: Sendable, Equatable {
 }
 
 public extension WidgetFeed {
-    /// Refreshes the kept snapshot from Dex: without pictures while the kept ones are recent and cover everyone, with
-    /// them otherwise. Falls back to what's kept when Dex can't be reached.
-    static func load(store: WidgetStore?, credentials: Credentials?, session: URLSession = .shared, now: Double = .nowMs) async -> WidgetLoad {
+    /// Refreshes the kept snapshot from Dex: without pictures while the kept ones are recent, match the app's digest
+    /// (`pictures`), and cover everyone, with them otherwise. Falls back to what's kept when Dex can't be reached;
+    /// forgets it when signed out.
+    static func load(store: WidgetStore?, credentials: Credentials?, pictures tag: String? = nil, session: URLSession = .shared,
+                     now: Double = .nowMs) async -> WidgetLoad {
+        guard let credentials, !credentials.isExpired(now: Date(timeIntervalSince1970: now / 1000)) else {
+            store?.clear()
+            return .signedOut
+        }
         let kept = store?.load()
-        guard let credentials, !credentials.isExpired(now: Date(timeIntervalSince1970: now / 1000)) else { return .signedOut }
         do {
-            let lean = kept != nil && store?.picturesAreRecent(now: now) == true
+            let lean = kept != nil && store?.picturesAreRecent(now: now, tag: tag) == true
             var fresh = try await fetch(server: credentials.server, token: credentials.token, images: !lean, session: session)
             var pictures = !lean
             if lean, store?.hasPictures(for: fresh) != true {
                 fresh = try await fetch(server: credentials.server, token: credentials.token, images: true, session: session)
                 pictures = true
             }
-            store?.save(fresh, pictures: pictures)
+            store?.save(fresh, pictures: pictures, tag: tag)
             return .ready(fresh.withoutImages, stale: false)
         } catch .signedOut {
+            store?.clear()
             return .signedOut
         } catch {
             return kept.map { .ready($0, stale: true) } ?? .unavailable

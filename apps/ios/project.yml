@@ -47,7 +47,11 @@ targets:
         INFOPLIST_FILE: Dex/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
-        # Push notifications (aps-environment) and the App Group shared with the widgets.
+        # Push notifications (aps-environment) and a Keychain access group shared with the widgets
+        # ($(AppIdentifierPrefix)dev.trydex.Dex.shared, also in DexWidgets.entitlements). No App Group: signing with an
+        # App Store Connect API key can't register one, and team-prefixed Keychain groups need no registration. The
+        # first group is the app's own, so its sign-in items stay where they were. Info.plist's DexAppIdentifierPrefix
+        # tells the code the team prefix.
         CODE_SIGN_ENTITLEMENTS: Dex/Dex.entitlements
         SUPPORTS_MACCATALYST: "NO"
         GENERATE_INFOPLIST_FILE: "NO"

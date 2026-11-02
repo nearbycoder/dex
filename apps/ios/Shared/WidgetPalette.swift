@@ -2,8 +2,9 @@ import DexCore
 import SwiftUI
 import UIKit
 
-/// The theme's accent (light and dark shades) as the widgets draw it. The app saves it in the App Group whenever the
-/// theme changes; the widgets read it. Nonisolated: UIKit resolves dynamic colors on whatever thread draws.
+/// The theme's accent (light and dark shades) as the widgets draw it. The app saves it in the Keychain item it shares
+/// with the widgets (`WidgetShare.accent`) whenever the theme changes; the widgets read it. Nonisolated: UIKit resolves
+/// dynamic colors on whatever thread draws.
 nonisolated struct WidgetPalette: Equatable, Sendable {
     var light: UInt32
     var dark: UInt32
@@ -22,14 +23,14 @@ nonisolated struct WidgetPalette: Equatable, Sendable {
         return Color(uiColor: UIColor { @Sendable traits in Self.isLight(traits.userInterfaceStyle == .dark ? dark : light) ? .black : .white })
     }
 
-    static func load(from defaults: UserDefaults? = AppGroup.defaults) -> WidgetPalette {
-        guard let values = defaults?.array(forKey: AppGroup.accentKey) as? [Int], values.count == 2 else { return .standard }
-        return WidgetPalette(light: UInt32(truncatingIfNeeded: values[0]), dark: UInt32(truncatingIfNeeded: values[1]))
+    /// The shared accent, else the default theme's.
+    static func load(from share: WidgetShare? = WidgetShare.load()) -> WidgetPalette {
+        guard let values = share?.accent, values.count == 2 else { return .standard }
+        return WidgetPalette(light: values[0], dark: values[1])
     }
 
-    func save(to defaults: UserDefaults? = AppGroup.defaults) {
-        defaults?.set([Int(light), Int(dark)], forKey: AppGroup.accentKey)
-    }
+    /// As `WidgetShare.accent`.
+    var shared: [UInt32] { [light, dark] }
 
     private static func color(_ value: UInt32) -> UIColor {
         UIColor(red: CGFloat((value >> 16) & 0xFF) / 255, green: CGFloat((value >> 8) & 0xFF) / 255, blue: CGFloat(value & 0xFF) / 255, alpha: 1)

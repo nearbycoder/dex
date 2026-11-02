@@ -4,8 +4,9 @@ import SwiftUI
 import WidgetKit
 
 /// Dex's widgets: one sidekick (Home Screen and Lock Screen), and all of them. They fetch `GET /api/sidekicks` with the
-/// session the app shares through the App Group (the Keychain), keep what they got there for when Dex can't be reached,
-/// and refresh about every 15 minutes; the app reloads them when its sidekicks or chats change and when a push arrives.
+/// session the app shares in the Keychain (`WidgetShare`), keep what they got in the extension's own container for when
+/// Dex can't be reached, and refresh about every 15 minutes; the app reloads them when its sidekicks or chats change and
+/// when a push arrives.
 @main
 struct DexWidgetsBundle: WidgetBundle {
     var body: some Widget {
@@ -23,22 +24,23 @@ enum WidgetKinds {
 enum WidgetData {
     static let refreshInterval: TimeInterval = 15 * 60
 
-    static var store: WidgetStore? { .shared }
+    static let store = WidgetStore.local
 
     /// Fetches the snapshot from Dex (falling back to the kept one).
     static func refresh() async -> WidgetLoad {
-        await WidgetFeed.load(store: store, credentials: AppGroup.credentials.load())
+        let share = WidgetShare.load()
+        return await WidgetFeed.load(store: store, credentials: share?.credentials, pictures: share?.pictures)
     }
 
     /// The kept snapshot, without fetching (the widget gallery's snapshot), or a fetch when nothing is kept yet.
     static func keptOrRefresh() async -> WidgetLoad {
-        guard AppGroup.credentials.load() != nil else { return .signedOut }
-        if let kept = store?.load() { return .ready(kept, stale: true) }
+        guard WidgetShare.load()?.credentials != nil else { return .signedOut }
+        if let kept = store.load() { return .ready(kept, stale: true) }
         return await refresh()
     }
 
     static func items(_ snapshot: SidekickSnapshot) -> [WidgetSidekickItem] {
-        snapshot.sidekicks.map { WidgetSidekickItem($0, picture: WidgetSidekickItem.picture(store?.picture($0.id))) }
+        snapshot.sidekicks.map { WidgetSidekickItem($0, picture: WidgetSidekickItem.picture(store.picture($0.id))) }
     }
 
     static func next(_ date: Date = .now) -> Date { date.addingTimeInterval(refreshInterval) }
@@ -46,7 +48,7 @@ enum WidgetData {
 
 // MARK: Sidekick
 
-/// A sidekick to put on a widget, from the kept snapshot.
+/// A sidekick to put on a widget, from the widgets' kept snapshot (fetched when there's none yet).
 struct SidekickEntity: AppEntity {
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "Sidekick"
     static let defaultQuery = SidekickQuery()
@@ -79,14 +81,14 @@ struct SidekickQuery: EntityQuery {
     func defaultResult() async -> SidekickEntity? { await all().first }
 
     private func all() async -> [SidekickEntity] {
-        let snapshot: SidekickSnapshot? = if let kept = WidgetData.store?.load(), !kept.sidekicks.isEmpty {
+        let snapshot: SidekickSnapshot? = if let kept = WidgetData.store.load(), !kept.sidekicks.isEmpty {
             kept
         } else if case .ready(let fresh, _) = await WidgetData.refresh() {
             fresh
         } else {
             nil
         }
-        return snapshot?.sidekicks.map { SidekickEntity($0, picture: WidgetData.store?.picture($0.id)) } ?? []
+        return snapshot?.sidekicks.map { SidekickEntity($0, picture: WidgetData.store.picture($0.id)) } ?? []
     }
 }
 
@@ -131,7 +133,7 @@ struct SidekickProvider: AppIntentTimelineProvider {
         case .ready(let snapshot, _):
             // The one picked, or (not picked yet) the first; one that's gone says so.
             if let sidekick = configuration.sidekick.map({ snapshot.sidekick($0.id) }) ?? snapshot.sidekicks.first {
-                .sidekick(WidgetSidekickItem(sidekick, picture: WidgetSidekickItem.picture(WidgetData.store?.picture(sidekick.id))))
+                .sidekick(WidgetSidekickItem(sidekick, picture: WidgetSidekickItem.picture(WidgetData.store.picture(sidekick.id))))
             } else {
                 .noSidekicks
             }

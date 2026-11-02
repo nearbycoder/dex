@@ -160,8 +160,9 @@ nonisolated enum PushRoute {
     }
 }
 
-/// Keeps the widgets' copy of your sidekicks (the App Group) current while the app runs, and has WidgetKit redraw them:
-/// when sidekicks or chats change (a moment after they settle), when a push arrives, and when the theme changes.
+/// Keeps the widgets current while the app runs: has WidgetKit reload them (they fetch for themselves) when sidekicks
+/// or chats change (a moment after they settle) and when a push arrives, and shares what they can't fetch in the
+/// Keychain (`WidgetShare`): the session, the theme's accent, and a digest of the pictures so they fetch new ones.
 @MainActor
 final class WidgetSync {
     static let shared = WidgetSync()
@@ -180,7 +181,8 @@ final class WidgetSync {
             let snapshot = SidekickSnapshot(state: state)
             guard !snapshot.sameContent(as: self.last) else { return }
             self.last = snapshot
-            WidgetStore.shared?.save(snapshot, pictures: true)
+            let digest = snapshot.picturesDigest
+            WidgetShare.update { $0.pictures = digest }
             WidgetCenter.shared.reloadAllTimelines()
         }
     }
@@ -191,25 +193,25 @@ final class WidgetSync {
         WidgetCenter.shared.reloadAllTimelines()
     }
 
-    /// The session the widgets fetch with: a copy of the app's, in the Keychain's App Group access group.
+    /// The session the widgets fetch with: a copy of the app's, in the Keychain item it shares with them.
     func share(_ credentials: Credentials) {
         guard enabled else { return }
-        AppGroup.credentials.save(credentials)
+        if WidgetShare.update({ $0.credentials = credentials }) { WidgetCenter.shared.reloadAllTimelines() }
     }
 
     func savePalette(light: UInt32, dark: UInt32) {
         guard enabled else { return }
         let palette = WidgetPalette(light: light, dark: dark)
-        guard palette != WidgetPalette.load() else { return }
-        palette.save()
-        WidgetCenter.shared.reloadAllTimelines()
+        if WidgetShare.update({ $0.accent = palette.shared }) { WidgetCenter.shared.reloadAllTimelines() }
     }
 
-    /// Signed out: the widgets forget the session and what they kept.
+    /// Signed out: the widgets lose the session, and forget what they kept the next time they look.
     func signedOut() {
         guard enabled else { return }
-        AppGroup.credentials.clear()
-        WidgetStore.shared?.clear()
+        WidgetShare.update {
+            $0.credentials = nil
+            $0.pictures = nil
+        }
         last = nil
         WidgetCenter.shared.reloadAllTimelines()
     }

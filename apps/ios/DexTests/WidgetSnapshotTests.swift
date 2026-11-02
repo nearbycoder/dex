@@ -115,10 +115,32 @@ import WidgetKit
     }
 
     @Test func paletteRoundTrips() throws {
-        let defaults = try #require(UserDefaults(suiteName: "dex.tests.\(UUID().uuidString)"))
-        #expect(WidgetPalette.load(from: defaults) == .standard)
+        #expect(WidgetPalette.load(from: nil) == .standard)
+        #expect(WidgetPalette.load(from: WidgetShare()) == .standard)
         let ocean = WidgetPalette(light: 0x2563EB, dark: 0x60A5FA)
-        ocean.save(to: defaults)
-        #expect(WidgetPalette.load(from: defaults) == ocean)
+        #expect(WidgetPalette.load(from: WidgetShare(accent: ocean.shared)) == ocean)
+    }
+
+    /// The Keychain item the app shares with the widgets: saved and read back, changed only when something changes, and
+    /// apart from the app's own sign-in (`dev.trydex.app.session`, no access group).
+    @Test func shareInTheKeychain() throws {
+        let item = KeychainItem<WidgetShare>(service: "dev.trydex.tests.\(UUID().uuidString)", account: "share", accessGroup: WidgetShare.accessGroup)
+        defer { item.clear() }
+        let session = CredentialStore(service: "dev.trydex.tests.session.\(UUID().uuidString)")
+        defer { session.clear() }
+        let credentials = Credentials(server: URL(string: "https://dex.example.com")!, token: "abc", user: Viewer(id: "u", login: "mona", name: "Mona"),
+                                      expiresAt: .nowMs + 86_400_000)
+        #expect(session.save(credentials))
+
+        #expect(item.load() == nil)
+        #expect(WidgetShare.update(in: item) { $0.credentials = credentials })
+        #expect(WidgetShare.update(in: item) { $0.accent = [0x2563EB, 0x60A5FA] })
+        #expect(!WidgetShare.update(in: item) { $0.accent = [0x2563EB, 0x60A5FA] })
+        #expect(item.load() == WidgetShare(credentials: credentials, accent: [0x2563EB, 0x60A5FA]))
+
+        // Signing out of the widgets leaves the theme, and the app's own item alone.
+        #expect(WidgetShare.update(in: item) { $0.credentials = nil })
+        #expect(item.load() == WidgetShare(accent: [0x2563EB, 0x60A5FA]))
+        #expect(session.load() == credentials)
     }
 }

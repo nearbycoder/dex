@@ -151,6 +151,52 @@ import Testing
         #expect(store.load() == nil && store.picture("muse") == nil && !store.picturesAreRecent())
     }
 
+    @Test func picturesTagAsksForNewOnes() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "dex-widget-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = WidgetStore(root: root)
+        let full = try WidgetFeed.decode(Data(Self.json.utf8), status: 200, retryAfter: nil, now: .nowMs)
+        store.save(full, pictures: true, tag: full.picturesDigest)
+        #expect(store.picturesAreRecent() && store.picturesAreRecent(tag: full.picturesDigest))
+
+        // The app saw Muse get a new picture: the digest it shares changes, and the kept pictures aren't enough.
+        var changed = full
+        changed.sidekicks[0].image = "data:image/png;base64,AQ=="
+        #expect(changed.picturesDigest != full.picturesDigest)
+        #expect(!store.picturesAreRecent(tag: changed.picturesDigest))
+        // Their words changing doesn't.
+        var words = full
+        words.sidekicks[0].lastReply = "Something new"
+        #expect(words.picturesDigest == full.picturesDigest)
+        // A fetch without pictures keeps the tag they were fetched with.
+        store.save(full.withoutImages, pictures: false, tag: changed.picturesDigest)
+        #expect(store.picturesAreRecent(tag: full.picturesDigest))
+    }
+
+    @Test func signedOutForgetsWhatsKept() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "dex-widget-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = WidgetStore(root: root)
+        store.save(try WidgetFeed.decode(Data(Self.json.utf8), status: 200, retryAfter: nil), pictures: true)
+        #expect(await WidgetFeed.load(store: store, credentials: nil) == .signedOut)
+        #expect(store.load() == nil && store.picture("muse") == nil)
+    }
+
+    @Test func share() throws {
+        #expect(WidgetShare.accessGroup(prefix: "ABCDE12345.") == "ABCDE12345.dev.trydex.Dex.shared")
+        #expect(WidgetShare.accessGroup(prefix: "ABCDE12345") == "ABCDE12345.dev.trydex.Dex.shared")
+        // An unsigned build (no team), a key that wasn't expanded, or none: the app's own item.
+        #expect(WidgetShare.accessGroup(prefix: "") == nil)
+        #expect(WidgetShare.accessGroup(prefix: "$(AppIdentifierPrefix)") == nil)
+        #expect(WidgetShare.accessGroup(prefix: nil) == nil)
+
+        let credentials = Credentials(server: URL(string: "https://dex.example.com")!, token: "abc", user: Viewer(id: "u", login: "mona", name: "Mona"), expiresAt: 1)
+        let share = WidgetShare(credentials: credentials, accent: [0x2563EB, 0x60A5FA], pictures: "d1")
+        #expect(try JSONDecoder().decode(WidgetShare.self, from: JSONEncoder().encode(share)) == share)
+        // Signed out with a theme picked.
+        #expect(try JSONDecoder().decode(WidgetShare.self, from: Data(#"{"accent":[1,2]}"#.utf8)) == WidgetShare(accent: [1, 2]))
+    }
+
     @Test func links() {
         #expect(DexLink.chat("s-muse").absoluteString == "dex://chat/s-muse")
         #expect(DexLink.chat("s-muse", compose: true).absoluteString == "dex://chat/s-muse?compose=1")
