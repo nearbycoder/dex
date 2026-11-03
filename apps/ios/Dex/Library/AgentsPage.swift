@@ -26,6 +26,7 @@ struct AgentsList: View {
                 NavigationLink(value: LibraryRoute.agent(agent.id)) {
                     HStack(alignment: .center, spacing: 8) {
                         AgentRow(agent: agent, chats: chatCount(agent.id), working: workingCount(agent.id))
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         StartChatButton(id: "agent.start.\(agent.id)") { router.newChat(agentId: agent.id) }
                     }
                 }

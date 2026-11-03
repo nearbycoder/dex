@@ -38,6 +38,7 @@ struct ProjectsList: View {
                     HStack(alignment: .center, spacing: 8) {
                         ProjectRow(project: project, chats: client.state?.sessions.filter { $0.projectId == project.id }.count ?? 0,
                                    working: client.state?.sessions.filter { $0.projectId == project.id && $0.busy }.count ?? 0)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         StartChatButton(id: "project.start.\(project.id)") { router.newChat(projectId: project.id) }
                     }
                 }

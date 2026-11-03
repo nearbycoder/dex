@@ -65,8 +65,9 @@ struct ChatView: View {
             TranscriptView(feed: feed, composer: composer, speaker: character, send: { text in sendNow(text, feed: feed) })
                 .environment(\.chatFeed, feed)
                 .environment(\.markdownMedia, ChatMediaView.resolver(server: client.server))
-                // iPhone (no list beside the chat): the other chats that are working or have a reply, a tap away.
-                .safeAreaInset(edge: .top, spacing: 0) {
+                // iPhone (no list beside the chat): the other chats that are working or have a reply, a tap away. A bar,
+                // so the transcript fades under it as under the navigation bar.
+                .safeAreaBar(edge: .top, spacing: 0) {
                     if sizeClass == .compact {
                         ActiveChatsStrip(current: sessionId)
                             .animation(.smooth, value: Inbox.active(client.state?.sessions ?? [], waiting: client.state?.waitingChats ?? [], excluding: sessionId).map(\.id))
