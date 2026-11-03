@@ -219,7 +219,12 @@ struct ChatRow: View {
                 HStack(spacing: 4) {
                     if draft, !session.busy {
                         // Like Mail: what you were writing, so you can pick it up.
-                        Label("Draft", systemImage: "pencil").labelStyle(.titleAndIcon).foregroundStyle(.orange).fixedSize()
+                        HStack(spacing: 3) {
+                            Image(systemName: "pencil").imageScale(.small)
+                            Text("Draft")
+                        }
+                        .foregroundStyle(.orange)
+                        .fixedSize()
                         Text(Drafts.shared.preview(session.id) ?? "").lineLimit(1)
                     } else {
                         Text(subtitle(agent: agent, project: project)).lineLimit(1)

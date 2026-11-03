@@ -122,6 +122,8 @@ struct ChatSwitcher: View {
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var highlighted = 0
+    /// Opens tall: the more chats it shows, the fewer you scroll.
+    @State private var detent = PresentationDetent.large
     @FocusState private var searching: Bool
 
     private struct Group: Identifiable {
@@ -164,12 +166,13 @@ struct ChatSwitcher: View {
                         Section(group.title) {
                             ForEach(group.chats) { session in
                                 let index = order.firstIndex { $0.id == session.id } ?? 0
-                                SwitcherRow(session: session, current: router.chat == session.id, highlighted: index == highlighted && !order.isEmpty)
-                                    .contentShape(.rect)
-                                    .onTapGesture { open(order, at: index) }
-                                    .accessibilityAddTraits(.isButton)
-                                    .accessibilityAction { open(order, at: index) }
-                                    .id(session.id)
+                                Button { open(order, at: index) } label: {
+                                    SwitcherRow(session: session, current: router.chat == session.id)
+                                }
+                                .tint(.primary)
+                                .listRowBackground(index == highlighted && !order.isEmpty ? Color.accentColor.opacity(0.14) : nil)
+                                .accessibilityIdentifier("switcher.chat.\(session.id)")
+                                .id(session.id)
                             }
                         }
                     }
@@ -192,7 +195,7 @@ struct ChatSwitcher: View {
                 if GCKeyboard.coalesced != nil { searching = true }
             }
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.medium, .large], selection: $detent)
         .presentationDragIndicator(.visible)
         .accessibilityIdentifier("switcher")
     }
@@ -232,7 +235,6 @@ private struct SwitcherRow: View {
     @Environment(DexClient.self) private var client
     let session: SessionMeta
     let current: Bool
-    let highlighted: Bool
 
     var body: some View {
         let character = client.state?.character(session.characterId)
@@ -279,9 +281,8 @@ private struct SwitcherRow: View {
             }
         }
         .padding(.vertical, 2)
-        .listRowBackground(highlighted ? Color.accentColor.opacity(0.14) : nil)
+        .contentShape(.rect)
         .accessibilityElement(children: .combine)
         .accessibilityValue(activity.label)
-        .accessibilityIdentifier("switcher.chat.\(session.id)")
     }
 }

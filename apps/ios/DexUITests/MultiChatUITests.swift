@@ -51,13 +51,12 @@ final class MultiChatUITests: ChatTestCase {
         XCTAssertTrue(menu.waitForExistence(timeout: 10))
         menu.tap()
         app.buttons["chat.menu.switch"].tap()
-        XCTAssertTrue(element("switcher").waitForExistence(timeout: 5))
-        XCTAssertTrue(element("switcher.new").exists)
+        XCTAssertTrue(element("switcher.new").waitForExistence(timeout: 5), "The switcher opens")
         snapshot("switcher")
         let target = element("switcher.chat.s-vm")
         XCTAssertTrue(target.waitForExistence(timeout: 5))
         target.tap()
-        XCTAssertTrue(element("switcher").waitForNonExistence(timeout: 5))
+        XCTAssertTrue(element("switcher.new").waitForNonExistence(timeout: 5))
         XCTAssertTrue(revealTitle("Fix the flaky test").waitForExistence(timeout: 10), "The picked chat opens")
     }
 

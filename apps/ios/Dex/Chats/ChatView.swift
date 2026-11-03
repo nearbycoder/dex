@@ -101,11 +101,12 @@ struct ChatView: View {
                         VmPreviewOverlay(vm: vm)
                     }
                 }
-                // The VM's files: a column beside the chat on iPad and an unfolded foldable, a sheet on iPhone.
-                .inspector(isPresented: Binding(get: { router.vmFiles == sessionId }, set: { if !$0 { router.vmFiles = nil } })) {
+                // The VM's files, in a sheet. (Not an inspector: on iPhone its toolbar took over the chat's own, even closed.)
+                .sheet(isPresented: Binding(get: { router.vmFiles == sessionId }, set: { if !$0 { router.vmFiles = nil } })) {
                     VmFilesPanel(sessionId: sessionId, running: feed.transcript.running) { router.vmFiles = nil }
-                        .inspectorColumnWidth(min: 320, ideal: 440, max: 720)
                         .presentationDetents([.large, .medium])
+                        .presentationSizing(.page)
+                        .tint(.dexAccent)
                 }
         }
     }
@@ -217,9 +218,10 @@ struct ChatToolbar: ToolbarContent {
                     }
                 }
             }
-            // iPhone: a new chat in one tap, from inside this one (it keeps working).
+            // iPhone: a new chat in one tap, from inside this one (it keeps working). Beside Back: a second button
+            // beside the title menu would fold the trailing ones into an overflow menu.
             if sizeClass == .compact {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .topBarLeading) {
                     Button {
                         router.newChat()
                     } label: {

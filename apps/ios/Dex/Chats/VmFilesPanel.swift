@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The chat's VM files (the web's Files panel): every file from ~/work down, folder by folder, and the uncommitted
 /// changes; a file opens as its text, or (changed) as what changed since the last commit. Read-only, and it never starts
-/// the VM by itself. Beside the chat on iPad and an unfolded foldable, a sheet on iPhone.
+/// the VM by itself. A sheet over the chat.
 struct VmFilesPanel: View {
     @Environment(DexClient.self) private var client
     let sessionId: String

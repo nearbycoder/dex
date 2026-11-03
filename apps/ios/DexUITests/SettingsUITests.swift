@@ -468,12 +468,12 @@ final class SettingsUITests: DexUITestCase {
         XCTAssertTrue(headline.waitForExistence(timeout: 10))
         pickRange("This month")
         XCTAssertTrue(text("Estimated bill this month").waitForExistence(timeout: 10))
-        XCTAssertTrue(element("usage.chart").exists)
         XCTAssertTrue(element("usage.bill").exists, "This month's bill shows what it's made of")
         snapshot("usage-month")
-        // The legend filters the chart.
+        // The daily chart is under the services; its legend filters it.
         let legend = element("usage.legend.boat")
         reveal(legend)
+        XCTAssertTrue(element("usage.chart").exists)
         legend.tap()
         XCTAssertEqual(legend.value as? String, "Hidden")
         legend.tap()
