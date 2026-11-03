@@ -1,5 +1,6 @@
 package dev.trydex.android.ui.chat
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -53,6 +54,7 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -68,6 +70,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.testTag
@@ -98,6 +102,8 @@ import dev.trydex.core.model.SessionMeta
 import dev.trydex.core.model.Snooze
 import dev.trydex.core.model.inboxGroups
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 
 @Composable
 fun ChatListScreen() {
@@ -112,6 +118,7 @@ fun ChatListScreen() {
     val snackbar = remember { SnackbarHostState() }
     val confirm = rememberConfirm()
     val actions = rememberChatActions(snackbar, confirm)
+    val haptics = haptics()
     var menu by remember { mutableStateOf<SessionMeta?>(null) }
     var searching by rememberSaveable { mutableStateOf(false) }
     val query = rememberTextFieldState()
@@ -129,6 +136,11 @@ fun ChatListScreen() {
     val listState = rememberLazyListState()
     val expandedFab by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
     val scroll = TopAppBarDefaults.pinnedScrollBehavior()
+    // Back closes the search first.
+    BackHandler(enabled = searching) {
+        searching = false
+        query.edit { replace(0, length, "") }
+    }
 
     Scaffold(
         modifier = Modifier.nestedScroll(scroll.nestedScrollConnection),
@@ -136,12 +148,14 @@ fun ChatListScreen() {
             TopAppBar(
                 title = {
                     if (searching) {
+                        val focus = remember { FocusRequester() }
+                        LaunchedEffect(Unit) { focus.requestFocus() }
                         TextField(
                             state = query,
                             placeholder = { Text("Search chats and sidekicks") },
                             lineLimits = androidx.compose.foundation.text.input.TextFieldLineLimits.SingleLine,
                             colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent),
-                            modifier = Modifier.fillMaxWidth().testTag("search-chats"),
+                            modifier = Modifier.fillMaxWidth().focusRequester(focus).testTag("search-chats"),
                         )
                     } else {
                         Text("Chats")
@@ -173,7 +187,21 @@ fun ChatListScreen() {
         snackbarHost = { SnackbarHost(snackbar) },
         contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
+        // The list is live; pulling it reconnects now when the socket is down (after a dropped network), instead of
+        // waiting for the next retry, and stays up until it's back.
+        var refreshing by remember { mutableStateOf(false) }
+        LaunchedEffect(refreshing) {
+            if (!refreshing) return@LaunchedEffect
+            repository.retryNow()
+            delay(600)
+            withTimeoutOrNull(10_000) { repository.connected.first { it } }
+            refreshing = false
+        }
+        PullToRefreshBox(
+            isRefreshing = refreshing,
+            onRefresh = { haptics.tick(); refreshing = true },
+            modifier = Modifier.fillMaxSize().padding(padding),
+        ) {
             val current = state
             AnimatedVisibility(status is ConnectionStatus.Connecting || status is ConnectionStatus.Waiting, modifier = Modifier.align(Alignment.TopCenter)) {
                 LinearWavyProgressIndicator(Modifier.fillMaxWidth().semantics { contentDescription = "Connecting to your agent" })
