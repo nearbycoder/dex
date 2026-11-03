@@ -35,10 +35,6 @@
 	<string>$(AppIdentifierPrefix)</string>
 	<key>DexApsEnvironment</key>
 	<string>$(APS_ENVIRONMENT)</string>
-	<key>NSUserActivityTypes</key>
-	<array>
-		<string>INSendMessageIntent</string>
-	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Take a photo to attach to a message.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
@@ -53,6 +49,7 @@
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>dev.trydex.Dex.chat</string>
+		<string>INSendMessageIntent</string>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
