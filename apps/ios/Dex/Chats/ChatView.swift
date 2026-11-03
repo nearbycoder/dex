@@ -60,7 +60,7 @@ struct ChatView: View {
         let session = client.state?.session(sessionId)
         let character = client.state?.character(session?.characterId)
         if client.state != nil, session == nil {
-            EmptyStateView(title: "Chat not found", symbol: "bubble.left.and.exclamationmark.bubble.right", message: "This chat no longer exists.")
+            EmptyStateView(title: "Chat Not Found", symbol: "bubble.left.and.exclamationmark.bubble.right", message: "This chat no longer exists.")
         } else {
             TranscriptView(feed: feed, composer: composer, speaker: character, send: { text in sendNow(text, feed: feed) })
                 .environment(\.chatFeed, feed)
@@ -349,7 +349,8 @@ struct ChatMenu: View {
         Menu {
             if compact, let vm = client.state?.vm(session.id), client.state?.vmConfigured == true {
                 Button { router.openMachine(session.id) } label: {
-                    Label { Text("Machine"); Text(vm.setup.status == "running" ? "Setting up" : vm.status.capitalized) } icon: { Image(systemName: "desktopcomputer") }
+                    Label("Machine", systemImage: "desktopcomputer")
+                    Text(vm.setup.status == "running" ? "Setting up" : vm.status.capitalized)
                 }
                 .accessibilityIdentifier("chat.menu.machine")
                 Button { router.vmFiles = session.id } label: { Label("Files", systemImage: "folder") }
@@ -388,7 +389,9 @@ struct ChatMenu: View {
             Section("Snooze Until") {
                 ForEach(Inbox.snoozeOptions()) { option in
                     Button { client.perform { try await feed.snooze(until: option.at.timeIntervalSince1970 * 1000) } } label: {
-                        Label { Text(option.label); Text(snoozeTime(option.at)) } icon: { Image(systemName: "moon.zzz") }
+                        // A Label and a Text: the menu shows the Text as the item's subtitle (inside the Label it was dropped).
+                        Label(option.label, systemImage: "moon.zzz")
+                        Text(snoozeTime(option.at))
                     }
                 }
             }

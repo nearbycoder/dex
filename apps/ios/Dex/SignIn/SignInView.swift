@@ -82,7 +82,7 @@ struct SignInView: View {
                 Task { await signIn() }
             } label: {
                 HStack {
-                    if working { ProgressView().tint(.white) }
+                    if working { ProgressView().tint(Color.onAccent) }
                     Text(working ? "Signing in…" : "Continue")
                         .font(.headline)
                 }

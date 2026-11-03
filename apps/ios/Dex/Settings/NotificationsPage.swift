@@ -104,6 +104,7 @@ struct NotificationsPage: View {
             Toggle(isOn: Binding(get: { on }, set: { value in Task { await turnPush(value) } })) {
                 Label("Notifications", systemImage: "bell.badge")
             }
+            .toggleStyle(StackedAtLargeTextToggleStyle())
             .accessibilityIdentifier("notify.enabled")
             if preferences.isDenied {
                 deniedNote
@@ -198,6 +199,7 @@ struct NotificationsPage: View {
             Toggle(isOn: Binding(get: { preferences.enabled }, set: { on in Task { await turnLocal(on) } })) {
                 Label("Notifications", systemImage: "bell.badge")
             }
+            .toggleStyle(StackedAtLargeTextToggleStyle())
             .accessibilityIdentifier("notify.enabled")
             if preferences.isDenied { deniedNote }
         } header: {

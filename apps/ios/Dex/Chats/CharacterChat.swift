@@ -68,7 +68,8 @@ struct CharacterChatMenu: View {
         Menu {
             if compact, let vm = client.state?.vm(session.id), client.state?.vmConfigured == true {
                 Button { router.openMachine(session.id) } label: {
-                    Label { Text("Machine"); Text(vm.setup.status == "running" ? "Setting up" : vm.status.capitalized) } icon: { Image(systemName: "desktopcomputer") }
+                    Label("Machine", systemImage: "desktopcomputer")
+                    Text(vm.setup.status == "running" ? "Setting up" : vm.status.capitalized)
                 }
                 .accessibilityIdentifier("chat.menu.machine")
                 Divider()

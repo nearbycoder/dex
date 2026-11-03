@@ -38,8 +38,10 @@ struct AccountPage: View {
                 Text("This app keeps its session in the Keychain on this device.")
             }
             Section {
-                Button("Sign Out", role: .destructive) { confirmSignOut = true }
-                    .accessibilityIdentifier("account.signOut")
+                Button(role: .destructive) { confirmSignOut = true } label: {
+                    Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right").foregroundStyle(.red)
+                }
+                .accessibilityIdentifier("account.signOut")
             } footer: {
                 Text("Signs out this device only.")
             }

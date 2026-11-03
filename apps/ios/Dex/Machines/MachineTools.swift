@@ -290,7 +290,7 @@ struct FilePeekSheet: View {
                             .accessibilityIdentifier("filePeek.content")
                     }
                 } else if let error {
-                    EmptyStateView(title: "Couldn't read the file", symbol: "doc.questionmark", message: error)
+                    EmptyStateView(title: "Couldn't Read the File", symbol: "doc.questionmark", message: error)
                 } else {
                     ProgressView()
                 }

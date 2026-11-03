@@ -19,7 +19,7 @@ struct MachinesView: View {
                 } else if client.state?.vmConfigured == false {
                     ConnectBoatView()
                 } else {
-                    EmptyStateView(title: "No machine selected", symbol: "desktopcomputer", message: "Pick a VM to watch its desktop and what runs on it.")
+                    EmptyStateView(title: "No Machine Selected", symbol: "desktopcomputer", message: "Pick a VM to watch its desktop and what runs on it.")
                 }
             }
         }
@@ -48,7 +48,7 @@ struct MachineListView: View {
                     List(selection: $router.machine) {
                         Section {
                             if vms.isEmpty {
-                                ContentUnavailableView("No VMs yet", systemImage: "desktopcomputer",
+                                ContentUnavailableView("No VMs Yet", systemImage: "desktopcomputer",
                                                        description: Text("Each chat gets its own VM the first time Dex needs one; project chats get theirs right away, with the repos cloned."))
                                     .accessibilityIdentifier("machines.empty")
                             }

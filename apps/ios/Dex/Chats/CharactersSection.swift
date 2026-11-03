@@ -66,6 +66,22 @@ struct CharacterChatRow: View {
     let character: CharacterProfile
     @State private var confirmRestart = false
 
+    private func nameLine(unread: Bool, muted: Bool) -> some View {
+        HStack(spacing: 6) {
+            if unread { UnreadDot() }
+            Text(character.name)
+                .font(.body.weight(unread ? .semibold : .medium))
+                .lineLimit(1)
+            if muted || character.notifyLevel == .off {
+                Image(systemName: "bell.slash.fill").font(.caption2).foregroundStyle(.secondary).accessibilityLabel("Notifications off")
+            }
+        }
+    }
+
+    private func whenText(_ when: String, unread: Bool) -> some View {
+        Text(when).font(.caption).foregroundStyle(unread ? Color.dexAccent : .secondary)
+    }
+
     var body: some View {
         let session = client.state?.session(character.sessionId)
         let busy = session?.busy == true
@@ -73,18 +89,20 @@ struct CharacterChatRow: View {
         HStack(spacing: 12) {
             CharacterAvatar(character, size: 36, typing: busy)
             VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    if unread { UnreadDot() }
-                    Text(character.name)
-                        .font(.body.weight(unread ? .semibold : .medium))
-                        .lineLimit(1)
-                    if session?.muted == true || character.notifyLevel == .off {
-                        Image(systemName: "bell.slash.fill").font(.caption2).foregroundStyle(.secondary).accessibilityLabel("Notifications off")
+                // Once you've talked: when they last said something. Beside the name, or under it where both don't fit
+                // whole (large text on a narrow screen cut the name to "Mu…").
+                let when = session.flatMap { session in
+                    !busy && session.updatedAt > session.createdAt + 1_000 ? Format.ago(session.repliedAt ?? session.updatedAt) : nil
+                }
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 6) {
+                        nameLine(unread: unread, muted: session?.muted == true).fixedSize()
+                        Spacer(minLength: 4)
+                        if let when { whenText(when, unread: unread).fixedSize() }
                     }
-                    Spacer(minLength: 4)
-                    // Once you've talked: when they last said something.
-                    if let session, !busy, session.updatedAt > session.createdAt + 1_000 {
-                        Text(Format.ago(session.repliedAt ?? session.updatedAt)).font(.caption).foregroundStyle(unread ? Color.dexAccent : .secondary).fixedSize()
+                    VStack(alignment: .leading, spacing: 3) {
+                        nameLine(unread: unread, muted: session?.muted == true)
+                        if let when { whenText(when, unread: unread) }
                     }
                 }
                 if busy {

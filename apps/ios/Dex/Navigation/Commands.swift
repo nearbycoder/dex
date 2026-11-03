@@ -20,6 +20,12 @@ struct DexCommands: Commands {
                 Button("New Chat") { router?.newChat() }
             }
         }
+        // The app menu's Settings… (⌘,) opens the Settings tab: a second ⌘, in the Go menu clashed with it.
+        CommandGroup(replacing: .appSettings) {
+            Button("Settings…") { router?.tab = .settings }
+                .keyboardShortcut(",", modifiers: .command)
+                .disabled(router == nil)
+        }
         CommandMenu("Go") {
             Button("Chats") { router?.tab = .chats }.keyboardShortcut("1", modifiers: .command)
             Button("Machines") { router?.tab = .machines }.keyboardShortcut("2", modifiers: .command)
@@ -29,7 +35,7 @@ struct DexCommands: Commands {
             Button("Projects") { router?.open(.page(.projects), compact: false) }.keyboardShortcut("5", modifiers: .command)
             Button("Skills") { router?.open(.page(.skills), compact: false) }.keyboardShortcut("6", modifiers: .command)
             Button("MCP Servers") { router?.open(.page(.mcp), compact: false) }.keyboardShortcut("7", modifiers: .command)
-            Button("Settings") { router?.tab = .settings }.keyboardShortcut(",", modifiers: .command)
+            Button("Settings") { router?.tab = .settings }
             Button("Search") { router?.tab = .search }.keyboardShortcut("f", modifiers: [.command, .shift])
         }
         CommandMenu("Chat") {

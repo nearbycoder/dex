@@ -57,7 +57,7 @@ struct MachineDetailView: View {
                 } else if let vm = state.machine(vmKey) {
                     content(vm, label: state.vmLabel(vmKey), minutes: state.settings.vmMinutes)
                 } else {
-                    EmptyStateView(title: "This VM no longer exists", symbol: "display.trianglebadge.exclamationmark", message: "Its chat may have been deleted.",
+                    EmptyStateView(title: "VM Not Found", symbol: "display.trianglebadge.exclamationmark", message: "Its chat may have been deleted.",
                                    actionTitle: "See All Machines") { router.machine = nil }
                 }
             } else {
@@ -445,6 +445,8 @@ struct MachineDetailView: View {
                 } label: {
                     if busy == "stop" { ProgressView() } else { Label("Stop", systemImage: "stop.fill") }
                 }
+                // Neutral, like the composer's Stop: a square in the accent read as "go" (green) next to the title.
+                .tint(.primary)
                 .disabled(busy != nil)
                 .accessibilityIdentifier("machine.stop")
             }
@@ -565,7 +567,7 @@ struct ConnectBoatView: View {
     @Environment(Router.self) private var router
 
     var body: some View {
-        EmptyStateView(title: "No cloud VMs", symbol: "server.rack",
+        EmptyStateView(title: "No Cloud VMs", symbol: "server.rack",
                        message: "Connect boat.dev in Settings to give each chat its own cloud VM with a desktop.",
                        actionTitle: "Connect boat.dev in Settings") { router.openSettings(.machines) }
             .accessibilityIdentifier("machines.connect")

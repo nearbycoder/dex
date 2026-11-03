@@ -176,7 +176,7 @@ struct OUIDatePicker: View {
     }
 
     @ViewBuilder
-    private func picker(_ value: JSONValue?, label: String, set: @escaping (Date) -> Void) -> some View {
+    private func picker(_ value: JSONValue?, label: String, set: @escaping @MainActor (Date) -> Void) -> some View {
         if let date = Self.date(value) {
             DatePicker(label, selection: Binding(get: { date }, set: set), displayedComponents: .date).labelsHidden()
         } else {
