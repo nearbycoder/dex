@@ -210,7 +210,7 @@ private struct RepoResultRow: View {
             OwnerAvatar(owner: repo.owner, url: repo.ownerAvatar, size: 38)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 5) {
-                    (Text(repo.owner + "/").foregroundStyle(.secondary) + Text(repo.name).fontWeight(.medium).foregroundStyle(.primary)).lineLimit(1)
+                    Text("\(Text(repo.owner + "/").foregroundStyle(.secondary))\(Text(repo.name).fontWeight(.medium).foregroundStyle(.primary))").lineLimit(1)
                     if repo.isPrivate { Tag(text: "Private", symbol: "lock.fill", color: .orange) }
                     if repo.fork { Image(systemName: "tuningfork").font(.caption2).foregroundStyle(.secondary).accessibilityLabel("Fork") }
                     if repo.archived { Tag(text: "Archived") }
