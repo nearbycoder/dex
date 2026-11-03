@@ -2,7 +2,8 @@
 # Screenshot tour: runs ScreenTourUITests on several simulators, in light and/or dark mode, and saves every screen to
 # apps/ios/artifacts/tour/<appearance>/Tour <device>-NN-<screen>.png for reviewing layout across device classes.
 # Devices are simulator device types; each gets its own "Tour <type>" simulator (made on first use), so the tour
-# never fights another test run for a simulator.
+# never fights another test run for a simulator. SIM_PREFIX="Mine" uses "Mine <type>" ones instead (when another
+# session is already using the Tour simulators).
 #   scripts/tour.sh                                        # every default device, light and dark
 #   APPEARANCES=light scripts/tour.sh                      # light only
 #   DEVICES="iPhone 18 Pro,iPad Pro 13-inch" scripts/tour.sh
@@ -11,6 +12,7 @@
 #   TEST=testComposer LONG_CHIPS=1 TEXT_SIZE=accessibilityExtraLarge scripts/tour.sh
 #                                    # the composer with the longest chips at that Dynamic Type size (<appearance>-long-<size>)
 #   OUT=/some/folder scripts/tour.sh                       # save somewhere else
+#   SIM_PREFIX=Mine scripts/tour.sh                        # on "Mine <type>" simulators
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -21,6 +23,7 @@ THEME="${THEME:-}"
 TEXT_SIZE="${TEXT_SIZE:-}"
 LONG_CHIPS="${LONG_CHIPS:-}"
 CONCURRENCY="${CONCURRENCY:-4}"
+SIM_PREFIX="${SIM_PREFIX:-Tour}"
 DERIVED=build/tour
 OUT="${OUT:-$PWD/artifacts/tour}"
 
@@ -49,12 +52,12 @@ RUNTIMES=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; print(" 
 make_simulator() {
   for runtime in $RUNTIMES; do
     # simctl prints its errors on stdout too: keep only a UDID.
-    udid=$(xcrun simctl create "Tour $1" "$1" "$runtime" 2>/dev/null | grep -E '^[0-9A-F-]{36}$') && { echo "$udid"; return 0; }
+    udid=$(xcrun simctl create "$SIM_PREFIX $1" "$1" "$runtime" 2>/dev/null | grep -E '^[0-9A-F-]{36}$') && { echo "$udid"; return 0; }
   done
   return 1
 }
 for name in "${NAMES[@]}"; do
-  udid=$(udid_for "Tour $name") || udid=$(make_simulator "$name") || { echo "Can't make a \"$name\" simulator" >&2; exit 1; }
+  udid=$(udid_for "$SIM_PREFIX $name") || udid=$(make_simulator "$name") || { echo "Can't make a \"$name\" simulator" >&2; exit 1; }
   UDIDS+=("$udid")
 done
 
@@ -81,6 +84,6 @@ echo "✓ Screenshots in $OUT"
 for appearance in $APPEARANCES; do
   folder="$appearance${THEME:+-$THEME}${LONG_CHIPS:+-long}${TEXT_SIZE:+-$TEXT_SIZE}"
   for name in "${NAMES[@]}"; do
-    echo "  $folder/$name: $(ls "$OUT/$folder" 2>/dev/null | grep -c "^Tour $name-" || true)"
+    echo "  $folder/$name: $(ls "$OUT/$folder" 2>/dev/null | grep -c "^$SIM_PREFIX $name-" || true)"
   done
 done
