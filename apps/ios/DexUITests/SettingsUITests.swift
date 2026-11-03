@@ -466,22 +466,51 @@ final class SettingsUITests: DexUITestCase {
         openSettings("usage")
         let headline = element("usage.headline")
         XCTAssertTrue(headline.waitForExistence(timeout: 10))
-        app.segmentedControls["usage.range"].buttons["This month"].tap()
+        pickRange("This month")
         XCTAssertTrue(text("Estimated bill this month").waitForExistence(timeout: 10))
         XCTAssertTrue(element("usage.chart").exists)
+        XCTAssertTrue(element("usage.bill").exists, "This month's bill shows what it's made of")
         snapshot("usage-month")
-        app.segmentedControls["usage.range"].buttons["Last 30 days"].tap()
+        // The legend filters the chart.
+        let legend = element("usage.legend.boat")
+        reveal(legend)
+        legend.tap()
+        XCTAssertEqual(legend.value as? String, "Hidden")
+        legend.tap()
 
-        XCTAssertTrue(text("Variable spend").waitForExistence(timeout: 10))
-        app.segmentedControls["usage.view"].buttons["Table"].tap()
+        pickRange("Last 30 days")
+        XCTAssertTrue(text("VM time in this period").waitForExistence(timeout: 10))
+        let view = app.segmentedControls["usage.view"].buttons["Table"]
+        reveal(view)
+        view.tap()
         XCTAssertTrue(element("usage.table").waitForExistence(timeout: 5))
-        app.segmentedControls["usage.range"].buttons["All time"].tap()
-        XCTAssertTrue(text("Variable spend").waitForExistence(timeout: 10))
+        pickRange("All time")
+        XCTAssertTrue(text("VM time in this period").waitForExistence(timeout: 10))
+
+        // A service row goes to its tab: Command Code (used in the period) on the Models tab, with its estimated allowance.
+        let service = element("usage.service.commandcode")
+        for _ in 0..<6 where !(service.exists && service.isHittable) { app.swipeDown(velocity: .slow) }
+        reveal(service)
+        service.tap()
+        XCTAssertTrue(app.segmentedControls["usage.tab"].buttons["Models"].waitForSelected(timeout: 5))
+        XCTAssertTrue(element("usage.allowance.Last 30 days").waitForExistence(timeout: 5))
+        snapshot("usage-commandcode")
+        element("usage.provider.all").tap()
+        XCTAssertTrue(text("Worth at model rates").waitForExistence(timeout: 5))
+        app.segmentedControls["usage.tab"].buttons["Machines"].tap()
+        XCTAssertTrue(text("boat.dev VM Runs").waitForExistence(timeout: 5) || text("BOAT.DEV VM RUNS").exists)
+        app.segmentedControls["usage.tab"].buttons["Models"].tap()
+
         // A top chat opens it.
         let chat = element("usage.chat.s-vm")
         reveal(chat, maxSwipes: 14)
         chat.tap()
         XCTAssertTrue(chat.waitForNonExistence(timeout: 10), "The chat opens in Chats")
+    }
+
+    private func pickRange(_ label: String) {
+        element("usage.range").tap()
+        app.buttons[label].firstMatch.tap()
     }
 
     func testAboutShowsBuilds() {

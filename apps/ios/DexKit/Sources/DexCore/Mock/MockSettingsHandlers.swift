@@ -290,7 +290,7 @@ extension MockAgent {
         register("usageReport") { [unowned self] args, _ in
             let range = UsageRange(rawValue: args.string(0) ?? "month") ?? .month
             try await Task.sleep(for: .milliseconds(150))
-            return try JSONValue(encoding: MockUsage.report(range: range, openCodeConnected: self.state.opencode.connected))
+            return try JSONValue(encoding: MockUsage.report(range: range, openCodeConnected: self.state.opencode.connected, commandCodeConnected: self.state.commandcode.connected))
         }
     }
 
@@ -367,10 +367,11 @@ extension MockAgent {
     }
 }
 
-/// A realistic usage report: daily rows with every service, two subscriptions' models and chats, VM runs, Cloudflare
-/// meters, and OpenCode Go's live allowance.
+/// A realistic usage report: daily rows with every service, three subscriptions' models and chats (Command Code's used in
+/// the period even while it isn't connected), VM runs, Cloudflare meters, OpenCode Go's live allowance, and Command Code's
+/// estimated one.
 public enum MockUsage {
-    public static func report(range: UsageRange, openCodeConnected: Bool, now: Date = .now) -> UsageReport {
+    public static func report(range: UsageRange, openCodeConnected: Bool, commandCodeConnected: Bool = false, now: Date = .now) -> UsageReport {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "UTC")!
         let today = calendar.startOfDay(for: now)
@@ -395,6 +396,7 @@ public enum MockUsage {
                 date: formatter.string(from: day),
                 cline: weekend ? 0.2 + seed.truncatingRemainder(dividingBy: 5) * 0.05 : 0.8 + seed.truncatingRemainder(dividingBy: 13) * 0.11,
                 opencode: openCodeConnected ? 0.1 + seed.truncatingRemainder(dividingBy: 7) * 0.04 : 0,
+                commandcode: weekend ? 0 : 0.3 + seed.truncatingRemainder(dividingBy: 9) * 0.08,
                 boat: weekend ? 0 : 0.02 + seed.truncatingRemainder(dividingBy: 6) * 0.015,
                 cloudflare: 0.01 + seed.truncatingRemainder(dividingBy: 4) * 0.004
             ))
@@ -403,6 +405,8 @@ public enum MockUsage {
         }
         let clineCost = daily.reduce(0) { $0 + $1.cline }
         let openCost = daily.reduce(0) { $0 + $1.opencode }
+        let commandCost = daily.reduce(0) { $0 + ($1.commandcode ?? 0) }
+        let lastDays = { (count: Int) in daily.suffix(count).reduce(0) { $0 + ($1.commandcode ?? 0) } }
         let boatCost = daily.reduce(0) { $0 + $1.boat }
         let cfCost = daily.reduce(0) { $0 + $1.cloudflare }
         let scale = Double(daily.count)
@@ -433,6 +437,19 @@ public enum MockUsage {
                     weekly: OpenCodeWindow(percent: 86, resetsAt: MockAgent.iso(nowMs + 60 * hour)),
                     monthly: OpenCodeWindow(percent: 41, resetsAt: MockAgent.iso(nowMs + 12 * 24 * hour))
                 ) : nil
+            ),
+            commandcode: ModelUsage(
+                responses: Int(scale * 5), inputTokens: scale * 150_000, outputTokens: scale * 12_000, cacheReadTokens: scale * 90_000, totalTokens: scale * 162_000, listCost: commandCost,
+                byModel: [
+                    ModelUsageRow(model: "commandcode/anthropic/claude-haiku-5.5", responses: Int(scale * 3), totalTokens: scale * 110_000, listCost: commandCost * 0.7),
+                    ModelUsageRow(model: "commandcode/deepseek/deepseek-v4.1-flash", responses: Int(scale * 2), totalTokens: scale * 52_000, listCost: commandCost * 0.3)
+                ],
+                byChat: [
+                    ChatUsageRow(sessionId: MockData.vmChatId, title: "Fix the flaky test in dex", totalTokens: scale * 100_000, listCost: commandCost * 0.6),
+                    ChatUsageRow(sessionId: MockData.welcomeId, title: "Plan a weekend in Lisbon", totalTokens: scale * 62_000, listCost: commandCost * 0.4)
+                ],
+                connected: commandCodeConnected,
+                spent: CommandCodeSpent(fiveHours: (daily.last?.commandcode ?? 0) * 0.4, week: lastDays(7), month: lastDays(30))
             ),
             boat: BoatUsage(
                 hours: boatCost / 0.018, cost: boatCost, running: true,

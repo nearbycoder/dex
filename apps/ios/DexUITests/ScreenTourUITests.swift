@@ -525,6 +525,14 @@ final class ScreenTourUITests: DexUITestCase {
             // A row the list wouldn't scroll to (a short screen): its link instead.
             guard tap(row, timeout: 3) || openLink("dex://settings/\(page)") else { missing("settings-\(page)"); continue }
             shot("settings-\(page)", settle: 2)
+            if page == "usage" {
+                // Each of the page's tabs (segments, or a menu on the narrowest screens).
+                for tab in ["Models", "Machines", "Cloudflare", "Overview"] {
+                    let segment = app.segmentedControls["usage.tab"].buttons[tab]
+                    if segment.exists { segment.tap() } else if tap(element("usage.tab"), timeout: 2) { tap(app.buttons[tab].firstMatch, timeout: 2) }
+                    if tab != "Overview" { shot("settings-usage-\(tab.lowercased())", settle: 1) }
+                }
+            }
             if page == "notifications" {
                 // Each sidekick's setting and the other devices, below this device's.
                 app.collectionViews.allElementsBoundByIndex.last { $0.isHittable }?.swipeUp()

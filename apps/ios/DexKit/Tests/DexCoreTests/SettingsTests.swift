@@ -45,35 +45,63 @@ import Testing
         #expect(report.range == .days30)
         #expect(report.opencode.connected == nil && report.opencode.limits == nil)
         #expect(report.chatgpt.totalTokens == 0 && report.chatgpt.connected == nil)
-        #expect(report.summary(clineConnected: true).showChatGPT == false)
+        #expect(!report.visibleSubscriptions(clineConnected: true).contains(.chatgpt))
         #expect(report.cloudflare.configured == false)
     }
 
-    @Test func summaryMatchesTheWeb() throws {
+    @Test func decodesCommandCode() throws {
+        let json = #"{"range":"month","since":1,"until":2,"commandcode":{"totalTokens":9,"listCost":3,"connected":true,"spent":{"fiveHours":4,"week":25,"month":60}},"daily":[{"date":"2026-10-01","cline":0,"opencode":0,"commandcode":1.5,"boat":0,"cloudflare":0}]}"#
+        let report = try JSONDecoder.dex.decode(UsageReport.self, from: Data(json.utf8))
+        #expect(report.commandcode.spent?.week == 25)
+        #expect(report.daily[0].value(.commandcode) == 1.5)
+        #expect(report.meter(.commandcode)?.percent == 60)
+        #expect(report.commandCodeWindows.map(\.cap) == [20, 50, 100])
+        #expect(report.visibleSubscriptions(clineConnected: false) == [.commandcode])
+        // An older agent: no Command Code, nothing shown and nothing in the bill.
+        let old = try JSONDecoder.dex.decode(UsageReport.self, from: Data(#"{"range":"month","since":1,"until":2,"daily":[]}"#.utf8))
+        #expect(old.commandcode.spent == nil && old.meter(.commandcode) == nil)
+        #expect(old.bill(clineConnected: false).plans == PlanFees.workersPaid)
+    }
+
+    @Test func overviewMatchesTheWeb() throws {
         let report = try JSONDecoder.dex.decode(UsageReport.self, from: Data(Self.json.utf8))
-        let summary = report.summary(clineConnected: true)
-        #expect(summary.series == [.cline, .boat, .cloudflare, .opencode])
-        #expect(abs(summary.plans - 24.99) < 0.0001)
-        #expect(abs(summary.headline - (24.99 + 0.063)) < 0.0001)
-        #expect(summary.headlineLabel == "Estimated bill this month")
+        #expect(report.visibleSubscriptions(clineConnected: true) == [.clinepass, .opencodeGo])
+        #expect(report.chartSeries(clineConnected: true) == [.cline, .boat, .cloudflare, .opencode])
+        let bill = report.bill(clineConnected: true)
+        #expect(bill.parts.map(\.series) == [.cline, .opencode, .cloudflare, .boat])
+        #expect(abs(bill.plans - 24.99) < 0.0001)
+        #expect(abs(bill.total - (24.99 + 0.063)) < 0.0001)
+        #expect(report.headline(clineConnected: true).label == "Estimated bill this month")
+        #expect(report.meter(.opencodeGo)?.percent == 40)
 
         var other = report
         other.range = .all
         other.opencode = ModelUsage()
-        let unconnected = other.summary(clineConnected: false)
-        #expect(unconnected.series == [.cline, .boat, .cloudflare])
-        #expect(unconnected.plans == PlanFees.workersPaid)
-        #expect(!unconnected.showOpenCode)
-        #expect(unconnected.showCline) // used in the period
-        #expect(unconnected.headline == report.boat.cost)
-        #expect(unconnected.headlineLabel == "Variable spend")
+        #expect(other.visibleSubscriptions(clineConnected: false) == [.clinepass]) // used in the period
+        #expect(other.chartSeries(clineConnected: false) == [.cline, .boat, .cloudflare])
+        #expect(other.bill(clineConnected: false).plans == PlanFees.workersPaid)
+        #expect(other.headline(clineConnected: false).label == "VM time in this period")
+        #expect(other.headline(clineConnected: false).value == report.boat.cost)
+        #expect(other.cloudflareTopAllowance == nil)
+        #expect(report.cloudflareTopAllowance == 0.012)
 
-        // ChatGPT appears once signed in, last in the fixed order, and adds no plan fee (Dex doesn't know which plan).
+        // ChatGPT appears once signed in, last, and adds no plan fee (Dex doesn't know which plan). Command Code adds its own.
         other.chatgpt = ModelUsage(totalTokens: 1_000, connected: true)
-        let chatgpt = other.summary(clineConnected: false)
-        #expect(chatgpt.showChatGPT)
-        #expect(chatgpt.series == [.cline, .boat, .cloudflare, .chatgpt])
-        #expect(chatgpt.plans == PlanFees.workersPaid)
+        other.commandcode = ModelUsage(connected: true, spent: .init())
+        #expect(other.visibleSubscriptions(clineConnected: false) == [.clinepass, .commandcode, .chatgpt])
+        #expect(other.chartSeries(clineConnected: false) == [.cline, .boat, .cloudflare, .chatgpt, .commandcode])
+        #expect(other.bill(clineConnected: false).plans == PlanFees.workersPaid + PlanFees.commandCode)
+    }
+
+    @Test func combinedMergesChatsAcrossSubscriptions() throws {
+        var report = try JSONDecoder.dex.decode(UsageReport.self, from: Data(Self.json.utf8))
+        report.commandcode = ModelUsage(responses: 3, totalTokens: 100, listCost: 9, byModel: [ModelUsageRow(model: "commandcode/x", responses: 3, totalTokens: 100, listCost: 9)],
+                                        byChat: [ChatUsageRow(sessionId: "s-2", title: "Deleted chat", totalTokens: 100, listCost: 9)], connected: true)
+        let combined = report.combined([.clinepass, .commandcode])
+        #expect(combined.responses == 123)
+        #expect(combined.byModel.map(\.subscription) == [.commandcode, .clinepass])
+        #expect(combined.topChats.map(\.sessionId) == ["s-2", "s-1"])
+        #expect(abs(combined.topChats[0].listCost - 9.01) < 1e-9)
     }
 
     @Test func formats() {
@@ -100,6 +128,7 @@ import Testing
         for range in UsageRange.allCases {
             let report = MockUsage.report(range: range, openCodeConnected: true)
             #expect(!report.daily.isEmpty)
+            #expect(report.commandcode.spent != nil)
             #expect(report.opencode.limits != nil)
             #expect(try JSONValue(encoding: report).decode(UsageReport.self) == report)
         }
