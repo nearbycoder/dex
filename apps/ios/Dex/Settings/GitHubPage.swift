@@ -27,9 +27,12 @@ struct GitHubPage: View {
                 } else if github.connected {
                     if github.expired == true {
                         Section {
-                            Label("GitHub stopped accepting this connection (revoked or expired). New VMs can't sign in and repo search shows public repos only until you reconnect.", systemImage: "exclamationmark.triangle.fill")
+                            Label("GitHub stopped accepting this connection\(github.expiredAt.map { " " + Date(timeIntervalSince1970: $0 / 1000).formatted(.relative(presentation: .named)) } ?? "") (revoked or expired). New VMs can't sign in and repo search shows public repos only until you reconnect.", systemImage: "exclamationmark.triangle.fill")
                                 .font(.footnote)
                                 .foregroundStyle(.orange)
+                            if let reason = github.expiredReason {
+                                Text("\(reason).").font(.caption).foregroundStyle(.secondary)
+                            }
                             Button("Reconnect") { startOAuth() }
                                 .prominentButton()
                                 .accessibilityIdentifier("github.reconnectExpired")

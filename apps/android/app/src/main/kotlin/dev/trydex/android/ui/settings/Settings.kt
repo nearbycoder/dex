@@ -570,8 +570,10 @@ private fun GitHubConnect() {
         )
         github.connected -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             if (github.expired) {
+                val since = github.expiredAt?.let { " " + android.text.format.DateUtils.getRelativeTimeSpanString(it).toString().lowercase() } ?: ""
                 dev.trydex.android.ui.components.Banner(
-                    "GitHub stopped accepting this connection (revoked or expired). New VMs can't sign in and repo search shows public repos only until you reconnect.",
+                    "GitHub stopped accepting this connection$since (revoked or expired). New VMs can't sign in and repo search shows public repos only until you reconnect." +
+                        (github.expiredReason?.let { "\n$it." } ?: ""),
                     action = { TextButton(onClick = { connectUrl?.let { waiting = true; openInBrowser(it) } }) { Text("Reconnect") } },
                 )
             }

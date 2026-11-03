@@ -289,6 +289,11 @@ export class VmManager {
   }
 
   /** Whether the VM is running with nothing in flight, so stopping it disturbs no one. */
+  /** Its setup ran (so it signed in to GitHub then); a VM that hasn't gets the current token when it does. */
+  get provisioned(): boolean {
+    return Boolean(this.row()?.provisioned)
+  }
+
   get idle(): boolean {
     return this.info.status === "running" && this.inFlight === 0 && this.starting === null
   }

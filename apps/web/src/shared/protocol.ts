@@ -53,6 +53,11 @@ export interface GitHubStatus {
   readonly oauthAvailable?: boolean
   /** GitHub stopped accepting the saved token (revoked, expired, or the app's access removed): reconnect it. */
   readonly expired?: boolean
+  /** When it stopped (ms) and what Dex was doing when GitHub turned it down. */
+  readonly expiredAt?: number | null
+  readonly expiredReason?: string | null
+  /** The token expires every eight hours and Dex renews it (the OAuth app has expiring tokens on). */
+  readonly renews?: boolean
 }
 
 export interface BoatStatus {

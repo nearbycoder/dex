@@ -52,12 +52,14 @@ export async function finishGitHubConnect(request: Request, env: Env): Promise<R
 
   const exchanged = await serverRuntime(env).runPromise(
     GitHubOAuth.use((github) => github.exchange({ code, redirectUri: callbackUrl(request) })).pipe(
-      Effect.map((token) => ({ ok: true as const, token })),
+      Effect.map((grant) => ({ ok: true as const, grant })),
       Effect.catchTag("OAuthError", (error) => Effect.succeed({ ok: false as const, error: error.message }))
     )
   )
   if (!exchanged.ok) return fail(exchanged.error)
   const agent = await getAgentByName(env.DexAgent as unknown as DurableObjectNamespace<DexAgent>, viewer.id)
-  const result = (await agent.connectGitHub(exchanged.token, "oauth")) as { ok: true; login: string } | { ok: false; error: string }
+  type Result = { ok: true; login: string } | { ok: false; error: string }
+  // An agent still on an older build has only connectGitHub (no refresh token, so an expiring one lasts its 8 hours).
+  const result = (await (agent.connectGitHubGrant(exchanged.grant) as Promise<Result>).catch(() => agent.connectGitHub(exchanged.grant.accessToken, "oauth") as Promise<Result>))
   return result.ok ? backToSettings(`github=connected`, [clearState]) : fail(result.error)
 }

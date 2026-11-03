@@ -1,6 +1,7 @@
 import { CheckCircle2, ExternalLink } from "lucide-react"
 import { useEffect, useState } from "react"
 import { useDex } from "~/client/lib/dex"
+import { timeAgo } from "~/client/lib/format"
 import { SecretConnect } from "./cline-connect"
 import { GitHubMark } from "./github-mark"
 import { InfoTip } from "./info-tip"
@@ -81,8 +82,9 @@ export function GitHubConnect() {
         {github.expired && (
           <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-amber-900/60 bg-amber-950/30 px-3 py-2.5 text-xs text-amber-200">
             <span className="min-w-0 flex-1">
-              GitHub stopped accepting this connection (revoked or expired). New VMs can't sign in and repo search shows public repos only until you
-              reconnect.
+              GitHub stopped accepting this connection{github.expiredAt ? ` ${timeAgo(github.expiredAt)}` : ""} (revoked or expired). New VMs can't sign in
+              and repo search shows public repos only until you reconnect.
+              {github.expiredReason && <span className="mt-1 block text-amber-200/60">{github.expiredReason}.</span>}
             </span>
             <a href="/auth/github/connect" className="shrink-0 rounded-md bg-amber-500/90 px-2.5 py-1 font-medium text-zinc-950 hover:bg-amber-400">
               Reconnect
@@ -94,6 +96,12 @@ export function GitHubConnect() {
             <CheckCircle2 className="size-4 shrink-0" />
             <span className="truncate">@{github.login}</span>
             <span className="text-xs text-zinc-500">via GitHub</span>
+            {github.renews && (
+              <InfoTip label="About token renewal">
+                This GitHub app's tokens expire every eight hours. Dex renews them on its own and signs running VMs in again, so nothing needs a
+                reconnect.
+              </InfoTip>
+            )}
           </span>
           <span className="ml-auto flex items-center gap-1">
             <a href="/auth/github/connect" className="rounded-md px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100">

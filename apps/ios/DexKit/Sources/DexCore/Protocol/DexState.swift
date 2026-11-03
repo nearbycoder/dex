@@ -86,8 +86,14 @@ public struct GitHubStatus: Codable, Sendable, Hashable {
     public var via: String?
     public var oauthAvailable: Bool?
     public var expired: Bool?
-    public init(connected: Bool = false, login: String? = nil, via: String? = nil, oauthAvailable: Bool? = nil, expired: Bool? = nil) {
+    /** When GitHub stopped accepting the token (ms), and what Dex was doing then. */
+    public var expiredAt: Double?
+    public var expiredReason: String?
+    /** The token expires every eight hours and the agent renews it. */
+    public var renews: Bool?
+    public init(connected: Bool = false, login: String? = nil, via: String? = nil, oauthAvailable: Bool? = nil, expired: Bool? = nil, expiredAt: Double? = nil, expiredReason: String? = nil, renews: Bool? = nil) {
         self.connected = connected; self.login = login; self.via = via; self.oauthAvailable = oauthAvailable; self.expired = expired
+        self.expiredAt = expiredAt; self.expiredReason = expiredReason; self.renews = renews
     }
 }
 

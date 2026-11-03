@@ -78,8 +78,8 @@ export class GitHubRepos {
   constructor(
     private readonly auth: () => Promise<GitHubAuth | null>,
     private readonly clientId: () => Promise<string | null>,
-    /** Called when GitHub rejects the token, so the app can show the connection as needing a reconnect. */
-    private readonly rejected: () => void
+    /** Called with the token GitHub rejected, so the app can renew it or show the connection as needing a reconnect. */
+    private readonly rejected: (token: string) => void
   ) {}
 
   private async get<T>(path: string, token: string | null): Promise<T> {
@@ -89,7 +89,7 @@ export class GitHubRepos {
     })
     if (response.status === 401) {
       if (token) {
-        this.rejected()
+        this.rejected(token)
         throw new GitHubRejected("GitHub didn't accept the connected account: reconnect it in Settings.")
       }
       throw new Error("GitHub turned the request down.")

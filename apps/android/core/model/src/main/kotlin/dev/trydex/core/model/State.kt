@@ -85,6 +85,11 @@ data class GitHubStatus(
     val via: String? = null,
     val oauthAvailable: Boolean = false,
     val expired: Boolean = false,
+    /** When GitHub stopped accepting the token (ms), and what Dex was doing then. */
+    val expiredAt: Long? = null,
+    val expiredReason: String? = null,
+    /** The token expires every eight hours and the agent renews it. */
+    val renews: Boolean = false,
 )
 
 @Serializable

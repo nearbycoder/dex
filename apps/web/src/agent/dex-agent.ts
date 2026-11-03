@@ -17,6 +17,7 @@ import { PiHarness } from "agents/harness/pi"
 import { Effect, Layer, ManagedRuntime, Option, Redacted, Schema } from "effect"
 import { AppConfig, envConfigProvider } from "~/server/config"
 import { Keys } from "~/server/crypto"
+import { GitHubOAuth, type GitHubGrant } from "~/server/github"
 import {
   clampThinking,
   DEFAULT_MODEL_ID,
@@ -91,7 +92,7 @@ import { vmTools } from "./tools/vm-tools"
 import { workspaceTools } from "./tools/workspace-tools"
 import { parseVmFiles, vmFilesCommand, type VmFilesView } from "./vm-files"
 import { verifyGitHubToken, type GitHubIdentity } from "./github-token"
-import { provisionVm, shellQuote } from "./provision"
+import { GITHUB_SIGN_OUT, GITHUB_TOKEN_FILE, githubSignIn, provisionVm, shellQuote } from "./provision"
 import { PushCenter, type SubscriptionInput } from "./push"
 import { ApnsSender, FcmSender } from "./native-push"
 import type { BackgroundAction, NotifyKind, PushPayload } from "~/shared/notifications"
@@ -102,7 +103,7 @@ import { UiCards } from "./ui-cards"
 import { Workspace, WORKSPACE_ROOT } from "./workspace"
 
 const AgentLayer = (env: object, boatKey: BoatKey["Service"]) =>
-  Layer.mergeAll(Keys.layer, ClinePassClient.layer, OpenCodeGoClient.layer, ChatGPTClient.layer, BoatClient.layer.pipe(Layer.provide(Layer.succeed(BoatKey, boatKey))), CloudflareAnalytics.layer).pipe(
+  Layer.mergeAll(Keys.layer, GitHubOAuth.layer, ClinePassClient.layer, OpenCodeGoClient.layer, ChatGPTClient.layer, BoatClient.layer.pipe(Layer.provide(Layer.succeed(BoatKey, boatKey))), CloudflareAnalytics.layer).pipe(
     Layer.provideMerge(AppConfig.layer),
     Layer.provide(envConfigProvider(env))
   )
@@ -175,6 +176,8 @@ const firstGrapheme = (text: string) => {
   return first.done ? "" : first.value.segment.slice(0, 16)
 }
 const MAX_MEMORY_CHARS = 8_000
+/** How long before an expiring GitHub token runs out Dex renews it, so a VM never gets one with little time left. */
+const GITHUB_RENEW_EARLY_MS = 60 * 60_000
 const SCHEDULE_CALLBACK = "runScheduledPrompt"
 const VM_SIZES = new Set<VmSize>(["small", "default", "large"])
 
@@ -395,7 +398,7 @@ export class DexAgent extends Agent<Env, DexState> {
       return credentials ? { token: credentials.token, login: credentials.login, via: this.secret("github_via") === "oauth" ? "oauth" : "token" } : null
     },
     () => this.runtime.runPromise(AppConfig.use((config) => Effect.succeed(Option.isSome(config.github) ? config.github.value.clientId : null))),
-    () => this.markGitHubExpired()
+    (token) => this.ctx.waitUntil(this.githubRejected(token, "searching repos"))
   )
 
   /** Secrets typed into chats' password fields: the chats only ever see placeholders. */
@@ -452,8 +455,10 @@ export class DexAgent extends Agent<Env, DexState> {
       const github = isolated ? null : await this.githubCredentials()
       const version = isolated ? 0 : this.accountSecrets.version()
       const env = version ? await this.accountSecrets.envFile() : null
+      const githubVersion = this.githubVersion()
       await provisionVm(setup, { github, project: this.projectForSession(key) ?? null, env })
       if (env !== null) this.vmSecretsVersion.set(key, version)
+      if (!isolated) this.setVmGitHubVersion(key, githubVersion)
     },
     setupFinished: (key, error) => void this.notifyMachine(key, error),
     template: () => this.vmTemplate.current(),
@@ -690,7 +695,8 @@ export class DexAgent extends Agent<Env, DexState> {
         ...vmTools((chatId) => this.vmFor(chatId), {
           prepare: async (chatId) => {
             await Promise.all([this.secrets.prepare(chatId), this.accountSecrets.load()])
-            await this.syncVmSecrets(chatId)
+            // A failed GitHub sign-in shouldn't fail the command; the next one tries again.
+            await Promise.all([this.syncVmSecrets(chatId), this.syncVmGitHub(chatId).catch(() => undefined)])
           },
           command: (chatId, command) => this.secrets.command(chatId, command),
           fill: (chatId, content) => this.secrets.fill(chatId, content)
@@ -2692,8 +2698,16 @@ export class DexAgent extends Agent<Env, DexState> {
 
   // ── GitHub access for the VMs ─────────────────────────────────────────────
 
-  /** The token and git identity each new VM signs in with, if the user connected GitHub. */
+  /**
+   * The token and git identity each new VM signs in with, if the user connected GitHub. An expiring token that's
+   * close to running out is renewed first.
+   */
   private async githubCredentials(): Promise<{ token: string; login: string; name: string; email: string } | null> {
+    if (this.githubDueForRenewal()) await this.renewGitHubToken()
+    return this.savedGitHubCredentials()
+  }
+
+  private async savedGitHubCredentials(): Promise<{ token: string; login: string; name: string; email: string } | null> {
     const sealed = this.secret("github_token")
     const identity = this.secret("github_identity")
     if (!sealed || !identity) return null
@@ -2708,23 +2722,95 @@ export class DexAgent extends Agent<Env, DexState> {
     this.githubRepos.forget()
     const identity = this.secret("github_identity")
     const oauthAvailable = Boolean((this.env as unknown as Record<string, unknown>).GITHUB_CLIENT_ID)
+    const expired = this.secret("github_expired") === "1"
     const github: GitHubStatus = identity && this.secret("github_token")
       ? {
           connected: true,
           login: (JSON.parse(identity) as GitHubIdentity).login,
           via: this.secret("github_via") === "oauth" ? "oauth" : "token",
           oauthAvailable,
-          expired: this.secret("github_expired") === "1"
+          expired,
+          ...(expired && { expiredAt: Number(this.secret("github_expired_at") ?? 0) || null, expiredReason: this.secret("github_expired_reason") ?? null }),
+          renews: Boolean(this.secret("github_refresh"))
         }
       : { connected: false, login: null, via: null, oauthAvailable }
     this.publish({ github })
   }
 
-  /** GitHub rejected the saved token (a 401): show the connection as needing a reconnect. Cleared by connecting again. */
-  private markGitHubExpired() {
+  /** Bumped whenever the saved token changes (connected, renewed, disconnected), so VMs know to sign in again. */
+  private githubVersion(): number {
+    return Number(this.ctx.storage.sql.exec<{ value: string }>(`SELECT value FROM dex_meta WHERE key = 'github_version'`).toArray()[0]?.value ?? 0)
+  }
+
+  private bumpGitHubVersion() {
+    this.ctx.storage.sql.exec(
+      `INSERT INTO dex_meta (key, value) VALUES ('github_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      String(this.githubVersion() + 1)
+    )
+  }
+
+  /** The token version a VM last signed in with (stored, so a restart doesn't sign every VM in again). */
+  private vmGitHubVersion(key: string): number | null {
+    const row = this.ctx.storage.sql.exec<{ value: string }>(`SELECT value FROM dex_meta WHERE key = ?`, `vm_github:${key}`).toArray()[0]
+    return row ? Number(row.value) : null
+  }
+
+  private setVmGitHubVersion(key: string, version: number) {
+    this.ctx.storage.sql.exec(`INSERT INTO dex_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, `vm_github:${key}`, String(version))
+  }
+
+  /**
+   * Signs a VM's gh and git in again if the token changed since it last signed in: renewed, reconnected (which
+   * revokes the old one), or disconnected. Before a chat's VM commands, and for running VMs when the token changes.
+   */
+  private async syncVmGitHub(key: string) {
+    if (key === MCP_VM) return
+    if (this.githubDueForRenewal()) await this.renewGitHubToken()
+    const vm = this.vmFor(key)
+    // Setup hasn't run yet: it signs in with the current token.
+    if (!vm.provisioned) return
+    const version = this.githubVersion()
+    if (this.vmGitHubVersion(key) === version || this.vmGitHubTried.get(key) === version) return
+    // Once per token: a sign-in that fails (say GitHub is down) isn't retried before every command.
+    this.vmGitHubTried.set(key, version)
+    const github = await this.savedGitHubCredentials()
+    if (github) {
+      await vm.writeFile(GITHUB_TOKEN_FILE, github.token, "system")
+      const result = await vm.exec(githubSignIn(github), { actor: "system", title: "Sign in to GitHub again (its token changed)" })
+      if (result.exitCode !== 0) return
+    } else {
+      await vm.exec(GITHUB_SIGN_OUT, { actor: "system", title: "Sign out of GitHub (disconnected in Settings)" })
+    }
+    this.setVmGitHubVersion(key, version)
+  }
+
+  private readonly vmGitHubTried = new Map<string, number>()
+
+  private async syncRunningVmsGitHub() {
+    const running = [...this.vms.values()].filter((vm) => vm.key !== MCP_VM && vm.current.status === "running")
+    await Promise.all(running.map((vm) => this.syncVmGitHub(vm.key).catch(() => undefined)))
+  }
+
+  /** GitHub stopped accepting the saved token: show the connection as needing a reconnect, and why. Cleared by connecting again. */
+  private markGitHubExpired(reason: string) {
     if (this.secret("github_expired") === "1" || !this.secret("github_token")) return
-    this.ctx.storage.sql.exec(`INSERT INTO dex_secrets (name, value) VALUES ('github_expired', '1') ON CONFLICT(name) DO UPDATE SET value = '1'`)
+    console.warn(`GitHub connection needs a reconnect: ${reason}`)
+    const upsert = `INSERT INTO dex_secrets (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value`
+    this.ctx.storage.sql.exec(upsert, "github_expired", "1")
+    this.ctx.storage.sql.exec(upsert, "github_expired_at", String(Date.now()))
+    this.ctx.storage.sql.exec(upsert, "github_expired_reason", reason)
     this.refreshGitHubStatus()
+  }
+
+  /**
+   * GitHub answered 401 to `token`. An expiring token is renewed if it can be; otherwise the connection needs a
+   * reconnect. Nothing happens if the token was replaced meanwhile.
+   */
+  private async githubRejected(token: string, doing: string) {
+    const current = await this.savedGitHubCredentials()
+    if (current?.token !== token) return
+    if (this.secret("github_refresh") && (await this.renewGitHubToken())) return
+    this.markGitHubExpired(`GitHub turned the token down while ${doing}`)
   }
 
   /** Once per start: does GitHub still accept the saved token? Catches a revoked connection before something needs it. */
@@ -2735,37 +2821,132 @@ export class DexAgent extends Agent<Env, DexState> {
       headers: { authorization: `Bearer ${credentials.token}`, accept: "application/vnd.github+json", "user-agent": "dex" },
       signal: AbortSignal.timeout(10_000)
     }).catch(() => null)
-    if (response?.status === 401) this.markGitHubExpired()
+    if (response?.status === 401) await this.githubRejected(credentials.token, "checking it")
     else if (response?.ok && this.secret("github_expired") === "1") {
-      this.ctx.storage.sql.exec(`DELETE FROM dex_secrets WHERE name = 'github_expired'`)
+      this.ctx.storage.sql.exec(`DELETE FROM dex_secrets WHERE name IN ('github_expired', 'github_expired_at', 'github_expired_reason')`)
       this.refreshGitHubStatus()
     }
   }
 
-  /**
-   * Saves a GitHub token (encrypted): a pasted personal access token, or (`via` "oauth") one from "Connect with
-   * GitHub", which the Worker's OAuth callback passes in. New VMs sign in to gh and git with it.
-   */
+  // An OAuth app with "Expire user authorization tokens" on hands out tokens that last eight hours, with a refresh
+  // token (six months) that renews them. Dex renews an hour early, on a schedule and whenever it needs the token.
+  private githubRenewing: Promise<boolean> | null = null
+
+  private githubDueForRenewal(): boolean {
+    const expiresAt = Number(this.secret("github_expires_at") ?? 0)
+    return expiresAt > 0 && Date.now() > expiresAt - GITHUB_RENEW_EARLY_MS && Boolean(this.secret("github_refresh"))
+  }
+
+  /** Renews the token with its refresh token: true when it got a new one. One at a time, since GitHub rotates the refresh token. */
+  private renewGitHubToken(): Promise<boolean> {
+    this.githubRenewing ??= this.renewGitHubTokenNow().finally(() => {
+      this.githubRenewing = null
+    })
+    return this.githubRenewing
+  }
+
+  private async renewGitHubTokenNow(): Promise<boolean> {
+    const sealed = this.secret("github_refresh")
+    if (!sealed) return false
+    const result = await this.runtime
+      .runPromise(
+        Effect.gen(function*() {
+          const refreshToken = yield* (yield* Keys).decrypt(sealed)
+          return yield* (yield* GitHubOAuth).refresh(refreshToken)
+        }).pipe(
+          Effect.map((grant) => ({ ok: true as const, grant })),
+          Effect.catchTag("OAuthError", (error) => Effect.succeed({ ok: false as const, rejected: error.reason === "refresh_rejected", message: error.message }))
+        )
+      )
+      .catch((error: unknown) => ({ ok: false as const, rejected: false, message: errorText(error) }))
+    // Reconnected while this ran: that connection wins.
+    if (this.secret("github_refresh") !== sealed) return result.ok
+    if (!result.ok) {
+      if (result.rejected) this.markGitHubExpired(`GitHub wouldn't renew the token (${result.message})`)
+      else {
+        console.warn(`Couldn't renew the GitHub token: ${result.message}`)
+        await this.scheduleGitHubRenewal(Date.now() + 10 * 60_000)
+      }
+      return false
+    }
+    await this.storeGitHubGrant(result.grant)
+    this.refreshGitHubStatus()
+    this.ctx.waitUntil(this.syncRunningVmsGitHub())
+    return true
+  }
+
+  /** Renews ahead of expiry even while Dex sits idle, which also keeps the refresh token from expiring unused. */
+  private async scheduleGitHubRenewal(at: number) {
+    await this.cancelGitHubRenewal()
+    await this.schedule(new Date(Math.max(Date.now() + 60_000, at)), "renewGitHub")
+  }
+
+  private async cancelGitHubRenewal() {
+    for (const schedule of this.getSchedules()) if (schedule.callback === "renewGitHub") await this.cancelSchedule(schedule.id)
+  }
+
+  async renewGitHub() {
+    if (!this.secret("github_refresh")) return
+    if (this.githubDueForRenewal()) await this.renewGitHubToken()
+    else await this.scheduleGitHubRenewal(Number(this.secret("github_expires_at")) - GITHUB_RENEW_EARLY_MS)
+  }
+
+  /** Saves a token (sealed), with its refresh token and expiry when it has them, and tells VMs it changed. */
+  private async storeGitHubGrant(grant: GitHubGrant) {
+    const renews = grant.refreshToken !== null && grant.expiresAt !== null
+    const [sealed, sealedRefresh] = await this.runtime.runPromise(
+      Keys.use((keys) => Effect.all([keys.encrypt(grant.accessToken), renews ? keys.encrypt(grant.refreshToken!) : Effect.succeed(null)]))
+    )
+    const upsert = `INSERT INTO dex_secrets (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value`
+    this.ctx.storage.sql.exec(upsert, "github_token", sealed)
+    if (sealedRefresh) {
+      this.ctx.storage.sql.exec(upsert, "github_refresh", sealedRefresh)
+      this.ctx.storage.sql.exec(upsert, "github_expires_at", String(grant.expiresAt))
+    } else {
+      this.ctx.storage.sql.exec(`DELETE FROM dex_secrets WHERE name IN ('github_refresh', 'github_expires_at')`)
+    }
+    this.ctx.storage.sql.exec(`DELETE FROM dex_secrets WHERE name IN ('github_expired', 'github_expired_at', 'github_expired_reason')`)
+    this.bumpGitHubVersion()
+    if (renews) await this.scheduleGitHubRenewal(grant.expiresAt! - GITHUB_RENEW_EARLY_MS)
+    else await this.cancelGitHubRenewal()
+  }
+
+  /** A pasted personal access token, or (`via` "oauth", from an agent on an older build) a "Connect with GitHub" token. */
   @callable()
   async connectGitHub(token: string, via: "token" | "oauth" = "token"): Promise<{ ok: true; login: string } | { ok: false; error: string }> {
-    const value = token.trim()
+    return this.saveGitHubConnection({ accessToken: token.trim(), refreshToken: null, expiresAt: null, refreshExpiresAt: null }, via === "oauth" ? "oauth" : "token")
+  }
+
+  /** "Connect with GitHub" (the Worker's OAuth callback): the token and, for an expiring one, what renews it. */
+  async connectGitHubGrant(grant: GitHubGrant): Promise<{ ok: true; login: string } | { ok: false; error: string }> {
+    return this.saveGitHubConnection(grant, "oauth")
+  }
+
+  /** For sign-in (the Worker): is this the token the GitHub connection uses? Then sign-in must not revoke it. */
+  async isGitHubConnectionToken(token: string): Promise<boolean> {
+    return (await this.savedGitHubCredentials())?.token === token
+  }
+
+  /** Verifies a token and saves it (encrypted); new VMs sign in to gh and git with it, and running ones sign in again. */
+  private async saveGitHubConnection(grant: GitHubGrant, via: "token" | "oauth"): Promise<{ ok: true; login: string } | { ok: false; error: string }> {
+    const value = grant.accessToken
     if (!value) return { ok: false, error: "Paste a GitHub personal access token." }
     const result = await this.runtime.runPromise(
-      Effect.gen(function*() {
-        const identity = yield* verifyGitHubToken(value)
-        const sealed = yield* (yield* Keys).encrypt(value)
-        return { ok: true as const, identity, sealed }
-      }).pipe(Effect.catchTag("GitHubTokenError", (error) => Effect.succeed({ ok: false as const, error: error.message })))
+      verifyGitHubToken(value).pipe(
+        Effect.map((identity) => ({ ok: true as const, identity })),
+        Effect.catchTag("GitHubTokenError", (error) => Effect.succeed({ ok: false as const, error: error.message }))
+      )
     )
     if (!result.ok) return result
     // Reconnecting replaces the old OAuth token: revoke it so it doesn't count toward GitHub's ten tokens per user.
+    // Running VMs still have it, so they sign in again below.
     await this.revokeOAuthToken(value)
     const upsert = `INSERT INTO dex_secrets (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value`
-    this.ctx.storage.sql.exec(upsert, "github_token", result.sealed)
     this.ctx.storage.sql.exec(upsert, "github_identity", JSON.stringify(result.identity))
-    this.ctx.storage.sql.exec(upsert, "github_via", via === "oauth" ? "oauth" : "token")
-    this.ctx.storage.sql.exec(`DELETE FROM dex_secrets WHERE name = 'github_expired'`)
+    this.ctx.storage.sql.exec(upsert, "github_via", via)
+    await this.storeGitHubGrant(via === "oauth" ? { ...grant, accessToken: value } : { accessToken: value, refreshToken: null, expiresAt: null, refreshExpiresAt: null })
     this.refreshGitHubStatus()
+    this.ctx.waitUntil(this.syncRunningVmsGitHub())
     return { ok: true, login: result.identity.login }
   }
 
@@ -2779,18 +2960,8 @@ export class DexAgent extends Agent<Env, DexState> {
     await this.runtime
       .runPromise(
         Effect.gen(function*() {
-          const { github } = yield* AppConfig
           const token = yield* (yield* Keys).decrypt(sealed)
-          if (Option.isNone(github) || token === keep) return
-          const basic = btoa(`${github.value.clientId}:${Redacted.value(github.value.clientSecret)}`)
-          yield* Effect.promise(() =>
-            fetch(`https://api.github.com/applications/${github.value.clientId}/token`, {
-              method: "DELETE",
-              headers: { authorization: `Basic ${basic}`, accept: "application/vnd.github+json", "user-agent": "dex", "content-type": "application/json" },
-              body: JSON.stringify({ access_token: token }),
-              signal: AbortSignal.timeout(10_000)
-            })
-          )
+          if (token !== keep) yield* (yield* GitHubOAuth).revoke(token)
         })
       )
       .catch(() => undefined)
@@ -2800,8 +2971,13 @@ export class DexAgent extends Agent<Env, DexState> {
   async disconnectGitHub() {
     // An OAuth token is revoked at GitHub too, so it stops working everywhere (VMs included), not just in Dex.
     await this.revokeOAuthToken()
-    this.ctx.storage.sql.exec(`DELETE FROM dex_secrets WHERE name IN ('github_token', 'github_identity', 'github_via', 'github_expired')`)
+    this.ctx.storage.sql.exec(
+      `DELETE FROM dex_secrets WHERE name IN ('github_token', 'github_identity', 'github_via', 'github_refresh', 'github_expires_at', 'github_expired', 'github_expired_at', 'github_expired_reason')`
+    )
+    await this.cancelGitHubRenewal()
+    this.bumpGitHubVersion()
     this.refreshGitHubStatus()
+    this.ctx.waitUntil(this.syncRunningVmsGitHub())
   }
 
   // ── Projects ──────────────────────────────────────────────────────────────

@@ -15,6 +15,25 @@ const POLL_MS = 3_000
 /** A single-quoted shell word. */
 export const shellQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`
 
+/** Where the token waits for `githubSignIn`, which deletes it. */
+export const GITHUB_TOKEN_FILE = "/tmp/.dex-gh-token"
+
+/**
+ * Signs the GitHub CLI and git in with the token in GITHUB_TOKEN_FILE (replacing any token they had). `gh auth login`
+ * refuses tokens without the scopes it wants (read:org), though everything Dex needs works without them: for those,
+ * it writes the CLI's credentials itself. Then it checks the token reaches GitHub.
+ */
+export const githubSignIn = (github: { readonly login: string; readonly name: string; readonly email: string }) =>
+  `if ! gh auth login --hostname github.com --git-protocol https --with-token < ${GITHUB_TOKEN_FILE}; then
+     echo "Signing the GitHub CLI in directly instead"
+     mkdir -p ~/.config/gh && (umask 077; printf 'github.com:\n    oauth_token: %s\n    user: %s\n    git_protocol: https\n' "$(cat ${GITHUB_TOKEN_FILE})" ${shellQuote(github.login)} > ~/.config/gh/hosts.yml)
+   fi
+   rm -f ${GITHUB_TOKEN_FILE}
+   gh auth setup-git && git config --global user.name ${shellQuote(github.name)} && git config --global user.email ${shellQuote(github.email)} && echo "Signed in as $(gh api user --jq .login)"`
+
+/** Signs the GitHub CLI and git out (GitHub was disconnected in Settings). */
+export const GITHUB_SIGN_OUT = `rm -f ~/.config/gh/hosts.yml; git config --global --unset-all credential.https://github.com.helper 2>/dev/null; echo "Signed out of GitHub"`
+
 /**
  * Prepares a new VM: signs the GitHub CLI and git in with the user's token, clones the project's repos
  * into ~/work, and runs its setup script. Throws on the first failed step.
@@ -29,18 +48,8 @@ export async function provisionVm(setup: VmSetupContext, plan: ProvisionPlan) {
   if (plan.github) {
     setup.step("Signing in to GitHub")
     // The token goes through a file, never a command line, so it stays out of the activity log.
-    await setup.writeFile("/tmp/.dex-gh-token", plan.github.token)
-    // `gh auth login` refuses tokens without the scopes it wants (read:org), though everything Dex needs works
-    // without them: for those, it writes the CLI's credentials itself. Then it checks the token reaches GitHub.
-    const login = await setup.run(
-      "Sign in to GitHub (gh auth login)",
-      `if ! gh auth login --hostname github.com --git-protocol https --with-token < /tmp/.dex-gh-token; then
-         echo "Signing the GitHub CLI in directly instead"
-         mkdir -p ~/.config/gh && (umask 077; printf 'github.com:\n    oauth_token: %s\n    user: %s\n    git_protocol: https\n' "$(cat /tmp/.dex-gh-token)" ${shellQuote(plan.github.login)} > ~/.config/gh/hosts.yml)
-       fi
-       rm -f /tmp/.dex-gh-token
-       gh auth setup-git && git config --global user.name ${shellQuote(plan.github.name)} && git config --global user.email ${shellQuote(plan.github.email)} && echo "Signed in as $(gh api user --jq .login)"`
-    )
+    await setup.writeFile(GITHUB_TOKEN_FILE, plan.github.token)
+    const login = await setup.run("Sign in to GitHub (gh auth login)", githubSignIn(plan.github))
     if (login.exitCode !== 0) throw new Error("gh auth login failed; check the GitHub token in Settings")
   }
 

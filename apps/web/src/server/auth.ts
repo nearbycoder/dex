@@ -50,7 +50,7 @@ export const startGitHubLogin = Effect.fn("auth.startGitHubLogin")(function*(req
   )
 })
 
-export const finishGitHubLogin = Effect.fn("auth.finishGitHubLogin")(function*(request: Request) {
+export const finishGitHubLogin = Effect.fn("auth.finishGitHubLogin")(function*(request: Request, keep?: (accessToken: string, userId: string) => Promise<boolean>) {
   const url = new URL(request.url)
   const secure = isSecureRequest(request)
   const clearState = clearCookie(STATE_COOKIE, secure)
@@ -67,7 +67,7 @@ export const finishGitHubLogin = Effect.fn("auth.finishGitHubLogin")(function*(r
 
   const { allowedUsers } = yield* AppConfig
   const github = yield* GitHubOAuth
-  return yield* github.complete({ code, redirectUri: callbackUrl(request) }).pipe(
+  return yield* github.complete({ code, redirectUri: callbackUrl(request), keep: keep && ((token, profile) => keep(token, userId(profile.login))) }).pipe(
     Effect.flatMap((profile) => {
       if (!allowedUsers.includes(profile.login.toLowerCase())) {
         return Effect.succeed(loginError(`@${profile.login} is not on this Dex's allowlist`, [clearState]))
