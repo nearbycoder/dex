@@ -41,6 +41,9 @@ import Testing
         // Command Code came later still: missing means disconnected.
         #expect(state.commandcode == ClineStatus())
         #expect(state.connectedProviders["commandcode"] == false)
+        // And OpenRouter after it.
+        #expect(state.openrouter == ClineStatus())
+        #expect(state.connectedProviders["openrouter"] == false)
         #expect(state.anyProviderConnected)
         #expect(state.vms.isEmpty)
         #expect(state.settings.vmSize == "small")
@@ -54,8 +57,17 @@ import Testing
         let json = #"{"cline":{"connected":false,"source":null,"keyHint":null,"verifiedAt":null},"commandcode":{"connected":true,"source":"user","keyHint":"cc_a…9f3c","verifiedAt":5}}"#
         let state = try JSONDecoder.dex.decode(DexState.self, from: Data(json.utf8))
         #expect(state.commandcode == ClineStatus(connected: true, source: "user", keyHint: "cc_a…9f3c", verifiedAt: 5))
-        #expect(state.connectedProviders == ["clinepass": false, "opencode-go": false, "chatgpt": false, "commandcode": true])
+        #expect(state.connectedProviders == ["clinepass": false, "opencode-go": false, "chatgpt": false, "commandcode": true, "openrouter": false])
         #expect(state.anyProviderConnected)
+        #expect(try JSONDecoder.dex.decode(DexState.self, from: JSONEncoder.dex.encode(state)) == state)
+    }
+
+    @Test func decodesOpenRouterStatus() throws {
+        let json = #"{"cline":{"connected":false,"source":null,"keyHint":null,"verifiedAt":null},"openrouter":{"connected":true,"source":"user","keyHint":"sk-or…4321","verifiedAt":5}}"#
+        let state = try JSONDecoder.dex.decode(DexState.self, from: Data(json.utf8))
+        #expect(state.openrouter == ClineStatus(connected: true, source: "user", keyHint: "sk-or…4321", verifiedAt: 5))
+        #expect(state.connectedProviders["openrouter"] == true)
+        #expect(state.anyProviderConnected, "OpenRouter alone is enough to think")
         #expect(try JSONDecoder.dex.decode(DexState.self, from: JSONEncoder.dex.encode(state)) == state)
     }
 
@@ -195,7 +207,7 @@ import Testing
 
     @Test func commandCodeModels() {
         let catalog = ModelCatalog(version: "v", updatedAt: 1, models: MockData.catalog.models + MockData.commandCodeModels)
-        #expect(ModelCatalog.providers.map(\.id) == ["clinepass", "opencode-go", "chatgpt", "commandcode"])
+        #expect(ModelCatalog.providers.map(\.id) == ["clinepass", "opencode-go", "chatgpt", "commandcode", "openrouter"])
         #expect(ModelCatalog.providerName("commandcode") == "Command Code")
         #expect(ModelCatalog.providers.first { $0.id == "commandcode" }?.short == "Command")
         #expect(ModelCatalog.makers["commandcode"] == "Command Code")
@@ -207,6 +219,25 @@ import Testing
         #expect(catalog.models(of: "commandcode").count == MockData.commandCodeModels.count)
         #expect(catalog.usableModel("cline-pass/glm-5.3", connected: ["clinepass": false, "commandcode": true]) == "commandcode/deepseek/deepseek-v4.1-flash")
         #expect(catalog.usableModel("commandcode/anthropic/claude-haiku-5.5", connected: ["commandcode": true]) == "commandcode/anthropic/claude-haiku-5.5")
+    }
+
+    @Test func openRouterModels() {
+        let catalog = MockData.catalog
+        #expect(ModelCatalog.providerName("openrouter") == "OpenRouter")
+        #expect(ModelCatalog.providers.first { $0.id == "openrouter" }?.short == "OpenRouter")
+        let crouton = catalog.model("openrouter/stealth/crouton-alpha")
+        #expect(crouton?.provider == "openrouter" && crouton?.maker == "other" && crouton?.isFree == true)
+        #expect(catalog.models(of: "openrouter").allSatisfy { $0.isFree }, "Dex lists only OpenRouter's free models")
+        // An id no longer listed still goes by its prefix, and its name by its last part.
+        #expect(catalog.provider(of: "openrouter/stealth/retired") == "openrouter")
+        #expect(catalog.name(of: "openrouter/stealth/retired") == "retired")
+        #expect(catalog.usableModel("cline-pass/glm-5.3", connected: ["clinepass": false, "openrouter": true]) == "openrouter/stealth/crouton-alpha")
+        #expect(catalog.usableModel("openrouter/google/gemma-4-31b-it:free", connected: ["openrouter": true]) == "openrouter/google/gemma-4-31b-it:free")
+        // A build that doesn't know a subscription keeps its models out of the subscriptions' tabs.
+        let future = ModelCatalog(version: "v", updatedAt: 1, models: catalog.models + [DexModel(id: "nextsub/m", provider: "nextsub", name: "M", maker: "other")])
+        #expect(future.provider(of: "nextsub/m") == "nextsub")
+        #expect(ModelCatalog.providers.allSatisfy { !future.models(of: $0.id).contains { $0.id == "nextsub/m" } })
+        #expect(ModelCatalog.providerName("nextsub") == "nextsub")
     }
 
     @Test func releaseDates() throws {

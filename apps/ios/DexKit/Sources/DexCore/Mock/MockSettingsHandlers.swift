@@ -106,6 +106,19 @@ extension MockAgent {
             self.publish()
             return .null
         }
+        register("connectOpenRouter") { [unowned self] args, _ in
+            let key = args.string(0) ?? ""
+            if let problem = Self.keyProblem(key, service: "OpenRouter") { return ["ok": false, "error": .string(problem)] }
+            self.state.openrouter = ClineStatus(connected: true, source: "user", keyHint: Self.hint(key), verifiedAt: .nowMs)
+            self.publish()
+            // As for an account that never bought credits.
+            return ["ok": true, "note": "Without credits on the account, OpenRouter allows a few dozen free-model requests a day."]
+        }
+        register("disconnectOpenRouter") { [unowned self] _, _ in
+            self.state.openrouter = ClineStatus(connected: false)
+            self.publish()
+            return .null
+        }
         register("startChatGPTSignIn") { _, _ in
             ["url": "https://auth.openai.com/api/accounts/authorize?client_id=dynamic_agent_client&state=mock", "redirectUri": "http://127.0.0.1:1455/auth/callback"]
         }

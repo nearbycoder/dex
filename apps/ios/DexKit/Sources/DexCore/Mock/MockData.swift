@@ -24,6 +24,7 @@ public enum MockData {
         state.cline = ClineStatus(connected: true, source: "user", keyHint: "…a1b2", verifiedAt: now - day)
         state.opencode = ClineStatus(connected: false)
         state.commandcode = ClineStatus(connected: false)
+        state.openrouter = ClineStatus(connected: false)
         state.boat = BoatStatus(connected: true, source: "user", keyHint: "…9f3c")
         state.vmConfigured = true
         state.github = GitHubStatus(connected: true, login: "octocat", via: "oauth", oauthAvailable: true)
@@ -97,7 +98,15 @@ public enum MockData {
         DexModel(id: "chatgpt/gpt-6.1-sol", apiId: "gpt-6.1-sol", provider: "chatgpt", name: "GPT-6.1 Sol", maker: "openai", input: ["text", "image"], contextWindow: 272_000,
                  maxTokens: 128_000, cost: .init(input: 2, output: 10), thinkingLevelMap: ["off": nil, "minimal": nil, "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": "max"], releasedAt: released(64)),
         DexModel(id: "chatgpt/gpt-6-luna", apiId: "gpt-6-luna", provider: "chatgpt", name: "GPT-6 Luna", maker: "openai", input: ["text", "image"], contextWindow: 272_000,
-                 maxTokens: 128_000, cost: .init(input: 0.1, output: 0.5), thinkingLevelMap: ["off": "none", "minimal": nil, "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": "max"])
+                 maxTokens: 128_000, cost: .init(input: 0.1, output: 0.5), thinkingLevelMap: ["off": "none", "minimal": nil, "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": "max"]),
+        // OpenRouter's free models that can use tools, listed whether or not a key is connected, newest first. Its ids
+        // are "openrouter/" and OpenRouter's own; a stealth model or a maker Dex has no logo for goes under Other.
+        DexModel(id: "openrouter/stealth/crouton-alpha", apiId: "stealth/crouton-alpha", provider: "openrouter", name: "Crouton Alpha", maker: "other", contextWindow: 262_144,
+                 thinkingLevelMap: ["off": nil, "minimal": nil, "low": "low", "medium": "medium", "high": "high", "xhigh": nil], releasedAt: released(1)),
+        DexModel(id: "openrouter/nvidia/nemotron-3.5-super:free", apiId: "nvidia/nemotron-3.5-super:free", provider: "openrouter", name: "Nemotron 3.5 Super", maker: "other",
+                 contextWindow: 262_144, releasedAt: released(16)),
+        DexModel(id: "openrouter/google/gemma-4-31b-it:free", apiId: "google/gemma-4-31b-it:free", provider: "openrouter", name: "Gemma 4 31B", maker: "google",
+                 input: ["text", "image"], contextWindow: 131_072, maxTokens: 8_192, releasedAt: released(52))
     ])
 
     /// What Command Code's plan covers. Like the real agent, the mock lists them only while a key is connected

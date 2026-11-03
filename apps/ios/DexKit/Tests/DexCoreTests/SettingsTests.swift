@@ -300,6 +300,18 @@ import Testing
         #expect(agent.state.commandcode.connected == false)
         #expect(try await call(agent, "modelCatalog").decode(ModelCatalog.self).models(of: "commandcode").isEmpty)
         #expect(agent.state.models?.version != listed.version)
+        // OpenRouter's free models are listed either way; connecting only checks and stores the key.
+        let before = try await call(agent, "modelCatalog").decode(ModelCatalog.self)
+        #expect(before.models(of: "openrouter").contains { $0.id == "openrouter/stealth/crouton-alpha" })
+        #expect(try await call(agent, "connectOpenRouter", ["bad"])["ok"]?.bool == false)
+        #expect(agent.state.openrouter.connected == false)
+        let openRouter = try await call(agent, "connectOpenRouter", ["sk-or-v1-good4321"])
+        #expect(openRouter["ok"]?.bool == true && openRouter["note"]?.string != nil)
+        #expect(agent.state.openrouter == ClineStatus(connected: true, source: "user", keyHint: "…4321", verifiedAt: agent.state.openrouter.verifiedAt))
+        #expect(agent.state.connectedProviders["openrouter"] == true)
+        _ = try await call(agent, "disconnectOpenRouter")
+        #expect(agent.state.openrouter.connected == false)
+        #expect(try await call(agent, "modelCatalog").decode(ModelCatalog.self).models(of: "openrouter") == before.models(of: "openrouter"))
         // A running VM keeps the boat.dev key.
         #expect(try await call(agent, "disconnectBoat")["ok"]?.bool == false)
 
