@@ -253,6 +253,35 @@ final class ChatUITests: ChatTestCase {
         XCTAssertTrue(wait(thinking, "label CONTAINS 'High'"))
     }
 
+    func testNewestModelsFirst() {
+        openChat("s-welcome")
+        app.buttons["composer.model"].tap()
+        XCTAssertTrue(element("model.sheet").waitForExistence(timeout: 5))
+        let crouton = app.buttons["model.cline-pass/crouton-alpha"]
+        XCTAssertTrue(crouton.waitForExistence(timeout: 5))
+        XCTAssertTrue(crouton.label.contains("New"), "a model out within two weeks is marked: \(crouton.label)")
+        XCTAssertFalse(element("model.within").exists, "the release filter is only for the newest-first list")
+
+        app.buttons["model.newest"].tap()
+        XCTAssertTrue(app.staticTexts["This week"].waitForExistence(timeout: 5))
+        XCTAssertTrue(crouton.label.contains("Cline"), "rows say which subscription: \(crouton.label)")
+        XCTAssertTrue(crouton.frame.minY < app.buttons["model.cline-pass/kimi-k3"].frame.minY, "newest first")
+        snapshot("model-sheet-newest")
+
+        // Out within 7 days: Crouton Alpha (yesterday), Kimi K3, LongCat; not GLM-5.3 (six weeks ago).
+        element("model.within.7").tap()
+        XCTAssertTrue(wait(app.buttons["model.cline-pass/glm-5.3"], "exists == false"))
+        XCTAssertTrue(crouton.exists)
+        XCTAssertTrue(app.buttons["model.cline-pass/kimi-k3"].exists)
+        let search = modelSheet.searchFields.firstMatch
+        search.tap()
+        search.typeText("zzz")
+        XCTAssertTrue(text(containing: "No model matches").waitForExistence(timeout: 5))
+        search.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 3) + "new vision")
+        XCTAssertTrue(app.buttons["model.cline-pass/kimi-k3"].waitForExistence(timeout: 5), "search matches the New badge")
+        XCTAssertFalse(crouton.exists)
+    }
+
     func testRefreshTheModelList() {
         openChat("s-welcome")
         app.buttons["composer.model"].tap()
