@@ -7,7 +7,11 @@ import XCTest
 final class PerformanceUITests: DexUITestCase {
     override func setUpWithError() throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["DEX_PERF"] == "1", "Set TEST_RUNNER_DEX_PERF=1 to run the performance tests")
-        app = XCUIApplication()
+    }
+
+    /// (After the base class's, which sets the usual arguments.)
+    override func setUp() {
+        super.setUp()
         // Not -DexFast: replies stream at about 28 chunks a second, like a model.
         app.launchArguments = ["-DexMock", "-DexReset", "-DexLongChat"]
         XCUIDevice.shared.orientation = .portrait
