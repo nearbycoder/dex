@@ -944,50 +944,56 @@ export function UsageSkeleton() {
   return (
     <div role="status" className="space-y-4">
       <span className="sr-only">Loading usage…</span>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {Array.from({ length: 4 }, (_, index) => (
-          <div key={index} className="rounded-xl border border-zinc-800 bg-zinc-900/40 px-4 py-3 sm:p-4">
-            <div className="flex h-7 items-center justify-between gap-3 sm:block sm:h-auto">
-              <Bone className="h-3 w-28" />
-              <Bone className="h-5 w-20 sm:mt-3 sm:h-7" />
-            </div>
-            <div className="mt-0.5 flex h-5 items-center sm:mt-1">
-              <Bone className="h-3" style={{ width: widthAt(index, [75, 55, 35, 60]) }} />
-            </div>
-          </div>
-        ))}
+      {/* The bill. */}
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+        <div className="flex h-4 items-center">
+          <Bone className="h-3 w-36" />
+        </div>
+        <div className="mt-1 flex h-9 items-center">
+          <Bone className="h-7 w-28" />
+        </div>
+        <Bone className="mt-4 h-2.5 w-full rounded-full" />
+        <div className="mt-3 flex h-4 flex-wrap items-center gap-4">
+          {[24, 28, 20, 22].map((width, index) => (
+            <Bone key={index} className="h-3" style={{ width: `${width * 4}px` }} />
+          ))}
+        </div>
       </div>
+      {/* Services. */}
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40">
+        <div className="flex h-[45px] items-center border-b border-zinc-800 px-4">
+          <Bone className="h-4 w-16" />
+        </div>
+        <div className="divide-y divide-zinc-800/70">
+          {Array.from({ length: 5 }, (_, index) => (
+            <div key={index} className="flex h-[61px] items-center gap-3 px-4">
+              <Bone className="size-2.5" />
+              <div className="min-w-0 flex-1 space-y-2">
+                <Bone className="h-3.5 w-24" />
+                <Bone className="h-3" style={{ width: widthAt(index, [45, 35, 50, 30]) }} />
+              </div>
+              <Bone className="h-3.5 w-16" />
+            </div>
+          ))}
+        </div>
+      </div>
+      {/* Daily usage. */}
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/40">
         <div className="flex h-[45px] items-center gap-2 border-b border-zinc-800 px-4">
           <Bone className="h-4 w-28" />
           <Bone className="ml-auto h-4 w-14" />
         </div>
         <div className="p-4">
-          <div className="mb-3 flex h-4 items-center gap-4 sm:hidden">
-            <Bone className="h-3 w-16" />
-            <Bone className="h-3 w-14" />
-            <Bone className="h-3 w-16" />
+          <div className="mb-3 flex h-[26px] items-center gap-1.5">
+            <Bone className="h-[26px] w-24 rounded-full" />
+            <Bone className="h-[26px] w-20 rounded-full" />
+            <Bone className="h-[26px] w-24 rounded-full" />
           </div>
           <div className="flex h-[200px] items-end gap-[2%] pl-11">
             {[8, 14, 6, 22, 10, 18, 7, 12, 30, 9, 16, 60].map((height, index) => (
               <Bone key={index} className="flex-1 rounded-b-none" style={{ height: `${height}%` }} />
             ))}
           </div>
-        </div>
-      </div>
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40">
-        <div className="flex h-[45px] items-center gap-2 border-b border-zinc-800 px-4">
-          <Bone className="h-4 w-36" />
-          <Bone className="ml-auto h-3 w-16" />
-        </div>
-        <div className="divide-y divide-zinc-800/60 p-4">
-          {Array.from({ length: 6 }, (_, index) => (
-            <div key={index} className="flex h-[37px] items-center gap-3">
-              <Bone className="h-3.5" style={{ width: widthAt(index, [34, 28, 40, 30]) }} />
-              <Bone className="ml-auto h-3 w-10" />
-              <Bone className="h-3 w-12" />
-            </div>
-          ))}
         </div>
       </div>
     </div>
@@ -1001,6 +1007,14 @@ function UsagePageSkeleton() {
         <Bone className="h-4 w-14" />
         <Bone className="ml-auto h-8 w-56 rounded-lg" />
       </HeaderBones>
+      {/* Tabs. */}
+      <div className="shrink-0 border-b border-zinc-900">
+        <div className="mx-auto flex h-[45px] max-w-5xl items-center gap-6 px-4.5">
+          {[16, 14, 18, 20].map((width, index) => (
+            <Bone key={index} className="h-3.5" style={{ width: `${width * 4}px` }} />
+          ))}
+        </div>
+      </div>
       <div className="min-h-0 flex-1 overflow-hidden">
         <div className="mx-auto max-w-5xl p-4">
           <UsageSkeleton />

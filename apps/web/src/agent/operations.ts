@@ -748,7 +748,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
   define({
     name: "app_usage_report",
     description:
-      "What Dex costs: ClinePass, OpenCode Go, and ChatGPT tokens per model and chat (with OpenCode Go's 5-hour, weekly, and monthly allowance used), boat.dev VM time, and Cloudflare usage, with daily totals.",
+      "What Dex costs: ClinePass, OpenCode Go, ChatGPT, and Command Code tokens per model and chat (with OpenCode Go's 5-hour, weekly, and monthly allowance used, and Command Code's spend against its plan's windows), boat.dev VM time, and Cloudflare usage, with daily totals.",
     risk: "read",
     parameters: Type.Object({ range: Type.Optional(Type.Union(USAGE_RANGES.map((range) => Type.Literal(range.id)))) }),
     covers: ["usageReport"],

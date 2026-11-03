@@ -2453,7 +2453,7 @@ export class DexAgent extends Agent<Env, DexState> {
     return entry
   }
 
-  /** Spending across ClinePass, OpenCode Go, ChatGPT, boat.dev, and Cloudflare for a period. */
+  /** Spending across ClinePass, OpenCode Go, ChatGPT, Command Code, boat.dev, and Cloudflare for a period. */
   @callable()
   async usageReport(range: UsageRange): Promise<UsageReport> {
     const DAY = 86_400_000
@@ -2474,6 +2474,13 @@ export class DexAgent extends Agent<Env, DexState> {
     const opencodeLimits = await this.openCodeLimits()
     const chatgptTokens = this.ledger.modelUsage("chatgpt", since, until, titles)
     const chatgptDaily = this.ledger.modelDaily("chatgpt", since, until)
+    const commandcodeTokens = this.ledger.modelUsage("commandcode", since, until, titles)
+    const commandcodeDaily = this.ledger.modelDaily("commandcode", since, until)
+    const commandcodeSpent = {
+      fiveHours: this.ledger.modelSpend("commandcode", until - 5 * 3_600_000, until),
+      week: this.ledger.modelSpend("commandcode", until - 7 * DAY, until),
+      month: this.ledger.modelSpend("commandcode", until - 30 * DAY, until)
+    }
     const { usage: boat, daily: boatDaily } = this.ledger.boatUsage(since, until)
 
     // Cloudflare keeps these analytics for about a month.
@@ -2503,6 +2510,7 @@ export class DexAgent extends Agent<Env, DexState> {
       cline,
       opencode: { ...opencodeTokens, connected: this.state.opencode.connected, limits: opencodeLimits.limits, limitsError: opencodeLimits.error },
       chatgpt: { ...chatgptTokens, connected: this.state.chatgpt.connected },
+      commandcode: { ...commandcodeTokens, connected: this.state.commandcode?.connected ?? false, spent: commandcodeSpent },
       boat,
       cloudflare: {
         configured,
@@ -2518,6 +2526,7 @@ export class DexAgent extends Agent<Env, DexState> {
           cline: clineDaily.get(date) ?? 0,
           opencode: opencodeDaily.get(date) ?? 0,
           chatgpt: chatgptDaily.get(date) ?? 0,
+          commandcode: commandcodeDaily.get(date) ?? 0,
           boat: boatDaily.get(date) ?? 0,
           cloudflare: day ? dayCost(day) : 0
         }

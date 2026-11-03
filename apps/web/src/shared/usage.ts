@@ -1,4 +1,4 @@
-/** Spending and usage across ClinePass, OpenCode Go, ChatGPT, boat.dev, and Cloudflare, as the Usage page shows it. */
+/** Spending and usage across ClinePass, OpenCode Go, ChatGPT, Command Code, boat.dev, and Cloudflare, as the Usage page shows it. */
 
 export type UsageRange = "month" | "30d" | "all"
 
@@ -13,8 +13,16 @@ export const PLAN_FEES = {
   clinePass: 9.99,
   /** OpenCode Go; Go Plus is $40. */
   openCodeGo: 10,
+  /** Command Code's Goat plan (plus a processing fee). */
+  commandCode: 10,
   workersPaid: 5
 } as const
+
+/**
+ * Command Code's Goat allowance, in dollars of usage at each model's API rates: any 5 hours may use $20, any 7 days $50,
+ * and the month $100 (https://commandcode.ai/docs/plans/goat). Command Code has no API for the live meters.
+ */
+export const COMMANDCODE_LIMITS = { fiveHours: 20, week: 50, month: 100 } as const
 
 /** boat.dev compute, USD per hour while a VM runs (billed per second). */
 export const BOAT_HOURLY: Readonly<Record<string, number>> = {
@@ -42,6 +50,8 @@ export interface DailySpend {
   readonly opencode: number
   /** At API list prices; the ChatGPT plan is a flat fee. Missing from an older agent's report. */
   readonly chatgpt?: number
+  /** At Command Code's rates, which count against the plan's allowance. Missing from an older agent's report. */
+  readonly commandcode?: number
   readonly boat: number
   readonly cloudflare: number
 }
@@ -78,6 +88,16 @@ export interface OpenCodeUsage extends ClineUsage {
   /** Live from OpenCode; null when it couldn't be read (see `limitsError`) or no key is connected. */
   readonly limits: OpenCodeLimits | null
   readonly limitsError: string | null
+}
+
+/**
+ * Command Code tokens, at the rates its plan counts against the allowance. `spent` is what Dex used in the last 5
+ * hours, 7 days, and 30 days, to set against COMMANDCODE_LIMITS; Command Code's own windows open on a first request and
+ * also count its CLI and other clients, so these are estimates.
+ */
+export interface CommandCodeUsage extends ClineUsage {
+  readonly connected: boolean
+  readonly spent: { readonly fiveHours: number; readonly week: number; readonly month: number }
 }
 
 export interface BoatUsage {
@@ -125,6 +145,8 @@ export interface UsageReport {
   readonly opencode: OpenCodeUsage
   /** Tokens on the ChatGPT plan, at API list prices. Missing from an older agent's report. */
   readonly chatgpt?: ClineUsage & { readonly connected: boolean }
+  /** Missing from an older agent's report. */
+  readonly commandcode?: CommandCodeUsage
   readonly boat: BoatUsage
   readonly cloudflare: CloudflareUsage
   readonly daily: ReadonlyArray<DailySpend>

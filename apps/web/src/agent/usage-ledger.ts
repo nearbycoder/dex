@@ -148,6 +148,14 @@ export class UsageLedger {
     return daily
   }
 
+  /** One subscription's token cost over a period. */
+  modelSpend(provider: ModelProvider, since: number, until: number): number {
+    return this.sql.exec<{ cost: number | null }>(
+      `SELECT sum(cost) AS cost FROM dex_usage_llm WHERE at >= ? AND at <= ? AND coalesce(provider, 'clinepass') = ?`,
+      since, until, provider
+    ).one().cost ?? 0
+  }
+
   earliest(): number | null {
     const llm = this.sql.exec<{ at: number | null }>(`SELECT min(at) AS at FROM dex_usage_llm`).one().at
     const vm = this.sql.exec<{ at: number | null }>(`SELECT min(started_at) AS at FROM dex_vm_runs`).one().at
