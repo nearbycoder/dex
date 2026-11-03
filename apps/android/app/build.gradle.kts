@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -10,6 +12,12 @@ plugins {
 // check about every 15 minutes instead.
 if (file("google-services.json").exists()) apply(plugin = libs.plugins.google.services.get().pluginId)
 
+// Release signing, per deployment and kept out of git: keystore.properties (storeFile, storePassword, keyAlias,
+// keyPassword) next to settings.gradle.kts. Without it, release builds come out unsigned.
+val releaseKeys = rootProject.file("keystore.properties").takeIf { it.exists() }?.let { file ->
+    Properties().apply { file.inputStream().use { load(it) } }
+}
+
 android {
     namespace = "dev.trydex.android"
     compileSdk {
@@ -20,15 +28,28 @@ android {
         applicationId = "dev.trydex.android"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
+        // Pass -PversionCode=… for a build that installs over an earlier one (scripts/install-phone.sh does).
+        versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 1
         versionName = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // The Dex the sign-in screen offers first; any self-hosted Dex can be entered instead.
         buildConfigField("String", "DEFAULT_SERVER", "\"https://trydex.dev\"")
     }
 
+    signingConfigs {
+        releaseKeys?.let { keys ->
+            create("release") {
+                storeFile = file(keys.getProperty("storeFile"))
+                storePassword = keys.getProperty("storePassword")
+                keyAlias = keys.getProperty("keyAlias")
+                keyPassword = keys.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

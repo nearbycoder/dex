@@ -12,6 +12,8 @@ echo "sdk.dir=$HOME/Library/Android/sdk" > local.properties   # once
 ./gradlew :app:installDebug                                    # build and install on a device or emulator
 ```
 
+**On your phone:** `scripts/install-phone.sh` builds a minified release and installs it over adb, keeping the app's data. It signs with the key named in the gitignored `keystore.properties` (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`); use the key the phone's copy was installed with, or Android refuses the update. For Wireless debugging, pair once with `PAIR=<ip:port> CODE=<code> scripts/install-phone.sh`, then pass the address the Wireless debugging screen shows.
+
 Sign in with your Dex's address (trydex.dev, or your own deployment). The browser opens your Dex's sign-in page, asks you to confirm it's for this app, and returns to the app with `dex://auth/callback`.
 
 **Sign in with ChatGPT** (Settings → ChatGPT): OpenAI sends the browser back only to `http://127.0.0.1:1455/auth/callback`, which Dex's server can't receive. While the sign-in page is open in a Custom Tab, the app listens on that port (`data/LoopbackCallback.kt`), catches the address, hands the browser on to `dex://chatgpt/signed-in` to come back, and finishes the sign-in with the agent. If the port is taken, the page opens in the full browser and you paste the address it lands on, as on the web.

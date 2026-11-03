@@ -14,3 +14,6 @@ app/src/test/screenshots/
 
 # Per deployment: your Firebase project's config (push). The build skips Firebase without it.
 /app/google-services.json
+
+# Per deployment: release signing (see app/build.gradle.kts).
+/keystore.properties
