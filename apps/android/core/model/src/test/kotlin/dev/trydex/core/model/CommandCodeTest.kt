@@ -28,7 +28,7 @@ class CommandCodeTest {
         assertThat(state.anyProviderConnected).isTrue()
         assertThat(ModelProvider.CommandCode.displayName).isEqualTo("Command Code")
         assertThat(ModelProvider.CommandCode.short).isEqualTo("Command")
-        assertThat(ModelProvider.entries.last()).isEqualTo(ModelProvider.CommandCode)
+        assertThat(ModelProvider.entries.indexOf(ModelProvider.CommandCode)).isEqualTo(3)
     }
 
     @Test fun slashedIdsGoByTheirPrefix() {

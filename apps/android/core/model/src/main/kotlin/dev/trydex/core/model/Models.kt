@@ -12,7 +12,7 @@ import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToLong
 
-/** The models Dex runs, from ClinePass, OpenCode Go, ChatGPT, and Command Code (apps/web/src/shared/models.ts). */
+/** The models Dex runs, from ClinePass, OpenCode Go, ChatGPT, Command Code, and OpenRouter (apps/web/src/shared/models.ts). */
 @Serializable
 enum class ModelProvider(val id: String, val displayName: String, val short: String) {
     @SerialName("clinepass") ClinePass("clinepass", "ClinePass", "Cline"),
@@ -20,7 +20,10 @@ enum class ModelProvider(val id: String, val displayName: String, val short: Str
     @SerialName("chatgpt") ChatGPT("chatgpt", "ChatGPT", "ChatGPT"),
 
     /** Only from the live catalog (no built-ins), and only while a key is connected. Its ids are `commandcode/<apiId>`, and an apiId can hold a slash. */
-    @SerialName("commandcode") CommandCode("commandcode", "Command Code", "Command");
+    @SerialName("commandcode") CommandCode("commandcode", "Command Code", "Command"),
+
+    /** Its free models only, from the live catalog (no built-ins), listed whether or not a key is connected. Its ids are `openrouter/<apiId>`, and an apiId holds a slash. */
+    @SerialName("openrouter") OpenRouter("openrouter", "OpenRouter", "OpenRouter");
 
     companion object {
         fun fromId(id: String): ModelProvider? = entries.firstOrNull { it.id == id }
@@ -131,6 +134,7 @@ class ModelRegistry(initial: List<DexModel> = BuiltInModels.list) {
             id.startsWith("opencode-go/") -> ModelProvider.OpenCodeGo
             id.startsWith("chatgpt/") -> ModelProvider.ChatGPT
             id.startsWith("commandcode/") -> ModelProvider.CommandCode
+            id.startsWith("openrouter/") -> ModelProvider.OpenRouter
             else -> ModelProvider.ClinePass
         }
 
