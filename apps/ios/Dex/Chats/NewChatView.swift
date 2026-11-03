@@ -46,7 +46,7 @@ struct NewChatView: View {
                     Button {
                         router.openSettings(.models)
                     } label: {
-                        Label("Connect ClinePass, OpenCode Go, ChatGPT, or Command Code in Settings so Dex can think.", systemImage: "key.fill")
+                        Label("Connect ClinePass, OpenCode Go, ChatGPT, Command Code, or OpenRouter in Settings so Dex can think.", systemImage: "key.fill")
                             .font(.subheadline)
                             .multilineTextAlignment(.leading)
                             .frame(maxWidth: .infinity, alignment: .leading)
