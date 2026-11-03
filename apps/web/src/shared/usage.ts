@@ -52,6 +52,8 @@ export interface DailySpend {
   readonly chatgpt?: number
   /** At Command Code's rates, which count against the plan's allowance. Missing from an older agent's report. */
   readonly commandcode?: number
+  /** OpenRouter's free models cost nothing, so this is 0 unless a paid one ran. Missing from an older agent's report. */
+  readonly openrouter?: number
   readonly boat: number
   readonly cloudflare: number
   /** Model tokens and responses across every subscription. Missing from an older agent's report. */
@@ -103,6 +105,25 @@ export interface CommandCodeUsage extends ClineUsage {
   readonly spent: { readonly fiveHours: number; readonly week: number; readonly month: number }
 }
 
+/** OpenRouter's own numbers for the connected key (GET /key and /credits), across every app that uses the key. */
+export interface OpenRouterAccount {
+  /** Free-model requests today (UTC) against the account's daily allowance: 50, or 1,000 once it has bought $10 of credits. */
+  readonly freeRequests: { readonly used: number; readonly limit: number } | null
+  /** USD this key spent today, this week, and this month (UTC), and in all. */
+  readonly spent: { readonly day: number; readonly week: number; readonly month: number; readonly total: number }
+  /** The key's own spending cap and what's left of it; null when it has none. */
+  readonly keyLimit: { readonly limit: number; readonly remaining: number } | null
+  /** The account's credits: bought, and used. Null when the key can't read them. */
+  readonly credits: { readonly total: number; readonly used: number } | null
+}
+
+/** OpenRouter tokens (its free models, at $0), with the account's live numbers when they could be read. */
+export interface OpenRouterUsage extends ClineUsage {
+  readonly connected: boolean
+  readonly account: OpenRouterAccount | null
+  readonly accountError: string | null
+}
+
 export interface BoatUsage {
   readonly hours: number
   readonly cost: number
@@ -150,6 +171,8 @@ export interface UsageReport {
   readonly chatgpt?: ClineUsage & { readonly connected: boolean }
   /** Missing from an older agent's report. */
   readonly commandcode?: CommandCodeUsage
+  /** Missing from an older agent's report. */
+  readonly openrouter?: OpenRouterUsage
   readonly boat: BoatUsage
   readonly cloudflare: CloudflareUsage
   readonly daily: ReadonlyArray<DailySpend>

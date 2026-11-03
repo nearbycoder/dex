@@ -12,6 +12,7 @@ import {
   type ClineUsage,
   COMMANDCODE_LIMITS,
   type CommandCodeUsage,
+  type OpenRouterUsage,
   type DailySpend,
   type OpenCodeUsage,
   type OpenCodeWindow,
@@ -35,7 +36,7 @@ interface UsageSearch {
   provider?: ModelProvider
 }
 
-const PROVIDER_IDS: ReadonlyArray<ModelProvider> = ["clinepass", "opencode-go", "chatgpt", "commandcode"]
+const PROVIDER_IDS: ReadonlyArray<ModelProvider> = ["clinepass", "opencode-go", "chatgpt", "commandcode", "openrouter"]
 
 export const Route = createFileRoute("/_app/usage")({
   component: UsagePage,
@@ -56,7 +57,8 @@ const SERIES = [
   { key: "cloudflare", label: "Cloudflare", color: "#199e70" },
   { key: "opencode", label: "OpenCode Go", color: "#c98500" },
   { key: "chatgpt", label: "ChatGPT", color: "#d55181" },
-  { key: "commandcode", label: "Command Code", color: "#8b6fe0" }
+  { key: "commandcode", label: "Command Code", color: "#8b6fe0" },
+  { key: "openrouter", label: "OpenRouter", color: "#1fa3b5" }
 ] as const
 type Series = (typeof SERIES)[number]
 type SeriesKey = Series["key"]
@@ -91,7 +93,17 @@ const SUBSCRIPTIONS = [
     key: "chatgpt",
     rates: "at API list prices",
     column: "List price",
-    fee: null
+    fee: null,
+    plan: { price: "ChatGPT plan", value: "ChatGPT", detail: "your ChatGPT plan" }
+  },
+  // Free models only.
+  {
+    id: "openrouter",
+    key: "openrouter",
+    rates: "free models",
+    column: "Cost",
+    fee: null,
+    plan: { price: "Free", value: "Free", detail: "free models only" }
   }
 ] as const satisfies ReadonlyArray<{
   id: ModelProvider
@@ -99,6 +111,8 @@ const SUBSCRIPTIONS = [
   rates: string
   column: string
   fee: number | null
+  /** How a subscription without a monthly fee is described. */
+  plan?: { price: string; value: string; detail: string }
 }>
 type Subscription = (typeof SUBSCRIPTIONS)[number]
 
@@ -111,6 +125,10 @@ const compact = (value: number) =>
     notation: "compact",
     maximumFractionDigits: value < 1000 ? 0 : 1
   }).format(value)
+
+/** How a subscription's price reads: its monthly fee, or what pays for it. */
+const planOf = (subscription: Subscription) =>
+  "plan" in subscription ? subscription.plan : { price: `${usd(subscription.fee)}/mo`, value: `${usd(subscription.fee)}/mo`, detail: "flat fee" }
 
 /** A model's name, or its id without the subscription and maker prefixes if this app's list doesn't have it (yet). */
 const modelName = (id: string) => findModel(id)?.name ?? id.split("/").pop()!
@@ -587,6 +605,80 @@ function CommandCodeAllowance({ usage }: { usage: CommandCodeUsage }) {
   )
 }
 
+/** OpenRouter's live numbers for the connected key: free requests today, the account's credits, and spending. */
+function OpenRouterAccountCard({ usage }: { usage: OpenRouterUsage }) {
+  const color = series("openrouter").color
+  const { account } = usage
+  return (
+    <Card
+      title="Account"
+      info="Read live from OpenRouter for the connected key, so it counts every app that uses the key, not only Dex. Free requests reset at midnight UTC; the daily allowance is 50 until the account has bought $10 of credits, then 1,000."
+      icon={<Swatch color={color} />}
+      aside={
+        <a href="https://openrouter.ai/activity" target="_blank" rel="noreferrer" className="text-zinc-400 hover:text-zinc-200 hover:underline">
+          Activity
+        </a>
+      }
+    >
+      {!account ? (
+        <p className="text-sm text-zinc-500">{usage.accountError ?? "Connect an OpenRouter key in Settings to see its numbers here."}</p>
+      ) : (
+        <div className="space-y-3">
+          {account.freeRequests && (
+            <Meter
+              label="Free requests today"
+              percent={(account.freeRequests.used / account.freeRequests.limit) * 100}
+              color={color}
+              value={
+                <>
+                  <span className="text-zinc-200">{account.freeRequests.used.toLocaleString()}</span> of {account.freeRequests.limit.toLocaleString()}
+                </>
+              }
+            />
+          )}
+          {account.credits && account.credits.total > 0 && (
+            <Meter
+              label="Credits used"
+              percent={(account.credits.used / account.credits.total) * 100}
+              color={color}
+              value={
+                <>
+                  <span className="text-zinc-200">{usd(account.credits.used)}</span> of {usd(account.credits.total)}
+                </>
+              }
+            />
+          )}
+          {account.keyLimit && (
+            <Meter
+              label="This key's limit"
+              percent={((account.keyLimit.limit - account.keyLimit.remaining) / account.keyLimit.limit) * 100}
+              color={color}
+              value={
+                <>
+                  <span className="text-zinc-200">{usd(account.keyLimit.limit - account.keyLimit.remaining)}</span> of {usd(account.keyLimit.limit)}
+                </>
+              }
+            />
+          )}
+          <div className="grid grid-cols-3 gap-px overflow-hidden rounded-lg border border-zinc-800 bg-zinc-800 text-center">
+            {[
+              { label: "Today", value: account.spent.day },
+              { label: "This week", value: account.spent.week },
+              { label: "This month", value: account.spent.month }
+            ].map((item) => (
+              <div key={item.label} className="bg-zinc-950 px-2 py-2.5">
+                <div className="text-sm font-semibold text-zinc-100 tabular-nums">{usd(item.value)}</div>
+                <div className="text-[11px] text-zinc-500">{item.label}</div>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-zinc-500">The key's spending. Free models cost nothing, so this is paid models it ran elsewhere.</p>
+        </div>
+      )}
+    </Card>
+  )
+}
+
 function ModelsTab({ report, visible, provider }: { report: UsageReport; visible: ReadonlyArray<Subscription>; provider: ModelProvider | undefined }) {
   const chosen = visible.find((subscription) => subscription.id === provider)
   const all = visible.flatMap((subscription) => {
@@ -714,16 +806,14 @@ function SubscriptionDetail({ report, subscription }: { report: UsageReport; sub
       <OpenCodeAllowance usage={report.opencode} />
     ) : subscription.id === "commandcode" && report.commandcode ? (
       <CommandCodeAllowance usage={report.commandcode} />
+    ) : subscription.id === "openrouter" && report.openrouter ? (
+      <OpenRouterAccountCard usage={report.openrouter} />
     ) : null
   return (
     <>
       <Stats
         items={[
-          {
-            label: "Plan",
-            value: subscription.fee === null ? "ChatGPT" : `${usd(subscription.fee)}/mo`,
-            detail: subscription.fee === null ? "your ChatGPT plan" : "flat fee"
-          },
+          { label: "Plan", value: planOf(subscription).value, detail: planOf(subscription).detail },
           { label: "Responses", value: compact(usage.responses) },
           {
             label: "Tokens",
@@ -1070,6 +1160,23 @@ function Status({ report, working, unread }: { report: UsageReport; working: num
       )
     })
   }
+  const freeRequests = report.openrouter?.connected ? report.openrouter.account?.freeRequests : undefined
+  if (freeRequests) {
+    groups.push({
+      key: "openrouter",
+      title: "OpenRouter",
+      note: "live",
+      search: { tab: "models", provider: "openrouter" },
+      rows: (
+        <WindowRow
+          label="Free requests today"
+          percent={(freeRequests.used / freeRequests.limit) * 100}
+          note={`${freeRequests.used.toLocaleString()} of ${freeRequests.limit.toLocaleString()}`}
+          color={series("openrouter").color}
+        />
+      )
+    })
+  }
   if (report.cloudflare.configured && !report.cloudflare.error && report.range !== "all") {
     const busiest = [...report.cloudflare.lines].filter((line) => line.allowanceUsed !== null).sort((a, b) => (b.allowanceUsed ?? 0) - (a.allowanceUsed ?? 0))[0]
     if (busiest)
@@ -1084,7 +1191,7 @@ function Status({ report, working, unread }: { report: UsageReport; working: num
   return (
     <Card
       title="Status"
-      info="What's running now, and how much of each plan's included usage is used. OpenCode Go's is read live; Command Code's is estimated from Dex's chats (its CLI and other clients count too)."
+      info="What's running now, and how much of each plan's included usage is used. OpenCode Go's and OpenRouter's are read live; Command Code's is estimated from Dex's chats (its CLI and other clients count too)."
     >
       {/* Right now. */}
       <div className="mb-5 grid grid-cols-3 gap-px overflow-hidden rounded-lg border border-zinc-800 bg-zinc-800 text-center">
@@ -1209,8 +1316,11 @@ function OverviewTab({ report, visible, clineConnected }: { report: UsageReport;
       const usage = tokensOf(report, subscription)!
       return {
         key: subscription.key as SeriesKey,
-        price: subscription.fee === null ? "ChatGPT plan" : `${usd(subscription.fee)}/mo`,
-        summary: `${compact(usage.totalTokens)} tokens · worth ${usd(usage.listCost)}`,
+        price: planOf(subscription).price,
+        summary:
+          subscription.id === "openrouter" && report.openrouter?.account?.freeRequests
+            ? `${compact(usage.totalTokens)} tokens · ${report.openrouter.account.freeRequests.used.toLocaleString()} of ${report.openrouter.account.freeRequests.limit.toLocaleString()} free today`
+            : `${compact(usage.totalTokens)} tokens · worth ${usd(usage.listCost)}`,
         search: { tab: "models", provider: subscription.id } as UsageSearch
       }
     }),
@@ -1417,7 +1527,9 @@ function UsagePage() {
               ? report.opencode.connected
               : subscription.id === "chatgpt"
                 ? report.chatgpt?.connected
-                : report.commandcode?.connected
+                : subscription.id === "openrouter"
+                  ? report.openrouter?.connected
+                  : report.commandcode?.connected
         return linked || usage.totalTokens > 0
       })
     : []
@@ -1484,7 +1596,7 @@ function UsagePage() {
               <p className="text-[11px] leading-relaxed text-zinc-600">
                 Estimates from Dex's own records (model responses, VM run times) and Cloudflare's analytics, priced at public list rates (ClinePass{" "}
                 {usd(PLAN_FEES.clinePass)}/mo, OpenCode Go {usd(PLAN_FEES.openCodeGo)}/mo, Command Code Goat {usd(PLAN_FEES.commandCode)}/mo plus a processing fee,
-                Workers Paid {usd(PLAN_FEES.workersPaid)}/mo, boat.dev small $0.018/h). Your invoices are the source of truth. VM time before usage tracking started is
+                OpenRouter's free models $0, Workers Paid {usd(PLAN_FEES.workersPaid)}/mo, boat.dev small $0.018/h). Your invoices are the source of truth. VM time before usage tracking started is
                 not included.
               </p>
             </>

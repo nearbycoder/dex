@@ -1,6 +1,7 @@
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy"
 import { createProvider } from "@earendil-works/pi-ai/models"
 import { modelsOf } from "~/shared/models"
+import type { OpenRouterAccount } from "~/shared/usage"
 
 /**
  * OpenRouter (https://openrouter.ai/docs): many providers' models over one OpenAI-compatible API. Dex offers only its
@@ -68,4 +69,24 @@ export async function checkOpenRouterKey(key: string): Promise<{ note?: string }
   const body = (await response.json().catch(() => ({}))) as { data?: { is_free_tier?: boolean } }
   // Accounts that never bought credits get a small daily allowance of free-model requests (OpenRouter's limits page).
   return body.data?.is_free_tier ? { note: "Without credits on the account, OpenRouter allows a few dozen free-model requests a day." } : {}
+}
+
+/** The key's live numbers for the Usage page: free requests today, spending, and the account's credits. */
+export async function openRouterAccount(key: string): Promise<OpenRouterAccount> {
+  const get = async (path: string) => {
+    const response = await fetch(`${OPENROUTER_BASE_URL}${path}`, { headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(TIMEOUT_MS) })
+    if (response.status === 401) throw new OpenRouterError("OpenRouter no longer accepts this key.", "invalid_key")
+    if (!response.ok) throw new OpenRouterError(`OpenRouter answered ${response.status}.`, "unexpected")
+    return ((await response.json()) as { data?: Record<string, unknown> }).data ?? {}
+  }
+  // Credits need a key that can read the account; without them the rest still shows.
+  const [info, credits] = await Promise.all([get("/key"), get("/credits").catch(() => undefined)])
+  const number = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : 0)
+  const free = info.free_model_daily_requests as { used?: unknown; limit?: unknown } | undefined
+  return {
+    freeRequests: free && typeof free.limit === "number" ? { used: number(free.used), limit: free.limit } : null,
+    spent: { day: number(info.usage_daily), week: number(info.usage_weekly), month: number(info.usage_monthly), total: number(info.usage) },
+    keyLimit: typeof info.limit === "number" ? { limit: info.limit, remaining: number(info.limit_remaining) } : null,
+    credits: credits && typeof credits.total_credits === "number" ? { total: credits.total_credits, used: number(credits.total_usage) } : null
+  }
 }

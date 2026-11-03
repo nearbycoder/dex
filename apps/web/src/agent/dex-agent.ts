@@ -54,7 +54,7 @@ import { withUiNotes } from "~/shared/ui-notes"
 import { AUDIO_UNLOCK_SCRIPT } from "~/shared/web-audio"
 import { attachmentSummary, type ChatAttachment, splitAttachments } from "~/shared/attachments"
 import { githubFullName, isProjectImage, normalizeRepoUrl, type ProjectDraft, type ProjectImageCandidate, type ProjectProfile, type ProjectRepo, PROJECT_ROOT, repoDirName, repoLabel } from "~/shared/projects"
-import { CLOUDFLARE_RATES, type CloudflareLine, type OpenCodeLimits, type UsageRange, type UsageReport } from "~/shared/usage"
+import { CLOUDFLARE_RATES, type CloudflareLine, type OpenCodeLimits, type OpenRouterAccount, type UsageRange, type UsageReport } from "~/shared/usage"
 import { AGENT_COLORS, AGENT_ICONS, type AgentDraft, type AgentProfile, STARTER_AGENTS } from "~/shared/agents"
 import { type CharacterDraft, characterMemoryPath, type CharacterProfile, MAX_CHARACTER_MEMORY_CHARS, NOTIFY_LEVELS } from "~/shared/characters"
 import { cleanLook, LOOK_PRESETS, randomLook } from "~/shared/sidekick-look"
@@ -72,7 +72,7 @@ import { CLINEPASS_PROVIDER_ID, ClinePassClient, clinePassProvider } from "./cli
 import { type ChatGPTCredential, ChatGPTClient, type ChatGPTPending, chatGPTProvider, CHATGPT_REDIRECT_URI, parseChatGPTCallback, startChatGPTSignIn } from "./chatgpt"
 import { catalogChanges, catalogVersion, fetchModelCatalog } from "./model-catalog"
 import { OpenCodeGoClient, openCodeGoProvider } from "./opencode-go"
-import { checkOpenRouterKey, OpenRouterError, openRouterProvider } from "./openrouter"
+import { checkOpenRouterKey, openRouterAccount, OpenRouterError, openRouterProvider } from "./openrouter"
 import { CommandCodeError, commandCodeProvider, type CommandCodeListed, listCommandCodeModels, planModels } from "./commandcode"
 import { isMcpExtension, type McpCallResult, mcpExtension, mcpExtensionName, type McpToolSpec, toToolResult } from "./mcp-tools"
 import { AccessCenter, parseAccessToken } from "./access"
@@ -1123,19 +1123,25 @@ export class DexAgent extends Agent<Env, DexState> {
 
   // ── OpenRouter connection ─────────────────────────────────────────────────
 
+  /** The user's own OpenRouter key, else the deployment's OPENROUTER_API_KEY for its owner only (like OPENCODE_API_KEY). */
   private async resolveOpenRouterKey(): Promise<{ key: string; source: string } | undefined> {
     const stored = this.secret("openrouter_api_key")
-    if (!stored) return undefined
-    const key = await this.runtime.runPromise(Keys.use((keys) => keys.decrypt(stored)).pipe(Effect.option))
-    return Option.isSome(key) ? { key: key.value, source: "OpenRouter (connected)" } : undefined
+    if (stored) {
+      const key = await this.runtime.runPromise(Keys.use((keys) => keys.decrypt(stored)).pipe(Effect.option))
+      if (Option.isSome(key)) return { key: key.value, source: "OpenRouter (connected)" }
+    }
+    const shared = this.isOwner() ? (this.env as unknown as Record<string, string | undefined>).OPENROUTER_API_KEY : undefined
+    return shared ? { key: shared, source: "OPENROUTER_API_KEY" } : undefined
   }
 
   private refreshOpenRouterStatus() {
-    const connected = Boolean(this.secret("openrouter_api_key"))
-    const verifiedAt = Number(this.secret("openrouter_verified_at") ?? 0) || null
-    this.publish({
-      openrouter: { connected, source: connected ? "user" : null, keyHint: connected ? (this.secret("openrouter_key_hint") ?? null) : null, verifiedAt: connected ? verifiedAt : null }
-    })
+    if (this.secret("openrouter_api_key")) {
+      const verifiedAt = Number(this.secret("openrouter_verified_at") ?? 0) || null
+      this.publish({ openrouter: { connected: true, source: "user", keyHint: this.secret("openrouter_key_hint") ?? null, verifiedAt } })
+      return
+    }
+    const shared = this.isOwner() && Boolean((this.env as unknown as Record<string, string | undefined>).OPENROUTER_API_KEY)
+    this.publish({ openrouter: { connected: shared, source: shared ? "server" : null, keyHint: null, verifiedAt: null } })
   }
 
   @callable()
@@ -2533,6 +2539,22 @@ export class DexAgent extends Agent<Env, DexState> {
     this.ctx.storage.sql.exec(`INSERT OR REPLACE INTO dex_meta (key, value) VALUES ('usage_backfill_v2', '1')`)
   }
 
+  private openRouterCache?: { at: number; key: string; result: { account: OpenRouterAccount | null; accountError: string | null } }
+
+  /** The connected OpenRouter key's live numbers, reused for a minute (the Usage page reloads often). */
+  private async openRouterAccount(): Promise<{ account: OpenRouterAccount | null; accountError: string | null }> {
+    const resolved = await this.resolveOpenRouterKey()
+    if (!resolved) return { account: null, accountError: null }
+    const cached = this.openRouterCache
+    if (cached && cached.key === resolved.key && Date.now() - cached.at < 60_000) return cached.result
+    const result = await openRouterAccount(resolved.key).then(
+      (account) => ({ account, accountError: null }),
+      (error: unknown) => ({ account: null, accountError: error instanceof Error ? error.message : String(error) })
+    )
+    this.openRouterCache = { at: Date.now(), key: resolved.key, result }
+    return result
+  }
+
   private async cloudflareDays(since: string, until: string) {
     const key = `${since}|${until}`
     const cached = this.cloudflareCache.get(key)
@@ -2550,7 +2572,7 @@ export class DexAgent extends Agent<Env, DexState> {
     return entry
   }
 
-  /** Spending across ClinePass, OpenCode Go, ChatGPT, Command Code, boat.dev, and Cloudflare for a period. */
+  /** Spending across ClinePass, OpenCode Go, ChatGPT, Command Code, OpenRouter, boat.dev, and Cloudflare for a period. */
   @callable()
   async usageReport(range: UsageRange): Promise<UsageReport> {
     const DAY = 86_400_000
@@ -2578,6 +2600,9 @@ export class DexAgent extends Agent<Env, DexState> {
       week: this.ledger.modelSpend("commandcode", until - 7 * DAY, until),
       month: this.ledger.modelSpend("commandcode", until - 30 * DAY, until)
     }
+    const openrouterTokens = this.ledger.modelUsage("openrouter", since, until, titles)
+    const openrouterDaily = this.ledger.modelDaily("openrouter", since, until)
+    const openrouterAccount = await this.openRouterAccount()
     const tokensDaily = this.ledger.tokensDaily(since, until)
     const { usage: boat, daily: boatDaily } = this.ledger.boatUsage(since, until)
 
@@ -2609,6 +2634,7 @@ export class DexAgent extends Agent<Env, DexState> {
       opencode: { ...opencodeTokens, connected: this.state.opencode.connected, limits: opencodeLimits.limits, limitsError: opencodeLimits.error },
       chatgpt: { ...chatgptTokens, connected: this.state.chatgpt.connected },
       commandcode: { ...commandcodeTokens, connected: this.state.commandcode?.connected ?? false, spent: commandcodeSpent },
+      openrouter: { ...openrouterTokens, connected: this.state.openrouter?.connected ?? false, ...openrouterAccount },
       boat,
       cloudflare: {
         configured,
@@ -2625,6 +2651,7 @@ export class DexAgent extends Agent<Env, DexState> {
           opencode: opencodeDaily.get(date) ?? 0,
           chatgpt: chatgptDaily.get(date) ?? 0,
           commandcode: commandcodeDaily.get(date) ?? 0,
+          openrouter: openrouterDaily.get(date) ?? 0,
           boat: boatDaily.get(date) ?? 0,
           cloudflare: day ? dayCost(day) : 0,
           tokens: tokensDaily.get(date)?.tokens ?? 0,

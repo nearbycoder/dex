@@ -10,6 +10,8 @@ GITHUB_CLIENT_SECRET=
 CLINE_API_KEY=
 # Optional: OpenCode Go key for the owner's chats (everyone else connects their own in Settings).
 OPENCODE_API_KEY=
+# Optional: OpenRouter key for the owner's chats on its free models (everyone else connects their own in Settings).
+OPENROUTER_API_KEY=
 # Optional: boat.dev key for the owner's VMs (everyone else connects their own in Settings).
 BOAT_API_KEY=
 # Optional: read-only Cloudflare token (Account > Account Analytics > Read) for the Usage page.
