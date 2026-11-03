@@ -33,6 +33,11 @@ import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.RocketLaunch
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -56,6 +61,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -110,6 +116,9 @@ fun NewChatScreen(route: NewChat) {
     var draft by remember(route.nonce) { mutableStateOf<Draft?>(null) }
     var error by remember(route.nonce) { mutableStateOf<String?>(null) }
     var starting by remember(route.nonce) { mutableStateOf(false) }
+    val snackbar = remember { SnackbarHostState() }
+    // Chats started from here while staying on it, for launching several at once.
+    var launched by rememberSaveable(route.nonce) { mutableStateOf(0) }
 
     val current = state
     val agents = current?.agents.orEmpty()
@@ -174,9 +183,19 @@ fun NewChatScreen(route: NewChat) {
                 repository.api.sendMessage(session.id, text, attachments)
                 session
             }.onSuccess { session ->
-                app.navigator.replace(Chat(session.id))
+                if (!LaunchMode.keep) {
+                    app.navigator.replace(Chat(session.id))
+                    return@onSuccess
+                }
+                // Stay to start the next one, with the same agent, project, and model; the chat is a tap away.
+                launched++
+                starting = false
+                val result = snackbar.showSnackbar("Started “${text.lineSequence().first().take(40)}”", actionLabel = "Open", withDismissAction = true, duration = SnackbarDuration.Short)
+                if (result == SnackbarResult.ActionPerformed) app.navigator.open(Chat(session.id))
             }.onFailure {
                 error = it.message ?: "Couldn't start the chat."
+                // What you wrote comes back, to try again.
+                draft = Draft(text, System.nanoTime())
             }
             starting = false
         }
@@ -281,6 +300,22 @@ fun NewChatScreen(route: NewChat) {
             ) {
                 Column(Modifier.widthIn(max = 672.dp).fillMaxWidth()) {
                     error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(bottom = 8.dp, start = 8.dp).testTag("new-chat-error")) }
+                    // Above the composer, so it never covers Send while you start the next one.
+                    SnackbarHost(snackbar)
+                    Row(Modifier.fillMaxWidth().padding(bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            if (launched > 0) "$launched started · they're in Chats" else "",
+                            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f).padding(start = 8.dp),
+                        )
+                        FilterChip(
+                            selected = LaunchMode.keep,
+                            onClick = { haptics.toggle(!LaunchMode.keep); LaunchMode.keep = !LaunchMode.keep },
+                            label = { Text("Keep launching") },
+                            leadingIcon = { Icon(Icons.Rounded.RocketLaunch, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize)) },
+                            modifier = Modifier.testTag("keep-launching").semantics { contentDescription = "Keep launching: stay here after starting a chat, to start another" },
+                        )
+                    }
                     Composer(
                         onSend = ::start,
                         enabled = connectedNow && !starting,
@@ -369,4 +404,9 @@ private fun NewAgentCard() {
             Text("New agent", style = MaterialTheme.typography.titleSmall)
         }
     }
+}
+
+/** Whether New chat stays open after starting a chat, to start another (for the rest of this run of the app). */
+object LaunchMode {
+    var keep by mutableStateOf(false)
 }

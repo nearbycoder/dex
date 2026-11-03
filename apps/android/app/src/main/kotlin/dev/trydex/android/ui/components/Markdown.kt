@@ -421,7 +421,7 @@ fun CodeBlock(code: String, language: String? = null, modifier: Modifier = Modif
                 }
                 SelectionContainer {
                     Text(
-                        Highlighter.highlight(code, language),
+                        remember(code, language) { Highlighter.highlight(code, language) },
                         style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp, lineHeight = 19.sp),
                         softWrap = false,
                         modifier = Modifier.horizontalScroll(rememberScrollState()).padding(start = 14.dp, end = 48.dp, top = if (!showLanguage || language.isNullOrBlank()) 12.dp else 4.dp, bottom = 12.dp),

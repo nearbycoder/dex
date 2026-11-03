@@ -41,7 +41,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.runtime.NavKey
@@ -107,6 +115,7 @@ fun AppShell(graph: AppGraph, links: LinkInbox) {
     }
 
     val running = state?.vms?.count { it.running } ?: 0
+    val unread = state?.unreadCount ?: 0
     val waiting = state?.access?.waiting(System.currentTimeMillis())?.size ?: 0
     val settingsAttention = state != null && (!state!!.anyProviderConnected || waiting > 0)
     val libraryAttention = state?.mcp?.any { it.status.needsAttention } == true
@@ -125,6 +134,7 @@ fun AppShell(graph: AppGraph, links: LinkInbox) {
                         icon = {
                             BadgedBox(badge = {
                                 when {
+                                    item.tab == Tab.Chats && unread > 0 -> Badge(Modifier.semantics { contentDescription = "$unread unread" }) { Text("$unread") }
                                     item.tab == Tab.Machines && running > 0 -> Badge { Text("$running") }
                                     item.tab == Tab.Settings && waiting > 0 -> Badge { Text("$waiting") }
                                     item.tab == Tab.Settings && settingsAttention -> Badge()
@@ -175,7 +185,13 @@ private fun Content(
             )
         },
     )
-    Box(Modifier.fillMaxSize()) {
+    // A hardware keyboard's Ctrl+N starts a new chat from anywhere.
+    Box(Modifier.fillMaxSize().onPreviewKeyEvent { event ->
+        if (event.type == KeyEventType.KeyDown && event.isCtrlPressed && event.key == Key.N) {
+            navigator.open(NewChat(nonce = System.nanoTime()))
+            true
+        } else false
+    }) {
         AnimatedContent(targetState = navigator.tab, label = "tab") { tab ->
             NavDisplay(
                 backStack = navigator.stack(tab),

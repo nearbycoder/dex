@@ -29,6 +29,7 @@ import androidx.compose.material.icons.outlined.Monitor
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.NotificationsOff
 import androidx.compose.material.icons.rounded.DoneAll
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material3.AlertDialog
@@ -54,6 +55,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -79,6 +81,7 @@ import dev.trydex.android.ui.machine.VmPreview
 import dev.trydex.android.ui.nav.AgentEditor
 import dev.trydex.android.ui.nav.ChatMachine
 import dev.trydex.android.ui.nav.GeneralSettings
+import dev.trydex.android.ui.nav.NewChat
 import dev.trydex.android.ui.nav.ProjectEditor
 import dev.trydex.android.ui.theme.DexTheme
 import dev.trydex.android.ui.ComposeRequests
@@ -88,6 +91,7 @@ import dev.trydex.core.model.SidekickNotify
 import dev.trydex.core.model.SessionMeta
 import dev.trydex.core.model.VmInfo
 import dev.trydex.core.model.VmStatus
+import kotlinx.coroutines.flow.debounce
 
 /** A chat: its transcript, live as the agent works, and the composer, queue, and pickers below it. */
 @Composable
@@ -126,8 +130,14 @@ fun ChatScreen(id: String) {
     var menu by remember { mutableStateOf(false) }
     var renaming by rememberSaveable { mutableStateOf(false) }
     val scroll = TopAppBarDefaults.pinnedScrollBehavior()
-    val composer = rememberTextFieldState()
+    // What you'd typed here comes back when you return, from another chat or after a restart.
+    val drafts = app.graph.drafts
+    val composer = rememberTextFieldState(drafts.get(id))
     var draft by remember { mutableStateOf<Draft?>(null) }
+    LaunchedEffect(id) {
+        snapshotFlow { composer.text.toString() }.debounce(400).collect { drafts.set(id, it) }
+    }
+    DisposableEffect(id) { onDispose { drafts.set(id, composer.text.toString()) } }
 
     // On screen: presence tells the agent (it marks the chat read and skips notifying about it), and its notification
     // goes away. Marking it read here too is the backup for an agent that missed the presence.
@@ -173,7 +183,15 @@ fun ChatScreen(id: String) {
         Box(Modifier.fillMaxSize().padding(padding)) {
             Column(Modifier.fillMaxSize()) {
                 Box(Modifier.weight(1f).fillMaxWidth()) {
-                    if (transcript.loaded) {
+                    // Files saved into this chat replace the VM links they came from.
+                    val media = remember(transcript.artifacts, transcript.savingArtifacts, id) {
+                        dev.trydex.android.ui.components.ChatMedia(
+                            bySource = transcript.artifacts.mapNotNull { artifact -> artifact.source?.let { it to artifact } }.toMap(),
+                            saving = transcript.savingArtifacts.toSet(),
+                            save = { url -> repository.api.saveArtifact(id, url) },
+                        )
+                    }
+                    if (transcript.loaded) androidx.compose.runtime.CompositionLocalProvider(dev.trydex.android.ui.components.LocalChatMedia provides media) {
                         MessageList(
                             sessionId = id,
                             transcript = transcript,
@@ -285,7 +303,8 @@ private fun ChatTopBar(
                         AgentAvatar(it.icon, it.color, size = 28.dp, image = it.image, modifier = Modifier.semantics { contentDescription = "${it.name} project" })
                     }
                 }
-                agent?.let {
+                // On a phone, a project's face stands for the chat, leaving the title room.
+                agent?.takeIf { project == null || app.panes > 1 }?.let {
                     IconButton(onClick = { app.navigator.open(AgentEditor(it.id)) }, modifier = Modifier.size(32.dp)) {
                         AgentAvatar(it.icon, it.color, size = 28.dp, modifier = Modifier.semantics { contentDescription = "${it.name} agent" })
                     }
@@ -377,7 +396,16 @@ private fun ChatTopBar(
                     Icon(Icons.Rounded.RestartAlt, contentDescription = "Start a new conversation with ${character.name}", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            if (session != null && character == null) {
+            // On a phone the list isn't beside the chat: a new chat and the other chats are one tap away instead, and
+            // settling is in the menu (and a swipe on the list).
+            val phone = app.panes < 2
+            if (session != null && phone) {
+                IconButton(onClick = { haptics.tap(); app.navigator.open(NewChat(nonce = System.nanoTime())) }, modifier = Modifier.testTag("chat-new-chat")) {
+                    Icon(Icons.Rounded.Edit, contentDescription = "New chat")
+                }
+                ChatSwitcherButton(session.id)
+            }
+            if (session != null && character == null && !phone) {
                 val settled = session.settledAt != null
                 IconToggleButton(checked = settled, onCheckedChange = { haptics.toggle(it); actions.settle(session, it) }, modifier = Modifier.testTag("settle")) {
                     Icon(

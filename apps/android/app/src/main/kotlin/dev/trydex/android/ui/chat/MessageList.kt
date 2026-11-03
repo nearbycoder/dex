@@ -119,6 +119,9 @@ fun MessageList(
 ) {
     val items = remember(transcript.entries, transcript.streaming) { displayItems(transcript) }
     val results = remember(transcript.entries) { toolResults(transcript.entries) }
+    val newestFirst = remember(items) { items.asReversed() }
+    val pendingNewestFirst = remember(pending) { pending.asReversed() }
+    val last = items.lastOrNull()
     // Reversed: the newest item is first, so the list starts at the bottom and keeps it in view as it grows.
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -154,15 +157,15 @@ fun MessageList(
                     }
                 }
             }
-            items(pending.reversed(), key = { "pending-${it.at}" }) { message -> Centered { UserBubble(message.text, 0, sending = true) } }
-            items(items.reversed(), key = { it.id }) { item ->
+            items(pendingNewestFirst, key = { "pending-${it.at}" }, contentType = { "pending" }) { message -> Centered { UserBubble(message.text, 0, sending = true) } }
+            items(newestFirst, key = { it.id }, contentType = { it::class }) { item ->
                 Centered {
                     when (item) {
                         // A prompt that ran on a schedule: the chat reaching out on its own, not something you said.
                         is DisplayItem.User -> ScheduledNote.of(item.text)?.let { ScheduledNoteRow(it) }
                             ?: UserBubble(item.text, item.images, files = item.files, imageParts = item.imageParts, sessionId = sessionId)
                         is DisplayItem.Assistant -> AssistantTurn(
-                            sessionId, item.messages, item.streaming, active = transcript.running && item === items.last(),
+                            sessionId, item.messages, item.streaming, active = transcript.running && item === last,
                             endedAt = item.endedAt, results = results, tools = transcript.tools, onSend = onSend, character = character,
                         )
                         is DisplayItem.Divider -> Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -324,29 +327,12 @@ fun AssistantTurn(
 ) {
     val app = LocalApp.current
     val openUrl = LocalOpenInBrowser.current
-    val blocks = messages.flatMapIndexed { m, message ->
-        message.content.mapIndexed { index, block -> Step("$m:$index", block, streaming && m == messages.lastIndex && index == message.content.lastIndex) }
-    }
-    val lastWork = blocks.indexOfLast { Tools.isWork(it.block) }
-    // Notes the model wrote between steps stay with the work; UI cards and the final answer stay in view.
-    val steps = blocks.take(lastWork + 1).filter { !Tools.isUi(it.block) }
-    val shown = blocks.take(lastWork + 1).filter { Tools.isUi(it.block) } + blocks.drop(lastWork + 1)
-    val touchedMemory = blocks.any { Tools.touchesMemory(it.block) }
-    val shownText = shown.joinToString("\n") { (it.block as? TextBlock)?.text ?: "" }
-    val sharedMedia = blocks.mapNotNull { step ->
-        val call = step.block as? ToolCallBlock ?: return@mapNotNull null
-        if (call.name != "share_media") return@mapNotNull null
-        val media = results[call.id]?.details?.obj?.get("media")?.obj ?: return@mapNotNull null
-        val url = media["url"].str ?: return@mapNotNull null
-        if (url in shownText) null else url to media["name"].str
-    }
-    val confirmations = blocks.mapNotNull { step ->
-        val call = step.block as? ToolCallBlock ?: return@mapNotNull null
-        if (call.name != "app_call") return@mapNotNull null
-        val confirmation = results[call.id]?.details?.obj?.get("confirmation")?.obj ?: return@mapNotNull null
-        (confirmation["id"].str ?: return@mapNotNull null) to (confirmation["summary"].str ?: "")
-    }
-    val errors = messages.filter { it.stopReason == "error" }
+    // Worked out once per change to this turn, not on every frame of another turn's stream.
+    val turn = remember(messages, streaming, results) { TurnParts.of(messages, streaming, results) }
+    val (steps, shown, touchedMemory) = turn
+    val sharedMedia = turn.sharedMedia
+    val confirmations = turn.confirmations
+    val errors = turn.errors
     Row(Modifier.fillMaxWidth().testTag("assistant-turn"), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         if (character != null) CharacterAvatar(character, size = 28.dp, modifier = Modifier.semantics { contentDescription = character.name })
         else Image(painterResource(R.drawable.ic_launcher_foreground), contentDescription = "Dex", modifier = Modifier.size(28.dp).padding(top = 2.dp))
@@ -450,6 +436,43 @@ fun ConfirmCard(id: String, summary: String) {
                 )
             }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        }
+    }
+}
+
+/** One reply split for showing: its work steps, what stays in view, and the media and confirmations it produced. */
+private data class TurnParts(
+    val steps: List<Step>,
+    val shown: List<Step>,
+    val touchedMemory: Boolean,
+    val sharedMedia: List<Pair<String, String?>>,
+    val confirmations: List<Pair<String, String>>,
+    val errors: List<AssistantMessage>,
+) {
+    companion object {
+        fun of(messages: List<AssistantMessage>, streaming: Boolean, results: Map<String, ToolResultMessage>): TurnParts {
+            val blocks = messages.flatMapIndexed { m, message ->
+                message.content.mapIndexed { index, block -> Step("$m:$index", block, streaming && m == messages.lastIndex && index == message.content.lastIndex) }
+            }
+            val lastWork = blocks.indexOfLast { Tools.isWork(it.block) }
+            // Notes the model wrote between steps stay with the work; UI cards and the final answer stay in view.
+            val steps = blocks.take(lastWork + 1).filter { !Tools.isUi(it.block) }
+            val shown = blocks.take(lastWork + 1).filter { Tools.isUi(it.block) } + blocks.drop(lastWork + 1)
+            val shownText = shown.joinToString("\n") { (it.block as? TextBlock)?.text ?: "" }
+            val sharedMedia = blocks.mapNotNull { step ->
+                val call = step.block as? ToolCallBlock ?: return@mapNotNull null
+                if (call.name != "share_media") return@mapNotNull null
+                val media = results[call.id]?.details?.obj?.get("media")?.obj ?: return@mapNotNull null
+                val url = media["url"].str ?: return@mapNotNull null
+                if (url in shownText) null else url to media["name"].str
+            }
+            val confirmations = blocks.mapNotNull { step ->
+                val call = step.block as? ToolCallBlock ?: return@mapNotNull null
+                if (call.name != "app_call") return@mapNotNull null
+                val confirmation = results[call.id]?.details?.obj?.get("confirmation")?.obj ?: return@mapNotNull null
+                (confirmation["id"].str ?: return@mapNotNull null) to (confirmation["summary"].str ?: "")
+            }
+            return TurnParts(steps, shown, blocks.any { Tools.touchesMemory(it.block) }, sharedMedia, confirmations, messages.filter { it.stopReason == "error" })
         }
     }
 }

@@ -855,12 +855,13 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
         val day = 86_400_000L
         val days = (0 until if (range == "month") 19 else 30).map { i ->
             val date = Format.utcDay(clock() - (if (range == "month") 18 - i else 29 - i) * day)
-            DailySpend(date, cline = 0.4 + (i % 5) * 0.31, opencode = 0.2 + (i % 3) * 0.18, boat = if (i % 4 == 0) 0.0 else 0.09 * (i % 6), cloudflare = 0.02)
+            DailySpend(date, cline = 0.4 + (i % 5) * 0.31, opencode = 0.2 + (i % 3) * 0.18, commandcode = if (i % 3 == 0) 0.0 else 0.15 * (i % 4), boat = if (i % 4 == 0) 0.0 else 0.09 * (i % 6), cloudflare = 0.02)
         }
         return UsageReport(
             range, clock() - days.size * day, clock(),
             cline = TokenUsage(412, 2_900_000, 410_000, 1_200_000, 3_310_000, 18.42, byModel = listOf(ModelUsageRow("cline-pass/glm-5.3", 280, 2_100_000, 11.5), ModelUsageRow("cline-pass/kimi-k3", 132, 1_210_000, 6.92)), byChat = listOf(ChatUsageRow("chat-dashboard", "Weekly metrics dashboard", 900_000, 4.1), ChatUsageRow("gone", "Deleted chat", 120_000, 0.5))),
             opencode = TokenUsage(120, 800_000, 90_000, 0, 890_000, 3.12, byModel = listOf(ModelUsageRow("opencode-go/kimi-k3", 120, 890_000, 3.12)), connected = true, limits = OpenCodeLimits(OpenCodeWindow(12.0, "2026-10-20T03:00:00Z", false), OpenCodeWindow(46.0, "2026-10-26T00:00:00Z", false), OpenCodeWindow(83.5, "2026-11-01T00:00:00Z", false))),
+            commandcode = TokenUsage(64, 520_000, 61_000, 210_000, 791_000, 4.86, byModel = listOf(ModelUsageRow("commandcode/claude-sonnet-5-5", 64, 791_000, 4.86)), byChat = listOf(ChatUsageRow("chat-dashboard", "Weekly metrics dashboard", 300_000, 1.9)), connected = true, spent = dev.trydex.core.model.CommandCodeSpent(3.4, 21.7, 41.2)),
             boat = BoatUsage(11.5, 0.21, true, listOf(BoatSizeUsage("small", 11.5, 0.21)), listOf(BoatRun(clock() - 2 * 3_600_000, null, "small", 2.0, 0.036), BoatRun(clock() - day, clock() - day + 5_400_000, "small", 1.5, 0.027))),
             cloudflare = CloudflareUsage(true, null, clock() - 18 * day, listOf(CloudflareLine("Worker requests", 412_000.0, "requests", 0.12, 0.04), CloudflareLine("Durable Object duration", 18_200.0, "GB-s", 0.23, 0.05), CloudflareLine("Workers AI", 3_200.0, "neurons", 0.03, null, accountWide = true)), 0.38),
             daily = days,

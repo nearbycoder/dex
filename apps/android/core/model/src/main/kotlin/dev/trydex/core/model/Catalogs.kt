@@ -82,7 +82,19 @@ object Catalogs {
 object UsageFormat {
     const val CLINE_PASS_FEE = 9.99
     const val OPENCODE_GO_FEE = 10.0
+    /** Command Code's Goat plan (plus a processing fee). */
+    const val COMMAND_CODE_FEE = 10.0
     const val WORKERS_PAID_FEE = 5.0
+
+    /**
+     * Command Code's Goat allowance, in dollars of usage at each model's API rates: any 5 hours may use $20, any 7 days
+     * $50, and the month $100. Command Code has no API for the live meters.
+     */
+    object CommandCodeLimits {
+        const val FIVE_HOURS = 20.0
+        const val WEEK = 50.0
+        const val MONTH = 100.0
+    }
 
     data class Series(val key: String, val label: String, val note: String, val color: Long)
 
@@ -92,7 +104,10 @@ object UsageFormat {
         Series("cloudflare", "Cloudflare", "metered", 0xFF199E70),
         Series("opencode", "OpenCode Go", "at Go rates", 0xFFC98500),
         Series("chatgpt", "ChatGPT", "at API list prices", 0xFFD55181),
+        Series("commandcode", "Command Code", "at the plan's rates", 0xFF8B6FE0),
     )
+
+    fun series(key: String): Series = SERIES.first { it.key == key }
 
     val RANGES = listOf("month" to "This month", "30d" to "Last 30 days", "all" to "All time")
 
@@ -116,11 +131,20 @@ object UsageFormat {
 }
 
 @Serializable
-data class DailySpend(val date: String, val cline: Double = 0.0, val opencode: Double = 0.0, val chatgpt: Double = 0.0, val boat: Double = 0.0, val cloudflare: Double = 0.0) {
+data class DailySpend(
+    val date: String,
+    val cline: Double = 0.0,
+    val opencode: Double = 0.0,
+    val chatgpt: Double = 0.0,
+    val commandcode: Double = 0.0,
+    val boat: Double = 0.0,
+    val cloudflare: Double = 0.0,
+) {
     fun value(key: String): Double = when (key) {
         "cline" -> cline
         "opencode" -> opencode
         "chatgpt" -> chatgpt
+        "commandcode" -> commandcode
         "boat" -> boat
         else -> cloudflare
     }
@@ -148,11 +172,16 @@ data class TokenUsage(
     val listCost: Double = 0.0,
     val byModel: List<ModelUsageRow> = emptyList(),
     val byChat: List<ChatUsageRow> = emptyList(),
-    /** OpenCode Go and ChatGPT only. */
+    /** OpenCode Go, ChatGPT, and Command Code only. */
     val connected: Boolean = false,
     val limits: OpenCodeLimits? = null,
     val limitsError: String? = null,
+    /** Command Code only: what Dex used in the last 5 hours, 7 days, and 30 days, against its allowance. */
+    val spent: CommandCodeSpent? = null,
 )
+
+@Serializable
+data class CommandCodeSpent(val fiveHours: Double = 0.0, val week: Double = 0.0, val month: Double = 0.0)
 
 @Serializable
 data class BoatSizeUsage(val size: String, val hours: Double = 0.0, val cost: Double = 0.0)
@@ -197,6 +226,8 @@ data class UsageReport(
     val opencode: TokenUsage = TokenUsage(),
     /** At API list prices; missing from an older agent's report. */
     val chatgpt: TokenUsage = TokenUsage(),
+    /** At the plan's rates; missing from an older agent's report. */
+    val commandcode: TokenUsage? = null,
     val boat: BoatUsage = BoatUsage(),
     val cloudflare: CloudflareUsage = CloudflareUsage(),
     val daily: List<DailySpend> = emptyList(),

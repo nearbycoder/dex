@@ -3,6 +3,7 @@ package dev.trydex.android.ui
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import com.github.takahirom.roborazzi.captureRoboImage
 import dev.trydex.android.testing.Harness
 import dev.trydex.android.testing.awaitTag
@@ -134,8 +135,11 @@ class ScreenshotTest(private val device: String, private val qualifiers: String)
         rule.awaitTag("general-settings")
         shot("8-settings")
         open(SettingsHome, Usage)
-        rule.awaitTag("tile-boat.dev")
+        rule.awaitTag("usage-bill")
         shot("9-usage")
+        rule.awaitTag("service-commandcode").performScrollTo().performClick()
+        rule.awaitTag("allowance-commandcode")
+        shot("9b-usage-command-code")
         open(SettingsHome, Access)
         rule.awaitTag("access")
         shot("10-access")

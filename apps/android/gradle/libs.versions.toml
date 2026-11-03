@@ -17,6 +17,7 @@ media3 = "1.11.1"
 datastore = "1.2.1"
 work = "2.12.0"
 splashscreen = "1.2.0"
+profileinstaller = "1.4.1"
 glance = "1.2.0"
 firebaseBom = "35.1.0"
 googleServices = "4.5.0"
@@ -57,6 +58,7 @@ androidx-media3-ui-compose = { module = "androidx.media3:media3-ui-compose-mater
 androidx-media3-ui = { module = "androidx.media3:media3-ui", version.ref = "media3" }
 androidx-media3-datasource-okhttp = { module = "androidx.media3:media3-datasource-okhttp", version.ref = "media3" }
 androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }
+androidx-profileinstaller = { module = "androidx.profileinstaller:profileinstaller", version.ref = "profileinstaller" }
 androidx-work-runtime = { module = "androidx.work:work-runtime-ktx", version.ref = "work" }
 androidx-core-splashscreen = { module = "androidx.core:core-splashscreen", version.ref = "splashscreen" }
 androidx-glance-appwidget = { module = "androidx.glance:glance-appwidget", version.ref = "glance" }

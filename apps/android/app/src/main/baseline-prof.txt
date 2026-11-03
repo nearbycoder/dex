@@ -1,0 +1,14 @@
+# Dex's own code, and the libraries every start and every chat runs through, compiled ahead of time on install
+# instead of interpreted until the JIT warms up: startup, the chat list, opening a chat, and its stream.
+HSPLdev/trydex/android/**->**(**)**
+Ldev/trydex/android/**;
+HSPLdev/trydex/core/**->**(**)**
+Ldev/trydex/core/**;
+HSPLdev/trydex/openui/**->**(**)**
+Ldev/trydex/openui/**;
+HSPLkotlinx/serialization/json/**->**(**)**
+Lkotlinx/serialization/json/**;
+HSPLokhttp3/internal/ws/**->**(**)**
+Lokhttp3/internal/ws/**;
+HSPLorg/commonmark/**->**(**)**
+Lorg/commonmark/**;

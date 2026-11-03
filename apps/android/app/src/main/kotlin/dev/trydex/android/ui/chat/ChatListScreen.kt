@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -22,6 +23,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material.icons.Icons
@@ -34,6 +36,7 @@ import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.NotificationsOff
 import androidx.compose.material.icons.rounded.Snooze
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearWavyProgressIndicator
@@ -87,7 +90,9 @@ import dev.trydex.android.ui.nav.Chat
 import dev.trydex.android.ui.nav.NewChat
 import dev.trydex.android.ui.theme.DexTheme
 import dev.trydex.core.client.ConnectionStatus
+import dev.trydex.core.model.AgentProfile
 import dev.trydex.core.model.DexState
+import dev.trydex.core.model.ProjectProfile
 import dev.trydex.core.model.Format
 import dev.trydex.core.model.SessionMeta
 import dev.trydex.core.model.Snooze
@@ -101,6 +106,9 @@ fun ChatListScreen() {
     val state by repository.state.collectAsStateWithLifecycle()
     val status by repository.status.collectAsStateWithLifecycle()
     val prefs by app.graph.preferences.prefs.collectAsStateWithLifecycle()
+    val drafts by app.graph.drafts.drafts.collectAsStateWithLifecycle()
+    // Just the chats that are working, or that have something you haven't seen: for keeping track of many at once.
+    var filter by rememberSaveable { mutableStateOf(ChatFilter.All) }
     val snackbar = remember { SnackbarHostState() }
     val confirm = rememberConfirm()
     val actions = rememberChatActions(snackbar, confirm)
@@ -115,6 +123,8 @@ fun ChatListScreen() {
             now = System.currentTimeMillis()
         }
     }
+    // Startup ends when the chats are on screen (Android's "fully drawn", which startup tools measure).
+    androidx.activity.compose.ReportDrawnWhen { state != null }
     val selected = (app.navigator.stack(dev.trydex.android.ui.nav.Tab.Chats).getOrNull(1) as? Chat)?.id
     val listState = rememberLazyListState()
     val expandedFab by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
@@ -177,23 +187,38 @@ fun ChatListScreen() {
                 val sessions = if (needle.isEmpty()) chats else chats.filter { needle in it.title.lowercase() }
                 val characters = if (needle.isEmpty()) current.characters else current.characters.filter { needle in it.name.lowercase() }
                 val groups = inboxGroups(sessions, now)
+                val working = chats.count { it.busy }
+                val unread = chats.count { it.unread && !it.busy && it.id != selected }
                 LazyColumn(state = listState, modifier = Modifier.fillMaxSize().testTag("chat-list")) {
+                    // Once there's more than one to keep track of (a small screen keeps its room otherwise).
+                    if (working + unread > 1 || filter != ChatFilter.All) {
+                        item(key = "filters", contentType = "filters") { FilterRow(filter, working, unread, Modifier.animateItem()) { filter = it } }
+                    }
+                    if (filter != ChatFilter.All) {
+                        val picked = sessions.filter { if (filter == ChatFilter.Working) it.busy else it.unread && !it.busy }.sortedByDescending { it.updatedAt }
+                        if (picked.isEmpty()) item(key = "filter-empty") {
+                            EmptyState(if (filter == ChatFilter.Working) "Nothing is working right now." else "Nothing new. You've seen it all.", Icons.Rounded.DoneAll, Modifier.animateItem())
+                        }
+                        rows(picked, current, now, selected, actions, drafts) { menu = it }
+                        item(key = "end") { Spacer(Modifier.size(96.dp)) }
+                        return@LazyColumn
+                    }
                     characterSection(current, characters, selected, now, searching = needle.isNotEmpty())
                     when {
-                        chats.isEmpty() -> item { EmptyState("No chats yet. Start one, and Dex will do the work.") }
-                        groups.inbox.isEmpty() && needle.isEmpty() -> item { EmptyState("All caught up", Icons.Rounded.DoneAll) }
-                        groups.isEmpty -> item { EmptyState("No chats match “$needle”.") }
+                        chats.isEmpty() -> item(key = "empty") { EmptyState("No chats yet. Start one, and Dex will do the work.") }
+                        groups.inbox.isEmpty() && needle.isEmpty() -> item(key = "empty") { EmptyState("All caught up", Icons.Rounded.DoneAll) }
+                        groups.isEmpty -> item(key = "empty") { EmptyState("No chats match “$needle”.") }
                     }
-                    rows(groups.inbox, current, now, selected, actions) { menu = it }
+                    rows(groups.inbox, current, now, selected, actions, drafts) { menu = it }
                     group(
                         "Snoozed", Icons.Rounded.Snooze, groups.snoozed, open = prefs.snoozedOpen || groups.snoozed.any { it.id == selected } || needle.isNotEmpty(),
                         onToggle = { app.graph.preferences.setSnoozedOpen(!prefs.snoozedOpen) },
-                    ) { rows(groups.snoozed, current, now, selected, actions, snoozed = true) { menu = it } }
+                    ) { rows(groups.snoozed, current, now, selected, actions, drafts, snoozed = true) { menu = it } }
                     group(
                         "Settled", Icons.Rounded.DoneAll, groups.settled, open = prefs.settledOpen || groups.settled.any { it.id == selected } || needle.isNotEmpty(),
                         onToggle = { app.graph.preferences.setSettledOpen(!prefs.settledOpen) },
-                    ) { rows(groups.settled, current, now, selected, actions, settled = true) { menu = it } }
-                    item { Spacer(Modifier.size(96.dp)) }
+                    ) { rows(groups.settled, current, now, selected, actions, drafts, settled = true) { menu = it } }
+                    item(key = "end") { Spacer(Modifier.size(96.dp)) }
                 }
             }
         }
@@ -210,7 +235,7 @@ private fun LazyListScope.group(
     content: LazyListScope.() -> Unit,
 ) {
     if (sessions.isEmpty()) return
-    item(key = "group-$label") {
+    item(key = "group-$label", contentType = "group") {
         val rotation by animateFloatAsState(if (open) 0f else -90f, label = "chevron")
         ListItem(
             headlineContent = { Text(label, style = MaterialTheme.typography.labelLarge) },
@@ -234,12 +259,40 @@ private fun LazyListScope.rows(
     now: Long,
     selected: String?,
     actions: ChatActions,
+    drafts: Map<String, String>,
     snoozed: Boolean = false,
     settled: Boolean = false,
     onMenu: (SessionMeta) -> Unit,
 ) {
-    items(sessions, key = { it.id }) { session ->
-        SwipeableChatRow(session, state, now, session.id == selected, actions, snoozed, settled, onMenu, Modifier.animateItem())
+    items(sessions, key = { it.id }, contentType = { "chat" }) { session ->
+        // Only what the row shows, so a synced-state update re-runs just the rows it changed.
+        SwipeableChatRow(session, state.agent(session.agentId), state.project(session.projectId), now, session.id == selected, drafts[session.id], actions, snoozed, settled, onMenu, Modifier.animateItem())
+    }
+}
+
+enum class ChatFilter { All, Working, Unread }
+
+/** All chats, or just the working or unread ones, with how many there are. */
+@Composable
+private fun FilterRow(filter: ChatFilter, working: Int, unread: Int, modifier: Modifier = Modifier, onPick: (ChatFilter) -> Unit) {
+    val haptics = haptics()
+    Row(
+        modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        listOf(ChatFilter.All to "All", ChatFilter.Working to "Working · $working", ChatFilter.Unread to "Unread · $unread").forEach { (value, label) ->
+            FilterChip(
+                selected = filter == value,
+                onClick = { haptics.tap(); onPick(if (filter == value) ChatFilter.All else value) },
+                label = { Text(label) },
+                leadingIcon = when (value) {
+                    ChatFilter.Working -> ({ StatusDot(DexTheme.colors.success, pulsing = working > 0) })
+                    ChatFilter.Unread -> ({ UnreadDot() })
+                    ChatFilter.All -> null
+                },
+                modifier = Modifier.testTag("filter-${value.name.lowercase()}"),
+            )
+        }
     }
 }
 
@@ -248,9 +301,11 @@ private fun LazyListScope.rows(
 @Composable
 private fun SwipeableChatRow(
     session: SessionMeta,
-    state: DexState,
+    agent: AgentProfile?,
+    project: ProjectProfile?,
     now: Long,
     selected: Boolean,
+    draft: String?,
     actions: ChatActions,
     snoozed: Boolean,
     settled: Boolean,
@@ -297,7 +352,7 @@ private fun SwipeableChatRow(
         },
     ) {
         ChatRow(
-            session, state, now, selected, snoozed, settled,
+            session, agent, project, now, selected, snoozed, settled, draft,
             modifier = Modifier.combinedClickable(
                 onClick = { app.navigator.open(Chat(session.id)) },
                 onLongClick = {
@@ -312,10 +367,8 @@ private fun SwipeableChatRow(
 }
 
 @Composable
-fun ChatRow(session: SessionMeta, state: DexState, now: Long, selected: Boolean, snoozed: Boolean, settled: Boolean, modifier: Modifier = Modifier) {
+fun ChatRow(session: SessionMeta, agent: AgentProfile?, project: ProjectProfile?, now: Long, selected: Boolean, snoozed: Boolean, settled: Boolean, draft: String? = null, modifier: Modifier = Modifier) {
     val app = LocalApp.current
-    val agent = state.agent(session.agentId)
-    val project = state.project(session.projectId)
     val model = app.graph.models.find(session.model)?.name ?: session.model
     val naming = session.id in Naming.ids
     // Something came in you haven't seen (not while it's open beside the list).
@@ -340,7 +393,12 @@ fun ChatRow(session: SessionMeta, state: DexState, now: Long, selected: Boolean,
                     agent != null -> "${agent.name} · $model"
                     else -> model
                 }
-                Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                // Something you typed here and haven't sent (not while it's open beside the list).
+                if (draft != null && !selected) {
+                    Text("Draft: " + draft.lineSequence().first(), maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f, fill = false).testTag("draft-${session.id}"))
+                } else {
+                    Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                }
                 if (session.muted) Icon(Icons.Rounded.NotificationsOff, contentDescription = "Muted", modifier = Modifier.size(14.dp))
             }
         },

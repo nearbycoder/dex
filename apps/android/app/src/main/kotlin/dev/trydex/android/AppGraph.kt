@@ -4,7 +4,9 @@ import android.content.Context
 import coil3.ImageLoader
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.svg.SvgDecoder
+import dev.trydex.android.data.ChatDrafts
 import dev.trydex.android.data.DexRepository
+import dev.trydex.android.data.SignedOutReason
 import dev.trydex.android.data.KeystoreSessionStore
 import dev.trydex.android.data.LocalCache
 import dev.trydex.android.data.Preferences
@@ -19,7 +21,10 @@ import dev.trydex.core.model.ModelRegistry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -43,6 +48,14 @@ class AppGraph(
         .build()
 
     val repository = DexRepository(scope, http, sessionStore, LocalCache(cacheDir), models)
+
+    /** Unsent text in each chat, kept per chat; forgotten on sign-out and when its chat is deleted. */
+    val drafts = ChatDrafts(context, scope).also { drafts ->
+        scope.launch { repository.signedOutReason.collect { if (it != SignedOutReason.None) drafts.clear() } }
+        scope.launch {
+            repository.state.filterNotNull().map { state -> state.sessions.mapTo(HashSet()) { it.id } }.distinctUntilChanged().collect(drafts::retain)
+        }
+    }
 
     /** Push to this device (Firebase), registered with the agent while notifications are on here. */
     val push = context.applicationContext.let { app ->
