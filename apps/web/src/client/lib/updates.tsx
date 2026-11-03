@@ -26,25 +26,37 @@ async function latestBuild(): Promise<string | null> {
 }
 
 /**
- * Whether a reload would lose nothing: only on the chat pages (other pages are forms with unsaved edits), and
- * only with nothing typed there (drafts live only in the page).
+ * Whether a reload would lose nothing: only on the chat pages (other pages are forms with unsaved edits), only with
+ * nothing typed there (drafts live only in the page), and not while a text box has focus: an empty, focused box is
+ * where typing or a voice-to-text app's paste is about to land, and a reload then threw that text away.
  */
-const safeToReload = () =>
-  /^\/chat(\/|$)/.test(location.pathname) &&
-  ![...document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("textarea, input:not([type=hidden])")].some((field) => field.value.trim() !== "")
+const safeToReload = () => {
+  const focused = document.activeElement
+  const editing = focused instanceof HTMLTextAreaElement || focused instanceof HTMLInputElement || (focused instanceof HTMLElement && focused.isContentEditable)
+  return (
+    !editing &&
+    /^\/chat(\/|$)/.test(location.pathname) &&
+    ![...document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("textarea, input:not([type=hidden])")].some((field) => field.value.trim() !== "")
+  )
+}
 
 /** The service worker's copy of app pages (see public/sw.js): cleared before reloading, so the reload is fresh. */
 const PAGE_CACHE = "dex-pages-v1"
 /** Forgets the service worker's copy of app pages (applying an update, signing out). */
 export const clearCachedPages = () => (typeof caches === "undefined" ? Promise.resolve(false) : caches.delete(PAGE_CACHE).catch(() => false))
 
-/** Reloads onto the new build, after letting the service worker pick up its own update. */
-export async function applyUpdate() {
+/**
+ * Reloads onto the new build, after letting the service worker pick up its own update. A quiet reload (`ifSafe`) asks
+ * again just before reloading, since text can arrive while the service worker updates; if it's no longer safe, the
+ * sidebar's "Update ready" stays for later.
+ */
+export async function applyUpdate({ ifSafe = false } = {}) {
   const registration = await navigator.serviceWorker?.getRegistration().catch(() => undefined)
   await Promise.race([
     Promise.all([registration?.update().catch(() => undefined), clearCachedPages()]),
     new Promise((resolve) => setTimeout(resolve, 1_500))
   ])
+  if (ifSafe && !safeToReload()) return
   location.reload()
 }
 
@@ -103,7 +115,7 @@ export function useUpdateChecker() {
       const away = hiddenAt.current === null ? 0 : Date.now() - hiddenAt.current
       hiddenAt.current = null
       const build = await check(away >= QUIET_RELOAD_AFTER_MS)
-      if (build && away >= QUIET_RELOAD_AFTER_MS && safeToReload()) void applyUpdate()
+      if (build && away >= QUIET_RELOAD_AFTER_MS && safeToReload()) void applyUpdate({ ifSafe: true })
     }
     const onOnline = () => void check()
     // The first check, soon after launch: the page may have come from the service worker's copy, a deploy behind.
@@ -111,7 +123,7 @@ export function useUpdateChecker() {
     const launchedAt = Date.now()
     const first = setTimeout(async () => {
       const build = await check(true)
-      if (build && Date.now() - launchedAt < 15_000 && safeToReload()) void applyUpdate()
+      if (build && Date.now() - launchedAt < 15_000 && safeToReload()) void applyUpdate({ ifSafe: true })
     }, 2_000)
     const poll = setInterval(() => {
       if (document.visibilityState === "visible") void check()
