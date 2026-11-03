@@ -291,9 +291,12 @@ struct AttachmentChips: View {
             Button { model.removeAttachment(draft.id) } label: {
                 Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).frame(width: 18, height: 18)
                     .background(.thinMaterial, in: .circle)
+                    // A finger-sized target reaching into the chip; the mark itself stays small in its corner.
+                    .padding(3)
+                    .padding([.leading, .bottom], 10)
+                    .contentShape(.rect)
             }
             .buttonStyle(.plain)
-            .padding(3)
             .accessibilityLabel("Remove \(draft.name)")
         }
         .accessibilityIdentifier("composer.attachment")

@@ -109,7 +109,7 @@ struct VmFilesPanel: View {
         } actions: {
             if vm?.status != "starting" {
                 Button("Start VM") { client.perform { try await client.vmStart(sessionId) } }
-                    .buttonStyle(.borderedProminent)
+                    .prominentButton()
                     .disabled(!client.isConnected || vm == nil)
                     .accessibilityIdentifier("files.start")
             }
