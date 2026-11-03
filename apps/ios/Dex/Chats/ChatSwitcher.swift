@@ -10,7 +10,8 @@ enum ChatActivity {
     case waiting, working, unread, draft, idle
 
     init(_ session: SessionMeta, draft: Bool, waiting: Bool = false) {
-        self = waiting ? .waiting : session.busy ? .working : session.unread ? .unread : draft ? .draft : .idle
+        // Working wins: it's what's happening now.
+        self = session.busy ? .working : waiting ? .waiting : session.unread ? .unread : draft ? .draft : .idle
     }
 
     var label: String {
@@ -216,9 +217,9 @@ struct ChatSwitcher: View {
         let rest = matching.filter { !shown.contains($0.id) && $0.characterId == nil && (!words.isEmpty || Inbox.place(of: $0) == .inbox) }
             .sorted { $0.updatedAt > $1.updatedAt }
         return [
-            Group(title: "Needs You", chats: active.filter { waiting.contains($0.id) }),
-            Group(title: "Working", chats: active.filter { !waiting.contains($0.id) && $0.busy }),
-            Group(title: "New Replies", chats: active.filter { !waiting.contains($0.id) && !$0.busy }),
+            Group(title: "Needs You", chats: active.filter { !$0.busy && waiting.contains($0.id) }),
+            Group(title: "Working", chats: active.filter(\.busy)),
+            Group(title: "New Replies", chats: active.filter { !$0.busy && !waiting.contains($0.id) }),
             Group(title: "Drafts", chats: drafts),
             Group(title: words.isEmpty ? "Inbox" : "Other Chats", chats: Array(rest.prefix(words.isEmpty ? 30 : 60)))
         ].filter { !$0.chats.isEmpty }

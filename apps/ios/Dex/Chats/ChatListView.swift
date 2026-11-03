@@ -300,7 +300,7 @@ struct ChatRow: View {
     }
 
     @ViewBuilder private var status: some View {
-        if client.state?.waitingChats.contains(session.id) == true {
+        if !session.busy, client.state?.waitingChats.contains(session.id) == true {
             // It asked to do something that needs your yes.
             HStack(spacing: 3) {
                 Image(systemName: "hand.raised.fill").imageScale(.small)
