@@ -162,3 +162,39 @@ import Testing
         await #expect(throws: AgentError.self) { _ = try await client.characterMemory("nobody") }
     }
 }
+
+@Suite struct SidekickPartsTests {
+    @Test func readsAndWritesLooks() {
+        let look: JSONValue = ["body": "cat", "skin": "pink", "eyes": "wink", "mouth": "purr", "extra": "bow", "blush": true]
+        let parts = SidekickParts(look)
+        #expect(parts == SidekickParts(body: "cat", skin: "pink", eyes: "wink", mouth: "purr", extra: "bow", blush: true))
+        #expect(parts?.json == look)
+        // Unknown parts fall back; not an object, no look.
+        #expect(SidekickParts(["body": "dragon", "skin": 3]) == SidekickParts())
+        #expect(SidekickParts(.string("x")) == nil)
+        // Every preset reads.
+        #expect(SidekickLook.all.allSatisfy { SidekickParts($0.look) != nil })
+    }
+
+    @Test func randomLooksUseKnownParts() {
+        var generator = SystemRandomNumberGenerator()
+        for _ in 0..<50 {
+            let parts = SidekickParts.random(using: &generator)
+            #expect(SidekickParts(parts.json) == parts)
+            if parts.eyes == "visor" { #expect(parts.body == "bot") }
+        }
+    }
+
+    @Test func parsesPathData() {
+        let steps = SVGPathData.parse("M50 24C71 24 80 37 80 56H20V10L5.5 .5ZM1 2Q3 4 5 6")
+        #expect(steps.first == .move(50, 24))
+        #expect(steps[1] == .curve(71, 24, 80, 37, 80, 56))
+        #expect(steps[2] == .line(20, 56))
+        #expect(steps[3] == .line(20, 10))
+        #expect(steps[4] == .line(5.5, 0.5))
+        #expect(steps[5] == .close)
+        #expect(steps[6] == .move(1, 2))
+        #expect(steps[7] == .quad(3, 4, 5, 6))
+        for body in SidekickParts.bodies { #expect(SVGPathData.parse(SidekickParts.shape(body).path).last == .close) }
+    }
+}

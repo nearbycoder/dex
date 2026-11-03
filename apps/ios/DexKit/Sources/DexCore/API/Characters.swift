@@ -44,6 +44,14 @@ public struct CharacterDraft: Codable, Sendable, Hashable {
         look = preset.look; image = preset.image; color = preset.color; avatar = ""; pictureChanged = true
     }
 
+    /// A look of your own: its parts, its picture (the PNG drawn from them), and its background color.
+    public mutating func use(parts: SidekickParts, color: String, image: String) {
+        look = parts.json; self.image = image; self.color = color; avatar = ""; pictureChanged = true
+    }
+
+    /// The parts of the look this draft wears (ready-made or mixed), if it wears one.
+    public var parts: SidekickParts? { SidekickParts(look) }
+
     /// A photo instead of a look.
     public mutating func usePhoto(_ dataURL: String) {
         look = nil; image = dataURL; pictureChanged = true
