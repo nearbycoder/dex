@@ -155,7 +155,7 @@ struct UserAvatar: View {
     }
 }
 
-/// A model maker's logo (from the asset catalog), or a CPU glyph.
+/// A model maker's logo (from the asset catalog), or a CPU glyph for a maker this build doesn't know.
 struct MakerLogo: View {
     let maker: String
     var size: CGFloat = 18
@@ -167,7 +167,8 @@ struct MakerLogo: View {
                 .renderingMode(.template)
                 .scaledToFit()
                 .frame(width: size, height: size)
-                .foregroundStyle(.primary)
+                // Other's sparkles stand in for a maker, muted as on the web.
+                .foregroundStyle(maker == "other" ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
         } else {
             Image(systemName: "cpu").frame(width: size, height: size)
         }
