@@ -354,8 +354,8 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
 
     @Suppress("CyclomaticComplexMethod")
     private fun rpc(connection: Connection, method: String, args: JsonArray): JsonElement? = when (method) {
-        "modelCatalog" -> encode(ModelCatalog.serializer(), ModelCatalog(FakeData.modelsVersion(state), state.models?.updatedAt ?: clock(), FakeData.models(state)))
-        "refreshModelList" -> buildJsonObject { put("added", JsonArray(emptyList())); put("retired", JsonArray(emptyList())); put("count", FakeData.models(state).size) }
+        "modelCatalog" -> encode(ModelCatalog.serializer(), ModelCatalog(FakeData.modelsVersion(state), state.models?.updatedAt ?: clock(), FakeData.models(state, clock())))
+        "refreshModelList" -> buildJsonObject { put("added", JsonArray(emptyList())); put("retired", JsonArray(emptyList())); put("count", FakeData.models(state, clock()).size) }
         "createSession" -> {
             val options = args.o(0)
             val agent = state.agents.firstOrNull { it.id == options["agentId"].str }

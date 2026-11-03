@@ -66,8 +66,43 @@ object FakeData {
         DexModel("commandcode/mistralai/devstral-3", "mistralai/devstral-3", "commandcode", "Devstral 3", "commandcode", listOf("text"), 256_000, 64_000, ModelCost(0.2, 0.8)),
     )
 
-    /** The model list the agent sends: the built-in one, plus Command Code's while a key is connected. */
-    fun models(state: DexState): List<DexModel> = BuiltInModels.list + if (state.commandcode.connected) commandCodeModels else emptyList()
+    /** A stealth model on Cline, its maker unannounced: new this week. */
+    val stealthModel = DexModel("cline-pass/crouton-alpha", "cline-pass/crouton-alpha", "clinepass", "Crouton Alpha", "other", listOf("text", "image"), 256_000, 32_000)
+
+    /** How many days ago some models came out, so the menu's dates, New badges, and Newest sections have something to show; the rest have no date. */
+    private val releasedDaysAgo = mapOf(
+        "cline-pass/crouton-alpha" to 2,
+        "opencode-go/hy4-preview" to 5,
+        "chatgpt/gpt-6.1-sol" to 9,
+        "chatgpt/gpt-6.1-terra" to 9,
+        "cline-pass/qwen3.8-max" to 12,
+        "opencode-go/qwen3.8-max" to 12,
+        "opencode-go/qwen3.8-flash" to 12,
+        "cline-pass/glm-5.3" to 24,
+        "cline-pass/glm-5.3-flash" to 24,
+        "opencode-go/glm-5.3" to 24,
+        "opencode-go/glm-5.3-flash" to 24,
+        "cline-pass/kimi-k3" to 41,
+        "opencode-go/kimi-k3" to 41,
+        "opencode-go/step-5-preview" to 3,
+        "cline-pass/deepseek-v4.1-flash" to 63,
+        "opencode-go/deepseek-v4.1-flash" to 63,
+        "commandcode/deepseek/deepseek-v4.1-flash" to 63,
+        "commandcode/anthropic/claude-haiku-5-5" to 80,
+        "opencode-go/claude-haiku-5-5" to 80,
+        "chatgpt/gpt-6-sol" to 120,
+        "chatgpt/gpt-6-luna" to 120,
+        "opencode-go/gpt-6-luna" to 120,
+        "opencode-go/glm-5.2" to 210,
+        "chatgpt/gpt-5.5" to 400,
+    )
+
+    /** The model list the agent sends: the built-in one with a stealth model, plus Command Code's while a key is connected. */
+    fun models(state: DexState, now: Long = System.currentTimeMillis()): List<DexModel> =
+        (BuiltInModels.list + stealthModel + if (state.commandcode.connected) commandCodeModels else emptyList()).map { model ->
+            val days = releasedDaysAgo[model.id] ?: return@map model
+            model.copy(releasedAt = java.time.Instant.ofEpochMilli(now - days * 86_400_000L).toString().take(10))
+        }
 
     /** The list's version, which changes when Command Code's models join or leave it (apps fetch the list again then). */
     fun modelsVersion(state: DexState): String = if (state.commandcode.connected) "builtin+commandcode" else "builtin"
