@@ -141,6 +141,7 @@ final class AppModel {
         WKWebsiteDataStore.default().removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) {}
         Notifications.shared.clearAll()
         WidgetSync.shared.signedOut()
+        Drafts.shared.clear()
     }
 
     /// Signing out from this device: Dex stops pushing to it first (a moment at most), then everything is forgotten.

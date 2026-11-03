@@ -126,6 +126,8 @@ final class Router {
     var characterSheet: CharacterSheet?
     /// A chat whose message box should take the caret once it's open (a widget's Message button).
     var composeRequest: String?
+    /// The chat switcher (⌘K, or the strip over a chat).
+    var switcherOpen = false
 
     enum CharacterSheet: Hashable, Identifiable {
         case new

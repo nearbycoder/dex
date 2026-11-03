@@ -24,9 +24,13 @@ struct AgentsList: View {
             }
             ForEach(agents) { agent in
                 NavigationLink(value: LibraryRoute.agent(agent.id)) {
-                    AgentRow(agent: agent, chats: chatCount(agent.id))
+                    HStack(alignment: .center, spacing: 8) {
+                        AgentRow(agent: agent, chats: chatCount(agent.id), working: workingCount(agent.id))
+                        StartChatButton(id: "agent.start.\(agent.id)") { router.newChat(agentId: agent.id) }
+                    }
                 }
                 .accessibilityIdentifier("agent.row.\(agent.id)")
+                .accessibilityAction(named: "Start Chat") { router.newChat(agentId: agent.id) }
                 .swipeActions(edge: .leading, allowsFullSwipe: true) {
                     Button { router.newChat(agentId: agent.id) } label: { Label("Start Chat", systemImage: "plus.bubble") }
                         .tint(.dexAccent)
@@ -68,12 +72,38 @@ struct AgentsList: View {
     }
 
     private func chatCount(_ id: String) -> Int { client.state?.sessions.filter { $0.agentId == id }.count ?? 0 }
+    private func workingCount(_ id: String) -> Int { client.state?.sessions.filter { $0.agentId == id && $0.busy }.count ?? 0 }
+}
+
+/// A row's one-tap Start Chat (beside its swipe action and menu item, which do the same).
+struct StartChatButton: View {
+    let id: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "plus.bubble")
+                .font(.body.weight(.medium))
+                .frame(width: 36, height: 36)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.borderless)
+        .tint(.dexAccent)
+        .accessibilityLabel("Start Chat")
+        .accessibilityIdentifier(id)
+    }
+}
+
+/// "· 2 working" after a row's chat count, in green, while any of its chats work.
+func workingSuffix(_ working: Int) -> Text {
+    working > 0 ? Text(" · \(working) working").foregroundStyle(.green) : Text("")
 }
 
 struct AgentRow: View {
     @Environment(DexClient.self) private var client
     let agent: AgentProfile
     let chats: Int
+    var working = 0
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -86,7 +116,7 @@ struct AgentRow: View {
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     MakerLogo(maker: client.catalog.model(agent.model)?.maker ?? "", size: 12)
                         .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
-                    Text("\(client.catalog.name(of: agent.model)) · \(ThinkingLevels.label(agent.thinking)) thinking · \(chats == 1 ? "1 chat" : "\(chats) chats")")
+                    Text("\(client.catalog.name(of: agent.model)) · \(ThinkingLevels.label(agent.thinking)) thinking · \(chats == 1 ? "1 chat" : "\(chats) chats")\(workingSuffix(working))")
                         .lineLimit(2)
                 }
                 .font(.caption)

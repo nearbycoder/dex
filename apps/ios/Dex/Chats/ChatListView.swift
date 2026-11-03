@@ -184,6 +184,9 @@ struct ChatRow: View {
         let project = client.state?.project(session.projectId)
         let naming = TitleNaming.shared.isNaming(session.id)
         let vm = client.state?.vm(session.id)
+        // The open chat is being read: no dot (the agent clears it a moment later).
+        let unread = session.unread && router.chat != session.id
+        let draft = router.chat != session.id && Drafts.shared.drafted.contains(session.id)
         HStack(spacing: 12) {
             Group {
                 if let project {
@@ -203,10 +206,10 @@ struct ChatRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     // Before the title, apart from the machine's status dot at the end of the row.
-                    if session.unread { UnreadDot() }
+                    if unread { UnreadDot() }
                     Text(session.title)
-                        .font(.body.weight(session.unread ? .semibold : place == .inbox ? .medium : .regular))
-                        .foregroundStyle(place == .settled && !session.unread ? .secondary : .primary)
+                        .font(.body.weight(unread ? .semibold : place == .inbox ? .medium : .regular))
+                        .foregroundStyle(place == .settled && !unread ? .secondary : .primary)
                         .lineLimit(1)
                         .namingPulse(naming)
                     if session.muted {
@@ -214,9 +217,15 @@ struct ChatRow: View {
                     }
                 }
                 HStack(spacing: 4) {
-                    Text(subtitle(agent: agent, project: project)).lineLimit(1)
-                    Text("·").foregroundStyle(.tertiary)
-                    status.fixedSize()
+                    if draft, !session.busy {
+                        // Like Mail: what you were writing, so you can pick it up.
+                        Label("Draft", systemImage: "pencil").labelStyle(.titleAndIcon).foregroundStyle(.orange).fixedSize()
+                        Text(Drafts.shared.preview(session.id) ?? "").lineLimit(1)
+                    } else {
+                        Text(subtitle(agent: agent, project: project)).lineLimit(1)
+                        Text("·").foregroundStyle(.tertiary)
+                        status.fixedSize()
+                    }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)

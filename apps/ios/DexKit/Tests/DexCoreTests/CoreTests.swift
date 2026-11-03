@@ -279,6 +279,27 @@ import Testing
         #expect(Inbox.place(of: state.sessions[3], now: now + 2 * 86_400_000) == .inbox)
     }
 
+    @Test func activeChatsAndNeighbors() {
+        let now = 1_000_000.0
+        func chat(_ id: String, busy: Bool = false, unread: Bool = false, updated: Double, snoozed: Double? = nil, settled: Double? = nil) -> SessionMeta {
+            SessionMeta(id: id, title: id, model: "m", thinking: "low", createdAt: 0, updatedAt: updated, busy: busy, unread: unread, settledAt: settled, snoozedUntil: snoozed)
+        }
+        let sessions = [
+            chat("quiet", updated: 9), chat("reply", unread: true, updated: 5), chat("work-old", busy: true, updated: 2),
+            chat("work-new", busy: true, unread: true, updated: 7), chat("napping", unread: true, updated: 8, snoozed: now + 1000),
+            chat("settled-reply", unread: true, updated: 3, settled: 1)
+        ]
+        #expect(Inbox.active(sessions, now: now).map(\.id) == ["work-new", "work-old", "reply", "settled-reply"])
+        #expect(Inbox.active(sessions, excluding: "work-new", now: now).map(\.id) == ["work-old", "reply", "settled-reply"])
+
+        let order = Array(sessions.prefix(3))
+        #expect(Inbox.neighbor(of: "reply", in: order, offset: 1)?.id == "work-old")
+        #expect(Inbox.neighbor(of: "work-old", in: order, offset: 1)?.id == "work-old")
+        #expect(Inbox.neighbor(of: "quiet", in: order, offset: -1)?.id == "quiet")
+        #expect(Inbox.neighbor(of: nil, in: order, offset: -1)?.id == "work-old")
+        #expect(Inbox.neighbor(of: nil, in: [], offset: 1) == nil)
+    }
+
     @Test func snoozeChoices() {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "UTC")!

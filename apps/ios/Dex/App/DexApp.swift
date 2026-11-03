@@ -58,6 +58,7 @@ struct RootView: View {
         .task { await model.refreshIfNeeded() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { Task { await model.refreshIfNeeded() } }
+            if phase == .background { Drafts.shared.save() }
         }
     }
 }

@@ -72,6 +72,9 @@ struct MainView: View {
         .background(TabBarRelayout(trigger: router.tab))
         .overlay(alignment: .top) { NoticeBanner() }
         .overlay { ConnectionOverlay() }
+        .sheet(isPresented: $router.switcherOpen) {
+            ChatSwitcher().tint(.dexAccent)
+        }
     }
 
     /// Chats with something new: working on it, or a reply you haven't seen.

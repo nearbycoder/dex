@@ -11,10 +11,16 @@ struct ChatView: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     let sessionId: String
     @State private var feed: ChatFeed?
-    @State private var composer = ComposerModel()
+    /// The chat's message box, kept when you go to another chat and come back.
+    @State private var composer: ComposerModel
     @State private var links = LinkOpener()
     @State private var renaming = false
     @State private var draft = ""
+
+    init(sessionId: String) {
+        self.sessionId = sessionId
+        _composer = State(initialValue: Drafts.shared.composer(for: sessionId))
+    }
 
     var body: some View {
         Group {
@@ -59,6 +65,13 @@ struct ChatView: View {
             TranscriptView(feed: feed, composer: composer, speaker: character, send: { text in sendNow(text, feed: feed) })
                 .environment(\.chatFeed, feed)
                 .environment(\.markdownMedia, ChatMediaView.resolver(server: client.server))
+                // iPhone (no list beside the chat): the other chats that are working or have a reply, a tap away.
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if sizeClass == .compact {
+                        ActiveChatsStrip(current: sessionId)
+                            .animation(.smooth, value: client.state?.sessions.filter { $0.busy || $0.unread }.map(\.id))
+                    }
+                }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     ChatComposerArea(feed: feed, session: session, character: character, composer: composer) { text, attachments in
                         try await send(text, attachments: attachments, feed: feed)
@@ -186,6 +199,17 @@ struct ChatToolbar: ToolbarContent {
                         .accessibilityIdentifier("chat.settle")
                         .sensoryFeedback(.success, trigger: session.settledAt != nil) { _, new in new }
                     }
+                }
+            }
+            // iPhone: a new chat in one tap, from inside this one (it keeps working).
+            if sizeClass == .compact {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        router.newChat()
+                    } label: {
+                        Label("New Chat", systemImage: "square.and.pencil")
+                    }
+                    .accessibilityIdentifier("chat.new")
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -319,6 +343,18 @@ struct ChatMenu: View {
                     .accessibilityIdentifier("chat.menu.settle")
             }
             Button { TitleNaming.shared.regenerate(session.id, client: client) } label: { Label("Regenerate Title", systemImage: "sparkles") }
+            // To come back to it later (once there's a reply to come back to).
+            if session.repliedAt != nil, !session.unread {
+                Button {
+                    // Out of the chat first: while it's on screen, the agent marks it read again.
+                    router.chatSelection = nil
+                    client.closeChat(session.id)
+                    client.perform { try await client.markUnread(session.id) }
+                } label: { Label("Mark as Unread", systemImage: "envelope.badge") }
+                    .accessibilityIdentifier("chat.menu.unread")
+            }
+            Button { router.switcherOpen = true } label: { Label("Switch Chat…", systemImage: "rectangle.stack") }
+                .accessibilityIdentifier("chat.menu.switch")
             if place == .snoozed, let until = session.snoozedUntil {
                 Button { client.perform { try await feed.snooze(until: nil) } } label: {
                     Label("Unsnooze (\(Inbox.snoozedLabel(until)))", systemImage: "alarm.waves.left.and.right")
@@ -352,7 +388,10 @@ struct ChatMenu: View {
         .confirmationDialog("Delete “\(session.title)”?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete Chat", role: .destructive) {
                 router.chatSelection = nil
-                client.perform { try await feed.delete() }
+                client.perform {
+                    try await feed.delete()
+                    Drafts.shared.discard(feed.sessionId)
+                }
             }
         } message: {
             Text("Its messages, files, and VM are deleted too.")

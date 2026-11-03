@@ -43,8 +43,17 @@ enum ChatActions {
     static func mute(_ id: String, _ muted: Bool, client: DexClient) async throws {
         try await client.run("setSessionMuted", .string(id), .bool(muted))
     }
+    /// Sends a message to a chat that isn't open (one just started in the background); `ChatFeed.send` otherwise.
+    static func send(_ id: String, _ text: String, attachments: [ChatAttachment], client: DexClient) async throws {
+        if attachments.isEmpty {
+            try await client.run("sendMessage", .string(id), .string(text))
+        } else {
+            try await client.run("sendMessage", .string(id), .string(text), .array(attachments.map(\.json)))
+        }
+    }
     static func delete(_ id: String, client: DexClient) async throws {
         try await client.run("deleteSession", .string(id), timeout: 60)
+        Drafts.shared.discard(id)
     }
 }
 
@@ -54,15 +63,23 @@ func snoozeTime(_ date: Date) -> String {
     return Calendar.current.isDateInToday(date) ? time : "\(date.formatted(.dateTime.weekday(.abbreviated))) \(time)"
 }
 
-/// What the message box holds, shared by the chat so a message's "Edit" can put its text back in the box.
+/// What the message box holds, shared by the chat so a message's "Edit" can put its text back in the box. A chat's is
+/// kept in `Drafts` (`draftKey` is its chat), so it outlives the chat's screen.
 @MainActor
 @Observable
 final class ComposerModel {
-    var text = ""
+    var text = "" { didSet { if text != oldValue { Drafts.shared.changed(self) } } }
     /// Files attached to the message being written (see Attachments.swift).
-    var attachments: [DraftAttachment] = []
+    var attachments: [DraftAttachment] = [] { didSet { if attachments.isEmpty != oldValue.isEmpty { Drafts.shared.changed(self) } } }
     /// Bumped to put the caret in the box.
     var focusRequest = 0
+    @ObservationIgnored let draftKey: String?
+
+    /// (Setting `text` here doesn't count as a change.)
+    init(draftKey: String? = nil, text: String = "") {
+        self.draftKey = draftKey
+        self.text = text
+    }
 
     func fill(_ text: String) {
         self.text = text

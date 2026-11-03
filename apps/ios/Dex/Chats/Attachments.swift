@@ -40,6 +40,61 @@ extension ComposerModel {
 
     func removeAttachment(_ id: UUID) { attachments.removeAll { $0.id == id } }
 
+    /// What can be dropped on the composer (or pasted into it) as a file: text goes into the box as text instead.
+    static let droppableTypes: [UTType] = [.image, .pdf, .movie, .fileURL]
+
+    /// Attaches dropped or pasted items: images, PDFs, and files (a file by its contents, with its name).
+    func attach(_ providers: [NSItemProvider], client: DexClient) {
+        for provider in providers.prefix(max(0, AttachmentLimits.files - attachments.count)) {
+            if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                    guard let url else { return }
+                    let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                    let data = size <= AttachmentLimits.uploadBytes ? try? Data(contentsOf: url) : nil
+                    let name = url.lastPathComponent
+                    let mimeType = AttachmentPrep.mimeType(for: url)
+                    Task { @MainActor in
+                        guard let data else {
+                            client.notice = size > AttachmentLimits.uploadBytes ? "\(name) is too large (limit \(AttachmentLimits.uploadBytes / 1024 / 1024) MB)." : "Couldn't read \(name)."
+                            return
+                        }
+                        self.attach(data, name: name, mimeType: mimeType, client: client)
+                    }
+                }
+                continue
+            }
+            guard let type = provider.registeredContentTypes.first(where: { type in Self.droppableTypes.contains { type.conforms(to: $0) } }) else { continue }
+            let name = provider.suggestedName.map { name in (name as NSString).pathExtension.isEmpty ? "\(name).\(type.preferredFilenameExtension ?? "bin")" : name }
+                ?? "\(type.conforms(to: .image) ? "Image" : "File").\(type.preferredFilenameExtension ?? "bin")"
+            _ = provider.loadDataRepresentation(for: type) { data, _ in
+                Task { @MainActor in
+                    guard let data else {
+                        client.notice = "Couldn't read \(name)."
+                        return
+                    }
+                    guard data.count <= AttachmentLimits.uploadBytes else {
+                        client.notice = "\(name) is too large (limit \(AttachmentLimits.uploadBytes / 1024 / 1024) MB)."
+                        return
+                    }
+                    self.attach(data, name: name, mimeType: type.preferredMIMEType ?? "application/octet-stream", client: client)
+                }
+            }
+        }
+    }
+
+    /// Attaches the images or files on the clipboard (the attach menu's Paste; pasting text still pastes the text).
+    func pasteFiles(client: DexClient) {
+        let pasteboard = UIPasteboard.general
+        let providers = pasteboard.itemProviders.filter { provider in
+            provider.registeredContentTypes.contains { type in Self.droppableTypes.contains { type.conforms(to: $0) } }
+        }
+        if providers.isEmpty, let image = pasteboard.image, let data = AttachmentPrep.jpeg(image) {
+            attach(data, name: "Pasted Image.jpg", mimeType: "image/jpeg", client: client)
+        } else {
+            attach(providers, client: client)
+        }
+    }
+
     private func update(_ id: UUID, _ change: (inout DraftAttachment) -> Void) {
         guard let index = attachments.firstIndex(where: { $0.id == id }) else { return }
         change(&attachments[index])
@@ -97,6 +152,12 @@ struct AttachButton: View {
                 Button { showCamera = true } label: { Label("Take Photo", systemImage: "camera") }
             }
             Button { showFiles = true } label: { Label("Choose Files", systemImage: "folder") }
+            // Only when the clipboard has an image or a file (checking doesn't ask to paste; pasting does).
+            if UIPasteboard.general.hasImages || UIPasteboard.general.contains(pasteboardTypes: [UTType.pdf.identifier, UTType.fileURL.identifier]) {
+                Divider()
+                Button { model.pasteFiles(client: client) } label: { Label("Paste", systemImage: "doc.on.clipboard") }
+                    .accessibilityIdentifier("composer.paste")
+            }
         } label: {
             Image(systemName: "paperclip").font(.body.weight(.semibold)).frame(width: 20, height: 20)
         }
