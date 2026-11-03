@@ -941,57 +941,79 @@ function FilesSkeleton() {
 
 /** The Usage page's report: headline numbers (rows on phones, tiles wider), the chart, and the first table. */
 export function UsageSkeleton() {
+  const card = "rounded-xl border border-zinc-800 bg-zinc-900/40"
   return (
     <div role="status" className="space-y-4">
       <span className="sr-only">Loading usage…</span>
-      {/* The bill. */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
-        <div className="flex h-4 items-center">
-          <Bone className="h-3 w-36" />
+      {/* The bill and its insights. */}
+      <div className={`${card} overflow-hidden`}>
+        <div className="p-5">
+          <div className="flex h-4 items-center">
+            <Bone className="h-3 w-40" />
+          </div>
+          <div className="mt-1 flex h-10 items-center gap-3">
+            <Bone className="h-8 w-32" />
+            <Bone className="hidden h-3.5 w-48 sm:block" />
+          </div>
+          <Bone className="mt-5 h-2.5 w-full rounded-full" />
+          <div className="mt-3 flex h-4 flex-wrap items-center gap-5">
+            {[30, 24, 22].map((width, index) => (
+              <Bone key={index} className="h-3" style={{ width: `${width * 4}px` }} />
+            ))}
+          </div>
         </div>
-        <div className="mt-1 flex h-9 items-center">
-          <Bone className="h-7 w-28" />
-        </div>
-        <Bone className="mt-4 h-2.5 w-full rounded-full" />
-        <div className="mt-3 flex h-4 flex-wrap items-center gap-4">
-          {[24, 28, 20, 22].map((width, index) => (
-            <Bone key={index} className="h-3" style={{ width: `${width * 4}px` }} />
-          ))}
-        </div>
-      </div>
-      {/* Services. */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40">
-        <div className="flex h-[45px] items-center border-b border-zinc-800 px-4">
-          <Bone className="h-4 w-16" />
-        </div>
-        <div className="divide-y divide-zinc-800/70">
-          {Array.from({ length: 5 }, (_, index) => (
-            <div key={index} className="flex h-[61px] items-center gap-3 px-4">
-              <Bone className="size-2.5" />
-              <div className="min-w-0 flex-1 space-y-2">
-                <Bone className="h-3.5 w-24" />
-                <Bone className="h-3" style={{ width: widthAt(index, [45, 35, 50, 30]) }} />
-              </div>
-              <Bone className="h-3.5 w-16" />
+        <div className="grid gap-4 border-t border-zinc-800 p-5 sm:grid-cols-3 sm:gap-6">
+          {[0, 1, 2].map((index) => (
+            <div key={index} className="space-y-2">
+              <Bone className="h-3 w-24" />
+              <Bone className="h-5 w-20" />
+              <Bone className="h-3" style={{ width: widthAt(index, [80, 60, 70]) }} />
             </div>
           ))}
         </div>
       </div>
-      {/* Daily usage. */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40">
-        <div className="flex h-[45px] items-center gap-2 border-b border-zinc-800 px-4">
-          <Bone className="h-4 w-28" />
-          <Bone className="ml-auto h-4 w-14" />
-        </div>
-        <div className="p-4">
-          <div className="mb-3 flex h-[26px] items-center gap-1.5">
-            <Bone className="h-[26px] w-24 rounded-full" />
-            <Bone className="h-[26px] w-20 rounded-full" />
-            <Bone className="h-[26px] w-24 rounded-full" />
+      {/* Headline numbers. */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {[0, 1, 2, 3].map((index) => (
+          <div key={index} className={`${card} p-4`}>
+            <Bone className="h-3 w-20" />
+            <Bone className="mt-3 h-6 w-24" />
+            <Bone className="mt-2 h-3" style={{ width: widthAt(index, [75, 60, 50, 70]) }} />
+            <Bone className="mt-4 h-8 w-full" />
           </div>
-          <div className="flex h-[200px] items-end gap-[2%] pl-11">
-            {[8, 14, 6, 22, 10, 18, 7, 12, 30, 9, 16, 60].map((height, index) => (
-              <Bone key={index} className="flex-1 rounded-b-none" style={{ height: `${height}%` }} />
+        ))}
+      </div>
+      {/* Daily usage and status. */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className={`${card} lg:col-span-2`}>
+          <div className="flex h-[45px] items-center gap-2 border-b border-zinc-800 px-4">
+            <Bone className="h-4 w-28" />
+            <Bone className="ml-auto h-4 w-14" />
+          </div>
+          <div className="p-4">
+            <div className="mb-3 flex h-[26px] items-center gap-1.5">
+              <Bone className="h-[26px] w-24 rounded-full" />
+              <Bone className="h-[26px] w-20 rounded-full" />
+              <Bone className="h-[26px] w-24 rounded-full" />
+            </div>
+            <div className="flex h-[200px] items-end gap-[2%] pl-11">
+              {[8, 14, 6, 22, 10, 18, 7, 12, 30, 9, 16, 60].map((height, index) => (
+                <Bone key={index} className="flex-1 rounded-b-none" style={{ height: `${height}%` }} />
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className={card}>
+          <div className="flex h-[45px] items-center border-b border-zinc-800 px-4">
+            <Bone className="h-4 w-16" />
+          </div>
+          <div className="space-y-4 p-4">
+            <Bone className="h-[58px] w-full rounded-lg" />
+            {[0, 1, 2].map((index) => (
+              <div key={index} className="space-y-1.5">
+                <Bone className="h-3" style={{ width: widthAt(index, [40, 50, 45]) }} />
+                <Bone className="h-1.5 w-full rounded-full" />
+              </div>
             ))}
           </div>
         </div>
@@ -1009,14 +1031,14 @@ function UsagePageSkeleton() {
       </HeaderBones>
       {/* Tabs. */}
       <div className="shrink-0 border-b border-zinc-900">
-        <div className="mx-auto flex h-[45px] max-w-5xl items-center gap-6 px-4.5">
+        <div className="mx-auto flex h-[45px] max-w-6xl items-center gap-6 px-4.5">
           {[16, 14, 18, 20].map((width, index) => (
             <Bone key={index} className="h-3.5" style={{ width: `${width * 4}px` }} />
           ))}
         </div>
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
-        <div className="mx-auto max-w-5xl p-4">
+        <div className="mx-auto max-w-6xl p-4">
           <UsageSkeleton />
         </div>
       </div>

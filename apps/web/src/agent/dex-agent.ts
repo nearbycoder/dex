@@ -2481,6 +2481,7 @@ export class DexAgent extends Agent<Env, DexState> {
       week: this.ledger.modelSpend("commandcode", until - 7 * DAY, until),
       month: this.ledger.modelSpend("commandcode", until - 30 * DAY, until)
     }
+    const tokensDaily = this.ledger.tokensDaily(since, until)
     const { usage: boat, daily: boatDaily } = this.ledger.boatUsage(since, until)
 
     // Cloudflare keeps these analytics for about a month.
@@ -2528,7 +2529,9 @@ export class DexAgent extends Agent<Env, DexState> {
           chatgpt: chatgptDaily.get(date) ?? 0,
           commandcode: commandcodeDaily.get(date) ?? 0,
           boat: boatDaily.get(date) ?? 0,
-          cloudflare: day ? dayCost(day) : 0
+          cloudflare: day ? dayCost(day) : 0,
+          tokens: tokensDaily.get(date)?.tokens ?? 0,
+          responses: tokensDaily.get(date)?.responses ?? 0
         }
       })
     }

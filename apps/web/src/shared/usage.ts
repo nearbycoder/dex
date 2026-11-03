@@ -54,6 +54,9 @@ export interface DailySpend {
   readonly commandcode?: number
   readonly boat: number
   readonly cloudflare: number
+  /** Model tokens and responses across every subscription. Missing from an older agent's report. */
+  readonly tokens?: number
+  readonly responses?: number
 }
 
 export interface ClineUsage {

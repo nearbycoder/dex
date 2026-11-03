@@ -12,8 +12,9 @@ export function getRouter() {
     defaultPendingComponent: CurrentRouteSkeleton,
     defaultPendingMs: 100,
     defaultPendingMinMs: 200,
-    // Cross-fades pages where the browser supports View Transitions (styled in styles.css).
-    defaultViewTransition: true
+    // Cross-fades pages where the browser supports View Transitions (styled in styles.css). Not when only the search
+    // changes (a page's tab or filter), which should feel instant.
+    defaultViewTransition: { types: ({ pathChanged }) => (pathChanged ? ["page"] : false) }
   })
 }
 

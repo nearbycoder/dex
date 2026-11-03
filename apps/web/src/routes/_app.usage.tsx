@@ -204,7 +204,7 @@ function Meter({ label, percent, value, limited, color }: { label: string; perce
 // ── Daily chart ─────────────────────────────────────────────────────────────
 
 /** Daily usage as stacked bars: thin marks, 2px gaps between segments, rounded tops, hover tooltip. */
-function DailyChart({ daily, shown }: { daily: ReadonlyArray<DailySpend>; shown: ReadonlyArray<Series> }) {
+function DailyChart({ daily, shown, through }: { daily: ReadonlyArray<DailySpend>; shown: ReadonlyArray<Series>; through?: number }) {
   const box = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(640)
   const [hover, setHover] = useState<number | null>(null)
@@ -231,10 +231,18 @@ function DailyChart({ daily, shown }: { daily: ReadonlyArray<DailySpend>; shown:
           return Math.ceil(max / step) * step
         })()
   const ticks = [0, niceMax / 2, niceMax]
-  const slot = plotW / Math.max(1, daily.length)
+  // Days still to come in the period (the rest of this month) keep their place on the axis.
+  const last = daily.at(-1)?.date
+  const ahead = last
+    ? Array.from({ length: Math.max(0, (through ?? daily.length) - daily.length) }, (_, index) =>
+        new Date(Date.parse(`${last}T00:00:00Z`) + (index + 1) * 86_400_000).toISOString().slice(0, 10)
+      )
+    : []
+  const columns = daily.length + ahead.length
+  const slot = plotW / Math.max(1, columns)
   const barW = Math.max(2, Math.min(22, slot * 0.6))
   const y = (value: number) => pad.top + plotH - (value / niceMax) * plotH
-  const labelEvery = Math.ceil(daily.length / Math.max(1, Math.floor(plotW / 56)))
+  const labelEvery = Math.ceil(columns / Math.max(1, Math.floor(plotW / 56)))
 
   return (
     <div ref={box} className="relative">
@@ -287,6 +295,16 @@ function DailyChart({ daily, shown }: { daily: ReadonlyArray<DailySpend>; shown:
                 </text>
               )}
             </g>
+          )
+        })}
+        {ahead.map((date, offset) => {
+          const index = daily.length + offset
+          return (
+            index % labelEvery === 0 && (
+              <text key={date} x={pad.left + index * slot + slot / 2} y={height - 6} textAnchor="middle" className="fill-zinc-700 text-[10px]">
+                {shortDate(date)}
+              </text>
+            )
           )
         })}
       </svg>
@@ -348,7 +366,7 @@ function DailyTable({ daily, shown }: { daily: ReadonlyArray<DailySpend>; shown:
 }
 
 /** Daily spend, with a legend that doubles as a filter: tap a service to hide or show it. */
-function DailyUsage({ daily, available }: { daily: ReadonlyArray<DailySpend>; available: ReadonlyArray<Series> }) {
+function DailyUsage({ daily, available, through }: { daily: ReadonlyArray<DailySpend>; available: ReadonlyArray<Series>; through?: number }) {
   const [view, setView] = useState<"chart" | "table">("chart")
   const [hidden, setHidden] = useState<ReadonlySet<SeriesKey>>(new Set())
   const shown = available.filter((item) => !hidden.has(item.key))
@@ -394,7 +412,7 @@ function DailyUsage({ daily, available }: { daily: ReadonlyArray<DailySpend>; av
           )
         })}
       </div>
-      {view === "chart" ? <DailyChart daily={daily} shown={shown} /> : <DailyTable daily={daily} shown={shown} />}
+      {view === "chart" ? <DailyChart daily={daily} shown={shown} through={through} /> : <DailyTable daily={daily} shown={shown} />}
     </Card>
   )
 }
@@ -896,176 +914,484 @@ function CloudflareTab({ report }: { report: UsageReport }) {
 
 // ── Overview ────────────────────────────────────────────────────────────────
 
-interface Service {
-  key: SeriesKey
+/** A trend under a headline number: one thin bar per day, no axes (the number above says what it is). */
+function MiniBars({ values, color, label }: { values: ReadonlyArray<number>; color: string; label: string }) {
+  const max = Math.max(...values, 0)
+  return (
+    <div className="flex h-8 items-end gap-[2px]" role="img" aria-label={label}>
+      {values.map((value, index) => (
+        <div
+          key={index}
+          className="max-w-3 min-w-px flex-1 rounded-t-[2px]"
+          style={{ height: max > 0 && value > 0 ? `${Math.max(8, (value / max) * 100)}%` : "2px", background: max > 0 && value > 0 ? color : "#27272a" }}
+        />
+      ))}
+    </div>
+  )
+}
+
+/** A headline number with its trend over the period. */
+function Kpi({
+  label,
+  value,
+  detail,
+  trend,
+  color,
+  to
+}: {
   label: string
-  /** What it costs: a plan fee, or metered spend. */
-  price: string
-  summary: ReactNode
-  meter?: { percent: number; label: string }
-  search: UsageSearch
+  value: string
+  detail: ReactNode
+  trend?: ReadonlyArray<number>
+  color: string
+  to?: UsageSearch
+}) {
+  const body = (
+    <>
+      <div className="flex items-center justify-between gap-2 text-xs text-zinc-500">
+        <span className="truncate">{label}</span>
+        {to && <ChevronRight className="size-3.5 shrink-0 text-zinc-700 transition-colors group-hover:text-zinc-400" />}
+      </div>
+      <div className="mt-1.5 truncate text-2xl font-semibold tracking-tight text-zinc-50 tabular-nums">{value}</div>
+      <div className="mt-0.5 truncate text-xs text-zinc-500">{detail}</div>
+      <div className="mt-3">{trend ? <MiniBars values={trend} color={color} label={`${label} by day`} /> : <div className="h-8" />}</div>
+    </>
+  )
+  const className = "group block min-w-0 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4"
+  return to ? (
+    <Link to="/usage" search={to} replace className={`${className} transition-colors hover:border-zinc-700 hover:bg-zinc-900/70`}>
+      {body}
+    </Link>
+  ) : (
+    <div className={className}>{body}</div>
+  )
+}
+
+/** Ranked rows with a thin bar each, sized against the largest. */
+function BarList({
+  rows,
+  empty
+}: {
+  rows: ReadonlyArray<{ key: string; label: ReactNode; value: number; display: string; detail?: string; color: string; icon?: ReactNode; link?: ReactNode }>
+  empty: string
+}) {
+  if (rows.length === 0) return <p className="py-6 text-center text-sm text-zinc-500">{empty}</p>
+  const max = Math.max(...rows.map((row) => row.value), 0)
+  return (
+    <ul className="space-y-3">
+      {rows.map((row) => (
+        <li key={row.key} className="min-w-0">
+          <div className="flex items-center gap-2 text-sm">
+            {row.icon}
+            <span className="min-w-0 flex-1 truncate text-zinc-200">{row.link ?? row.label}</span>
+            {row.detail && <span className="hidden shrink-0 text-xs text-zinc-500 tabular-nums sm:inline">{row.detail}</span>}
+            <span className="w-16 shrink-0 text-right text-zinc-100 tabular-nums">{row.display}</span>
+          </div>
+          <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-zinc-800/70">
+            <div className="h-full rounded-full" style={{ width: `${max > 0 ? Math.max(2, (row.value / max) * 100) : 0}%`, background: row.color }} />
+          </div>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/** One window of an allowance, compact: name, share used, when it resets. */
+function WindowRow({ label, percent, note, limited, color }: { label: string; percent: number; note: string; limited?: boolean; color: string }) {
+  const clamped = Math.min(100, Math.max(0, percent))
+  const tone = limited || clamped >= 100 ? "#ef4444" : clamped >= 80 ? "#f59e0b" : color
+  return (
+    <div>
+      <div className="flex items-baseline gap-2 text-xs">
+        <span className="text-zinc-400">{label}</span>
+        <span className="ml-auto text-zinc-600">{note}</span>
+        <span className={`w-12 text-right tabular-nums ${limited ? "font-medium text-red-400" : clamped >= 80 ? "text-amber-300" : "text-zinc-200"}`}>
+          {limited ? "Limit" : clamped > 0 && clamped < 1 ? "<1%" : `${Math.round(clamped)}%`}
+        </span>
+      </div>
+      <div
+        className="mt-1 h-1.5 overflow-hidden rounded-full bg-zinc-800"
+        role="meter"
+        aria-label={`${label}: ${Math.round(clamped)}% used`}
+        aria-valuenow={clamped}
+        aria-valuemin={0}
+        aria-valuemax={100}
+      >
+        <div className="h-full rounded-full" style={{ width: `${Math.max(clamped, clamped > 0 ? 2 : 0)}%`, background: tone }} />
+      </div>
+    </div>
+  )
+}
+
+/** Every allowance in one place: OpenCode Go's live windows, Command Code's estimate, Cloudflare's busiest meter. */
+function Status({ report, working, unread }: { report: UsageReport; working: number; unread: number }) {
+  const groups: Array<{ key: SeriesKey; title: string; note?: string; search: UsageSearch; rows: ReactNode }> = []
+  const opencode = series("opencode").color
+  if (report.opencode.limits) {
+    const { rolling, weekly, monthly } = report.opencode.limits
+    groups.push({
+      key: "opencode",
+      title: "OpenCode Go",
+      note: "live",
+      search: { tab: "models", provider: "opencode-go" },
+      rows: (
+        <>
+          <WindowRow label="5 hours" percent={rolling.percent} limited={rolling.limited} note={resetsIn(rolling.resetsAt)} color={opencode} />
+          <WindowRow label="Week" percent={weekly.percent} limited={weekly.limited} note={resetsIn(weekly.resetsAt)} color={opencode} />
+          <WindowRow label="Month" percent={monthly.percent} limited={monthly.limited} note={resetsIn(monthly.resetsAt)} color={opencode} />
+        </>
+      )
+    })
+  }
+  if (report.commandcode?.connected) {
+    const { spent } = report.commandcode
+    const color = series("commandcode").color
+    groups.push({
+      key: "commandcode",
+      title: "Command Code",
+      note: "estimated",
+      search: { tab: "models", provider: "commandcode" },
+      rows: (
+        <>
+          <WindowRow
+            label="5 hours"
+            percent={(spent.fiveHours / COMMANDCODE_LIMITS.fiveHours) * 100}
+            note={`${usd(spent.fiveHours)} of ${usd(COMMANDCODE_LIMITS.fiveHours)}`}
+            color={color}
+          />
+          <WindowRow label="7 days" percent={(spent.week / COMMANDCODE_LIMITS.week) * 100} note={`${usd(spent.week)} of ${usd(COMMANDCODE_LIMITS.week)}`} color={color} />
+          <WindowRow
+            label="30 days"
+            percent={(spent.month / COMMANDCODE_LIMITS.month) * 100}
+            note={`${usd(spent.month)} of ${usd(COMMANDCODE_LIMITS.month)}`}
+            color={color}
+          />
+        </>
+      )
+    })
+  }
+  if (report.cloudflare.configured && !report.cloudflare.error && report.range !== "all") {
+    const busiest = [...report.cloudflare.lines].filter((line) => line.allowanceUsed !== null).sort((a, b) => (b.allowanceUsed ?? 0) - (a.allowanceUsed ?? 0))[0]
+    if (busiest)
+      groups.push({
+        key: "cloudflare",
+        title: "Cloudflare",
+        note: "busiest meter",
+        search: { tab: "cloudflare" },
+        rows: <WindowRow label={busiest.label} percent={(busiest.allowanceUsed ?? 0) * 100} note="of the monthly allowance" color={series("cloudflare").color} />
+      })
+  }
+  return (
+    <Card
+      title="Status"
+      info="What's running now, and how much of each plan's included usage is used. OpenCode Go's is read live; Command Code's is estimated from Dex's chats (its CLI and other clients count too)."
+    >
+      {/* Right now. */}
+      <div className="mb-5 grid grid-cols-3 gap-px overflow-hidden rounded-lg border border-zinc-800 bg-zinc-800 text-center">
+        {[
+          { label: "Working", value: String(working), live: working > 0 },
+          { label: "Unread", value: String(unread), live: false },
+          { label: "VM", value: report.boat.running ? "On" : "Off", live: report.boat.running }
+        ].map((item) => (
+          <div key={item.label} className="bg-zinc-950 px-2 py-2.5">
+            <div className="flex items-center justify-center gap-1.5 text-base font-semibold text-zinc-100 tabular-nums">
+              {item.live && <span className="size-1.5 animate-pulse rounded-full bg-emerald-400" />}
+              {item.value}
+            </div>
+            <div className="text-[11px] text-zinc-500">{item.label}</div>
+          </div>
+        ))}
+      </div>
+      {groups.length === 0 ? (
+        <p className="py-4 text-center text-sm text-zinc-500">No plan with an allowance is connected.</p>
+      ) : (
+        <div className="space-y-5">
+          {groups.map((group) => (
+            <section key={group.key} className="space-y-2.5">
+              <Link to="/usage" search={group.search} replace className="group flex items-center gap-2 text-xs">
+                <Swatch color={series(group.key).color} className="size-2" />
+                <span className="font-medium text-zinc-300 group-hover:text-zinc-100">{group.title}</span>
+                {group.note && <span className="text-zinc-600">{group.note}</span>}
+                <ChevronRight className="ml-auto size-3.5 text-zinc-700 group-hover:text-zinc-400" />
+              </Link>
+              {group.rows}
+            </section>
+          ))}
+        </div>
+      )}
+    </Card>
+  )
 }
 
 function OverviewTab({ report, visible, clineConnected }: { report: UsageReport; visible: ReadonlyArray<Subscription>; clineConnected: boolean }) {
+  const { state } = useDex()
   const isMonth = report.range === "month"
-  // What this month's bill is made of: the flat plans Dex knows about, plus VM time.
-  const parts = [
-    ...visible.flatMap((subscription) =>
-      subscription.fee !== null &&
-      (subscription.id === "clinepass" ? clineConnected : subscription.id === "opencode-go" ? report.opencode.connected : report.commandcode?.connected)
-        ? [{ key: subscription.key, value: subscription.fee }]
-        : []
-    ),
-    { key: "cloudflare" as const, value: PLAN_FEES.workersPaid },
-    { key: "boat" as const, value: report.boat.cost }
-  ]
-  const plans = parts.filter((part) => part.key !== "boat").reduce((sum, part) => sum + part.value, 0)
-  const bill = plans + report.boat.cost
+  const usages = visible.flatMap((subscription) => {
+    const usage = tokensOf(report, subscription)
+    return usage ? [{ subscription, usage }] : []
+  })
+  const sum = (pick: (usage: ClineUsage) => number) => usages.reduce((total, { usage }) => total + pick(usage), 0)
+  const worth = sum((usage) => usage.listCost)
+  const tokens = sum((usage) => usage.totalTokens)
+  const responses = sum((usage) => usage.responses)
+  const cached = sum((usage) => usage.cacheReadTokens)
+  const input = sum((usage) => usage.inputTokens) + cached
 
-  const services: Service[] = [
-    ...visible.map((subscription): Service => {
+  // What the bill is made of: the flat plans Dex knows about, plus VM time.
+  const connectedPlan = (subscription: Subscription) =>
+    subscription.id === "clinepass"
+      ? clineConnected
+      : subscription.id === "opencode-go"
+        ? report.opencode.connected
+        : subscription.id === "commandcode" && Boolean(report.commandcode?.connected)
+  const parts = [
+    ...SUBSCRIPTIONS.flatMap((subscription) =>
+      subscription.fee !== null && connectedPlan(subscription) ? [{ key: subscription.key as SeriesKey, value: subscription.fee }] : []
+    ),
+    { key: "cloudflare" as SeriesKey, value: PLAN_FEES.workersPaid },
+    { key: "boat" as SeriesKey, value: report.boat.cost }
+  ]
+  const plans = parts.filter((part) => part.key !== "boat").reduce((total, part) => total + part.value, 0)
+  const modelPlans = parts.filter((part) => part.key !== "boat" && part.key !== "cloudflare").reduce((total, part) => total + part.value, 0)
+
+  // Insights.
+  const modelKeys = visible.map((subscription) => subscription.key)
+  const dayModelValue = (day: DailySpend) => modelKeys.reduce((total, key) => total + (day[key] ?? 0), 0)
+  const busiest = [...report.daily].sort((a, b) => dayModelValue(b) + b.boat - (dayModelValue(a) + a.boat))[0]
+  const models = usages.flatMap(({ subscription, usage }) => usage.byModel.map((row) => ({ ...row, subscription }))).sort((a, b) => b.listCost - a.listCost)
+  const topByTokens = [...models].sort((a, b) => b.totalTokens - a.totalTokens)[0]
+  const chats = [
+    ...usages
+      .flatMap(({ usage }) => usage.byChat)
+      .reduce((all, chat) => {
+        const merged = all.get(chat.sessionId)
+        all.set(chat.sessionId, merged ? { ...merged, totalTokens: merged.totalTokens + chat.totalTokens, listCost: merged.listCost + chat.listCost } : chat)
+        return all
+      }, new Map<string, ClineUsage["byChat"][number]>())
+      .values()
+  ].sort((a, b) => b.listCost - a.listCost)
+
+  const sessions = state?.sessions ?? []
+  const working = sessions.filter((session) => session.busy).length
+  const unread = sessions.filter((session) => session.unread).length
+  const accent = "#34d399"
+  // This month's trends span the whole month, so a few days in don't read as a full trend.
+  const daysInMonth = new Date(Date.UTC(new Date(report.until).getUTCFullYear(), new Date(report.until).getUTCMonth() + 1, 0)).getUTCDate()
+  const trend = (pick: (day: DailySpend) => number) => [
+    ...report.daily.map(pick),
+    ...Array.from({ length: isMonth ? Math.max(0, daysInMonth - report.daily.length) : 0 }, () => 0)
+  ]
+  const monthName = new Date(report.until).toLocaleDateString("en", { month: "long" })
+
+  const insights = [
+    modelPlans > 0 &&
+      worth > 0 && {
+        label: worth >= modelPlans ? "Your plans are worth" : "Plan value used",
+        value: worth >= modelPlans ? `${(worth / modelPlans).toFixed(worth / modelPlans >= 10 ? 0 : 1)}× their price` : `${Math.round((worth / modelPlans) * 100)}%`,
+        detail: `${usd(worth)} at model rates · ${usd(modelPlans)}/mo in plans`
+      },
+    busiest &&
+      dayModelValue(busiest) + busiest.boat > 0 && {
+        label: "Busiest day",
+        value: shortDate(busiest.date),
+        detail: `${usd(dayModelValue(busiest))} of models${busiest.boat > 0 ? ` · ${usd(busiest.boat)} of VM time` : ""}${busiest.tokens ? ` · ${compact(busiest.tokens)} tokens` : ""}`
+      },
+    topByTokens &&
+      tokens > 0 && {
+        label: "Most used model",
+        value: modelName(topByTokens.model),
+        detail: `${Math.round((topByTokens.totalTokens / tokens) * 100)}% of tokens · ${series(topByTokens.subscription.key).label}`
+      }
+  ].filter(Boolean) as Array<{ label: string; value: string; detail: string }>
+
+  const services = [
+    ...visible.map((subscription) => {
       const usage = tokensOf(report, subscription)!
-      const meter =
-        subscription.id === "opencode-go" && report.opencode.limits
-          ? {
-              percent: report.opencode.limits.monthly.percent,
-              label: "of this month's allowance"
-            }
-          : subscription.id === "commandcode" && report.commandcode
-            ? {
-                percent: (report.commandcode.spent.month / COMMANDCODE_LIMITS.month) * 100,
-                label: "of 30 days' allowance"
-              }
-            : undefined
       return {
-        key: subscription.key,
-        label: series(subscription.key).label,
+        key: subscription.key as SeriesKey,
         price: subscription.fee === null ? "ChatGPT plan" : `${usd(subscription.fee)}/mo`,
-        summary: `${compact(usage.totalTokens)} tokens · ${usd(usage.listCost)} ${subscription.rates}`,
-        meter,
-        search: { tab: "models", provider: subscription.id }
+        summary: `${compact(usage.totalTokens)} tokens · worth ${usd(usage.listCost)}`,
+        search: { tab: "models", provider: subscription.id } as UsageSearch
       }
     }),
     {
-      key: "boat",
-      label: "boat.dev",
+      key: "boat" as SeriesKey,
       price: usd(report.boat.cost),
-      summary: (
-        <>
-          {duration(report.boat.hours)} of VM time
-          {report.boat.running && <span className="text-emerald-400"> · running now</span>}
-        </>
-      ),
-      search: { tab: "machines" }
+      summary: `${duration(report.boat.hours)} of VM time${report.boat.running ? " · running now" : ""}`,
+      search: { tab: "machines" } as UsageSearch
     },
     {
-      key: "cloudflare",
-      label: "Cloudflare",
+      key: "cloudflare" as SeriesKey,
       price: `${usd(PLAN_FEES.workersPaid)}/mo`,
       summary: report.cloudflare.configured
         ? report.cloudflare.error
-          ? "Analytics unavailable right now"
-          : `${usd(report.cloudflare.meteredCost)} metered, inside the plan's allowance`
-        : "Add an analytics token to see usage",
-      search: { tab: "cloudflare" }
+          ? "Analytics unavailable"
+          : `${usd(report.cloudflare.meteredCost)} metered, in the allowance`
+        : "Add an analytics token",
+      search: { tab: "cloudflare" } as UsageSearch
     }
   ]
 
   return (
     <div className="space-y-4">
-      <Card>
-        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-1">
+      {/* The bill, and what stands out. */}
+      <section className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/40">
+        <div className="flex min-w-0 flex-col gap-5 p-5">
           <div>
-            <div className="text-xs text-zinc-400">{isMonth ? "Estimated bill this month" : "VM time in this period"}</div>
-            <div className="mt-1 text-3xl font-semibold tracking-tight text-zinc-50 tabular-nums">{usd(isMonth ? bill : report.boat.cost)}</div>
+            <div className="text-xs text-zinc-400">{isMonth ? `Estimated bill for ${monthName}` : `Plans, plus VM time in this period`}</div>
+            <div className="mt-1 flex flex-wrap items-baseline gap-x-3">
+              <span className="text-4xl font-semibold tracking-tight text-zinc-50 tabular-nums">{usd(isMonth ? plans + report.boat.cost : report.boat.cost)}</span>
+              <span className="text-sm text-zinc-500">
+                {isMonth ? `${usd(plans)} in plans + ${usd(report.boat.cost)} of VM time` : `VM time · plans add ${usd(plans)} a month`}
+              </span>
+            </div>
           </div>
-          <div className="pb-1 text-xs text-zinc-500">{isMonth ? `${usd(plans)} in plans + ${usd(report.boat.cost)} of VM time` : `Plans add ${usd(plans)} a month`}</div>
-        </div>
-        {isMonth && bill > 0 && (
-          <>
-            <div className="mt-4 flex h-2.5 gap-0.5 overflow-hidden rounded-full" role="img" aria-label="What the bill is made of">
+          <div>
+            <div className="flex h-2.5 gap-0.5 overflow-hidden rounded-full bg-zinc-800" role="img" aria-label="What the bill is made of">
               {parts
                 .filter((part) => part.value > 0)
                 .map((part) => (
-                  <div
-                    key={part.key}
-                    style={{
-                      flexGrow: part.value,
-                      background: series(part.key).color
-                    }}
-                  />
+                  <div key={part.key} style={{ flexGrow: part.value, background: series(part.key).color }} />
                 ))}
             </div>
-            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-zinc-400">
+            <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5 text-xs">
               {parts.map((part) => (
-                <span key={part.key} className="flex items-center gap-1.5">
+                <span key={part.key} className="flex items-center gap-1.5 text-zinc-400">
                   <Swatch color={series(part.key).color} className="size-2" />
                   {series(part.key).label}
                   <span className="text-zinc-200 tabular-nums">{usd(part.value)}</span>
                 </span>
               ))}
             </div>
-          </>
-        )}
-      </Card>
+          </div>
+        </div>
+        <dl className="grid min-w-0 gap-4 border-t border-zinc-800 p-5 sm:grid-cols-3 sm:gap-6">
+          {insights.length === 0 ? (
+            <p className="text-sm text-zinc-500">Insights show up once your chats have used some models.</p>
+          ) : (
+            insights.map((insight) => (
+              <div key={insight.label} className="min-w-0">
+                <dt className="text-xs text-zinc-500">{insight.label}</dt>
+                <dd className="mt-0.5 truncate text-lg font-semibold tracking-tight text-zinc-100">{insight.value}</dd>
+                <dd className="truncate text-xs text-zinc-500" title={insight.detail}>
+                  {insight.detail}
+                </dd>
+              </div>
+            ))
+          )}
+        </dl>
+      </section>
 
-      <Card title="Services" flush>
-        <ul className="divide-y divide-zinc-800/70">
+      {/* Headline numbers. */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Kpi label="Model usage" value={usd(worth)} detail="at model rates, covered by plans" trend={trend(dayModelValue)} color={accent} to={{ tab: "models" }} />
+        <Kpi
+          label="Tokens"
+          value={compact(tokens)}
+          detail={input > 0 ? `${Math.round((cached / input) * 100)}% of input from cache` : "input and output"}
+          trend={report.daily.some((day) => day.tokens !== undefined) ? trend((day) => day.tokens ?? 0) : undefined}
+          color={accent}
+          to={{ tab: "models" }}
+        />
+        <Kpi
+          label="VM time"
+          value={duration(report.boat.hours)}
+          detail={`${usd(report.boat.cost)}${report.boat.running ? " · running now" : ` · ${report.boat.runs.length} ${report.boat.runs.length === 1 ? "run" : "runs"}`}`}
+          trend={trend((day) => day.boat)}
+          color={series("boat").color}
+          to={{ tab: "machines" }}
+        />
+        <Kpi
+          label="Responses"
+          value={compact(responses)}
+          detail={responses > 0 ? `${compact(tokens / responses)} tokens each, on average` : "model replies and tool steps"}
+          trend={trend((day) => day.responses ?? 0)}
+          color={accent}
+          to={{ tab: "models" }}
+        />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="min-w-0 lg:col-span-2">
+          <DailyUsage
+            daily={report.daily}
+            through={isMonth ? daysInMonth : undefined}
+            available={SERIES.filter((item) => item.key === "boat" || item.key === "cloudflare" || modelKeys.includes(item.key))}
+          />
+        </div>
+        <Status report={report} working={working} unread={unread} />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card
+          title="Top models"
+          aside={
+            <Link to="/usage" search={{ tab: "models" }} replace className="text-zinc-400 hover:text-zinc-200">
+              All models
+            </Link>
+          }
+        >
+          <BarList
+            empty="No model usage in this period."
+            rows={models.slice(0, 5).map((row) => ({
+              key: row.model,
+              label: <span title={row.model}>{modelName(row.model)}</span>,
+              icon: <ModelLogo modelId={row.model} className="size-4" />,
+              value: row.listCost || row.totalTokens / 1e9,
+              display: usd(row.listCost),
+              detail: `${compact(row.totalTokens)} tokens`,
+              color: series(row.subscription.key).color
+            }))}
+          />
+        </Card>
+        <Card title="Top chats" aside={<span>by model usage</span>}>
+          <BarList
+            empty="No chats used models in this period."
+            rows={chats.slice(0, 5).map((chat) => ({
+              key: chat.sessionId,
+              label: chat.title,
+              link:
+                chat.title === "Deleted chat" ? (
+                  <span className="text-zinc-500">{chat.title}</span>
+                ) : (
+                  <Link to="/chat/$sessionId" params={{ sessionId: chat.sessionId }} className="hover:underline">
+                    {chat.title}
+                  </Link>
+                ),
+              value: chat.listCost || chat.totalTokens / 1e9,
+              display: usd(chat.listCost),
+              detail: `${compact(chat.totalTokens)} tokens`,
+              color: accent
+            }))}
+          />
+        </Card>
+      </div>
+
+      <section>
+        <h2 className="mb-2 px-1 text-xs font-medium text-zinc-500">Services</h2>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {services.map((service) => (
-            <li key={service.key}>
-              <Link to="/usage" search={service.search} className="group flex items-center gap-3 px-4 py-3 hover:bg-zinc-900/60">
-                <Swatch color={series(service.key).color} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline gap-2">
-                    <span className="truncate text-sm text-zinc-100">{service.label}</span>
-                    <span className="ml-auto shrink-0 text-sm text-zinc-200 tabular-nums sm:hidden">{service.price}</span>
-                  </div>
-                  <div className="mt-0.5 truncate text-xs text-zinc-500">{service.summary}</div>
-                  {service.meter && (
-                    <div className="mt-1.5 flex items-center gap-2 sm:hidden">
-                      <MiniMeter percent={service.meter.percent} color={series(service.key).color} />
-                      <span className="shrink-0 text-[11px] text-zinc-500 tabular-nums">
-                        {Math.round(service.meter.percent)}% {service.meter.label}
-                      </span>
-                    </div>
-                  )}
+            <Link
+              key={service.key}
+              to="/usage"
+              search={service.search}
+              replace
+              className="group flex min-w-0 items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900/40 px-4 py-3 transition-colors hover:border-zinc-700 hover:bg-zinc-900/70"
+            >
+              <Swatch color={series(service.key).color} />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline gap-2">
+                  <span className="truncate text-sm text-zinc-100">{series(service.key).label}</span>
+                  <span className="ml-auto shrink-0 text-sm text-zinc-300 tabular-nums">{service.price}</span>
                 </div>
-                {service.meter && (
-                  <div className="hidden w-44 shrink-0 sm:block">
-                    <MiniMeter percent={service.meter.percent} color={series(service.key).color} />
-                    <div className="mt-1 text-[11px] text-zinc-500 tabular-nums">
-                      {Math.round(service.meter.percent)}% {service.meter.label}
-                    </div>
-                  </div>
-                )}
-                <span className="hidden w-24 shrink-0 text-right text-sm text-zinc-200 tabular-nums sm:block">{service.price}</span>
-                <ChevronRight className="size-4 shrink-0 text-zinc-600 group-hover:text-zinc-400" />
-              </Link>
-            </li>
+                <div className="mt-0.5 truncate text-xs text-zinc-500">{service.summary}</div>
+              </div>
+              <ChevronRight className="size-4 shrink-0 text-zinc-700 group-hover:text-zinc-400" />
+            </Link>
           ))}
-        </ul>
-      </Card>
-
-      <DailyUsage
-        daily={report.daily}
-        available={SERIES.filter((item) => item.key === "boat" || item.key === "cloudflare" || visible.some((subscription) => subscription.key === item.key))}
-      />
+        </div>
+      </section>
     </div>
-  )
-}
-
-function MiniMeter({ percent, color }: { percent: number; color: string }) {
-  const clamped = Math.min(100, Math.max(0, percent))
-  return (
-    <span className="block h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
-      <span
-        className="block h-full rounded-full"
-        style={{
-          width: `${Math.max(clamped, clamped > 0 ? 2 : 0)}%`,
-          background: clamped >= 100 ? "#ef4444" : clamped >= 80 ? "#f59e0b" : color
-        }}
-      />
-    </span>
   )
 }
 
@@ -1125,7 +1451,7 @@ function UsagePage() {
 
       <nav className="scrollbar-none shrink-0 overflow-x-auto border-b border-zinc-900" aria-label="Usage sections">
         {/* Lined up with the content below. */}
-        <div className="mx-auto flex max-w-5xl gap-1 px-2">
+        <div className="mx-auto flex max-w-6xl gap-1 px-2">
           {TABS.map((item) => {
             const selected = item.id === tab
             return (
@@ -1145,7 +1471,7 @@ function UsagePage() {
       </nav>
 
       <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-5xl space-y-4 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        <div className="mx-auto max-w-6xl space-y-4 p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
           {error && <p className="rounded-lg bg-red-950/40 px-3 py-2 text-sm text-red-300">{error}</p>}
           {!report ? (
             <UsageSkeleton />

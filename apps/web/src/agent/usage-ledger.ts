@@ -148,6 +148,18 @@ export class UsageLedger {
     return daily
   }
 
+  /** Tokens and responses per UTC day, across every subscription. */
+  tokensDaily(since: number, until: number): Map<string, { tokens: number; responses: number }> {
+    const daily = new Map<string, { tokens: number; responses: number }>()
+    for (const row of this.sql.exec<{ at: number; total_tokens: number }>(`SELECT at, total_tokens FROM dex_usage_llm WHERE at >= ? AND at <= ?`, since, until)) {
+      const day = daily.get(utcDate(row.at)) ?? { tokens: 0, responses: 0 }
+      day.tokens += row.total_tokens
+      day.responses++
+      daily.set(utcDate(row.at), day)
+    }
+    return daily
+  }
+
   /** One subscription's token cost over a period. */
   modelSpend(provider: ModelProvider, since: number, until: number): number {
     return this.sql.exec<{ cost: number | null }>(
