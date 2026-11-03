@@ -16,6 +16,19 @@ struct VmPreviewOverlay: View {
     @AppStorage("dex.vmPreview.window") private var windowSpot = PreviewSpot(right: true, y: 0.85).raw
     @AppStorage("dex.vmPreview.width") private var savedWidth: Double = 0
 
+    /// A reset launch (UI tests) starts with the preview closed and in its first places, as on a new device.
+    private static let resetPlaces: Void = {
+        guard LaunchOptions.current.resetState else { return }
+        for key in ["dex.vmPreview.open", "dex.vmPreview.button", "dex.vmPreview.window", "dex.vmPreview.width"] {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+    }()
+
+    init(vm: VmInfo) {
+        _ = Self.resetPlaces
+        self.vm = vm
+    }
+
     var body: some View {
         GeometryReader { geometry in
             let bounds = PreviewBounds(size: geometry.size)

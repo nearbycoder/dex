@@ -186,17 +186,21 @@ public extension TranscriptState {
         return results
     }
 
-    var displayItems: [DisplayItem] {
+    /// What the chat screen shows, in order: the recorded entries' items and the message being streamed.
+    var displayItems: [DisplayItem] { displayItems(recorded: recordedItems) }
+
+    /// The streaming message added to items already worked out from the entries (`recordedItems`, which only change
+    /// when an entry is recorded, not with every streamed chunk).
+    func displayItems(recorded: [DisplayItem]) -> [DisplayItem] {
+        guard let streaming else { return recorded }
+        var items = recorded
+        Self.addAssistant("streaming", streaming, streaming: true, to: &items)
+        return items
+    }
+
+    /// The items from the recorded entries alone.
+    var recordedItems: [DisplayItem] {
         var items: [DisplayItem] = []
-        // Consecutive assistant messages (tool results don't interrupt them) are one reply.
-        func addAssistant(_ id: String, _ message: AssistantMessage, streaming: Bool) {
-            let ended: Double? = streaming ? nil : message.timestamp + (message.durationMs ?? 0)
-            if case .assistant(let lastId, let messages, _, let lastEnded) = items.last {
-                items[items.count - 1] = .assistant(id: lastId, messages: messages + [message], streaming: streaming, endedAt: ended ?? lastEnded)
-            } else {
-                items.append(.assistant(id: id, messages: [message], streaming: streaming, endedAt: ended))
-            }
-        }
         for entry in entries {
             if entry.kind == "pi.reset" { items.append(.divider(id: entry.id, label: "Context reset")) }
             else if entry.kind == "pi.compaction" { items.append(.divider(id: entry.id, label: "Earlier messages summarized")) }
@@ -208,7 +212,7 @@ public extension TranscriptState {
                 case .user(let user):
                     let split = splitAttachments(user.text)
                     items.append(.user(id: id, text: split.text, images: user.images, files: split.files, imageParts: user.imageParts))
-                case .assistant(let assistant): addAssistant(id, assistant, streaming: false)
+                case .assistant(let assistant): Self.addAssistant(id, assistant, streaming: false, to: &items)
                 case .toolResult(let result):
                     if case .assistant(let lastId, let messages, let streaming, let ended) = items.last {
                         items[items.count - 1] = .assistant(id: lastId, messages: messages, streaming: streaming, endedAt: max(ended ?? 0, result.timestamp))
@@ -217,7 +221,16 @@ public extension TranscriptState {
                 }
             }
         }
-        if let streaming { addAssistant("streaming", streaming, streaming: true) }
         return items
+    }
+
+    /// Consecutive assistant messages (tool results don't interrupt them) are one reply.
+    private static func addAssistant(_ id: String, _ message: AssistantMessage, streaming: Bool, to items: inout [DisplayItem]) {
+        let ended: Double? = streaming ? nil : message.timestamp + (message.durationMs ?? 0)
+        if case .assistant(let lastId, let messages, _, let lastEnded) = items.last {
+            items[items.count - 1] = .assistant(id: lastId, messages: messages + [message], streaming: streaming, endedAt: ended ?? lastEnded)
+        } else {
+            items.append(.assistant(id: id, messages: [message], streaming: streaming, endedAt: ended))
+        }
     }
 }

@@ -228,6 +228,32 @@ public final class ChatFeed {
 
     public var session: SessionMeta? { client?.state?.session(sessionId) }
 
+    /// What the chat shows (`TranscriptState.displayItems`). The recorded entries' part is worked out once per entry
+    /// recorded, not on every streamed chunk, and stays the same value between them, so replies that didn't change
+    /// aren't drawn again.
+    public var displayItems: [DisplayItem] { transcript.displayItems(recorded: recorded().items) }
+
+    /// Tool results by call id (`TranscriptState.toolResults`), kept the same way.
+    public var toolResults: [String: ToolResultMessage] { recorded().results }
+
+    private struct RecordedKey: Equatable {
+        let count: Int
+        let first: String?
+        let last: String?
+    }
+
+    @ObservationIgnored private var recordedCache: (key: RecordedKey, items: [DisplayItem], results: [String: ToolResultMessage])?
+
+    /// Entries are only ever added (or replaced by a snapshot), so their count and ends tell a change.
+    private func recorded() -> (items: [DisplayItem], results: [String: ToolResultMessage]) {
+        let entries = transcript.entries
+        let key = RecordedKey(count: entries.count, first: entries.first?.id, last: entries.last?.id)
+        if let cache = recordedCache, cache.key == key { return (cache.items, cache.results) }
+        let made = (items: transcript.recordedItems, results: transcript.toolResults)
+        recordedCache = (key, made.items, made.results)
+        return made
+    }
+
     func activate() {
         guard let connection = client?.connection else { return }
         subscriptions = [

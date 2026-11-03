@@ -698,6 +698,9 @@ public struct DexState: Codable, Sendable, Hashable {
     /// Ordinary chats: everything but characters' conversations, which live under them.
     public var chats: [SessionMeta] { sessions.filter { $0.characterId == nil } }
 
+    /// Chats waiting on you: they asked to do something that needs your yes (Access & API → Waiting for you).
+    public var waitingChats: Set<String> { Set(access.pending.filter { $0.status == "pending" }.map(\.sessionId)) }
+
     /// Chats (sidekicks' conversations too) with a reply you haven't seen: the app icon's badge, as the agent counts it.
     public var unreadCount: Int { sessions.filter(\.unread).count }
 

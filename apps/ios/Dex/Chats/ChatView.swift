@@ -11,10 +11,16 @@ struct ChatView: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     let sessionId: String
     @State private var feed: ChatFeed?
-    @State private var composer = ComposerModel()
+    /// The chat's message box, kept when you go to another chat and come back.
+    @State private var composer: ComposerModel
     @State private var links = LinkOpener()
     @State private var renaming = false
     @State private var draft = ""
+
+    init(sessionId: String) {
+        self.sessionId = sessionId
+        _composer = State(initialValue: Drafts.shared.composer(for: sessionId))
+    }
 
     var body: some View {
         Group {
@@ -59,6 +65,14 @@ struct ChatView: View {
             TranscriptView(feed: feed, composer: composer, speaker: character, send: { text in sendNow(text, feed: feed) })
                 .environment(\.chatFeed, feed)
                 .environment(\.markdownMedia, ChatMediaView.resolver(server: client.server))
+                // iPhone (no list beside the chat): the other chats that are working or have a reply, a tap away. A bar,
+                // so the transcript fades under it as under the navigation bar.
+                .safeAreaBar(edge: .top, spacing: 0) {
+                    if sizeClass == .compact {
+                        ActiveChatsStrip(current: sessionId)
+                            .animation(.smooth, value: Inbox.active(client.state?.sessions ?? [], waiting: client.state?.waitingChats ?? [], excluding: sessionId).map(\.id))
+                    }
+                }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     ChatComposerArea(feed: feed, session: session, character: character, composer: composer) { text, attachments in
                         try await send(text, attachments: attachments, feed: feed)
@@ -87,6 +101,13 @@ struct ChatView: View {
                     if let vm = client.state?.vm(sessionId), vm.status == "running" || vm.status == "starting" {
                         VmPreviewOverlay(vm: vm)
                     }
+                }
+                // The VM's files, in a sheet. (Not an inspector: on iPhone its toolbar took over the chat's own, even closed.)
+                .sheet(isPresented: Binding(get: { router.vmFiles == sessionId }, set: { if !$0 { router.vmFiles = nil } })) {
+                    VmFilesPanel(sessionId: sessionId, running: feed.transcript.running) { router.vmFiles = nil }
+                        .presentationDetents([.large, .medium])
+                        .presentationSizing(.page)
+                        .tint(.dexAccent)
                 }
         }
     }
@@ -155,6 +176,16 @@ struct ChatToolbar: ToolbarContent {
                         .accessibilityHint("Watch or take over this chat's VM")
                         .accessibilityIdentifier("chat.machine")
                     }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            router.vmFiles = router.vmFiles == session.id ? nil : session.id
+                        } label: {
+                            Label("Files", systemImage: router.vmFiles == session.id ? "folder.fill" : "folder")
+                        }
+                        .accessibilityLabel("VM files")
+                        .accessibilityHint("Browse this chat's VM files and changes")
+                        .accessibilityIdentifier("chat.files")
+                    }
                 }
                 // A sidekick's chat has their bell instead.
                 if showsMute, character == nil {
@@ -186,6 +217,18 @@ struct ChatToolbar: ToolbarContent {
                         .accessibilityIdentifier("chat.settle")
                         .sensoryFeedback(.success, trigger: session.settledAt != nil) { _, new in new }
                     }
+                }
+            }
+            // iPhone: a new chat in one tap, from inside this one (it keeps working). Beside Back: a second button
+            // beside the title menu would fold the trailing ones into an overflow menu.
+            if sizeClass == .compact {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        router.newChat()
+                    } label: {
+                        Label("New Chat", systemImage: "square.and.pencil")
+                    }
+                    .accessibilityIdentifier("chat.new")
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -309,6 +352,8 @@ struct ChatMenu: View {
                     Label { Text("Machine"); Text(vm.setup.status == "running" ? "Setting up" : vm.status.capitalized) } icon: { Image(systemName: "desktopcomputer") }
                 }
                 .accessibilityIdentifier("chat.menu.machine")
+                Button { router.vmFiles = session.id } label: { Label("Files", systemImage: "folder") }
+                    .accessibilityIdentifier("chat.menu.files")
                 Divider()
             }
             if place == .settled {
@@ -319,6 +364,21 @@ struct ChatMenu: View {
                     .accessibilityIdentifier("chat.menu.settle")
             }
             Button { TitleNaming.shared.regenerate(session.id, client: client) } label: { Label("Regenerate Title", systemImage: "sparkles") }
+            // To come back to it later (once there's a reply to come back to).
+            if session.repliedAt != nil, !session.unread {
+                Button {
+                    // Out of the chat first: while it's on screen, the agent marks it read again.
+                    router.chatSelection = nil
+                    client.closeChat(session.id)
+                    client.perform { try await client.markUnread(session.id) }
+                } label: { Label("Mark as Unread", systemImage: "envelope.badge") }
+                    .accessibilityIdentifier("chat.menu.unread")
+            }
+            Button { router.switcherOpen = true } label: { Label("Switch Chat…", systemImage: "rectangle.stack") }
+                .accessibilityIdentifier("chat.menu.switch")
+            if Router.canOpenWindows {
+                Button { Router.openInNewWindow(session.id) } label: { Label("Open in New Window", systemImage: "macwindow.badge.plus") }
+            }
             if place == .snoozed, let until = session.snoozedUntil {
                 Button { client.perform { try await feed.snooze(until: nil) } } label: {
                     Label("Unsnooze (\(Inbox.snoozedLabel(until)))", systemImage: "alarm.waves.left.and.right")
@@ -352,7 +412,10 @@ struct ChatMenu: View {
         .confirmationDialog("Delete “\(session.title)”?", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Delete Chat", role: .destructive) {
                 router.chatSelection = nil
-                client.perform { try await feed.delete() }
+                client.perform {
+                    try await feed.delete()
+                    Drafts.shared.discard(feed.sessionId)
+                }
             }
         } message: {
             Text("Its messages, files, and VM are deleted too.")

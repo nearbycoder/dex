@@ -61,6 +61,8 @@ ONLY=DexUITests/ChatUITests apps/ios/scripts/test.sh       # one class
 cd apps/ios/DexKit && swift test                           # DexCore only (seconds, no simulator)
 ```
 
+`PerformanceUITests` time launch, opening a long chat, a reply streaming into it while scrolling, and switching chats, on the mock with a 120-exchange chat (`-DexLongChat`); they're opt-in: `TEST_RUNNER_DEX_PERF=1` on the xcodebuild command line.
+
 UI tests run on the mock agent (`-DexMock -DexReset -DexFast`) and save screenshots to `apps/ios/artifacts/` (gitignored). Against a real Dex with dev login (`npm run dev`, `DEV_LOGIN=true`):
 
 - `DEX_LIVE_SERVER=http://localhost:5173 DEX_LIVE_TOKEN=<session token> swift test --filter LiveServerTests` runs DexCore against it (state, RPC, chats, files, refresh, a forged token).
@@ -87,7 +89,14 @@ The app declares that it uses only exempt encryption (`ITSAppUsesNonExemptEncryp
 
 ## Devices
 
-iPhone (SE to Pro Max), the foldable iPhone Duo, and iPad. Compact width gets the Liquid Glass tab bar (Chats, Machines, Files, Library, Settings); regular width (iPad, an unfolded foldable, a wide window) gets the sidebar with each Library page and Search, and split views with the list beside the detail. Each window keeps its own place (`Router`), so folding, unfolding, rotating, or resizing keeps the open chat or page. iPad windows each have their own connection, like browser tabs; keyboard shortcuts are in the menu bar (⌘N, ⌘1–7, ⌘E settle, ⌘. stop).
+iPhone (SE to Pro Max), the foldable iPhone Duo, and iPad. Compact width gets the Liquid Glass tab bar (Chats, Machines, Files, Library, Settings); regular width (iPad, an unfolded foldable, a wide window) gets the sidebar with each Library page and Search, and split views with the list beside the detail. Each window keeps its own place (`Router`), so folding, unfolding, rotating, or resizing keeps the open chat or page. iPad windows each have their own connection, like browser tabs (Open in New Window in a chat's menu, or drag a chat out of the list); keyboard shortcuts are in the menu bar (⌘N, ⌘1–7, ⌘K switch chat, ⌥⌘↑/↓ previous/next chat, ⌘J next chat that's working or has a reply, ⌘E settle, ⌘. stop).
+
+## Many chats at once
+
+- Each chat's message box keeps what you wrote (files too) when you go to another chat, and its text is saved on the device (`Dex/Chats/Drafts.swift`); the chat list shows a Draft line.
+- Over a chat on iPhone, a strip of the other chats that are working or have a reply waiting; the switcher (⌘K, the strip's last button, the chat's menu) lists every chat, active ones first.
+- New Chat is in every chat's toolbar on iPhone. In a new chat, Send's menu (or ⌥↩) has Send and Start Another: the chat runs in the background and the project, agent, and model stay picked for the next one. Agents and Projects have a Start Chat button on each row.
+- A chat's VM files (the web's Files panel: folders, uncommitted changes, diffs) open beside it on iPad and as a sheet on iPhone.
 
 ## Notifications
 

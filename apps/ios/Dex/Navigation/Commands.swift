@@ -33,6 +33,24 @@ struct DexCommands: Commands {
             Button("Search") { router?.tab = .search }.keyboardShortcut("f", modifiers: [.command, .shift])
         }
         CommandMenu("Chat") {
+            Button("Switch Chat…") { router?.switcherOpen = true }
+                .keyboardShortcut("k", modifiers: .command)
+                .disabled(router == nil)
+            // Through the chat list's order (the inbox, newest first), from anywhere, the message box too.
+            Button("Next Chat") { step(1) }
+                .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+                .disabled(router == nil)
+            Button("Previous Chat") { step(-1) }
+                .keyboardShortcut(.upArrow, modifiers: [.command, .option])
+                .disabled(router == nil)
+            // The next chat that needs you, is working, or has a reply waiting.
+            Button("Next Active Chat") {
+                guard let router, let client else { return }
+                if let next = Inbox.active(client.state?.sessions ?? [], waiting: client.state?.waitingChats ?? [], excluding: router.chat).first { router.openChat(next.id) }
+            }
+            .keyboardShortcut("j", modifiers: .command)
+            .disabled(router == nil)
+            Divider()
             Button("Settle") {
                 guard let router, let client, let id = router.chat else { return }
                 let settled = client.state?.session(id)?.settledAt != nil
@@ -54,5 +72,11 @@ struct DexCommands: Commands {
             .keyboardShortcut("m", modifiers: [.command, .shift])
             .disabled(router?.chat == nil)
         }
+    }
+
+    private func step(_ offset: Int) {
+        guard let router, let client else { return }
+        let order = Inbox.groups(client.state?.chats ?? []).inbox
+        if let next = Inbox.neighbor(of: router.chat, in: order, offset: offset) { router.openChat(next.id) }
     }
 }

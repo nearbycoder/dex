@@ -8,9 +8,11 @@ struct MarkdownView: View {
     var font: Font = .body
     /// Links are opened here (the chat routes Dex links in-app).
     var onLink: ((URL) -> Void)? = nil
+    /// Still being written (a streaming reply): parsed each time, not kept.
+    var live = false
 
     var body: some View {
-        let document = Document(parsing: text, options: [.parseBlockDirectives, .parseSymbolLinks])
+        let document = live ? MarkdownCache.parse(text) : MarkdownCache.document(text)
         VStack(alignment: .leading, spacing: 10) {
             ForEach(Array(document.blockChildren.enumerated()), id: \.offset) { _, block in
                 MarkdownBlock(block: block, font: font)
@@ -22,6 +24,32 @@ struct MarkdownView: View {
             return .systemAction
         })
         .textSelection(.enabled)
+    }
+}
+
+/// Parsed documents by their text, so a reply drawn again (scrolled back into view, its chat opened again) isn't parsed
+/// again.
+@MainActor
+enum MarkdownCache {
+    private final class Box {
+        let document: Markdown.Document
+        init(_ document: Markdown.Document) { self.document = document }
+    }
+
+    private static let documents: NSCache<NSString, Box> = {
+        let cache = NSCache<NSString, Box>()
+        cache.countLimit = 400
+        return cache
+    }()
+
+    static func parse(_ text: String) -> Markdown.Document { Markdown.Document(parsing: text, options: [.parseBlockDirectives, .parseSymbolLinks]) }
+
+    static func document(_ text: String) -> Markdown.Document {
+        let key = text as NSString
+        if let box = documents.object(forKey: key) { return box.document }
+        let document = parse(text)
+        documents.setObject(Box(document), forKey: key)
+        return document
     }
 }
 

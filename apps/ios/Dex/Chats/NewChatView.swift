@@ -3,7 +3,8 @@ import SwiftUI
 
 /// A new chat: start from a project (its VM and repos) and an agent (its role, model, and MCP servers), or neither,
 /// pick a model, and write the first message. Picking one fills in its starter prompt. Sending creates the chat and
-/// opens it.
+/// opens it; Send and Start Another (Send's menu, ⌥↩) starts it in the background and stays, with the same project,
+/// agent, and model, to launch the next one.
 struct NewChatView: View {
     @Environment(DexClient.self) private var client
     @Environment(Router.self) private var router
@@ -15,8 +16,11 @@ struct NewChatView: View {
     @State private var thinking: ThinkingLevel?
     /// nil follows the default: servers marked for new chats, or the agent's.
     @State private var mcpServers: [String]?
-    @State private var composer = ComposerModel()
+    /// Kept while you look at a chat and come back.
+    @State private var composer = Drafts.shared.composer(for: Drafts.newChat)
     @State private var error: String?
+    /// Chats started from here in the background, newest last, each with a way to open it.
+    @State private var started: [SessionMeta] = []
     /// The agent cards' width grows with the text size: one card a row at large sizes rather than names cut short.
     @ScaledMetric(relativeTo: .subheadline) private var cardWidth: CGFloat = 150
 
@@ -112,8 +116,19 @@ struct NewChatView: View {
                 if let error {
                     Text(error).font(.footnote).foregroundStyle(.red).padding(.horizontal, 8).accessibilityIdentifier("newchat.error")
                 }
+                if let last = started.last {
+                    StartedBanner(session: client.state?.session(last.id) ?? last, count: started.count) {
+                        router.openChat(last.id)
+                    } dismiss: {
+                        started = []
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
                 Composer(model: composer, placeholder: agent.map { "Ask \($0.name)…" } ?? "Ask Dex to do anything…", disabled: !client.isConnected,
                          onSend: { text, attachments in try await start(text, attachments: attachments, model: choice.model, thinking: choice.thinking, servers: servers) },
+                         onSendAndStay: { text, attachments in
+                             try await start(text, attachments: attachments, model: choice.model, thinking: choice.thinking, servers: servers, stay: true)
+                         },
                          header: (agent != nil || project != nil) ? AnyView(chips(agent: agent, project: project)) : nil) {
                     ModelPickerButton(model: choice.model, thinking: choice.thinking) { newModel, newThinking in
                         if let newModel { model = newModel }
@@ -126,7 +141,9 @@ struct NewChatView: View {
             .padding(.bottom, 8)
             .frame(maxWidth: 800)
             .frame(maxWidth: .infinity)
+            .animation(.smooth, value: started.map(\.id))
         }
+        .sensoryFeedback(.success, trigger: started.count) { old, new in new > old }
         .navigationTitle("New Chat")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear(perform: applyDraft)
@@ -212,7 +229,7 @@ struct NewChatView: View {
         if !draft.text.isEmpty { composer.fill(draft.text) }
     }
 
-    private func start(_ text: String, attachments: [ChatAttachment], model: String, thinking: ThinkingLevel, servers: [String]) async throws {
+    private func start(_ text: String, attachments: [ChatAttachment], model: String, thinking: ThinkingLevel, servers: [String], stay: Bool = false) async throws {
         error = nil
         var options: [String: JSONValue] = ["model": .string(model), "thinking": .string(thinking), "mcpServers": .array(servers.map(JSONValue.string))]
         if let agentId { options["agentId"] = .string(agentId) }
@@ -220,6 +237,14 @@ struct NewChatView: View {
         do {
             Notifications.shared.requestPermissionIfNeeded()
             let session: SessionMeta = try await client.call("createSession", .object(options))
+            if stay {
+                // It runs in the background; the project, agent, and model stay picked for the next one.
+                try await ChatActions.send(session.id, text, attachments: attachments, client: client)
+                started.append(session)
+                composer.focusRequest += 1
+                return
+            }
+            started = []
             let feed = client.chat(session.id)
             router.openChat(session.id)
             try await feed.send(text, attachments: attachments)
@@ -232,6 +257,43 @@ struct NewChatView: View {
             self.error = error.localizedDescription
             throw error
         }
+    }
+}
+
+/// "Started “Fix the test” · 3 started" with Open, after Send and Start Another.
+private struct StartedBanner: View {
+    let session: SessionMeta
+    let count: Int
+    let open: () -> Void
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: session.busy ? "bolt.fill" : "checkmark.circle.fill")
+                .foregroundStyle(session.busy ? .green : .secondary)
+                .symbolEffect(.pulse, isActive: session.busy)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Started “\(session.title)”").font(.subheadline.weight(.medium)).lineLimit(1)
+                if count > 1 {
+                    Text("\(count) chats started from here").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 4)
+            Button("Open", action: open)
+                .buttonStyle(.glass)
+                .accessibilityIdentifier("newchat.started.open")
+            Button(action: dismiss) {
+                Image(systemName: "xmark").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss")
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 10)
+        .padding(.vertical, 8)
+        .glassEffect(.regular, in: .rect(cornerRadius: 20, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("newchat.started")
     }
 }
 

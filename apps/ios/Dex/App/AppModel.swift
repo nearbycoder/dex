@@ -41,6 +41,7 @@ final class AppModel {
             let agent = MockAgent()
             agent.chunkDelay = .milliseconds(launch.fastReplies ? 5 : 35)
             if launch.longChips { Self.useLongChips(agent) }
+            if launch.longChat { MockLongChat.seed(agent) }
             mockAgent = agent
             phase = launch.signedOut ? .signedOut : .signedIn(Self.mockCredentials)
         } else {
@@ -141,6 +142,7 @@ final class AppModel {
         WKWebsiteDataStore.default().removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) {}
         Notifications.shared.clearAll()
         WidgetSync.shared.signedOut()
+        Drafts.shared.clear()
     }
 
     /// Signing out from this device: Dex stops pushing to it first (a moment at most), then everything is forgotten.
@@ -162,6 +164,8 @@ struct LaunchOptions {
     var fastReplies = false
     /// Mock chats on the model, thinking level, and MCP server with the longest names.
     var longChips = false
+    /// A long chat to measure the transcript with (`MockLongChat`).
+    var longChat = false
     /// Open this chat at launch.
     var openChat: String?
 
@@ -173,6 +177,7 @@ struct LaunchOptions {
         options.resetState = arguments.contains("-DexReset")
         options.fastReplies = arguments.contains("-DexFast")
         options.longChips = arguments.contains("-DexLongChips")
+        options.longChat = arguments.contains("-DexLongChat")
         if let index = arguments.firstIndex(of: "-DexOpenChat"), arguments.indices.contains(index + 1) { options.openChat = arguments[index + 1] }
         return options
     }()

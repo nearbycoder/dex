@@ -159,6 +159,13 @@ public final class AgentConnection {
             deliver(text)
             return
         }
+        // The synced state, the largest and most frequent frame: decoded in one pass, not parsed into a JSONValue,
+        // written back out, and decoded again. (That pattern can't occur inside a JSON string, where quotes are escaped.)
+        if text.contains(#""type":"cf_agent_state""#), let frame = try? JSONDecoder.dex.decode(StateFrame.self, from: Data(text.utf8)),
+           frame.type == "cf_agent_state" {
+            receiveState(frame.state)
+            return
+        }
         guard let frame = try? JSONValue.parse(text), let type = frame["type"]?.string else { return }
         if type.hasPrefix("dex.") {
             deliver(text)
@@ -170,14 +177,7 @@ public final class AgentConnection {
             stateFollows = frame["stateFollows"]?.bool == true
             if !stateFollows { becameConnected() }
         case "cf_agent_state":
-            if let raw = frame["state"], let decoded = try? raw.decode(DexState.self) {
-                state = decoded
-                onStateChange?(decoded)
-            }
-            if stateFollows || status != .connected {
-                stateFollows = false
-                if identity != nil { becameConnected() }
-            }
+            receiveState(frame["state"].flatMap { try? $0.decode(DexState.self) })
         case "rpc":
             guard let id = frame["id"]?.string, let call = pending[id] else { return }
             if frame["success"]?.bool == false {
@@ -193,6 +193,31 @@ public final class AgentConnection {
             call.continuation.resume(returning: frame["result"] ?? .null)
         default:
             break
+        }
+    }
+
+    private struct StateFrame: Decodable {
+        let type: String
+        let state: DexState?
+
+        enum CodingKeys: String, CodingKey { case type, state }
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            type = try c.decode(String.self, forKey: .type)
+            // A state this version can't read still counts as the state arriving (as before).
+            state = try? c.decode(DexState.self, forKey: .state)
+        }
+    }
+
+    private func receiveState(_ decoded: DexState?) {
+        // The same state again (a change in something this app doesn't read) redraws nothing.
+        if let decoded, decoded != state {
+            state = decoded
+            onStateChange?(decoded)
+        }
+        if stateFollows || status != .connected {
+            stateFollows = false
+            if identity != nil { becameConnected() }
         }
     }
 

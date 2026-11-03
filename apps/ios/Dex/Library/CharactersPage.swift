@@ -123,6 +123,8 @@ struct CharacterEditor: View {
     @State private var confirmRestart = false
     @State private var photo: PhotosPickerItem?
     @State private var readingPhoto = false
+    /// The look mixer is open (it opens by itself on a look of your own).
+    @State private var mixing = false
 
     private var existing: CharacterProfile? { client.state?.character(characterId) }
     private var isNew: Bool { characterId == nil }
@@ -225,6 +227,15 @@ struct CharacterEditor: View {
 
             Section {
                 LookGrid(selection: value.preset?.id) { draft.wrappedValue.use($0) }
+                DisclosureGroup(isExpanded: $mixing) {
+                    LookMixer(parts: value.parts, color: value.color) { parts, color in
+                        guard let parts else { draft.wrappedValue.color = color; return }
+                        if let png = SidekickArt.png(parts, background: color) { draft.wrappedValue.use(parts: parts, color: color, image: png) }
+                    }
+                } label: {
+                    Label("Mix Your Own", systemImage: "paintpalette")
+                }
+                .accessibilityIdentifier("character.mix")
                 // A photo: one that isn't a ready-made look.
                 let photoShown = value.image != nil && value.look == nil
                 PhotosPicker(selection: $photo, matching: .images) {
@@ -242,11 +253,7 @@ struct CharacterEditor: View {
             } header: {
                 Text("Look")
             } footer: {
-                if let id = existing?.id, let server = client.server {
-                    Text("Pick a ready-made sidekick or a photo. To mix your own look, [customize on the web](\(server.appending(path: "sidekicks/\(id)").absoluteString)).")
-                } else {
-                    Text("Pick a ready-made sidekick or a photo. To mix your own look, customize them on the web.")
-                }
+                Text("Pick a ready-made sidekick, mix your own, or use a photo.")
             }
 
             Section {
@@ -323,6 +330,31 @@ struct CharacterEditor: View {
 
             if let error {
                 Section { FieldProblem(text: error) }
+            }
+
+            // A new sidekick's setting goes with it when it's made.
+            if isNew {
+                Section {
+                    Picker(selection: Binding(get: { SidekickNotify(rawValue: value.notify ?? "") ?? .all }, set: { draft.wrappedValue.notify = $0.rawValue })) {
+                        ForEach(SidekickNotify.allCases) { level in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(level.label)
+                                Text(level.description).font(.caption).foregroundStyle(.secondary)
+                            }
+                            .tag(level)
+                            .accessibilityIdentifier("character.notify.\(level.rawValue)")
+                        }
+                    } label: {
+                        EmptyView()
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                    .accessibilityIdentifier("character.notify")
+                } header: {
+                    Text("Notify Me")
+                } footer: {
+                    Text("Which of their messages notify you, on your devices that get Sidekicks notifications (Settings → Notifications).")
+                }
             }
 
             if let existing {

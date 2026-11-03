@@ -35,9 +35,15 @@ struct ProjectsList: View {
             }
             ForEach(projects) { project in
                 NavigationLink(value: LibraryRoute.project(project.id)) {
-                    ProjectRow(project: project, chats: client.state?.sessions.filter { $0.projectId == project.id }.count ?? 0)
+                    HStack(alignment: .center, spacing: 8) {
+                        ProjectRow(project: project, chats: client.state?.sessions.filter { $0.projectId == project.id }.count ?? 0,
+                                   working: client.state?.sessions.filter { $0.projectId == project.id && $0.busy }.count ?? 0)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        StartChatButton(id: "project.start.\(project.id)") { router.newChat(projectId: project.id) }
+                    }
                 }
                 .accessibilityIdentifier("project.row.\(project.id)")
+                .accessibilityAction(named: "Start Chat") { router.newChat(projectId: project.id) }
                 .swipeActions(edge: .leading, allowsFullSwipe: true) {
                     Button { router.newChat(projectId: project.id) } label: { Label("Start Chat", systemImage: "plus.bubble") }
                         .tint(.dexAccent)
@@ -82,6 +88,7 @@ struct ProjectsList: View {
 struct ProjectRow: View {
     let project: ProjectProfile
     let chats: Int
+    var working = 0
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -99,7 +106,7 @@ struct ProjectRow: View {
                         }
                     }
                     if project.repos.count > 2 { Text("+\(project.repos.count - 2) more").foregroundStyle(.tertiary) }
-                    Text("\(project.repos.isEmpty ? "No repos · " : "")\(project.setupScript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "No setup script" : "Setup script") · \(chats == 1 ? "1 chat" : "\(chats) chats")")
+                    Text("\(project.repos.isEmpty ? "No repos · " : "")\(project.setupScript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "No setup script" : "Setup script") · \(chats == 1 ? "1 chat" : "\(chats) chats")\(workingSuffix(working))")
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)

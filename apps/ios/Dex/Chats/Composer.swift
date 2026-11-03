@@ -3,6 +3,7 @@ import SwiftUI
 
 /// The message box: grows with its text; on a hardware keyboard Return sends (Shift-Return for a new line) and ⌘↩
 /// too. `/` at the start opens the skill menu. While the chat works, Send queues a follow-up and Stop ends the run.
+/// With `onSendAndStay` (a new chat), Send's menu and ⌥↩ send and stay to write the next one.
 struct Composer<Accessory: View>: View {
     @Environment(DexClient.self) private var client
     @Bindable var model: ComposerModel
@@ -11,11 +12,15 @@ struct Composer<Accessory: View>: View {
     var disabled = false
     let onSend: (String, [ChatAttachment]) async throws -> Void
     var onStop: (() async throws -> Void)? = nil
+    /// Sends without leaving (a new chat: start it, and start another).
+    var onSendAndStay: ((String, [ChatAttachment]) async throws -> Void)? = nil
     /// Shown above the text, inside the box (the new chat's agent and project).
     var header: AnyView? = nil
     @ViewBuilder var accessory: Accessory
     @FocusState private var focused: Bool
     @State private var sent = 0
+    /// A file is being dragged over the box.
+    @State private var dropping = false
     @State private var skills = SkillMenuModel()
 
     var body: some View {
@@ -63,7 +68,7 @@ struct Composer<Accessory: View>: View {
                             .accessibilityLabel("Stop")
                             .accessibilityIdentifier("composer.stop")
                         }
-                        Button(action: send) {
+                        Button { send() } label: {
                             Image(systemName: "arrow.up").font(.body.weight(.bold)).frame(width: 20, height: 20)
                         }
                         .prominentButton()
@@ -71,6 +76,13 @@ struct Composer<Accessory: View>: View {
                         .fixedSize()
                         .disabled(!canSend)
                         .keyboardShortcut(.return, modifiers: .command)
+                        .contextMenu {
+                            if onSendAndStay != nil {
+                                Button { send(stay: true) } label: { Label("Send and Start Another", systemImage: "plus.bubble") }
+                                    .accessibilityIdentifier("composer.sendAndStay")
+                            }
+                        }
+                        .accessibilityAction(named: "Send and Start Another") { if onSendAndStay != nil { send(stay: true) } }
                         .accessibilityLabel(running ? "Queue follow-up" : "Send")
                         .accessibilityIdentifier("composer.send")
                         .sensoryFeedback(.impact(weight: .light), trigger: sent)
@@ -79,6 +91,19 @@ struct Composer<Accessory: View>: View {
                     .padding(.bottom, 10)
                 }
                 .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 26, style: .continuous))
+                .overlay {
+                    if dropping {
+                        RoundedRectangle(cornerRadius: 26, style: .continuous)
+                            .strokeBorder(Color.dexAccent, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+                            .allowsHitTesting(false)
+                    }
+                }
+                // Images and files dragged in (iPad, from another app or Files) are attached.
+                .onDrop(of: ComposerModel.droppableTypes, isTargeted: $dropping) { providers in
+                    guard !disabled, !model.attachmentsFull else { return false }
+                    model.attach(providers, client: client)
+                    return true
+                }
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("composer")
             }
@@ -103,11 +128,11 @@ struct Composer<Accessory: View>: View {
             }
         }
         guard press.key == .return, !press.modifiers.contains(.shift) else { return .ignored }
-        send()
+        send(stay: press.modifiers.contains(.option) && onSendAndStay != nil)
         return .handled
     }
 
-    private func send() {
+    private func send(stay: Bool = false) {
         let message = model.text.trimmingCharacters(in: .whitespacesAndNewlines)
         let drafts = model.attachments
         let ready = model.readyAttachments
@@ -116,7 +141,9 @@ struct Composer<Accessory: View>: View {
         model.attachments = []
         sent += 1
         Task {
-            do { try await onSend(message, ready) } catch {
+            do {
+                if stay, let onSendAndStay { try await onSendAndStay(message, ready) } else { try await onSend(message, ready) }
+            } catch {
                 // Back in the box, files included, to try again.
                 if model.text.isEmpty { model.text = message }
                 if model.attachments.isEmpty { model.attachments = drafts }

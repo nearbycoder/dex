@@ -184,6 +184,9 @@ struct ChatRow: View {
         let project = client.state?.project(session.projectId)
         let naming = TitleNaming.shared.isNaming(session.id)
         let vm = client.state?.vm(session.id)
+        // The open chat is being read: no dot (the agent clears it a moment later).
+        let unread = session.unread && router.chat != session.id
+        let draft = router.chat != session.id && Drafts.shared.drafted.contains(session.id)
         HStack(spacing: 12) {
             Group {
                 if let project {
@@ -203,10 +206,10 @@ struct ChatRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     // Before the title, apart from the machine's status dot at the end of the row.
-                    if session.unread { UnreadDot() }
+                    if unread { UnreadDot() }
                     Text(session.title)
-                        .font(.body.weight(session.unread ? .semibold : place == .inbox ? .medium : .regular))
-                        .foregroundStyle(place == .settled && !session.unread ? .secondary : .primary)
+                        .font(.body.weight(unread ? .semibold : place == .inbox ? .medium : .regular))
+                        .foregroundStyle(place == .settled && !unread ? .secondary : .primary)
                         .lineLimit(1)
                         .namingPulse(naming)
                     if session.muted {
@@ -214,9 +217,20 @@ struct ChatRow: View {
                     }
                 }
                 HStack(spacing: 4) {
-                    Text(subtitle(agent: agent, project: project)).lineLimit(1)
-                    Text("·").foregroundStyle(.tertiary)
-                    status.fixedSize()
+                    if draft, !session.busy {
+                        // Like Mail: what you were writing, so you can pick it up.
+                        HStack(spacing: 3) {
+                            Image(systemName: "pencil").imageScale(.small)
+                            Text("Draft")
+                        }
+                        .foregroundStyle(.orange)
+                        .fixedSize()
+                        Text(Drafts.shared.preview(session.id) ?? "").lineLimit(1)
+                    } else {
+                        Text(subtitle(agent: agent, project: project)).lineLimit(1)
+                        Text("·").foregroundStyle(.tertiary)
+                        status.fixedSize()
+                    }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -254,6 +268,7 @@ struct ChatRow: View {
             }
         }
         .contextMenu { menu }
+        .modifier(DragToNewWindow(chat: session.id, title: session.title))
         .confirmationDialog("Snooze “\(session.title)” until", isPresented: $choosingSnooze, titleVisibility: .visible) {
             ForEach(Inbox.snoozeOptions()) { option in
                 Button("\(option.label) (\(snoozeTime(option.at)))") {
@@ -285,7 +300,14 @@ struct ChatRow: View {
     }
 
     @ViewBuilder private var status: some View {
-        if session.busy {
+        if !session.busy, client.state?.waitingChats.contains(session.id) == true {
+            // It asked to do something that needs your yes.
+            HStack(spacing: 3) {
+                Image(systemName: "hand.raised.fill").imageScale(.small)
+                Text("needs you")
+            }
+            .foregroundStyle(.orange)
+        } else if session.busy {
             HStack(spacing: 4) {
                 Circle().fill(.green).frame(width: 6, height: 6)
                     .phaseAnimator([1.0, 0.3]) { view, phase in view.opacity(phase) }
@@ -310,6 +332,9 @@ struct ChatRow: View {
                 title = session.title
                 renaming = true
             } label: { Label("Rename", systemImage: "pencil") }
+        }
+        if Router.canOpenWindows {
+            Button { Router.openInNewWindow(session.id) } label: { Label("Open in New Window", systemImage: "macwindow.badge.plus") }
         }
         MarkUnreadButton(session: session)
         if place == .settled {
@@ -341,6 +366,28 @@ struct ChatRow: View {
         }
         Divider()
         Button(role: .destructive) { confirmDelete = true } label: { Label("Delete", systemImage: "trash") }
+    }
+}
+
+/// iPad: drag a chat out of the list to open it in a window of its own, beside this one. (iPhone has one window.)
+struct DragToNewWindow: ViewModifier {
+    let chat: String
+    let title: String
+
+    func body(content: Content) -> some View {
+        if Router.canOpenWindows {
+            content.onDrag {
+                let activity = NSUserActivity(activityType: Router.chatActivity)
+                activity.userInfo = ["chat": chat]
+                activity.targetContentIdentifier = "dex://chat/\(chat)"
+                let provider = NSItemProvider()
+                provider.registerObject(activity, visibility: .all)
+                provider.suggestedName = title
+                return provider
+            }
+        } else {
+            content
+        }
     }
 }
 
