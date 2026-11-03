@@ -213,10 +213,10 @@ private struct OAuthWebView: UIViewRepresentable {
             switch url.path() {
             case "/settings":
                 let error = query.first { $0.name == "github_error" }?.value
-                await complete(error.map { .failed($0) } ?? .connected)
+                complete(error.map { .failed($0) } ?? .connected)
                 return .cancel
             case "/login":
-                await complete(.failed("Dex didn't accept this app's session for the GitHub sign-in. Sign out and in again, or paste a token instead."))
+                complete(.failed("Dex didn't accept this app's session for the GitHub sign-in. Sign out and in again, or paste a token instead."))
                 return .cancel
             default:
                 return .allow
@@ -229,7 +229,7 @@ private struct OAuthWebView: UIViewRepresentable {
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             parent.loading = false
             let code = (error as NSError).code
-            if code != NSURLErrorCancelled, code != 102 { Task { await complete(.failed(error.localizedDescription)) } }
+            if code != NSURLErrorCancelled, code != 102 { Task { complete(.failed(error.localizedDescription)) } }
         }
 
         @MainActor private func complete(_ outcome: GitHubConnectSheet.Outcome) {

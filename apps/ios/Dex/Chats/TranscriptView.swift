@@ -272,7 +272,8 @@ struct UserBubble: View {
     /// The text, with a leading `/skill` in monospace.
     static func styled(_ text: String) -> Text {
         guard let skill = Format.invokedSkill(text), let range = text.range(of: "/\(skill)") else { return Text(text) }
-        return Text(text[..<range.lowerBound]) + Text("/\(skill)").font(.body.monospaced().weight(.semibold)) + Text(text[range.upperBound...])
+        let name = Text("/\(skill)").font(.body.monospaced().weight(.semibold))
+        return Text("\(Text(text[..<range.lowerBound]))\(name)\(Text(text[range.upperBound...]))")
     }
 }
 
