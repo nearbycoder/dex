@@ -38,6 +38,17 @@ function VisionBadge({ vision }: { vision: boolean }) {
   )
 }
 
+/** The labels of a model's badges, which the search also matches. */
+const badges = (model: DexModel) => {
+  const levels = supportedThinkingLevels(model)
+  return [
+    hasVision(model) ? "Vision" : "Text only",
+    ...(levels.length > 0 ? [levels.includes("off") ? "thinking optional" : "always thinks"] : []),
+    ...(model.cost.input === 0 && model.cost.output === 0 ? ["Free"] : []),
+    ...(model.trainsOnData ? ["Trains on data"] : [])
+  ]
+}
+
 /** Model menu that shows each model's capabilities: image input, context window, and thinking levels. */
 function ModelMenu(props: { model: string; onSelect: (model: string) => void; disabled?: boolean }) {
   const [open, setOpen] = useState(false)
@@ -53,11 +64,17 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
   const connected: Record<ModelProvider, boolean> = state
     ? connectedProviders(state)
     : { clinepass: true, "opencode-go": true, chatgpt: true, commandcode: true }
-  // Connected subscriptions first; a model matches on its name, maker, or subscription.
+  // Connected subscriptions first; a model matches when every word of the search is in its name, maker, subscription,
+  // or badges ("free vision" finds the free models that see images).
   const providers = (Object.keys(MODEL_PROVIDERS) as ModelProvider[]).sort((a, b) => Number(connected[b]) - Number(connected[a]))
   const needle = query.trim().toLowerCase()
-  const matches = (model: DexModel) =>
-    (only === "all" || model.provider === only) && (!needle || `${model.name} ${MODEL_MAKERS[model.maker].name} ${MODEL_PROVIDERS[model.provider].name}`.toLowerCase().includes(needle))
+  const words = needle.split(/\s+/).filter(Boolean)
+  const matches = (model: DexModel) => {
+    if (only !== "all" && model.provider !== only) return false
+    if (words.length === 0) return true
+    const text = `${model.name} ${MODEL_MAKERS[model.maker].name} ${MODEL_PROVIDERS[model.provider].name} ${badges(model).join(" ")}`.toLowerCase()
+    return words.every((word) => text.includes(word))
+  }
 
   useEffect(() => {
     if (!open) return

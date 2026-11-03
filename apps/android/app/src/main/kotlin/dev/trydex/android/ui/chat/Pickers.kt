@@ -164,8 +164,21 @@ private fun ModelSheet(selected: String, onDismiss: () -> Unit, onSelect: (Strin
     val connected = state?.connectedProviders ?: ModelProvider.entries.associateWith { true }
     val providers = ModelProvider.entries.sortedByDescending { connected[it] == true }
     val needle = query.text.toString().trim().lowercase()
-    fun matches(model: DexModel) = (tab == null || model.modelProvider == tab) &&
-        (needle.isEmpty() || "${model.name} ${model.modelMaker?.displayName} ${model.modelProvider.displayName}".lowercase().contains(needle))
+    // Every word of the search must be in the name, maker, subscription, or badges ("free vision").
+    val words = needle.split(Regex("\\s+")).filter { it.isNotEmpty() }
+    fun matches(model: DexModel): Boolean {
+        if (tab != null && model.modelProvider != tab) return false
+        if (words.isEmpty()) return true
+        val levels = supportedThinkingLevels(model)
+        val badges = listOfNotNull(
+            if (model.hasVision) "vision" else "text only",
+            if (levels.isEmpty()) null else if (ThinkingLevel.Off in levels) "thinking optional" else "always thinks",
+            "free".takeIf { model.free },
+            "trains on data".takeIf { model.trainsOnData }
+        )
+        val text = "${model.name} ${model.modelMaker?.displayName} ${model.modelProvider.displayName} ${badges.joinToString(" ")}".lowercase()
+        return words.all { it in text }
+    }
     val scope = rememberCoroutineScope()
     var refreshing by remember { mutableStateOf(false) }
 
