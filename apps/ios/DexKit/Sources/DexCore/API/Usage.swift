@@ -1,6 +1,6 @@
 import Foundation
 
-// Spending and usage across ClinePass, OpenCode Go, ChatGPT, Command Code, boat.dev, and Cloudflare (`usageReport(range)`),
+// Spending and usage across ClinePass, OpenCode Go, ChatGPT, Command Code, OpenRouter, boat.dev, and Cloudflare (`usageReport(range)`),
 // mirroring apps/web/src/shared/usage.ts.
 
 public enum UsageRange: String, Codable, Sendable, Hashable, CaseIterable, Identifiable {
@@ -51,12 +51,16 @@ public struct DailySpend: Codable, Sendable, Hashable, Identifiable {
     public var chatgpt: Double?
     /// At Command Code's rates. Missing from an older agent's report.
     public var commandcode: Double?
+    /// OpenRouter's free models cost nothing, so 0 unless a paid one ran. Missing from an older agent's report.
+    public var openrouter: Double?
     public var boat: Double
     public var cloudflare: Double
     public var id: String { date }
 
-    public init(date: String, cline: Double = 0, opencode: Double = 0, chatgpt: Double? = nil, commandcode: Double? = nil, boat: Double = 0, cloudflare: Double = 0) {
-        self.date = date; self.cline = cline; self.opencode = opencode; self.chatgpt = chatgpt; self.commandcode = commandcode; self.boat = boat; self.cloudflare = cloudflare
+    public init(date: String, cline: Double = 0, opencode: Double = 0, chatgpt: Double? = nil, commandcode: Double? = nil, openrouter: Double? = nil,
+                boat: Double = 0, cloudflare: Double = 0) {
+        self.date = date; self.cline = cline; self.opencode = opencode; self.chatgpt = chatgpt; self.commandcode = commandcode; self.openrouter = openrouter
+        self.boat = boat; self.cloudflare = cloudflare
     }
 
     public func value(_ series: UsageSeries) -> Double {
@@ -65,6 +69,7 @@ public struct DailySpend: Codable, Sendable, Hashable, Identifiable {
         case .opencode: opencode
         case .chatgpt: chatgpt ?? 0
         case .commandcode: commandcode ?? 0
+        case .openrouter: openrouter ?? 0
         case .boat: boat
         case .cloudflare: cloudflare
         }
@@ -84,7 +89,7 @@ public struct DailySpend: Codable, Sendable, Hashable, Identifiable {
 
 /// The services in the daily chart, in the web's fixed order.
 public enum UsageSeries: String, Sendable, Hashable, CaseIterable, Identifiable {
-    case cline, boat, cloudflare, opencode, chatgpt, commandcode
+    case cline, boat, cloudflare, opencode, chatgpt, commandcode, openrouter
     public var id: String { rawValue }
     public var label: String {
         switch self {
@@ -94,6 +99,7 @@ public enum UsageSeries: String, Sendable, Hashable, CaseIterable, Identifiable 
         case .opencode: "OpenCode Go"
         case .chatgpt: "ChatGPT"
         case .commandcode: "Command Code"
+        case .openrouter: "OpenRouter"
         }
     }
 }
@@ -105,6 +111,8 @@ public enum UsageSubscription: String, Sendable, Hashable, CaseIterable, Identif
     case commandcode
     /// Paid for with your ChatGPT plan, outside Dex's estimate.
     case chatgpt
+    /// Free models only.
+    case openrouter
     public var id: String { rawValue }
 
     public var series: UsageSeries {
@@ -113,6 +121,7 @@ public enum UsageSubscription: String, Sendable, Hashable, CaseIterable, Identif
         case .opencodeGo: .opencode
         case .commandcode: .commandcode
         case .chatgpt: .chatgpt
+        case .openrouter: .openrouter
         }
     }
     public var label: String { series.label }
@@ -121,6 +130,7 @@ public enum UsageSubscription: String, Sendable, Hashable, CaseIterable, Identif
         case .clinepass, .chatgpt: "at API list prices"
         case .opencodeGo: "at Go's rates"
         case .commandcode: "at the plan's rates"
+        case .openrouter: "free models"
         }
     }
     public var column: String {
@@ -128,15 +138,24 @@ public enum UsageSubscription: String, Sendable, Hashable, CaseIterable, Identif
         case .clinepass, .chatgpt: "List price"
         case .opencodeGo: "Go rates"
         case .commandcode: "Plan rates"
+        case .openrouter: "Cost"
         }
     }
-    /// The plan's monthly fee; nil for ChatGPT, whose plan Dex doesn't know.
+    /// The plan's monthly fee; nil for ChatGPT, whose plan Dex doesn't know, and OpenRouter's free models.
     public var fee: Double? {
         switch self {
         case .clinepass: PlanFees.clinePass
         case .opencodeGo: PlanFees.openCodeGo
         case .commandcode: PlanFees.commandCode
-        case .chatgpt: nil
+        case .chatgpt, .openrouter: nil
+        }
+    }
+    /// How its price reads: in the Services list (`price`), and as the Plan stat (`value`, `detail`).
+    public var plan: (price: String, value: String, detail: String) {
+        switch self {
+        case .chatgpt: ("ChatGPT plan", "ChatGPT", "your ChatGPT plan")
+        case .openrouter: ("Free", "Free", "free models only")
+        default: fee.map { ("\(UsageFormat.usd($0))/mo", "\(UsageFormat.usd($0))/mo", "flat fee") } ?? ("", "", "")
         }
     }
 }
@@ -154,6 +173,69 @@ public struct CommandCodeSpent: Codable, Sendable, Hashable {
         fiveHours = c.value(.fiveHours, default: 0)
         week = c.value(.week, default: 0)
         month = c.value(.month, default: 0)
+    }
+}
+
+/// OpenRouter's own numbers for the connected key, across every app that uses the key (`OpenRouterAccount` in usage.ts).
+public struct OpenRouterAccount: Codable, Sendable, Hashable {
+    /// Free-model requests today (UTC) against the account's daily allowance: 50, or 1,000 once it has bought $10 of credits.
+    public struct FreeRequests: Codable, Sendable, Hashable {
+        public var used: Double
+        public var limit: Double
+        public init(used: Double, limit: Double) { self.used = used; self.limit = limit }
+        public var percent: Double { limit > 0 ? used / limit * 100 : 0 }
+        /// "12 of 50".
+        public var label: String { "\(Int(used).formatted()) of \(Int(limit).formatted())" }
+    }
+    /// USD the key spent today, this week, and this month (UTC), and in all.
+    public struct Spent: Codable, Sendable, Hashable {
+        public var day: Double
+        public var week: Double
+        public var month: Double
+        public var total: Double
+        public init(day: Double = 0, week: Double = 0, month: Double = 0, total: Double = 0) { self.day = day; self.week = week; self.month = month; self.total = total }
+
+        enum CodingKeys: String, CodingKey { case day, week, month, total }
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            day = c.value(.day, default: 0)
+            week = c.value(.week, default: 0)
+            month = c.value(.month, default: 0)
+            total = c.value(.total, default: 0)
+        }
+    }
+    /// The key's own spending cap and what's left of it.
+    public struct KeyLimit: Codable, Sendable, Hashable {
+        public var limit: Double
+        public var remaining: Double
+        public init(limit: Double, remaining: Double) { self.limit = limit; self.remaining = remaining }
+        public var used: Double { max(0, limit - remaining) }
+    }
+    /// The account's credits: bought, and used.
+    public struct Credits: Codable, Sendable, Hashable {
+        public var total: Double
+        public var used: Double
+        public init(total: Double, used: Double) { self.total = total; self.used = used }
+    }
+
+    public var freeRequests: FreeRequests?
+    public var spent: Spent
+    /// nil when the key has no cap.
+    public var keyLimit: KeyLimit?
+    /// nil when the key can't read them.
+    public var credits: Credits?
+
+    public init(freeRequests: FreeRequests? = nil, spent: Spent = .init(), keyLimit: KeyLimit? = nil, credits: Credits? = nil) {
+        self.freeRequests = freeRequests; self.spent = spent; self.keyLimit = keyLimit; self.credits = credits
+    }
+
+    enum CodingKeys: String, CodingKey { case freeRequests, spent, keyLimit, credits }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        freeRequests = c.value(.freeRequests, default: nil)
+        spent = c.value(.spent, default: .init())
+        keyLimit = c.value(.keyLimit, default: nil)
+        credits = c.value(.credits, default: nil)
     }
 }
 
@@ -191,23 +273,29 @@ public struct ModelUsage: Codable, Sendable, Hashable {
     public var listCost: Double
     public var byModel: [ModelUsageRow]
     public var byChat: [ChatUsageRow]
-    /// OpenCode Go, ChatGPT, and Command Code only.
+    /// OpenCode Go, ChatGPT, Command Code, and OpenRouter only.
     public var connected: Bool?
     /// OpenCode Go only.
     public var limits: OpenCodeLimits?
     public var limitsError: String?
     /// Command Code only.
     public var spent: CommandCodeSpent?
+    /// OpenRouter only: the key's live numbers, nil when it isn't connected or they couldn't be read (then `accountError` may say why).
+    public var account: OpenRouterAccount?
+    public var accountError: String?
 
     public init(responses: Int = 0, inputTokens: Double = 0, outputTokens: Double = 0, cacheReadTokens: Double = 0, totalTokens: Double = 0,
                 listCost: Double = 0, byModel: [ModelUsageRow] = [], byChat: [ChatUsageRow] = [], connected: Bool? = nil,
-                limits: OpenCodeLimits? = nil, limitsError: String? = nil, spent: CommandCodeSpent? = nil) {
+                limits: OpenCodeLimits? = nil, limitsError: String? = nil, spent: CommandCodeSpent? = nil,
+                account: OpenRouterAccount? = nil, accountError: String? = nil) {
         self.responses = responses; self.inputTokens = inputTokens; self.outputTokens = outputTokens; self.cacheReadTokens = cacheReadTokens
         self.totalTokens = totalTokens; self.listCost = listCost; self.byModel = byModel; self.byChat = byChat; self.connected = connected
-        self.limits = limits; self.limitsError = limitsError; self.spent = spent
+        self.limits = limits; self.limitsError = limitsError; self.spent = spent; self.account = account; self.accountError = accountError
     }
 
-    enum CodingKeys: String, CodingKey { case responses, inputTokens, outputTokens, cacheReadTokens, totalTokens, listCost, byModel, byChat, connected, limits, limitsError, spent }
+    enum CodingKeys: String, CodingKey {
+        case responses, inputTokens, outputTokens, cacheReadTokens, totalTokens, listCost, byModel, byChat, connected, limits, limitsError, spent, account, accountError
+    }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         responses = c.value(.responses, default: 0)
@@ -222,6 +310,8 @@ public struct ModelUsage: Codable, Sendable, Hashable {
         limits = c.value(.limits, default: nil)
         limitsError = c.value(.limitsError, default: nil)
         spent = c.value(.spent, default: nil)
+        account = c.value(.account, default: nil)
+        accountError = c.value(.accountError, default: nil)
     }
 }
 
@@ -351,17 +441,20 @@ public struct UsageReport: Codable, Sendable, Hashable {
     public var chatgpt: ModelUsage
     /// At the rates Command Code's plan counts against its allowance, with `spent`. Empty in an older agent's report.
     public var commandcode: ModelUsage
+    /// Its free models' tokens (at $0), with `account`. Empty in an older agent's report.
+    public var openrouter: ModelUsage
     public var boat: BoatUsage
     public var cloudflare: CloudflareUsage
     public var daily: [DailySpend]
 
     public init(range: UsageRange, since: Double, until: Double, cline: ModelUsage = .init(), opencode: ModelUsage = .init(), chatgpt: ModelUsage = .init(),
-                commandcode: ModelUsage = .init(), boat: BoatUsage = .init(), cloudflare: CloudflareUsage = .init(), daily: [DailySpend] = []) {
+                commandcode: ModelUsage = .init(), openrouter: ModelUsage = .init(), boat: BoatUsage = .init(), cloudflare: CloudflareUsage = .init(),
+                daily: [DailySpend] = []) {
         self.range = range; self.since = since; self.until = until; self.cline = cline; self.opencode = opencode; self.chatgpt = chatgpt
-        self.commandcode = commandcode; self.boat = boat; self.cloudflare = cloudflare; self.daily = daily
+        self.commandcode = commandcode; self.openrouter = openrouter; self.boat = boat; self.cloudflare = cloudflare; self.daily = daily
     }
 
-    enum CodingKeys: String, CodingKey { case range, since, until, cline, opencode, chatgpt, commandcode, boat, cloudflare, daily }
+    enum CodingKeys: String, CodingKey { case range, since, until, cline, opencode, chatgpt, commandcode, openrouter, boat, cloudflare, daily }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         range = c.value(.range, default: .month)
@@ -371,6 +464,7 @@ public struct UsageReport: Codable, Sendable, Hashable {
         opencode = c.value(.opencode, default: .init())
         chatgpt = c.value(.chatgpt, default: .init())
         commandcode = c.value(.commandcode, default: .init())
+        openrouter = c.value(.openrouter, default: .init())
         boat = c.value(.boat, default: .init())
         cloudflare = c.value(.cloudflare, default: .init())
         daily = c.value(.daily, default: [])
@@ -382,6 +476,7 @@ public struct UsageReport: Codable, Sendable, Hashable {
         case .opencodeGo: opencode
         case .commandcode: commandcode
         case .chatgpt: chatgpt
+        case .openrouter: openrouter
         }
     }
 
@@ -432,13 +527,29 @@ public struct UsageReport: Codable, Sendable, Hashable {
             : ("VM time in this period", boat.cost, "Plans add \(UsageFormat.usd(bill.plans)) a month")
     }
 
-    /// A subscription's allowance as one share-used number for the Services list (OpenCode Go's live month, Command Code's estimated 30 days).
+    /// A subscription's allowance as one share-used number for the Services list (OpenCode Go's live month, Command Code's
+    /// estimated 30 days, OpenRouter's live free requests today).
     public func meter(_ subscription: UsageSubscription) -> (percent: Double, label: String)? {
         switch subscription {
         case .opencodeGo: opencode.limits.map { ($0.monthly.percent, "of this month's allowance") }
         case .commandcode: commandcode.spent.map { $0.month / CommandCodeLimits.month * 100 }.map { ($0, "of 30 days' allowance") }
+        case .openrouter: openRouterFreeRequests.map { ($0.percent, "of today's free requests") }
         default: nil
         }
+    }
+
+    /// OpenRouter's free-model requests today, while its key is connected and OpenRouter answered.
+    public var openRouterFreeRequests: OpenRouterAccount.FreeRequests? {
+        openrouter.connected == true ? openrouter.account?.freeRequests : nil
+    }
+
+    /// The Services list's line about a subscription's usage.
+    public func serviceSummary(_ subscription: UsageSubscription) -> String {
+        let usage = usage(subscription)
+        if subscription == .openrouter, let free = openRouterFreeRequests {
+            return "\(UsageFormat.compact(usage.totalTokens)) tokens · \(free.label) free today"
+        }
+        return "\(UsageFormat.compact(usage.totalTokens)) tokens · \(UsageFormat.usd(usage.listCost)) \(subscription.rates)"
     }
 
     /// Command Code's estimated windows: label, spent, cap.

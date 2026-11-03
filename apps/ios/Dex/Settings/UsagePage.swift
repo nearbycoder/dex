@@ -16,7 +16,7 @@ enum UsageTab: String, CaseIterable, Identifiable {
     }
 }
 
-/// Spending and usage across ClinePass, OpenCode Go, Command Code, ChatGPT, boat.dev, and Cloudflare (the web's Usage
+/// Spending and usage across ClinePass, OpenCode Go, Command Code, ChatGPT, OpenRouter, boat.dev, and Cloudflare (the web's Usage
 /// page): Overview (the bill, one row per service, daily spend), Models (all subscriptions or one, with allowance
 /// meters), Machines, and Cloudflare.
 struct UsagePage: View {
@@ -52,7 +52,7 @@ struct UsagePage: View {
                 }
                 Section {
                 } footer: {
-                    Text("Estimates from Dex's own records (model responses, VM run times) and Cloudflare's analytics, priced at public list rates (ClinePass \(UsageFormat.usd(PlanFees.clinePass))/mo, OpenCode Go \(UsageFormat.usd(PlanFees.openCodeGo))/mo, Command Code Goat \(UsageFormat.usd(PlanFees.commandCode))/mo plus a processing fee, Workers Paid \(UsageFormat.usd(PlanFees.workersPaid))/mo, boat.dev small $0.018/h). Your invoices are the source of truth. VM time before usage tracking started is not included.")
+                    Text("Estimates from Dex's own records (model responses, VM run times) and Cloudflare's analytics, priced at public list rates (ClinePass \(UsageFormat.usd(PlanFees.clinePass))/mo, OpenCode Go \(UsageFormat.usd(PlanFees.openCodeGo))/mo, Command Code Goat \(UsageFormat.usd(PlanFees.commandCode))/mo plus a processing fee, OpenRouter's free models $0, Workers Paid \(UsageFormat.usd(PlanFees.workersPaid))/mo, boat.dev small $0.018/h). Your invoices are the source of truth. VM time before usage tracking started is not included.")
                 }
             } else {
                 UsageSkeleton()
@@ -144,6 +144,7 @@ extension UsageSeries {
         case .opencode: Color(red: 0xC9 / 255, green: 0x85 / 255, blue: 0x00 / 255)
         case .chatgpt: Color(red: 0xD5 / 255, green: 0x51 / 255, blue: 0x81 / 255)
         case .commandcode: Color(red: 0x8B / 255, green: 0x6F / 255, blue: 0xE0 / 255)
+        case .openrouter: Color(red: 0x1F / 255, green: 0xA3 / 255, blue: 0xB5 / 255)
         }
     }
 }
@@ -263,11 +264,10 @@ private struct UsageOverview: View {
 
         Section("Services") {
             ForEach(visible) { subscription in
-                let usage = report.usage(subscription)
                 ServiceRow(
                     series: subscription.series,
-                    price: subscription.fee.map { "\(UsageFormat.usd($0))/mo" } ?? "ChatGPT plan",
-                    summary: "\(UsageFormat.compact(usage.totalTokens)) tokens · \(UsageFormat.usd(usage.listCost)) \(subscription.rates)",
+                    price: subscription.plan.price,
+                    summary: report.serviceSummary(subscription),
                     meter: report.meter(subscription)
                 ) {
                     provider = subscription
@@ -578,7 +578,7 @@ private struct UsageModels: View {
         if visible.isEmpty {
             Section {
                 ContentUnavailableView("No Model Subscriptions", systemImage: "cpu",
-                                       description: Text("Connect ClinePass, OpenCode Go, Command Code, or ChatGPT in Settings → Model Subscriptions."))
+                                       description: Text("Connect ClinePass, OpenCode Go, Command Code, ChatGPT, or OpenRouter in Settings → Model Subscriptions."))
             }
         } else if let chosen {
             SubscriptionDetail(report: report, subscription: chosen)
@@ -592,7 +592,7 @@ private struct UsageModels: View {
                 ])
             }
             ModelTable(title: "By Model", rows: combined.byModel.map { ($0.row, $0.subscription.series) },
-                       footer: "Each subscription's tokens at its rates: API list prices for ClinePass and ChatGPT, the plans' own rates for OpenCode Go and Command Code.")
+                       footer: "Each subscription's tokens at its rates: API list prices for ClinePass and ChatGPT, the plans' own rates for OpenCode Go and Command Code, and $0 for OpenRouter's free models.")
             TopChats(chats: combined.topChats)
         }
     }
@@ -633,8 +633,7 @@ private struct SubscriptionDetail: View {
         let usage = report.usage(subscription)
         Section {
             StatGrid(items: [
-                .init(label: "Plan", value: subscription.fee.map { "\(UsageFormat.usd($0))/mo" } ?? "ChatGPT",
-                      detail: subscription.fee == nil ? "your ChatGPT plan" : "flat fee"),
+                .init(label: "Plan", value: subscription.plan.value, detail: subscription.plan.detail),
                 .init(label: "Responses", value: UsageFormat.compact(Double(usage.responses))),
                 .init(label: "Tokens", value: UsageFormat.compact(usage.totalTokens),
                       detail: "\(UsageFormat.compact(usage.inputTokens + usage.cacheReadTokens)) in · \(UsageFormat.compact(usage.outputTokens)) out"),
@@ -644,9 +643,11 @@ private struct SubscriptionDetail: View {
         switch subscription {
         case .opencodeGo: OpenCodeAllowance(usage: report.opencode)
         case .commandcode: CommandCodeAllowance(report: report)
+        case .openrouter: OpenRouterAccountSection(usage: report.openrouter)
         default: EmptyView()
         }
-        ModelTable(title: "By Model", rows: usage.byModel.map { ($0, nil) }, footer: "Costs \(subscription.rates).")
+        ModelTable(title: "By Model", rows: usage.byModel.map { ($0, nil) },
+                   footer: subscription == .openrouter ? "Free models, at $0." : "Costs \(subscription.rates).")
         TopChats(chats: usage.byChat)
     }
 }
@@ -694,6 +695,57 @@ private struct CommandCodeAllowance: View {
             HStack(spacing: 6) { Swatch(series: .commandcode); Text("Allowance") }
         } footer: {
             Text("Estimated from Dex's chats only. The Goat plan includes up to \(UsageFormat.usd(CommandCodeLimits.month)) of usage a month at each model's API rates, with up to \(UsageFormat.usd(CommandCodeLimits.fiveHours)) in any 5 hours and \(UsageFormat.usd(CommandCodeLimits.week)) in any week. Command Code's CLI and other clients count too, and its windows start at your first request; Studio shows the exact meters.")
+        }
+    }
+}
+
+/// OpenRouter's live numbers for the connected key: free requests today, the account's credits, and the key's spending.
+private struct OpenRouterAccountSection: View {
+    let usage: ModelUsage
+
+    var body: some View {
+        let color = UsageSeries.openrouter.color
+        Section {
+            if let account = usage.account {
+                if let free = account.freeRequests {
+                    AllowanceMeter(label: "Free requests today", percent: free.percent, color: color,
+                                   value: Int(free.used).formatted(), detail: "of \(Int(free.limit).formatted())")
+                }
+                if let credits = account.credits, credits.total > 0 {
+                    AllowanceMeter(label: "Credits used", percent: credits.used / credits.total * 100, color: color,
+                                   value: UsageFormat.usd(credits.used), detail: "of \(UsageFormat.usd(credits.total))")
+                }
+                if let key = account.keyLimit, key.limit > 0 {
+                    AllowanceMeter(label: "This key's limit", percent: key.used / key.limit * 100, color: color,
+                                   value: UsageFormat.usd(key.used), detail: "of \(UsageFormat.usd(key.limit))")
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 0) {
+                        ForEach([("Today", account.spent.day), ("This week", account.spent.week), ("This month", account.spent.month)], id: \.0) { label, value in
+                            VStack(spacing: 2) {
+                                Text(UsageFormat.usd(value)).font(.subheadline.weight(.semibold)).monospacedDigit()
+                                Text(label).font(.caption2).foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .accessibilityElement(children: .combine)
+                        }
+                    }
+                    .accessibilityIdentifier("usage.openrouter.spent")
+                    Text("The key's spending. Free models cost nothing, so this is paid models it ran elsewhere.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 2)
+            } else {
+                Text(usage.accountError.map { "Couldn't read it from OpenRouter: \($0)" } ?? "Connect an OpenRouter key in Settings to see its numbers here.")
+                    .font(.footnote)
+                    .foregroundStyle(usage.accountError == nil ? Color.secondary : Color.orange)
+            }
+            ExternalLink(title: "OpenRouter activity", url: "https://openrouter.ai/activity")
+        } header: {
+            HStack(spacing: 6) { Swatch(series: .openrouter); Text("Account") }
+        } footer: {
+            Text("Read live from OpenRouter for the connected key, so it counts every app that uses the key, not only Dex. Free requests reset at midnight UTC; the daily allowance is 50 until the account has bought $10 of credits, then 1,000.")
         }
     }
 }

@@ -63,6 +63,32 @@ import Testing
         #expect(old.bill(clineConnected: false).plans == PlanFees.workersPaid)
     }
 
+    @Test func decodesOpenRouter() throws {
+        let json = #"{"range":"month","since":1,"until":2,"openrouter":{"totalTokens":4000,"listCost":0,"connected":true,"account":{"freeRequests":{"used":12,"limit":50},"spent":{"day":0,"week":0.5,"month":1.25,"total":3},"keyLimit":null,"credits":null},"accountError":null},"daily":[{"date":"2026-10-01","cline":0,"opencode":0,"openrouter":0,"boat":0,"cloudflare":0}]}"#
+        let report = try JSONDecoder.dex.decode(UsageReport.self, from: Data(json.utf8))
+        #expect(report.openrouter.account?.freeRequests == .init(used: 12, limit: 50))
+        #expect(report.openrouter.account?.spent.month == 1.25)
+        #expect(report.openrouter.account?.keyLimit == nil && report.openrouter.account?.credits == nil)
+        #expect(report.meter(.openrouter)?.percent == 24)
+        #expect(report.serviceSummary(.openrouter) == "4K tokens · 12 of 50 free today")
+        #expect(report.visibleSubscriptions(clineConnected: false) == [.openrouter])
+        #expect(report.chartSeries(clineConnected: false) == [.boat, .cloudflare, .openrouter])
+        // Free: no plan fee in the bill.
+        #expect(report.bill(clineConnected: false).plans == PlanFees.workersPaid)
+        #expect(UsageSubscription.openrouter.plan.value == "Free" && UsageSubscription.openrouter.plan.detail == "free models only")
+        #expect(UsageSubscription.clinepass.plan.price == "$9.99/mo")
+
+        // Connected, but OpenRouter didn't answer: no meter, and the reason.
+        let failed = try JSONDecoder.dex.decode(UsageReport.self, from: Data(#"{"range":"month","since":1,"until":2,"openrouter":{"connected":true,"account":null,"accountError":"OpenRouter answered 502."},"daily":[]}"#.utf8))
+        #expect(failed.openrouter.accountError == "OpenRouter answered 502." && failed.meter(.openrouter) == nil)
+        #expect(failed.serviceSummary(.openrouter) == "0 tokens · $0.00 free models")
+        // An older agent: no OpenRouter at all.
+        let old = try JSONDecoder.dex.decode(UsageReport.self, from: Data(#"{"range":"month","since":1,"until":2,"daily":[{"date":"2026-10-01","cline":1,"opencode":0,"boat":0,"cloudflare":0}]}"#.utf8))
+        #expect(old.openrouter == ModelUsage() && old.meter(.openrouter) == nil)
+        #expect(!old.visibleSubscriptions(clineConnected: false).contains(.openrouter))
+        #expect(old.daily[0].openrouter == nil && old.daily[0].value(.openrouter) == 0)
+    }
+
     @Test func overviewMatchesTheWeb() throws {
         let report = try JSONDecoder.dex.decode(UsageReport.self, from: Data(Self.json.utf8))
         #expect(report.visibleSubscriptions(clineConnected: true) == [.clinepass, .opencodeGo])
@@ -130,9 +156,13 @@ import Testing
             #expect(!report.daily.isEmpty)
             #expect(report.commandcode.spent != nil)
             #expect(report.opencode.limits != nil)
+            #expect(report.openrouter.account == nil, "OpenRouter's numbers need its key")
             #expect(try JSONValue(encoding: report).decode(UsageReport.self) == report)
         }
         #expect(MockUsage.report(range: .days30, openCodeConnected: false).daily.count == 30)
+        let openRouter = MockUsage.report(range: .month, openCodeConnected: false, openRouterConnected: true)
+        #expect(openRouter.meter(.openrouter) != nil)
+        #expect(try JSONValue(encoding: openRouter).decode(UsageReport.self) == openRouter)
     }
 }
 
@@ -300,6 +330,18 @@ import Testing
         #expect(agent.state.commandcode.connected == false)
         #expect(try await call(agent, "modelCatalog").decode(ModelCatalog.self).models(of: "commandcode").isEmpty)
         #expect(agent.state.models?.version != listed.version)
+        // OpenRouter's free models are listed either way; connecting only checks and stores the key.
+        let before = try await call(agent, "modelCatalog").decode(ModelCatalog.self)
+        #expect(before.models(of: "openrouter").contains { $0.id == "openrouter/stealth/crouton-alpha" })
+        #expect(try await call(agent, "connectOpenRouter", ["bad"])["ok"]?.bool == false)
+        #expect(agent.state.openrouter.connected == false)
+        let openRouter = try await call(agent, "connectOpenRouter", ["sk-or-v1-good4321"])
+        #expect(openRouter["ok"]?.bool == true && openRouter["note"]?.string != nil)
+        #expect(agent.state.openrouter == ClineStatus(connected: true, source: "user", keyHint: "…4321", verifiedAt: agent.state.openrouter.verifiedAt))
+        #expect(agent.state.connectedProviders["openrouter"] == true)
+        _ = try await call(agent, "disconnectOpenRouter")
+        #expect(agent.state.openrouter.connected == false)
+        #expect(try await call(agent, "modelCatalog").decode(ModelCatalog.self).models(of: "openrouter") == before.models(of: "openrouter"))
         // A running VM keeps the boat.dev key.
         #expect(try await call(agent, "disconnectBoat")["ok"]?.bool == false)
 

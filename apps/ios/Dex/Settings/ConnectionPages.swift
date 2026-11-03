@@ -1,7 +1,7 @@
 import DexCore
 import SwiftUI
 
-/// ClinePass, OpenCode Go, ChatGPT, and Command Code: the subscriptions Dex's models run on.
+/// ClinePass, OpenCode Go, ChatGPT, Command Code, and OpenRouter: the subscriptions Dex's models run on.
 struct ModelSubscriptionsPage: View {
     @Environment(DexClient.self) private var client
 
@@ -58,8 +58,23 @@ struct ModelSubscriptionsPage: View {
                 }
                 Section {
                     ExternalLink(title: "Command Code Studio", url: "https://commandcode.ai/studio/")
+                }
+
+                // OpenRouter's free models (stealth previews and promotions) are listed whether or not a key is connected.
+                KeyConnectSection(
+                    id: "openrouter", title: "OpenRouter", connected: state.openrouter.connected,
+                    status: state.openrouter.keyHint ?? "Connected",
+                    placeholder: state.openrouter.connected ? "New OpenRouter API key" : "OpenRouter API key",
+                    footer: footer(state.openrouter, provider: "OpenRouter"),
+                    onConnect: { key in ConnectResult.from(try await client.run("connectOpenRouter", .string(key), timeout: 60)) },
+                    onDisconnect: { ConnectResult.from(try await client.run("disconnectOpenRouter", timeout: 60)) }
+                ) {
+                    Text("Create a key in OpenRouter's settings. Dex lists only OpenRouter's free models, so a chat on one costs nothing. They're limited to a few dozen requests a day until the account has bought $10 of credits, and their providers may keep or train on what you send (OpenRouter's privacy settings decide which ones your key can use). Dex checks the key with OpenRouter, then stores it encrypted in your agent.")
+                }
+                Section {
+                    ExternalLink(title: "OpenRouter API keys", url: "https://openrouter.ai/settings/keys")
                 } footer: {
-                    Text("Models marked Cline, OpenCode, ChatGPT, or Command in the model menu run on that subscription. Connect any or all of them.")
+                    Text("Models marked Cline, OpenCode, ChatGPT, Command, or OpenRouter in the model menu run on that subscription. Connect any or all of them.")
                 }
             }
             .navigationTitle("Model Subscriptions")

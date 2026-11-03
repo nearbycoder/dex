@@ -15,7 +15,7 @@ public struct DexModel: Codable, Sendable, Hashable, Identifiable {
 
     public var id: String
     public var apiId: String
-    /// clinepass, opencode-go, chatgpt, or commandcode
+    /// clinepass, opencode-go, chatgpt, commandcode, or openrouter
     public var provider: String
     public var name: String
     public var maker: String
@@ -143,7 +143,7 @@ public struct ModelCatalog: Codable, Sendable, Hashable {
 
     public static let providers: [(id: String, name: String, short: String)] = [
         ("clinepass", "ClinePass", "Cline"), ("opencode-go", "OpenCode Go", "OpenCode"), ("chatgpt", "ChatGPT", "ChatGPT"),
-        ("commandcode", "Command Code", "Command")
+        ("commandcode", "Command Code", "Command"), ("openrouter", "OpenRouter", "OpenRouter")
     ]
 
     public static func providerName(_ id: String) -> String { providers.first { $0.id == id }?.name ?? id }
@@ -187,7 +187,8 @@ public struct ModelCatalog: Codable, Sendable, Hashable {
 
     /// Which subscription a chat's model runs on (an unlisted id goes by its prefix, else ClinePass, as on the web).
     public func provider(of id: String) -> String {
-        model(id)?.provider ?? (id.hasPrefix("opencode-go/") ? "opencode-go" : id.hasPrefix("chatgpt/") ? "chatgpt" : id.hasPrefix("commandcode/") ? "commandcode" : "clinepass")
+        model(id)?.provider ?? (id.hasPrefix("opencode-go/") ? "opencode-go" : id.hasPrefix("chatgpt/") ? "chatgpt" : id.hasPrefix("commandcode/") ? "commandcode"
+            : id.hasPrefix("openrouter/") ? "openrouter" : "clinepass")
     }
 
     /// The model's name, or a readable form of its id when it isn't listed.

@@ -106,6 +106,19 @@ extension MockAgent {
             self.publish()
             return .null
         }
+        register("connectOpenRouter") { [unowned self] args, _ in
+            let key = args.string(0) ?? ""
+            if let problem = Self.keyProblem(key, service: "OpenRouter") { return ["ok": false, "error": .string(problem)] }
+            self.state.openrouter = ClineStatus(connected: true, source: "user", keyHint: Self.hint(key), verifiedAt: .nowMs)
+            self.publish()
+            // As for an account that never bought credits.
+            return ["ok": true, "note": "Without credits on the account, OpenRouter allows a few dozen free-model requests a day."]
+        }
+        register("disconnectOpenRouter") { [unowned self] _, _ in
+            self.state.openrouter = ClineStatus(connected: false)
+            self.publish()
+            return .null
+        }
         register("startChatGPTSignIn") { _, _ in
             ["url": "https://auth.openai.com/api/accounts/authorize?client_id=dynamic_agent_client&state=mock", "redirectUri": "http://127.0.0.1:1455/auth/callback"]
         }
@@ -290,7 +303,8 @@ extension MockAgent {
         register("usageReport") { [unowned self] args, _ in
             let range = UsageRange(rawValue: args.string(0) ?? "month") ?? .month
             try await Task.sleep(for: .milliseconds(150))
-            return try JSONValue(encoding: MockUsage.report(range: range, openCodeConnected: self.state.opencode.connected, commandCodeConnected: self.state.commandcode.connected))
+            return try JSONValue(encoding: MockUsage.report(range: range, openCodeConnected: self.state.opencode.connected, commandCodeConnected: self.state.commandcode.connected,
+                                                               openRouterConnected: self.state.openrouter.connected))
         }
     }
 
@@ -367,11 +381,12 @@ extension MockAgent {
     }
 }
 
-/// A realistic usage report: daily rows with every service, three subscriptions' models and chats (Command Code's used in
-/// the period even while it isn't connected), VM runs, Cloudflare meters, OpenCode Go's live allowance, and Command Code's
-/// estimated one.
+/// A realistic usage report: daily rows with every service, four subscriptions' models and chats (Command Code's and
+/// OpenRouter's used in the period even while they aren't connected), VM runs, Cloudflare meters, OpenCode Go's live
+/// allowance, Command Code's estimated one, and OpenRouter's account while its key is connected.
 public enum MockUsage {
-    public static func report(range: UsageRange, openCodeConnected: Bool, commandCodeConnected: Bool = false, now: Date = .now) -> UsageReport {
+    public static func report(range: UsageRange, openCodeConnected: Bool, commandCodeConnected: Bool = false, openRouterConnected: Bool = false,
+                              now: Date = .now) -> UsageReport {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "UTC")!
         let today = calendar.startOfDay(for: now)
@@ -397,6 +412,7 @@ public enum MockUsage {
                 cline: weekend ? 0.2 + seed.truncatingRemainder(dividingBy: 5) * 0.05 : 0.8 + seed.truncatingRemainder(dividingBy: 13) * 0.11,
                 opencode: openCodeConnected ? 0.1 + seed.truncatingRemainder(dividingBy: 7) * 0.04 : 0,
                 commandcode: weekend ? 0 : 0.3 + seed.truncatingRemainder(dividingBy: 9) * 0.08,
+                openrouter: 0,
                 boat: weekend ? 0 : 0.02 + seed.truncatingRemainder(dividingBy: 6) * 0.015,
                 cloudflare: 0.01 + seed.truncatingRemainder(dividingBy: 4) * 0.004
             ))
@@ -450,6 +466,20 @@ public enum MockUsage {
                 ],
                 connected: commandCodeConnected,
                 spent: CommandCodeSpent(fiveHours: (daily.last?.commandcode ?? 0) * 0.4, week: lastDays(7), month: lastDays(30))
+            ),
+            // Free models: tokens at $0, and the key's numbers from OpenRouter (an account that bought $10 of credits).
+            openrouter: ModelUsage(
+                responses: Int(scale * 2), inputTokens: scale * 64_000, outputTokens: scale * 6_000, cacheReadTokens: 0, totalTokens: scale * 70_000, listCost: 0,
+                byModel: [
+                    ModelUsageRow(model: "openrouter/stealth/crouton-alpha", responses: Int(scale * 2), totalTokens: scale * 58_000, listCost: 0),
+                    ModelUsageRow(model: "openrouter/google/gemma-4-31b-it:free", responses: Int(scale / 3), totalTokens: scale * 12_000, listCost: 0)
+                ],
+                byChat: [ChatUsageRow(sessionId: MockData.welcomeId, title: "Plan a weekend in Lisbon", totalTokens: scale * 70_000, listCost: 0)],
+                connected: openRouterConnected,
+                account: openRouterConnected ? OpenRouterAccount(
+                    freeRequests: .init(used: 214, limit: 1_000), spent: .init(day: 0.12, week: 0.84, month: 2.37, total: 6.1),
+                    keyLimit: .init(limit: 5, remaining: 2.63), credits: .init(total: 10, used: 6.1)
+                ) : nil
             ),
             boat: BoatUsage(
                 hours: boatCost / 0.018, cost: boatCost, running: true,
