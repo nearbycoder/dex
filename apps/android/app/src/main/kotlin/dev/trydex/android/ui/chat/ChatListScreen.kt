@@ -76,6 +76,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -443,7 +444,8 @@ fun ChatRow(session: SessionMeta, agent: AgentProfile?, project: ProjectProfile?
                 project != null -> AgentAvatar(project.icon, project.color, 40.dp, project.image)
                 agent != null -> AgentAvatar(agent.icon, agent.color, 40.dp)
                 else -> Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh), contentAlignment = Alignment.Center) {
-                    ModelLogo(session.model, app.graph.models, size = 22.dp)
+                    // The model's name is in the line under the title: TalkBack needn't read its maker first.
+                    ModelLogo(session.model, app.graph.models, size = 22.dp, modifier = Modifier.clearAndSetSemantics {})
                 }
             }
         },

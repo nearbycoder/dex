@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -189,7 +190,7 @@ private fun SwitcherRow(session: SessionMeta, state: DexState, now: Long, draft:
                 project != null -> AgentAvatar(project.icon, project.color, 36.dp, project.image)
                 agent != null -> AgentAvatar(agent.icon, agent.color, 36.dp)
                 else -> Box(Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh), contentAlignment = Alignment.Center) {
-                    ModelLogo(session.model, app.graph.models, size = 20.dp)
+                    ModelLogo(session.model, app.graph.models, size = 20.dp, modifier = Modifier.clearAndSetSemantics {})
                 }
             }
         },
