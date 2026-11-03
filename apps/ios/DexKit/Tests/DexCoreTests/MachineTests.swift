@@ -208,3 +208,46 @@ import Testing
         await #expect(throws: AgentError.self) { try await client.vmExposePort(MockData.vmChatId, port: 0) }
     }
 }
+
+@Suite struct VmFilesTests {
+    @Test func decodesTheWebShapes() throws {
+        let directory = try JSONDecoder.dex.decode(VmDirectory.self, from: Data(#"{"path":"/home/u/work","parent":"/home/u","entries":[{"path":"/home/u/work/b.ts","name":"b.ts","directory":false,"size":3,"modifiedAt":1,"link":false},{"path":"/home/u/work/src","name":"src","directory":true,"size":0,"modifiedAt":1,"link":false}],"next":null}"#.utf8))
+        #expect(directory.sortedEntries.map(\.name) == ["src", "b.ts"])
+        #expect(directory.next == nil)
+        let file = try JSONDecoder.dex.decode(VmFile.self, from: Data(#"{"path":"/a","size":2,"modifiedAt":null,"content":null,"before":"x","change":"deleted","binary":false,"truncated":false,"message":null}"#.utf8))
+        #expect(file.content == nil && file.before == "x" && file.change == "deleted")
+        #expect(VmFsChange(status: "untracked", path: "/a").letter == "U")
+        #expect(vmRelativePath("/home/u/work/src/a.ts", to: "/home/u/work") == "src/a.ts")
+        #expect(vmRelativePath("/etc/hosts", to: "/home/u/work") == "/etc/hosts")
+    }
+
+    @Test func unifiedDiffFoldsUnchangedLines() {
+        let before = (1...20).map { "line \($0)" }.joined(separator: "\n") + "\n"
+        let after = before.replacingOccurrences(of: "line 10\n", with: "line ten\n")
+        let diff = LineDiff.unified(before: before, after: after, context: 2)
+        #expect(diff.filter { $0.kind == .removed }.map(\.text) == ["line 10"])
+        #expect(diff.filter { $0.kind == .added }.map(\.text) == ["line ten"])
+        #expect(diff.first?.kind == .fold && diff.first?.text == "7 unchanged lines")
+        #expect(diff.last?.kind == .fold && diff.last?.text == "8 unchanged lines")
+        // A new file is all additions; no change is all the same.
+        #expect(LineDiff.unified(before: nil, after: "a\nb\n", context: 2).map(\.kind) == [.added, .added])
+        #expect(LineDiff.unified(before: "a\n", after: "a\n").map(\.kind) == [.same])
+    }
+
+    @Test @MainActor func mockServesFiles() async throws {
+        let agent = MockAgent()
+        let client = DexClient(credentials: nil, factory: MockTransportFactory(agent: agent), cache: nil)
+        client.start()
+        defer { client.stop() }
+        while !client.isConnected { try await Task.sleep(for: .milliseconds(10)) }
+        let directory: VmDirectory = try await client.vmFiles(MockData.vmChatId, view: .directory, path: "~/work/dex")
+        #expect(directory.entries.contains { $0.name == "src" && $0.directory })
+        let changes: VmChanges = try await client.vmFiles(MockData.vmChatId, view: .changes, path: "~/work")
+        #expect(changes.changes.count == 3)
+        let file: VmFile = try await client.vmFiles(MockData.vmChatId, view: .file, path: changes.changes[1].path)
+        #expect(file.before != nil && file.content != file.before)
+        await #expect(throws: VmFilesError.self) {
+            let _: VmDirectory = try await client.vmFiles(MockData.welcomeId, view: .directory, path: "~/work")
+        }
+    }
+}

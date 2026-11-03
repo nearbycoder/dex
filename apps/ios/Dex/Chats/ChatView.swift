@@ -101,6 +101,12 @@ struct ChatView: View {
                         VmPreviewOverlay(vm: vm)
                     }
                 }
+                // The VM's files: a column beside the chat on iPad and an unfolded foldable, a sheet on iPhone.
+                .inspector(isPresented: Binding(get: { router.vmFiles == sessionId }, set: { if !$0 { router.vmFiles = nil } })) {
+                    VmFilesPanel(sessionId: sessionId, running: feed.transcript.running) { router.vmFiles = nil }
+                        .inspectorColumnWidth(min: 320, ideal: 440, max: 720)
+                        .presentationDetents([.large, .medium])
+                }
         }
     }
 
@@ -167,6 +173,16 @@ struct ChatToolbar: ToolbarContent {
                         .accessibilityLabel(vm.setup.status == "running" ? "Machine, setting up" : "Machine, \(vm.status)")
                         .accessibilityHint("Watch or take over this chat's VM")
                         .accessibilityIdentifier("chat.machine")
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            router.vmFiles = router.vmFiles == session.id ? nil : session.id
+                        } label: {
+                            Label("Files", systemImage: router.vmFiles == session.id ? "folder.fill" : "folder")
+                        }
+                        .accessibilityLabel("VM files")
+                        .accessibilityHint("Browse this chat's VM files and changes")
+                        .accessibilityIdentifier("chat.files")
                     }
                 }
                 // A sidekick's chat has their bell instead.
@@ -333,6 +349,8 @@ struct ChatMenu: View {
                     Label { Text("Machine"); Text(vm.setup.status == "running" ? "Setting up" : vm.status.capitalized) } icon: { Image(systemName: "desktopcomputer") }
                 }
                 .accessibilityIdentifier("chat.menu.machine")
+                Button { router.vmFiles = session.id } label: { Label("Files", systemImage: "folder") }
+                    .accessibilityIdentifier("chat.menu.files")
                 Divider()
             }
             if place == .settled {

@@ -65,6 +65,13 @@ extension MockAgent {
             }
             return Self.peek(view: view, path: path)
         }
+        register("vmFiles") { [unowned self] args, _ in
+            let key = try self.requireVmKey(args.string(0))
+            guard let vm = self.state.vm(key), vm.status == "running" else {
+                return ["running": false, "status": .string(self.state.vm(key)?.status ?? "none")]
+            }
+            return ["running": true, "data": try Self.files(view: args.string(1) ?? "directory", path: args.string(2) ?? "~/work")]
+        }
         register("vmDesktopUrl") { [unowned self] args, _ in
             guard let key = args.string(0), self.state.vm(key)?.status == "running" else { return .null }
             return .string(Self.desktopPage(key: key, mode: args.string(1) ?? "selkies"))
@@ -216,6 +223,50 @@ extension MockAgent {
     }
 
     // MARK: Peeks and the desktop
+
+    /// The chat's VM files (`vmFiles`): ~/work/dex with a src folder, two changed files, and a new one.
+    nonisolated static func files(view: String, path raw: String) throws -> JSONValue {
+        let home = "/home/dex"
+        let path = raw == "~/work" || raw == "~" ? home + "/work" : raw.replacingOccurrences(of: "~", with: home)
+        let now = Double.nowMs
+        let tree: [String: [VmFsEntry]] = [
+            "\(home)/work": [VmFsEntry(path: "\(home)/work/dex", name: "dex", directory: true, modifiedAt: now - 600_000)],
+            "\(home)/work/dex": [
+                VmFsEntry(path: "\(home)/work/dex/src", name: "src", directory: true, modifiedAt: now - 600_000),
+                VmFsEntry(path: "\(home)/work/dex/README.md", name: "README.md", directory: false, size: 412, modifiedAt: now - 86_400_000),
+                VmFsEntry(path: "\(home)/work/dex/notes.md", name: "notes.md", directory: false, size: 96, modifiedAt: now - 120_000),
+                VmFsEntry(path: "\(home)/work/dex/package.json", name: "package.json", directory: false, size: 2_140, modifiedAt: now - 3_600_000)
+            ],
+            "\(home)/work/dex/src": [
+                VmFsEntry(path: "\(home)/work/dex/src/dates.ts", name: "dates.ts", directory: false, size: 380, modifiedAt: now - 900_000),
+                VmFsEntry(path: "\(home)/work/dex/src/dates.test.ts", name: "dates.test.ts", directory: false, size: 512, modifiedAt: now - 300_000)
+            ]
+        ]
+        let changes = [
+            VmFsChange(status: "modified", path: "\(home)/work/dex/src/dates.test.ts"),
+            VmFsChange(status: "modified", path: "\(home)/work/dex/src/dates.ts"),
+            VmFsChange(status: "untracked", path: "\(home)/work/dex/notes.md")
+        ]
+        let dates = "export function formatDate(date: Date): string {\n  return date.toISOString().slice(0, 10)\n}\n\nexport function midnight(date: Date): Date {\n  const copy = new Date(date)\n  copy.setUTCHours(0, 0, 0, 0)\n  return copy\n}\n"
+        let datesBefore = dates.replacingOccurrences(of: "setUTCHours", with: "setHours")
+        let test = "import { formatDate, midnight } from \"./dates\"\n\nprocess.env.TZ = \"UTC\"\n\ntest(\"formats midnight\", () => {\n  expect(formatDate(midnight(new Date(\"2026-10-19T23:30:00Z\")))).toBe(\"2026-10-19\")\n})\n"
+        let testBefore = test.replacingOccurrences(of: "process.env.TZ = \"UTC\"\n\n", with: "")
+        switch view {
+        case "directory":
+            guard let entries = tree[path] else { throw AgentError.remote("No such folder: \(path)") }
+            return try JSONValue(encoding: VmDirectory(path: path, parent: (path as NSString).deletingLastPathComponent, entries: entries))
+        case "changes":
+            return try JSONValue(encoding: VmChanges(path: path, repositories: path.hasPrefix(home + "/work") ? [home + "/work/dex"] : [], changes: changes.filter { $0.path.hasPrefix(path) }))
+        default:
+            switch (path as NSString).lastPathComponent {
+            case "dates.ts": return try JSONValue(encoding: VmFile(path: path, size: dates.utf8.count, content: dates, before: datesBefore, change: "modified"))
+            case "dates.test.ts": return try JSONValue(encoding: VmFile(path: path, size: test.utf8.count, content: test, before: testBefore, change: "modified"))
+            case "notes.md": return try JSONValue(encoding: VmFile(path: path, size: 96, content: "# Notes\n\n- The date test depends on the time zone.\n", change: "untracked"))
+            case "package.json": return try JSONValue(encoding: VmFile(path: path, size: 2_140, content: "{\n  \"name\": \"dex\",\n  \"private\": true\n}\n"))
+            default: return try JSONValue(encoding: VmFile(path: path, size: 412, content: "# dex\n\nA personal agent harness.\n"))
+            }
+        }
+    }
 
     nonisolated static func peek(view: String, path: String) -> JSONValue {
         let now = Double.nowMs

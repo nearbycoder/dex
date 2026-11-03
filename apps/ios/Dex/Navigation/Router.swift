@@ -128,6 +128,8 @@ final class Router {
     var composeRequest: String?
     /// The chat switcher (⌘K, or the strip over a chat).
     var switcherOpen = false
+    /// The chat whose VM files are open beside it (a sheet on iPhone).
+    var vmFiles: String?
 
     enum CharacterSheet: Hashable, Identifiable {
         case new
