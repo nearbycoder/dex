@@ -128,7 +128,10 @@ class ScreenshotTest(private val device: String, private val qualifiers: String)
         shot("4e-model-menu-openrouter")
         // Its free models are listed without a key too, under a nudge to connect one.
         harness.fake.update { it.copy(openrouter = dev.trydex.core.model.ProviderStatus()) }
-        rule.waitUntil(10_000) { harness.graph.repository.state.value?.openrouter?.connected == false }
+        rule.waitUntil(10_000) {
+            ShadowLooper.idleMainLooper()
+            harness.graph.repository.state.value?.openrouter?.connected == false
+        }
         rule.awaitText("Connect in Settings")
         shot("4f-model-menu-openrouter-not-connected")
     }
