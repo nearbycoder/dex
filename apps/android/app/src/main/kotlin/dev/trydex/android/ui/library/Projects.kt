@@ -76,6 +76,7 @@ import dev.trydex.android.ui.components.BoneRows
 import dev.trydex.android.ui.components.EmptyState
 import dev.trydex.android.ui.components.ErrorText
 import dev.trydex.android.ui.components.Hint
+import dev.trydex.android.ui.components.IconLabel
 import dev.trydex.android.ui.components.InfoTip
 import dev.trydex.android.ui.components.PageColumn
 import dev.trydex.android.ui.components.PaneScaffold
@@ -199,14 +200,13 @@ private fun ProjectCard(project: ProjectProfile, chats: Int, selected: Boolean) 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilledTonalButton(
                     onClick = { app.navigator.open(NewChat(projectId = project.id, nonce = System.nanoTime())) },
+                    contentPadding = CardButtonPadding,
                     modifier = Modifier.weight(1f).testTag("project-start-${project.id}"),
                 ) {
-                    Icon(Icons.Rounded.AddComment, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Text("Start chat", modifier = Modifier.padding(start = 8.dp))
+                    IconLabel(Icons.Rounded.AddComment, "Start chat")
                 }
-                OutlinedButton(onClick = { app.navigator.open(ProjectEditor(project.id)) }) {
-                    Icon(Icons.Rounded.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Text("Edit", modifier = Modifier.padding(start = 8.dp))
+                OutlinedButton(onClick = { app.navigator.open(ProjectEditor(project.id)) }, contentPadding = CardButtonPadding) {
+                    IconLabel(Icons.Rounded.Edit, "Edit")
                 }
             }
         }
@@ -389,7 +389,7 @@ private fun ProjectForm(draft: ProjectProfile, state: DexState, onChange: ((Proj
     SectionCard {
         ProfileField(
             "Setup script",
-            "Bash, run once in ~/work after cloning each new VM, with `set -e`. It can run for up to 30 minutes; its log is ~/work/.dex/setup.log. Changes apply to new VMs; on an existing one, use “Re-run setup” on its Machine page.",
+            "Bash, run once in ~/work after cloning each new VM, with set -e. It can run for up to 30 minutes; its log is ~/work/.dex/setup.log. Changes apply to new VMs; on an existing one, use “Re-run setup” on its Machine page.",
         ) {
             OutlinedTextField(
                 value = draft.setupScript,

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -32,6 +33,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.text.style.TextOverflow
 import dev.trydex.android.ui.LocalApp
 import dev.trydex.android.ui.chat.mcpStatusColor
+import dev.trydex.android.ui.components.IconLabel
 import dev.trydex.android.ui.components.StatusDot
 import dev.trydex.android.ui.components.haptics
 import dev.trydex.android.ui.nav.McpEditor
@@ -223,6 +225,9 @@ fun SaveButtonContent(label: String, saving: Boolean, saved: Boolean) {
     Text(label, modifier = Modifier.padding(start = if (saving || saved) 8.dp else 0.dp))
 }
 
+/** A card's buttons (Start chat, Edit): a little tighter than a button's own, so both keep their labels in a narrow pane. */
+val CardButtonPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+
 /** An editor's save bar, stuck to the bottom: save, start a chat, and delete. */
 @Composable
 fun ProfileSaveBar(
@@ -239,28 +244,32 @@ fun ProfileSaveBar(
     Surface(color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal))) {
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Button(onClick = onSave, enabled = enabled, modifier = Modifier.widthIn(min = 112.dp).testTag(saveTag)) {
-                    SaveButtonContent(label, saving, saved)
-                }
-                if (onStartChat != null) {
-                    OutlinedButton(onClick = onStartChat, modifier = Modifier.testTag("$saveTag-chat")) {
-                        Icon(Icons.Rounded.AddComment, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text(startChatLabel, modifier = Modifier.padding(start = 8.dp))
+            BoxWithConstraints {
+                // A narrow pane gives Save less room to grow into (it keeps its width as it turns into "Saved").
+                val narrow = maxWidth < 320.dp
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Button(onClick = onSave, enabled = enabled, modifier = Modifier.widthIn(min = if (narrow) 88.dp else 112.dp).testTag(saveTag)) {
+                        SaveButtonContent(label, saving, saved)
                     }
-                }
-                Spacer(Modifier.weight(1f))
-                if (onDelete != null) {
-                    Hint("Delete") {
-                        IconButton(
-                            onClick = onDelete,
-                            colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                            modifier = Modifier.testTag("$saveTag-delete"),
-                        ) { Icon(Icons.Outlined.DeleteOutline, contentDescription = "Delete") }
+                    if (onStartChat != null) {
+                        // Gives way (label, then icon) before the bar overflows in a narrow pane.
+                        OutlinedButton(onClick = onStartChat, contentPadding = CardButtonPadding, modifier = Modifier.weight(1f, fill = false).testTag("$saveTag-chat")) {
+                            IconLabel(Icons.Rounded.AddComment, startChatLabel)
+                        }
+                    }
+                    Spacer(Modifier.weight(1f))
+                    if (onDelete != null) {
+                        Hint("Delete") {
+                            IconButton(
+                                onClick = onDelete,
+                                colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                                modifier = Modifier.testTag("$saveTag-delete"),
+                            ) { Icon(Icons.Outlined.DeleteOutline, contentDescription = "Delete") }
+                        }
                     }
                 }
             }

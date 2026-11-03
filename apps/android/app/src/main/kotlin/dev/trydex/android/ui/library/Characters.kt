@@ -70,6 +70,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.trydex.android.ui.LocalApp
+import dev.trydex.android.ui.components.IconLabel
 import dev.trydex.android.ui.nav.NotificationSettings
 import dev.trydex.android.ui.theme.DexTheme
 import dev.trydex.core.model.SidekickNotify
@@ -202,14 +203,13 @@ private fun CharacterCard(character: CharacterProfile, session: SessionMeta?, se
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilledTonalButton(
                     onClick = { app.navigator.open(Chat(character.sessionId)) },
+                    contentPadding = CardButtonPadding,
                     modifier = Modifier.weight(1f).testTag("character-talk-${character.id}"),
                 ) {
-                    Icon(Icons.AutoMirrored.Rounded.Chat, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Text("Talk", modifier = Modifier.padding(start = 8.dp))
+                    IconLabel(Icons.AutoMirrored.Rounded.Chat, "Talk")
                 }
-                OutlinedButton(onClick = { app.navigator.open(CharacterEditor(character.id)) }) {
-                    Icon(Icons.Rounded.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Text("Edit", modifier = Modifier.padding(start = 8.dp))
+                OutlinedButton(onClick = { app.navigator.open(CharacterEditor(character.id)) }, contentPadding = CardButtonPadding) {
+                    IconLabel(Icons.Rounded.Edit, "Edit")
                 }
             }
         }

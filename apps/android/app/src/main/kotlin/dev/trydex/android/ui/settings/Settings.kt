@@ -2,10 +2,14 @@ package dev.trydex.android.ui.settings
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -66,6 +70,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.trydex.android.Demo
@@ -111,7 +116,11 @@ import java.time.format.FormatStyle
 fun waitingCount(state: dev.trydex.core.model.DexState?, now: Long = System.currentTimeMillis()): Int =
     state?.access?.pending?.count { it.status == "pending" && now - it.createdAt < 3_600_000 } ?: 0
 
-/** A row of a list in a card: icon, label, an optional line under it, and a control on the right. */
+/**
+ * A row of a list in a card: icon, label, an optional line under it, and a control on the right. A wide control (a
+ * menu's label, a pair of buttons) gives [wideTrailingBelow]: in a row narrower than that it moves under the text,
+ * which would otherwise be squeezed to a few letters a line.
+ */
 @Composable
 fun SettingRow(
     label: String,
@@ -121,21 +130,33 @@ fun SettingRow(
     info: String? = null,
     leading: (@Composable () -> Unit)? = null,
     onClick: (() -> Unit)? = null,
+    wideTrailingBelow: Dp? = null,
     trailing: (@Composable () -> Unit)? = null,
 ) {
-    ListItem(
-        headlineContent = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                if (info != null) InfoTip(info, "About $label")
-            }
-        },
-        supportingContent = detail?.let { { Text(it) } },
-        leadingContent = leading ?: icon?.let { { Icon(it, contentDescription = null) } },
-        trailingContent = trailing,
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        modifier = modifier.then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
-    )
+    BoxWithConstraints(modifier) {
+        val below = trailing != null && wideTrailingBelow != null && maxWidth < wideTrailingBelow
+        ListItem(
+            headlineContent = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    if (info != null) InfoTip(info, "About $label")
+                }
+            },
+            supportingContent = if (below) {
+                {
+                    Column {
+                        detail?.let { Text(it) }
+                        // Lined up with the text above it: a text button's own padding would indent it.
+                        Box(Modifier.offset(x = (-12).dp)) { trailing!!() }
+                    }
+                }
+            } else detail?.let { { Text(it) } },
+            leadingContent = leading ?: icon?.let { { Icon(it, contentDescription = null) } },
+            trailingContent = if (below) null else trailing,
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+            modifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier,
+        )
+    }
 }
 
 /** Settings' hub: a list of pages, with what needs attention marked. */
@@ -299,6 +320,27 @@ fun GeneralSettingsScreen() {
     }
 }
 
+/** A connection's status with a check, and its buttons beside it, or under it in a narrow card (the key stays legible). */
+@Composable
+private fun ConnectedRow(status: @Composable (Modifier) -> Unit, actions: @Composable RowScope.() -> Unit) {
+    BoxWithConstraints {
+        val stacked = maxWidth < 320.dp
+        val line = @Composable { modifier: Modifier ->
+            Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = DexTheme.colors.success, modifier = Modifier.size(20.dp))
+                status(Modifier.weight(1f))
+                if (!stacked) actions()
+            }
+        }
+        if (stacked) {
+            Column {
+                line(Modifier.fillMaxWidth())
+                Row(Modifier.offset(x = 16.dp), verticalAlignment = Alignment.CenterVertically, content = actions)
+            }
+        } else line(Modifier.fillMaxWidth())
+    }
+}
+
 /** A key that connects a provider: its status, and a form to add, replace, or remove it. */
 @Composable
 fun SecretConnect(
@@ -321,9 +363,7 @@ fun SecretConnect(
     val value = rememberTextFieldState()
     Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.testTag("connect-$tag")) {
         if (connected) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = DexTheme.colors.success, modifier = Modifier.size(20.dp))
-                Text(status, color = DexTheme.colors.success, fontFamily = if (monospace) FontFamily.Monospace else null, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            ConnectedRow(status = { Text(status, color = DexTheme.colors.success, fontFamily = if (monospace) FontFamily.Monospace else null, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = it) }) {
                 if (!editing) TextButton(onClick = { editing = true }) { Text("Replace") }
                 if (onDisconnect != null) TextButton(onClick = {
                     message = null
@@ -461,9 +501,7 @@ private fun ChatGPTConnect(status: ProviderStatus) {
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.testTag("connect-chatgpt")) {
         if (status.connected) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = DexTheme.colors.success, modifier = Modifier.size(20.dp))
-                Text(status.keyHint ?: "Signed in", color = DexTheme.colors.success, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            ConnectedRow(status = { Text(status.keyHint ?: "Signed in", color = DexTheme.colors.success, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = it) }) {
                 if (signIn == null) TextButton(onClick = { start() }, enabled = !busy) { Text("Sign in again") }
                 TextButton(onClick = {
                     stopListening()
