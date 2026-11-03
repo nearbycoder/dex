@@ -60,7 +60,7 @@ struct ChatView: View {
         let session = client.state?.session(sessionId)
         let character = client.state?.character(session?.characterId)
         if client.state != nil, session == nil {
-            EmptyStateView(title: "Chat not found", symbol: "bubble.left.and.exclamationmark.bubble.right", message: "This chat no longer exists.")
+            EmptyStateView(title: "Chat Not Found", symbol: "bubble.left.and.exclamationmark.bubble.right", message: "This chat no longer exists.")
         } else {
             TranscriptView(feed: feed, composer: composer, speaker: character, send: { text in sendNow(text, feed: feed) })
                 .environment(\.chatFeed, feed)

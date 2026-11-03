@@ -42,7 +42,7 @@ struct ChatListView: View {
             if client.state == nil {
                 ForEach(0..<7, id: \.self) { _ in ChatRowSkeleton() }
             } else if sessions.isEmpty {
-                EmptyStateView(title: "No chats yet", symbol: "bubble.left.and.text.bubble.right", message: "Start one to ask Dex anything.", actionTitle: "New Chat") {
+                EmptyStateView(title: "No Chats Yet", symbol: "bubble.left.and.text.bubble.right", message: "Start one to ask Dex anything.", actionTitle: "New Chat") {
                     router.newChat()
                 }
                 .listRowSeparator(.hidden)

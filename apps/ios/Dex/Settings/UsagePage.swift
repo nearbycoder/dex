@@ -577,7 +577,7 @@ private struct UsageModels: View {
 
         if visible.isEmpty {
             Section {
-                ContentUnavailableView("No model subscriptions", systemImage: "cpu",
+                ContentUnavailableView("No Model Subscriptions", systemImage: "cpu",
                                        description: Text("Connect ClinePass, OpenCode Go, Command Code, or ChatGPT in Settings → Model Subscriptions."))
             }
         } else if let chosen {

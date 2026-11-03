@@ -321,7 +321,7 @@ private struct VmFileView: View {
     var body: some View {
         Group {
             if let error {
-                ContentUnavailableView("Couldn't open it", systemImage: "exclamationmark.triangle", description: Text(error))
+                ContentUnavailableView("Couldn't Open It", systemImage: "exclamationmark.triangle", description: Text(error))
             } else if let file {
                 content(file)
             } else {
@@ -386,7 +386,7 @@ private struct VmFileView: View {
             } else if let content = file.content {
                 CodeLines(lines: LineDiff.lines(content).enumerated().map { LineDiff.Line(kind: .same, text: $1, old: nil, new: $0 + 1) })
             } else {
-                ContentUnavailableView("This file was deleted", systemImage: "trash", description: Text("Changes shows what it was."))
+                ContentUnavailableView("File Deleted", systemImage: "trash", description: Text("Changes shows what it was."))
             }
         }
         .accessibilityIdentifier("files.file")

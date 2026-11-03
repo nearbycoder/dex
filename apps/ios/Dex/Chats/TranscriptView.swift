@@ -46,7 +46,7 @@ struct TranscriptView: View {
                         EmptyStateView(title: "Say hi to \(speaker.name)", symbol: "hand.wave", message: speaker.tagline.isEmpty ? nil : speaker.tagline)
                             .padding(.top, 60)
                     } else {
-                        EmptyStateView(title: "New chat", symbol: "sparkles", message: "Ask Dex anything. It can browse, run code on its own VM, and answer with live UI.")
+                        EmptyStateView(title: "New Chat", symbol: "sparkles", message: "Ask Dex anything. It can browse, run code on its own VM, and answer with live UI.")
                             .padding(.top, 60)
                     }
                 }
