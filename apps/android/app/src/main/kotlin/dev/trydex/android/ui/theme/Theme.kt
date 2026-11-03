@@ -17,7 +17,7 @@ import androidx.compose.ui.platform.LocalContext
 
 /**
  * Colors with a meaning that the scheme doesn't carry: success, warning, info (status dots, callouts, the activity
- * row), and the code-block surface. Tuned for each mode.
+ * row), fresh (newly released models: violet, as on the web), and the code-block surface. Tuned for each mode.
  */
 @Immutable
 data class DexColors(
@@ -31,6 +31,9 @@ data class DexColors(
     val infoContainer: Color,
     val onInfoContainer: Color,
     val danger: Color,
+    val fresh: Color,
+    val freshContainer: Color,
+    val onFreshContainer: Color,
     val codeBackground: Color,
     val codeText: Color,
     val dark: Boolean,
@@ -51,6 +54,9 @@ private val LightExtras = DexColors(
     infoContainer = Color(0xFFDCE6FF),
     onInfoContainer = Color(0xFF001A43),
     danger = Color(0xFFC62828),
+    fresh = Color(0xFF7C3AED),
+    freshContainer = Color(0xFFEDE4FF),
+    onFreshContainer = Color(0xFF2E1065),
     codeBackground = Color(0xFF1E1E1E),
     codeText = Color(0xFFD4D4D4),
     dark = false,
@@ -67,6 +73,9 @@ private val DarkExtras = DexColors(
     infoContainer = Color(0xFF15305A),
     onInfoContainer = Color(0xFFD6E4FF),
     danger = Color(0xFFFF8A80),
+    fresh = Color(0xFFC4B5FD),
+    freshContainer = Color(0xFF2E1F5E),
+    onFreshContainer = Color(0xFFE4DCFF),
     codeBackground = Color(0xFF18181B),
     codeText = Color(0xFFD4D4D4),
     dark = true,
