@@ -106,7 +106,7 @@ struct ActiveChatsStrip: View {
                     .padding(.vertical, 4)
                 }
             }
-            .scrollClipDisabled()
+            // Clipped to the bar: unclipped, the chips ran under the foldable cover screen's side rail.
             .transition(.move(edge: .top).combined(with: .opacity))
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Other active chats")
@@ -123,6 +123,8 @@ struct ChatSwitcher: View {
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var highlighted = 0
+    /// The highlight is for the keyboard (Return opens it): shown with a hardware keyboard, or once you type.
+    @State private var keyboard = GCKeyboard.coalesced != nil
     /// Opens tall: the more chats it shows, the fewer you scroll.
     @State private var detent = PresentationDetent.large
     @FocusState private var searching: Bool
@@ -148,6 +150,7 @@ struct ChatSwitcher: View {
                             .onSubmit { open(order, at: highlighted) }
                             .onKeyPress(keys: [.upArrow, .downArrow], phases: .down) { press in
                                 guard !order.isEmpty else { return .ignored }
+                                keyboard = true
                                 highlighted = min(max(highlighted + (press.key == .downArrow ? 1 : -1), 0), order.count - 1)
                                 proxy.scrollTo(order[highlighted].id)
                                 return .handled
@@ -171,7 +174,7 @@ struct ChatSwitcher: View {
                                     SwitcherRow(session: session, current: router.chat == session.id)
                                 }
                                 .tint(.primary)
-                                .listRowBackground(index == highlighted && !order.isEmpty ? Color.accentColor.opacity(0.14) : nil)
+                                .listRowBackground(index == highlighted && (keyboard || !query.isEmpty) ? Color.dexAccent.opacity(0.14) : nil)
                                 .accessibilityIdentifier("switcher.chat.\(session.id)")
                                 .id(session.id)
                             }
