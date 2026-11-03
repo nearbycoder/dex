@@ -87,6 +87,8 @@ struct ChatListView: View {
         }
         .listStyle(.sidebar)
         .tint(.selectionAccent)
+        // The list syncs live; pulling down reconnects at once when it's offline (as on coming back to the app).
+        .refreshable { await reconnect() }
         .animation(.smooth, value: sessions.map { "\($0.id)\(Inbox.place(of: $0).rawValue)" })
         .searchable(text: $filter, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "Search chats")
         .navigationTitle("Chats")
@@ -132,6 +134,15 @@ struct ChatListView: View {
             }
         }
         .accessibilityIdentifier("chats.list")
+    }
+
+    /// Reconnects if the socket is down, and waits a few seconds for it (the spinner shows meanwhile).
+    private func reconnect() async {
+        client.connection.reconnectNow()
+        let deadline = Date.now.addingTimeInterval(5)
+        while !client.isConnected, Date.now < deadline, !Task.isCancelled {
+            try? await Task.sleep(for: .milliseconds(200))
+        }
     }
 }
 
