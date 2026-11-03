@@ -445,6 +445,8 @@ struct MachineDetailView: View {
                 } label: {
                     if busy == "stop" { ProgressView() } else { Label("Stop", systemImage: "stop.fill") }
                 }
+                // Neutral, like the composer's Stop: a square in the accent read as "go" (green) next to the title.
+                .tint(.primary)
                 .disabled(busy != nil)
                 .accessibilityIdentifier("machine.stop")
             }
