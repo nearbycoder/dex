@@ -111,23 +111,30 @@ struct KeyConnectSection<Help: View>: View {
     @State private var message: (tone: InlineMessage.Tone, text: String)?
     @State private var confirmDisconnect = false
     @FocusState private var focused: Bool
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         Section {
             if connected {
-                HStack(spacing: 10) {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                    Text(status)
-                        .font(statusIsHint ? .body.monospaced() : .body)
-                        .lineLimit(1)
-                        .accessibilityIdentifier("\(id).status")
-                    Spacer()
+                // Large text: Replace goes under the key, which then shows whole.
+                let stacked = dynamicTypeSize.isAccessibilitySize
+                let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(spacing: 10))
+                layout {
+                    HStack(spacing: 10) {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                        Text(status)
+                            .font(statusIsHint ? .body.monospaced() : .body)
+                            .lineLimit(stacked ? 3 : 1)
+                            .accessibilityIdentifier("\(id).status")
+                    }
+                    if !stacked { Spacer() }
                     if !replacing {
                         Button("Replace") {
                             replacing = true
                             focused = true
                         }
                         .buttonStyle(.borderless)
+                        .fixedSize()
                         .accessibilityIdentifier("\(id).replace")
                     }
                 }

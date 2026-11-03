@@ -44,15 +44,12 @@ struct Composer<Accessory: View>: View {
                         .accessibilityIdentifier("composer.field")
                     HStack(spacing: 6) {
                         // The chips are neutral (gray glass, primary text) in every theme; only Send carries the accent.
+                        // Attach, Stop, and Send keep their size; the chips get what's left and show as much as fits.
                         AttachButton(model: model, disabled: disabled)
                             .tint(.primary)
-                        ScrollView(.horizontal) {
-                            HStack(spacing: 6) { accessory }
-                        }
-                        .scrollIndicators(.hidden)
-                        .scrollClipDisabled()
-                        .tint(.primary)
-                        Spacer(minLength: 0)
+                            .fixedSize()
+                        ComposerChips { accessory }
+                            .tint(.primary)
                         if running, let onStop {
                             Button {
                                 client.perform { try await onStop() }
@@ -62,6 +59,7 @@ struct Composer<Accessory: View>: View {
                             .buttonStyle(.glass)
                             .buttonBorderShape(.circle)
                             .tint(.primary)
+                            .fixedSize()
                             .accessibilityLabel("Stop")
                             .accessibilityIdentifier("composer.stop")
                         }
@@ -70,6 +68,7 @@ struct Composer<Accessory: View>: View {
                         }
                         .prominentButton()
                         .buttonBorderShape(.circle)
+                        .fixedSize()
                         .disabled(!canSend)
                         .keyboardShortcut(.return, modifiers: .command)
                         .accessibilityLabel(running ? "Queue follow-up" : "Send")
@@ -80,6 +79,8 @@ struct Composer<Accessory: View>: View {
                     .padding(.bottom, 10)
                 }
                 .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 26, style: .continuous))
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("composer")
             }
         }
         .animation(.smooth(duration: 0.25), value: skills.isOpen)
@@ -122,6 +123,90 @@ struct Composer<Accessory: View>: View {
                 client.notice = error.localizedDescription
             }
         }
+    }
+}
+
+/// How much the composer's chips (model, thinking, MCP) show, from everything down to the least: the composer picks
+/// the first that fits beside Attach and Send (a phone's narrow screen, a foldable's cover screen, large text).
+enum ComposerChipFit: Int, CaseIterable, Hashable, Comparable {
+    /// The model's name, subscription, and vision eye; the thinking level's name; the MCP server's name (regular width).
+    case full
+    /// Without the model's subscription.
+    case noSubscription
+    /// Without the vision eye too.
+    case noVision
+    /// The model's name cut short, while a good part of it still fits beside thinking's and MCP's labels.
+    case shortName
+    /// Thinking and MCP as icons (the level as bars), and the model's name cut short if it must be.
+    case compact
+    /// The model as its maker's logo alone, where not even a few letters of its name fit (large text on a narrow screen).
+    case logoOnly
+
+    /// The least of the model's name worth showing beside thinking's and MCP's labels; with less, they become icons.
+    static let shortNameRoom: CGFloat = 80
+    /// The least of the model's name worth showing cut short at all; with less room it's the logo alone.
+    static let shortestName: CGFloat = 44
+
+    static func < (a: Self, b: Self) -> Bool { a.rawValue < b.rawValue }
+}
+
+extension EnvironmentValues {
+    @Entry var composerChipFit: ComposerChipFit = .full
+    /// The chips are an invisible copy the composer measures: the same look, with no menu or list to open.
+    @Entry var composerChipMeasuring = false
+}
+
+/// The composer's chips at the widest `ComposerChipFit` that fits the room they have. Each fit is measured by an
+/// invisible copy (`composerChipMeasuring`: the chips' look without their menus), so the chips on screen stay one view
+/// (an open menu or list isn't rebuilt when the fit changes), and they never draw past their room: in the last fits the
+/// model's name gives way.
+struct ComposerChips<Content: View>: View {
+    @ViewBuilder var content: Content
+    @State private var widths: [ComposerChipFit: CGFloat] = [:]
+    @State private var room: CGFloat?
+
+    var body: some View {
+        let fit = Self.fit(widths: widths, room: room)
+        // Not even the logo and icons fit (the largest text on the narrowest screen): they scroll rather than overlap.
+        let overflowing = room.map { (widths[.logoOnly] ?? 0) > $0 + 0.5 } ?? false
+        // In a scroll view, as before, though it only scrolls when overflowing: a chip's menu then opens as a menu of
+        // its own (outside one, iOS morphs the glass chip into the menu, and the MCP toggles stop responding).
+        ScrollView(.horizontal) {
+            HStack(spacing: 6) { content }
+                .environment(\.composerChipFit, fit)
+                .frame(width: overflowing ? nil : room, alignment: .leading)
+        }
+        .scrollDisabled(!overflowing)
+        .scrollIndicators(.hidden)
+        .scrollClipDisabled(!overflowing)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { room = $0 }
+        .background(alignment: .leading) {
+            ZStack(alignment: .leading) {
+                ForEach(ComposerChipFit.allCases, id: \.self) { candidate in
+                    HStack(spacing: 6) { content }
+                        .environment(\.composerChipFit, candidate)
+                        .environment(\.composerChipMeasuring, true)
+                        .fixedSize()
+                        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { widths[candidate] = $0 }
+                }
+            }
+            .hidden()
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
+
+    /// The widest fit whose chips fit `room` whole (a half point to spare for rounding); then the model's name cut short
+    /// beside thinking's and MCP's labels; then those as icons with the name cut short; else the logo alone. (`shortName`
+    /// is measured without the name, so its width is what everything else takes.)
+    static func fit(widths: [ComposerChipFit: CGFloat], room: CGFloat?) -> ComposerChipFit {
+        guard let room else { return .full }
+        let whole: [ComposerChipFit] = [.full, .noSubscription, .noVision]
+        if let fit = whole.first(where: { (widths[$0] ?? .infinity) <= room + 0.5 }) { return fit }
+        if let rest = widths[.shortName], rest + ComposerChipFit.shortNameRoom <= room { return .shortName }
+        if let rest = widths[.logoOnly], rest + ComposerChipFit.shortestName <= room { return .compact }
+        return .logoOnly
     }
 }
 

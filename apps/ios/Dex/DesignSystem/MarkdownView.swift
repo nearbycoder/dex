@@ -205,11 +205,34 @@ private struct TableView: View {
     }
 
     private func cellView(_ cell: Markdown.Table.Cell) -> some View {
-        SwiftUI.Text(Inline.attributed(cell.inlineChildren))
-            .frame(minWidth: 60, maxWidth: 280, alignment: .leading)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
+        CappedWidth(min: 60, max: 280) {
+            SwiftUI.Text(Inline.attributed(cell.inlineChildren))
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+    }
+}
+
+/// A table cell's text at its own width, between `min` and `max`, and as tall as it wraps at that width. (A plain
+/// `.frame(maxWidth:)` reports the one-line height when the table asks for its ideal size, so a cell that wraps, as with
+/// large text, would spill over the row below.)
+private struct CappedWidth: Layout {
+    let min: CGFloat
+    let max: CGFloat
+
+    private func width(_ proposal: ProposedViewSize, _ subview: LayoutSubview) -> CGFloat {
+        let wanted = proposal.width ?? subview.sizeThatFits(.unspecified).width
+        return Swift.min(Swift.max(wanted, min), max)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let subview = subviews.first else { return .zero }
+        let width = width(proposal, subview)
+        return CGSize(width: width, height: subview.sizeThatFits(ProposedViewSize(width: width, height: nil)).height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        subviews.first?.place(at: bounds.origin, anchor: .topLeading, proposal: ProposedViewSize(width: bounds.width, height: nil))
     }
 }
 

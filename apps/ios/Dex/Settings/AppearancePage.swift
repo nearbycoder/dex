@@ -4,6 +4,8 @@ import SwiftUI
 /// once to every window.
 struct AppearancePage: View {
     @Bindable private var store = ThemeStore.shared
+    /// Wider swatches at larger text sizes, so each theme's name fits under it.
+    @ScaledMetric(relativeTo: .footnote) private var swatchWidth: CGFloat = 92
 
     var body: some View {
         Form {
@@ -18,7 +20,7 @@ struct AppearancePage: View {
             }
 
             Section {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 92, maximum: 140), spacing: 12)], spacing: 16) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: swatchWidth, maximum: max(140, swatchWidth * 1.5)), spacing: 12)], spacing: 16) {
                     ForEach(Theme.all) { theme in
                         ThemeSwatch(theme: theme, selected: store.theme == theme) {
                             withAnimation(.smooth) { store.theme = theme }

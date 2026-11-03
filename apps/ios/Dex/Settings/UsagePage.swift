@@ -273,16 +273,22 @@ private struct ServiceRow: View {
     let series: UsageSeries
     let value: String
     let detail: String
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Swatch(series: series)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(series.label)
-                Text(detail).font(.caption).foregroundStyle(.secondary)
+            // Large text: the amount goes under the name rather than squeezing both.
+            let stacked = dynamicTypeSize.isAccessibilitySize
+            let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2)) : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 10))
+            layout {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(series.label)
+                    Text(detail).font(.caption).foregroundStyle(.secondary)
+                }
+                if !stacked { Spacer() }
+                Text(value).font(.body.weight(.semibold)).monospacedDigit().fixedSize()
             }
-            Spacer()
-            Text(value).font(.body.weight(.semibold)).monospacedDigit()
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("usage.service.\(series.rawValue)")

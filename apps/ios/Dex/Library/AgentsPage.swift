@@ -82,17 +82,15 @@ struct AgentRow: View {
                 Text(agent.name).font(.body.weight(.medium)).lineLimit(1)
                 Text(agent.description.isEmpty ? "Custom agent" : agent.description)
                     .font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
-                HStack(spacing: 5) {
+                // One text, so on a narrow screen it wraps rather than cutting the model's name and level short.
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
                     MakerLogo(maker: client.catalog.model(agent.model)?.maker ?? "", size: 12)
-                    Text(client.catalog.name(of: agent.model))
-                    Text("·")
-                    Text("\(ThinkingLevels.label(agent.thinking)) thinking")
-                    Text("·")
-                    Text(chats == 1 ? "1 chat" : "\(chats) chats")
+                        .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
+                    Text("\(client.catalog.name(of: agent.model)) · \(ThinkingLevels.label(agent.thinking)) thinking · \(chats == 1 ? "1 chat" : "\(chats) chats")")
+                        .lineLimit(2)
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
                 .padding(.top, 1)
             }
         }

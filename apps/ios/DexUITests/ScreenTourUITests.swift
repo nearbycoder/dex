@@ -12,7 +12,27 @@ final class ScreenTourUITests: DexUITestCase {
         XCUIDevice.shared.orientation = .portrait
         // `THEME=ocean scripts/tour.sh`: every launch starts in that theme.
         if let theme = ProcessInfo.processInfo.environment["DEX_THEME"], !theme.isEmpty { app.launchEnvironment["DEX_THEME"] = theme }
+        app.launchArguments += extraArguments
     }
+
+    /// `TEXT_SIZE=accessibilityExtraLarge scripts/tour.sh`: every launch at that Dynamic Type size; `LONG_CHIPS=1`: the
+    /// chats on the longest model, thinking, and MCP names (`-DexLongChips`).
+    private var extraArguments: [String] {
+        let environment = ProcessInfo.processInfo.environment
+        var arguments: [String] = []
+        if let size = environment["DEX_TEXT_SIZE"], !size.isEmpty {
+            let category = size.hasPrefix("UICTContentSizeCategory") ? size : "UICTContentSizeCategory" + Self.categoryNames[size, default: size]
+            arguments += ["-UIPreferredContentSizeCategoryName", category]
+        }
+        if environment["DEX_LONG_CHIPS"] == "1" { arguments.append("-DexLongChips") }
+        return arguments
+    }
+
+    private static let categoryNames = [
+        "extraSmall": "XS", "small": "S", "medium": "M", "large": "L", "extraLarge": "XL", "extraExtraLarge": "XXL", "extraExtraExtraLarge": "XXXL",
+        "accessibilityMedium": "AccessibilityM", "accessibilityLarge": "AccessibilityL", "accessibilityExtraLarge": "AccessibilityXL",
+        "accessibilityExtraExtraLarge": "AccessibilityXXL", "accessibilityExtraExtraExtraLarge": "AccessibilityXXXL",
+    ]
 
     override func tearDown() {
         XCUIDevice.shared.orientation = .portrait
@@ -139,9 +159,47 @@ final class ScreenTourUITests: DexUITestCase {
 
     private func openChatAtLaunch(_ id: String) -> Bool {
         app.terminate()
-        app.launchArguments = ["-DexMock", "-DexReset", "-DexFast", "-DexOpenChat", id]
+        app.launchArguments = ["-DexMock", "-DexReset", "-DexFast", "-DexOpenChat", id] + extraArguments
         app.launch()
         return element("chat.transcript").waitForExistence(timeout: 15)
+    }
+
+    /// Opens a `dex://` link in the app (Router.handle); false if the page it names never showed.
+    @discardableResult
+    private func openLink(_ link: String, expect id: String? = nil) -> Bool {
+        guard let url = URL(string: link) else { return false }
+        app.open(url)
+        sleep(2)
+        ensureForeground()
+        guard let id else { return true }
+        return element(id).waitForExistence(timeout: 5)
+    }
+
+    /// The pages where long labels and large text wrap or clip first, straight from their links: Settings' subscriptions,
+    /// notifications, defaults, access, and usage, a new sidekick's look grid, a sidekick's chat, and a new chat
+    /// (`TEST=testPages TEXT_SIZE=accessibilityExtraLarge DEVICES="iPhone SE (3rd generation),iPhone Duo" scripts/tour.sh`).
+    func testPages() {
+        app.launchArguments = ["-DexMock", "-DexReset", "-DexFast"] + extraArguments
+        app.launch()
+        _ = element("chats.list").waitForExistence(timeout: 10)
+        for page in ["models", "notifications", "defaults", "access", "usage", "appearance"] {
+            openLink("dex://settings/\(page)")
+            shot("page-settings-\(page)", settle: 1)
+            // The page (not the Settings list beside it on iPad): the rightmost scrolling view.
+            let list = app.collectionViews.allElementsBoundByIndex.filter(\.isHittable).max { $0.frame.minX < $1.frame.minX }
+            if let list { list.swipeUp(velocity: .slow) } else { app.swipeUp(velocity: .slow) }
+            shot("page-settings-\(page)-scrolled", settle: 1)
+        }
+        if openLink("dex://sidekicks/new", expect: "character.template.muse") {
+            shot("page-sidekick-new")
+            tap(element("character.template.rex"))
+            app.collectionViews.allElementsBoundByIndex.last { $0.isHittable }?.swipeUp()
+            shot("page-sidekick-new-look", settle: 1)
+            tap(element("character.cancel"))
+            sleep(1)
+        } else { missing("page-sidekick-new") }
+        if openLink("dex://chat/s-muse", expect: "chat.transcript") { shot("page-sidekick-chat") } else { missing("page-sidekick-chat") }
+        if openLink("dex://new", expect: "newchat.heading") { shot("page-newchat") } else { missing("page-newchat") }
     }
 
     private func scrollTranscript(up: Bool, times: Int = 2) {
@@ -155,7 +213,7 @@ final class ScreenTourUITests: DexUITestCase {
     /// The screens where the theme shows most: the inbox, a chat and its composer, the model list, a new chat, and
     /// Settings → Appearance (`TEST=testThemeGlance THEME=ocean scripts/tour.sh`).
     func testThemeGlance() {
-        app.launchArguments = ["-DexMock", "-DexReset", "-DexFast"]
+        app.launchArguments = ["-DexMock", "-DexReset", "-DexFast"] + extraArguments
         app.launch()
         if labelled("Plan a weekend in Lisbon").waitForExistence(timeout: 10) { shot("chats-list") } else { missing("chats-list") }
         if tap(element("chats.new")), element("newchat.heading").waitForExistence(timeout: 10) { shot("newchat") } else { missing("newchat") }
@@ -166,6 +224,38 @@ final class ScreenTourUITests: DexUITestCase {
             let row = element("settings.page.appearance")
             if tap(row) { shot("settings-appearance", settle: 2) } else { missing("settings-appearance") }
         } else { missing("settings") }
+    }
+
+    /// The composer and the chat header in each kind of chat, with the composer's menus and the model list, in
+    /// portrait and landscape (`TEST=testComposer LONG_CHIPS=1 TEXT_SIZE=accessibilityExtraLarge scripts/tour.sh`).
+    func testComposer() {
+        for orientation in [UIDeviceOrientation.portrait, .landscapeLeft] {
+            XCUIDevice.shared.orientation = orientation
+            let suffix = orientation == .portrait ? "" : "-landscape"
+            if openChatAtLaunch("s-muse") { shot("composer-character\(suffix)", settle: 2) } else { missing("composer-character\(suffix)") }
+            if openChatAtLaunch("s-vm") { shot("composer-running\(suffix)", settle: 2) } else { missing("composer-running\(suffix)") }
+            if openChatAtLaunch("s-welcome") {
+                shot("composer-chat\(suffix)", settle: 2)
+                guard orientation == .portrait else { continue }
+                let field = composerField
+                if field.waitForExistence(timeout: 5) {
+                    field.tap()
+                    _ = app.keyboards.firstMatch.waitForExistence(timeout: 3)
+                    field.typeText("A draft message that runs long enough to wrap onto a second line in the composer")
+                    shot("composer-keyboard")
+                    endSearch()
+                }
+                for (id, name) in [("composer.thinking", "thinking"), ("composer.mcp", "mcp"), ("composer.attach", "attach")] {
+                    if tap(element(id)) { shot("composer-\(name)-menu"); dismissPopup(); sleep(1) } else { missing("composer-\(name)-menu") }
+                }
+                if tap(element("composer.model")) { shot("composer-model-picker", settle: 2); dismissPopup(); sleep(1) } else { missing("composer-model-picker") }
+            } else { missing("composer-chat\(suffix)") }
+        }
+        XCUIDevice.shared.orientation = .portrait
+        app.terminate()
+        app.launchArguments = ["-DexMock", "-DexReset", "-DexFast"] + extraArguments
+        app.launch()
+        if go("chats", "Chats"), tap(element("chats.new")), element("newchat.heading").waitForExistence(timeout: 10) { shot("composer-newchat") } else { missing("composer-newchat") }
     }
 
     func testTour() {
@@ -188,7 +278,7 @@ final class ScreenTourUITests: DexUITestCase {
     }
 
     private func chats() {
-        app.launchArguments = ["-DexMock", "-DexReset", "-DexFast"]
+        app.launchArguments = ["-DexMock", "-DexReset", "-DexFast"] + extraArguments
         app.launch()
         if labelled("Plan a weekend in Lisbon").waitForExistence(timeout: 10) { shot("chats-list") } else { missing("chats-list") }
 
@@ -266,7 +356,7 @@ final class ScreenTourUITests: DexUITestCase {
 
         // Back to the inbox with everything.
         app.terminate()
-        app.launchArguments = ["-DexMock", "-DexReset", "-DexFast"]
+        app.launchArguments = ["-DexMock", "-DexReset", "-DexFast"] + extraArguments
         app.launch()
         _ = labelled("Plan a weekend in Lisbon").waitForExistence(timeout: 10)
     }
@@ -381,7 +471,7 @@ final class ScreenTourUITests: DexUITestCase {
         if openChatAtLaunch("s-atlas") { shot("character-greeting", settle: 2) } else { missing("character-greeting") }
         if openChatAtLaunch("s-muse-earlier") { shot("character-earlier", settle: 2) } else { missing("character-earlier") }
         app.terminate()
-        app.launchArguments = ["-DexMock", "-DexReset", "-DexFast"]
+        app.launchArguments = ["-DexMock", "-DexReset", "-DexFast"] + extraArguments
         app.launch()
         if element("character.row.muse").waitForExistence(timeout: 10) { shot("characters-list") } else { missing("characters-list") }
         if tap(element("characters.new")), element("character.template.muse").waitForExistence(timeout: 10) {
@@ -432,7 +522,8 @@ final class ScreenTourUITests: DexUITestCase {
                 if swipes < 5 { element("settings.list").swipeUp() } else { element("settings.list").swipeDown() }
                 swipes += 1
             }
-            guard tap(row, timeout: 3) else { missing("settings-\(page)"); continue }
+            // A row the list wouldn't scroll to (a short screen): its link instead.
+            guard tap(row, timeout: 3) || openLink("dex://settings/\(page)") else { missing("settings-\(page)"); continue }
             shot("settings-\(page)", settle: 2)
             if page == "notifications" {
                 // Each sidekick's setting and the other devices, below this device's.

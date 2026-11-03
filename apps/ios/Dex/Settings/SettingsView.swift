@@ -76,7 +76,10 @@ struct SettingsView: View {
 
     private func row(_ page: SettingsPage, detail: String? = nil, badge: Int = 0) -> some View {
         HStack {
+            // The page's name first: in a narrow column (an unfolded foldable's sidebar) the detail is cut short rather
+            // than the name broken across lines.
             Label(page.title, systemImage: page.symbol)
+                .layoutPriority(1)
             Spacer(minLength: 8)
             if let detail {
                 Text(detail).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)

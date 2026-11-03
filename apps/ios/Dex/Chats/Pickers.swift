@@ -2,9 +2,13 @@ import DexCore
 import SwiftUI
 
 /// The model and thinking level, as two composer buttons: the model (its maker's logo, name, which subscription
-/// when both are connected, and an eye when it sees images) opens the model list; the brain picks a thinking level.
+/// when more than one is connected, and an eye when it sees images) opens the model list; the brain picks a thinking
+/// level. Where the composer is narrow (`composerChipFit`) the subscription goes first, then the eye, then the name
+/// is cut short; the accessibility label always says all of it.
 struct ModelPickerButton: View {
     @Environment(DexClient.self) private var client
+    @Environment(\.composerChipFit) private var fit
+    @Environment(\.composerChipMeasuring) private var measuring
     let model: String
     let thinking: ThinkingLevel
     /// A new model (with the thinking level clamped to what it supports), or a new level.
@@ -16,30 +20,36 @@ struct ModelPickerButton: View {
         let connected = client.state?.connectedProviders ?? [:]
         let bothConnected = connected.values.filter { $0 }.count > 1
         Button {
-            showing = true
+            if !measuring { showing = true }
         } label: {
             HStack(spacing: 5) {
                 MakerLogo(maker: current?.maker ?? "", size: 14)
-                Text(client.catalog.name(of: model)).lineLimit(1)
-                if let current, bothConnected {
+                // Measured for `shortName` without it: what the rest of the chips take.
+                if fit != .logoOnly, !(measuring && fit == .shortName) {
+                    Text(client.catalog.name(of: model)).lineLimit(1).truncationMode(.tail)
+                }
+                if let current, bothConnected, fit == .full {
                     Text(ModelCatalog.providers.first { $0.id == current.provider }?.short ?? current.provider)
                         .font(.caption2.weight(.semibold))
+                        .lineLimit(1)
+                        .fixedSize()
                         .padding(.horizontal, 4)
                         .padding(.vertical, 1)
                         .background(.quaternary, in: .rect(cornerRadius: 4))
                 }
-                if current?.acceptsImages == true {
+                if current?.acceptsImages == true, fit < .noVision {
                     Image(systemName: "eye").font(.caption2).foregroundStyle(.secondary)
                 }
             }
             .font(.caption.weight(.medium))
-            .padding(.horizontal, 4)
+            // Narrow: a little of the glass's own inset goes to the name.
+            .padding(.horizontal, fit >= .compact ? -2 : 4)
             .padding(.vertical, 2)
         }
         .buttonStyle(.glass)
-        .accessibilityLabel("Model: \(client.catalog.name(of: model))\(current.map { ", \(ModelCatalog.providerName($0.provider))" } ?? "")")
+        .accessibilityLabel("Model: \(client.catalog.name(of: model))\(current.map { ", \(ModelCatalog.providerName($0.provider))" } ?? "")\(current?.acceptsImages == true ? ", sees images" : "")")
         .accessibilityIdentifier("composer.model")
-        .popover(isPresented: $showing) {
+        .popover(isPresented: measuring ? .constant(false) : $showing) {
             ModelPickerSheet(model: model) { picked in
                 let clamped = client.catalog.model(picked)?.clampThinking(thinking) ?? thinking
                 onChange(picked, clamped == thinking ? nil : clamped)
@@ -54,9 +64,12 @@ struct ModelPickerButton: View {
     }
 }
 
-/// The thinking level, for models that think.
+/// The thinking level, for models that think: the brain and the level's name, or where the composer is narrow the
+/// brain and the level as bars.
 struct ThinkingPicker: View {
     @Environment(DexClient.self) private var client
+    @Environment(\.composerChipFit) private var fit
+    @Environment(\.composerChipMeasuring) private var measuring
     let model: String
     let thinking: ThinkingLevel
     let onChange: (ThinkingLevel) -> Void
@@ -64,24 +77,49 @@ struct ThinkingPicker: View {
     var body: some View {
         let levels = client.catalog.model(model)?.supportedThinkingLevels ?? ThinkingLevels.all
         if !levels.isEmpty {
-            Menu {
-                Picker("Thinking", selection: Binding(get: { thinking }, set: { onChange($0) })) {
-                    ForEach(levels, id: \.self) { level in Text(ThinkingLevels.label(level)).tag(level) }
+            if measuring {
+                // The composer sizing its chips: the same menu glass (a button's is a little larger), nothing in it.
+                Menu {} label: { label(levels) }.buttonStyle(.glass).fixedSize()
+            } else {
+                Menu {
+                    Picker("Thinking", selection: Binding(get: { thinking }, set: { onChange($0) })) {
+                        ForEach(levels, id: \.self) { level in Text(ThinkingLevels.label(level)).tag(level) }
+                    }
+                    .pickerStyle(.inline)
+                } label: {
+                    label(levels)
                 }
-                .pickerStyle(.inline)
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "brain")
-                    Text(ThinkingLevels.label(thinking)).lineLimit(1)
-                }
-                .font(.caption.weight(.medium))
-                .padding(.horizontal, 2)
-                .padding(.vertical, 2)
+                .buttonStyle(.glass)
+                .fixedSize()
+                .accessibilityLabel("Thinking: \(ThinkingLevels.label(thinking))")
+                .accessibilityIdentifier("composer.thinking")
             }
-            .buttonStyle(.glass)
-            .accessibilityLabel("Thinking: \(ThinkingLevels.label(thinking))")
-            .accessibilityIdentifier("composer.thinking")
         }
+    }
+
+    private func label(_ levels: [ThinkingLevel]) -> some View {
+        HStack(spacing: fit >= .compact ? 2 : 4) {
+            Image(systemName: "brain")
+            if fit >= .compact {
+                Image(systemName: "cellularbars", variableValue: Self.amount(thinking, of: levels))
+                    .font(.caption2.weight(.semibold))
+            } else {
+                Text(ThinkingLevels.label(thinking)).lineLimit(1)
+            }
+        }
+        .font(.caption.weight(.medium))
+        .padding(.horizontal, fit >= .compact ? -4 : 2)
+        .padding(.vertical, 2)
+    }
+
+    /// How far up the model's levels `level` is, 0 (off, or its lowest) to 1 (its highest), for the bars.
+    static func amount(_ level: ThinkingLevel, of levels: [ThinkingLevel]) -> Double {
+        if level == "off" { return 0 }
+        let thinking = levels.filter { $0 != "off" }
+        guard let index = thinking.firstIndex(of: level) else {
+            return Double(ThinkingLevels.all.firstIndex(of: level) ?? 0) / Double(ThinkingLevels.all.count - 1)
+        }
+        return thinking.count > 1 ? 0.25 + 0.75 * Double(index) / Double(thinking.count - 1) : 1
     }
 }
 
@@ -268,9 +306,18 @@ struct ModelPickerSheet: View {
 
     private func matches(_ candidate: DexModel) -> Bool {
         guard only == "all" || candidate.provider == only else { return false }
-        let needle = search.trimmingCharacters(in: .whitespaces).lowercased()
-        if needle.isEmpty { return true }
-        return "\(candidate.name) \(ModelCatalog.makers[candidate.maker] ?? candidate.maker) \(ModelCatalog.providerName(candidate.provider))".lowercased().contains(needle)
+        // Every word of the search must be in the name, maker, subscription, or badges ("free vision").
+        let words = search.lowercased().split(whereSeparator: \.isWhitespace)
+        if words.isEmpty { return true }
+        let levels = candidate.supportedThinkingLevels
+        let badges = [
+            candidate.acceptsImages ? "vision" : "text only",
+            levels.isEmpty ? "" : levels.contains("off") ? "thinking optional" : "always thinks",
+            candidate.isFree ? "free" : "",
+            candidate.trainsOnData == true ? "trains on prompts" : ""
+        ]
+        let text = "\(candidate.name) \(ModelCatalog.makers[candidate.maker] ?? candidate.maker) \(ModelCatalog.providerName(candidate.provider)) \(badges.joined(separator: " "))".lowercased()
+        return words.allSatisfy { text.contains($0) }
     }
 }
 
@@ -336,54 +383,68 @@ struct Badge: View {
 }
 
 /// Which MCP servers the chat can use: each with its status and tool count, and a link to manage them.
+/// Where the composer is narrow (`composerChipFit`) it's the plug and how many are on.
 struct McpPickerButton: View {
     @Environment(DexClient.self) private var client
     @Environment(Router.self) private var router
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.composerChipFit) private var fit
+    @Environment(\.composerChipMeasuring) private var measuring
     let selected: [String]
     let onChange: ([String]) -> Void
 
     var body: some View {
         let servers = client.state?.mcp ?? []
         let attached = servers.filter { selected.contains($0.id) }
-        let attention = attached.contains { $0.status == "authenticating" || $0.status == "failed" }
-        Menu {
-            Section("MCP servers for this chat") {
-                if servers.isEmpty {
-                    Text("No MCP servers yet. Connect one to give Dex its tools.")
-                }
-                ForEach(servers) { server in
-                    Toggle(isOn: Binding(get: { selected.contains(server.id) }, set: { on in
-                        onChange(on ? selected + [server.id] : selected.filter { $0 != server.id })
-                    })) {
-                        Text(server.name)
-                        Text(server.status == "ready" ? "\(server.tools.count) tools" : server.statusLabel)
+        if measuring {
+            // The composer sizing its chips: the same menu glass (a button's is a little larger), nothing in it.
+            Menu {} label: { label(attached) }.buttonStyle(.glass).fixedSize()
+        } else {
+            Menu {
+                Section("MCP servers for this chat") {
+                    if servers.isEmpty {
+                        Text("No MCP servers yet. Connect one to give Dex its tools.")
                     }
-                    .accessibilityIdentifier("mcp.\(server.id)")
+                    ForEach(servers) { server in
+                        Toggle(isOn: Binding(get: { selected.contains(server.id) }, set: { on in
+                            onChange(on ? selected + [server.id] : selected.filter { $0 != server.id })
+                        })) {
+                            Text(server.name)
+                            Text(server.status == "ready" ? "\(server.tools.count) tools" : server.statusLabel)
+                        }
+                        .accessibilityIdentifier("mcp.\(server.id)")
+                    }
                 }
+                Button {
+                    router.open(.page(.mcp), compact: sizeClass == .compact)
+                } label: { Label("Manage MCP Servers", systemImage: "gearshape") }
+            } label: {
+                label(attached)
             }
-            Button {
-                router.open(.page(.mcp), compact: sizeClass == .compact)
-            } label: { Label("Manage MCP Servers", systemImage: "gearshape") }
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "powerplug")
-                if attached.count == 1, sizeClass != .compact {
-                    Text(attached[0].name).lineLimit(1)
-                } else if !attached.isEmpty {
-                    Text(sizeClass == .compact ? "\(attached.count)" : "\(attached.count) MCP")
-                } else if sizeClass != .compact {
-                    Text("MCP")
-                }
-                if attention { Circle().fill(.orange).frame(width: 6, height: 6) }
-            }
-            .font(.caption.weight(.medium))
-            .padding(.horizontal, 2)
-            .padding(.vertical, 2)
+            .menuActionDismissBehavior(.disabled)
+            .buttonStyle(.glass)
+            .fixedSize()
+            .accessibilityLabel(attached.isEmpty ? "MCP servers" : "MCP servers: \(attached.map(\.name).joined(separator: ", "))")
+            .accessibilityIdentifier("composer.mcp")
         }
-        .menuActionDismissBehavior(.disabled)
-        .buttonStyle(.glass)
-        .accessibilityLabel(attached.isEmpty ? "MCP servers" : "MCP servers: \(attached.map(\.name).joined(separator: ", "))")
-        .accessibilityIdentifier("composer.mcp")
+    }
+
+    private func label(_ attached: [McpServerInfo]) -> some View {
+        let attention = attached.contains { $0.status == "authenticating" || $0.status == "failed" }
+        let short = sizeClass == .compact || fit >= .compact
+        return HStack(spacing: 4) {
+            Image(systemName: "powerplug")
+            if attached.count == 1, !short {
+                Text(attached[0].name).lineLimit(1)
+            } else if !attached.isEmpty {
+                Text(short ? "\(attached.count)" : "\(attached.count) MCP").lineLimit(1)
+            } else if !short {
+                Text("MCP")
+            }
+            if attention { Circle().fill(.orange).frame(width: 6, height: 6) }
+        }
+        .font(.caption.weight(.medium))
+        .padding(.horizontal, fit >= .compact ? -4 : 2)
+        .padding(.vertical, 2)
     }
 }

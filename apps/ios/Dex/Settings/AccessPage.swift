@@ -104,6 +104,7 @@ struct AccessPage: View {
 
 private struct PendingRow: View {
     @Environment(Router.self) private var router
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let action: PendingAction
     let title: String?
     let answering: String?
@@ -119,7 +120,9 @@ private struct PendingRow: View {
             }
             .buttonStyle(.borderless)
             .foregroundStyle(.secondary)
-            HStack {
+            // Large text: one above the other, so neither name breaks up.
+            let layout = dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 8)) : AnyLayout(HStackLayout())
+            layout {
                 Button {
                     answer(true)
                 } label: {

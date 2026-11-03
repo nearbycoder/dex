@@ -94,19 +94,26 @@ struct ChatGPTConnectSection: View {
     @State private var checking = false
     @State private var message: (tone: InlineMessage.Tone, text: String)?
     @State private var confirmDisconnect = false
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         Section {
             if status.connected {
-                HStack(spacing: 10) {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-                    Text(status.keyHint ?? "Signed in")
-                        .lineLimit(1)
-                        .accessibilityIdentifier("chatgpt.status")
-                    Spacer()
+                // Large text: Sign In Again goes under the account, which then shows whole.
+                let stacked = dynamicTypeSize.isAccessibilitySize
+                let layout = stacked ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(spacing: 10))
+                layout {
+                    HStack(spacing: 10) {
+                        Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                        Text(status.keyHint ?? "Signed in")
+                            .lineLimit(stacked ? 3 : 1)
+                            .accessibilityIdentifier("chatgpt.status")
+                    }
+                    if !stacked { Spacer() }
                     if signIn == nil {
                         Button("Sign In Again") { Task { await start() } }
                             .buttonStyle(.borderless)
+                            .fixedSize()
                             .disabled(starting)
                             .accessibilityIdentifier("chatgpt.again")
                     }

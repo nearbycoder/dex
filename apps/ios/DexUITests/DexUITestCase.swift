@@ -33,9 +33,22 @@ class DexUITestCase: XCTestCase {
         app.staticTexts[title].firstMatch.tap()
     }
 
+    /// The screenshot as it looks: a capture in landscape comes in the screen's native (portrait) pixels with an
+    /// orientation tag, which not every viewer follows; drawn upright, it's a plain landscape PNG. A screen that stays
+    /// portrait when the device turns (the foldable's cover screen) has no tag and stays as it is.
+    static func upright(_ shot: XCUIScreenshot) -> Data {
+        let image = shot.image
+        guard image.imageOrientation != .up else { return shot.pngRepresentation }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = image.scale
+        return UIGraphicsImageRenderer(size: image.size, format: format).pngData { _ in image.draw(at: .zero) }
+    }
+
     /// Saves a screenshot to the test results (and, with DEX_SCREENSHOTS set, to that folder).
     func snapshot(_ name: String) {
-        let shot = XCUIScreen.main.screenshot()
+        // A foldable has two screens and `main` isn't always the lit one: the app's own then. (Open, the inner screen
+        // still comes out black from XCTest on the simulator; look at it with the device tools instead.)
+        let shot = XCUIScreen.screens.count > 1 && app.state == .runningForeground ? app.screenshot() : XCUIScreen.main.screenshot()
         let attachment = XCTAttachment(screenshot: shot)
         attachment.name = name
         attachment.lifetime = .keepAlways
@@ -44,7 +57,7 @@ class DexUITestCase: XCTestCase {
             let device = ProcessInfo.processInfo.environment["SIMULATOR_DEVICE_NAME"] ?? "device"
             let url = URL(fileURLWithPath: folder).appendingPathComponent("\(device)-\(name).png")
             try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try? shot.pngRepresentation.write(to: url)
+            try? Self.upright(shot).write(to: url)
         }
     }
 }

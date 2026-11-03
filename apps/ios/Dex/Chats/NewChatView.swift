@@ -17,6 +17,8 @@ struct NewChatView: View {
     @State private var mcpServers: [String]?
     @State private var composer = ComposerModel()
     @State private var error: String?
+    /// The agent cards' width grows with the text size: one card a row at large sizes rather than names cut short.
+    @ScaledMetric(relativeTo: .subheadline) private var cardWidth: CGFloat = 150
 
     var body: some View {
         let state = client.state
@@ -71,7 +73,7 @@ struct NewChatView: View {
                         }
                     }
                     section("Agents", manage: .page(.agents)) {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: sizeClass == .compact ? 150 : 220), spacing: 10)], spacing: 10) {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: sizeClass == .compact ? cardWidth : cardWidth * 22 / 15), spacing: 10)], spacing: 10) {
                             ForEach(state.agents) { item in
                                 AgentCard(agent: item, selected: item.id == agentId, showsDescription: sizeClass != .compact) { pick(item) }
                             }

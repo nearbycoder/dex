@@ -302,6 +302,7 @@ struct ThinkingStep: View {
 /// Nothing happens until you confirm here; your answer goes back to the chat as a message.
 struct ConfirmCard: View {
     @Environment(DexClient.self) private var client
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let id: String
     let summary: String
     @State private var busy: Bool?
@@ -318,7 +319,9 @@ struct ConfirmCard: View {
                 Text("Dex wants to").font(.caption.weight(.semibold)).textCase(.uppercase).foregroundStyle(.orange)
                 Text(summary.isEmpty ? (pending?.summary ?? "") : summary).font(.body)
                 if status == "pending" {
-                    HStack(spacing: 10) {
+                    // Large text: one above the other, so neither name breaks up.
+                    let layout = dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10)) : AnyLayout(HStackLayout(spacing: 10))
+                    layout {
                         Button { answer(true) } label: {
                             Label("Confirm", systemImage: "checkmark").opacity(busy == true ? 0 : 1)
                                 .overlay { if busy == true { ProgressView() } }

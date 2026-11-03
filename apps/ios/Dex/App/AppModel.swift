@@ -40,6 +40,7 @@ final class AppModel {
         if launch.mock {
             let agent = MockAgent()
             agent.chunkDelay = .milliseconds(launch.fastReplies ? 5 : 35)
+            if launch.longChips { Self.useLongChips(agent) }
             mockAgent = agent
             phase = launch.signedOut ? .signedOut : .signedIn(Self.mockCredentials)
         } else {
@@ -52,6 +53,21 @@ final class AppModel {
                 phase = .signedOut
             }
         }
+    }
+
+    /// The widest composer chips the app can show (`-DexLongChips`, for layout checks on narrow screens): two
+    /// subscriptions connected (so the model chip names its subscription), every chat on the longest-named vision
+    /// model at the longest thinking level, with an MCP server attached.
+    private static func useLongChips(_ agent: MockAgent) {
+        agent.state.chatgpt = ClineStatus(connected: true, source: "user", keyHint: "you@example.com", verifiedAt: .nowMs)
+        agent.state.opencode = ClineStatus(connected: true, source: "user", keyHint: "…c3d4", verifiedAt: .nowMs)
+        for index in agent.state.sessions.indices {
+            agent.state.sessions[index].model = "opencode-go/gemini-4-argon-contributor"
+            agent.state.sessions[index].thinking = "xhigh"
+            agent.state.sessions[index].mcpServers = ["m-linear"]
+        }
+        agent.state.settings.defaultModel = "opencode-go/gemini-4-argon-contributor"
+        agent.state.settings.defaultThinking = "xhigh"
     }
 
     static let mockCredentials = Credentials(
@@ -144,6 +160,8 @@ struct LaunchOptions {
     var resetState = false
     /// Mock replies stream quickly.
     var fastReplies = false
+    /// Mock chats on the model, thinking level, and MCP server with the longest names.
+    var longChips = false
     /// Open this chat at launch.
     var openChat: String?
 
@@ -154,6 +172,7 @@ struct LaunchOptions {
         options.signedOut = arguments.contains("-DexSignedOut")
         options.resetState = arguments.contains("-DexReset")
         options.fastReplies = arguments.contains("-DexFast")
+        options.longChips = arguments.contains("-DexLongChips")
         if let index = arguments.firstIndex(of: "-DexOpenChat"), arguments.indices.contains(index + 1) { options.openChat = arguments[index + 1] }
         return options
     }()

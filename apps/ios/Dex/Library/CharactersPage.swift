@@ -83,17 +83,16 @@ struct CharacterRow: View {
                 Text(character.name).font(.body.weight(.medium)).lineLimit(1)
                 Text(character.tagline.isEmpty ? "A sidekick" : character.tagline)
                     .font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
-                HStack(spacing: 5) {
+                // One text, so on a narrow screen it wraps rather than cutting the model's name short.
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
                     MakerLogo(maker: client.catalog.model(character.model)?.maker ?? "", size: 12)
-                    Text(client.catalog.name(of: character.model))
-                    if let session {
-                        Text("·")
-                        Text(session.updatedAt > session.createdAt + 1_000 ? "talked \(Format.ago(session.updatedAt))" : "new")
-                    }
+                        .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
+                    Text(client.catalog.name(of: character.model)
+                        + (session.map { $0.updatedAt > $0.createdAt + 1_000 ? " · talked \(Format.ago($0.updatedAt))" : " · new" } ?? ""))
+                        .lineLimit(2)
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
                 .padding(.top, 1)
             }
         }
@@ -215,7 +214,10 @@ struct CharacterEditor: View {
                 TextField("Name", text: draft.name, prompt: Text("Muse"))
                     .font(.body.weight(.medium))
                     .accessibilityIdentifier("character.name")
-                TextField("Tagline", text: draft.tagline, prompt: Text("Your creative sparring partner"))
+                // Wraps (large text, a narrow screen) rather than scrolling out of sight; it's still one line of text.
+                TextField("Tagline", text: Binding(get: { draft.wrappedValue.tagline }, set: { draft.wrappedValue.tagline = $0.replacingOccurrences(of: "\n", with: " ") }),
+                          prompt: Text("Your creative sparring partner"), axis: .vertical)
+                    .lineLimit(1...4)
                     .accessibilityIdentifier("character.tagline")
             } footer: {
                 if nameMissing { FieldProblem(text: "Give the sidekick a name.") } else { Text("The tagline is the line under their name in the chat list.") }
@@ -488,9 +490,11 @@ private struct OptionalStartOver: ViewModifier {
 private struct TemplateGrid: View {
     let selection: String?
     let pick: (CharacterTemplate?) -> Void
+    /// Wider tiles at larger text sizes, so names and taglines wrap rather than get cut short.
+    @ScaledMetric(relativeTo: .subheadline) private var tileWidth: CGFloat = 136
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 136), spacing: 10)], spacing: 10) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: tileWidth), spacing: 10)], spacing: 10) {
             ForEach(CharacterTemplate.all) { template in
                 tile(id: template.id, title: template.name, subtitle: template.tagline) {
                     CharacterAvatar(glyph: String(template.name.prefix(1)), color: template.color, image: template.look?.image, size: 32)
