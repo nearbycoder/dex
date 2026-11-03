@@ -7,14 +7,15 @@ import SwiftUI
 
 /// How a chat is doing, for the strip and the switcher.
 enum ChatActivity {
-    case working, unread, draft, idle
+    case waiting, working, unread, draft, idle
 
-    init(_ session: SessionMeta, draft: Bool) {
-        self = session.busy ? .working : session.unread ? .unread : draft ? .draft : .idle
+    init(_ session: SessionMeta, draft: Bool, waiting: Bool = false) {
+        self = waiting ? .waiting : session.busy ? .working : session.unread ? .unread : draft ? .draft : .idle
     }
 
     var label: String {
         switch self {
+        case .waiting: "needs you"
         case .working: "working"
         case .unread: "new reply"
         case .draft: "draft"
@@ -29,6 +30,8 @@ struct ChatActivityMark: View {
 
     var body: some View {
         switch activity {
+        case .waiting:
+            Image(systemName: "hand.raised.fill").font(.caption2).foregroundStyle(.orange).accessibilityHidden(true)
         case .working:
             Circle().fill(.green).frame(width: 8, height: 8)
                 .phaseAnimator([1.0, 0.3]) { view, phase in view.opacity(phase) }
@@ -56,7 +59,8 @@ struct ActiveChatsStrip: View {
     let current: String
 
     var body: some View {
-        let active = Inbox.active(client.state?.sessions ?? [], excluding: current)
+        let waiting = client.state?.waitingChats ?? []
+        let active = Inbox.active(client.state?.sessions ?? [], waiting: waiting, excluding: current)
         if !active.isEmpty {
             ScrollView(.horizontal, showsIndicators: false) {
                 GlassEffectContainer(spacing: 6) {
@@ -66,7 +70,7 @@ struct ActiveChatsStrip: View {
                                 router.openChat(session.id)
                             } label: {
                                 HStack(spacing: 6) {
-                                    ChatActivityMark(activity: ChatActivity(session, draft: false))
+                                    ChatActivityMark(activity: ChatActivity(session, draft: false, waiting: waiting.contains(session.id)))
                                     Text(chatName(session, state: client.state))
                                         .lineLimit(1)
                                         .frame(maxWidth: 150, alignment: .leading)
@@ -79,7 +83,7 @@ struct ActiveChatsStrip: View {
                             }
                             .buttonStyle(.plain)
                             .glassEffect(.regular.interactive(), in: .capsule)
-                            .accessibilityLabel("\(chatName(session, state: client.state)), \(ChatActivity(session, draft: false).label)")
+                            .accessibilityLabel("\(chatName(session, state: client.state)), \(ChatActivity(session, draft: false, waiting: waiting.contains(session.id)).label)")
                             .accessibilityHint("Opens this chat")
                             .accessibilityIdentifier("strip.chat.\(session.id)")
                         }
@@ -200,7 +204,8 @@ struct ChatSwitcher: View {
             let name = chatName(session, state: client.state).lowercased()
             return words.allSatisfy { name.contains($0) }
         }
-        let active = Inbox.active(matching)
+        let waiting = client.state?.waitingChats ?? []
+        let active = Inbox.active(matching, waiting: waiting)
         let activeIds = Set(active.map(\.id))
         let drafts = matching.filter { !activeIds.contains($0.id) && Drafts.shared.drafted.contains($0.id) }.sorted { $0.updatedAt > $1.updatedAt }
         let shown = activeIds.union(drafts.map(\.id))
@@ -208,8 +213,9 @@ struct ChatSwitcher: View {
         let rest = matching.filter { !shown.contains($0.id) && $0.characterId == nil && (!words.isEmpty || Inbox.place(of: $0) == .inbox) }
             .sorted { $0.updatedAt > $1.updatedAt }
         return [
-            Group(title: "Working", chats: active.filter(\.busy)),
-            Group(title: "New Replies", chats: active.filter { !$0.busy }),
+            Group(title: "Needs You", chats: active.filter { waiting.contains($0.id) }),
+            Group(title: "Working", chats: active.filter { !waiting.contains($0.id) && $0.busy }),
+            Group(title: "New Replies", chats: active.filter { !waiting.contains($0.id) && !$0.busy }),
             Group(title: "Drafts", chats: drafts),
             Group(title: words.isEmpty ? "Inbox" : "Other Chats", chats: Array(rest.prefix(words.isEmpty ? 30 : 60)))
         ].filter { !$0.chats.isEmpty }
@@ -232,7 +238,7 @@ private struct SwitcherRow: View {
         let character = client.state?.character(session.characterId)
         let agent = client.state?.agent(session.agentId)
         let project = client.state?.project(session.projectId)
-        let activity = ChatActivity(session, draft: Drafts.shared.drafted.contains(session.id))
+        let activity = ChatActivity(session, draft: Drafts.shared.drafted.contains(session.id), waiting: client.state?.waitingChats.contains(session.id) == true)
         HStack(spacing: 10) {
             Group {
                 if let character {

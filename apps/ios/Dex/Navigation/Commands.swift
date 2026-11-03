@@ -43,10 +43,10 @@ struct DexCommands: Commands {
             Button("Previous Chat") { step(-1) }
                 .keyboardShortcut(.upArrow, modifiers: [.command, .option])
                 .disabled(router == nil)
-            // The next chat that's working or has a reply waiting.
+            // The next chat that needs you, is working, or has a reply waiting.
             Button("Next Active Chat") {
                 guard let router, let client else { return }
-                if let next = Inbox.active(client.state?.sessions ?? [], excluding: router.chat).first { router.openChat(next.id) }
+                if let next = Inbox.active(client.state?.sessions ?? [], waiting: client.state?.waitingChats ?? [], excluding: router.chat).first { router.openChat(next.id) }
             }
             .keyboardShortcut("j", modifiers: .command)
             .disabled(router == nil)

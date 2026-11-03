@@ -69,7 +69,7 @@ struct ChatView: View {
                 .safeAreaInset(edge: .top, spacing: 0) {
                     if sizeClass == .compact {
                         ActiveChatsStrip(current: sessionId)
-                            .animation(.smooth, value: client.state?.sessions.filter { $0.busy || $0.unread }.map(\.id))
+                            .animation(.smooth, value: Inbox.active(client.state?.sessions ?? [], waiting: client.state?.waitingChats ?? [], excluding: sessionId).map(\.id))
                     }
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {

@@ -295,7 +295,14 @@ struct ChatRow: View {
     }
 
     @ViewBuilder private var status: some View {
-        if session.busy {
+        if client.state?.waitingChats.contains(session.id) == true {
+            // It asked to do something that needs your yes.
+            HStack(spacing: 3) {
+                Image(systemName: "hand.raised.fill").imageScale(.small)
+                Text("needs you")
+            }
+            .foregroundStyle(.orange)
+        } else if session.busy {
             HStack(spacing: 4) {
                 Circle().fill(.green).frame(width: 6, height: 6)
                     .phaseAnimator([1.0, 0.3]) { view, phase in view.opacity(phase) }

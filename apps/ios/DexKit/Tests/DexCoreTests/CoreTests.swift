@@ -291,6 +291,8 @@ import Testing
         ]
         #expect(Inbox.active(sessions, now: now).map(\.id) == ["work-new", "work-old", "reply", "settled-reply"])
         #expect(Inbox.active(sessions, excluding: "work-new", now: now).map(\.id) == ["work-old", "reply", "settled-reply"])
+        // A chat waiting for your yes comes first, even a quiet one.
+        #expect(Inbox.active(sessions, waiting: ["quiet", "work-old"], now: now).map(\.id) == ["quiet", "work-old", "work-new", "reply", "settled-reply"])
 
         let order = Array(sessions.prefix(3))
         #expect(Inbox.neighbor(of: "reply", in: order, offset: 1)?.id == "work-old")

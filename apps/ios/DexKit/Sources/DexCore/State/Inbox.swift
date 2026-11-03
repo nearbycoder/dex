@@ -25,12 +25,15 @@ public enum Inbox {
         )
     }
 
-    /// Chats that want a look, for switching between them: working ones first, then those with a reply you haven't seen,
-    /// newest first in each. Snoozed chats wait; a settled one is here only once something new happens (it's unread).
-    public static func active(_ sessions: [SessionMeta], excluding: String? = nil, now: Double = .nowMs) -> [SessionMeta] {
-        let candidates = sessions.filter { $0.id != excluding && ($0.busy || $0.unread) && place(of: $0, now: now) != .snoozed }
-        return candidates.filter(\.busy).sorted { $0.updatedAt > $1.updatedAt }
-            + candidates.filter { !$0.busy }.sorted { $0.updatedAt > $1.updatedAt }
+    /// Chats that want a look, for switching between them: those waiting on you (`waiting`: a confirmation they asked
+    /// for) first, then working ones, then those with a reply you haven't seen, newest first in each. Snoozed chats wait;
+    /// a settled one is here only once something new happens.
+    public static func active(_ sessions: [SessionMeta], waiting: Set<String> = [], excluding: String? = nil, now: Double = .nowMs) -> [SessionMeta] {
+        let candidates = sessions.filter { $0.id != excluding && ($0.busy || $0.unread || waiting.contains($0.id)) && place(of: $0, now: now) != .snoozed }
+            .sorted { $0.updatedAt > $1.updatedAt }
+        return candidates.filter { waiting.contains($0.id) }
+            + candidates.filter { !waiting.contains($0.id) && $0.busy }
+            + candidates.filter { !waiting.contains($0.id) && !$0.busy }
     }
 
     /// The chat `offset` places from `id` in `order` (the chat list's order), stopping at either end; the first (or
