@@ -187,6 +187,60 @@ final class SettingsUITests: DexUITestCase {
         XCTAssertFalse(element("commandcode.status").exists)
     }
 
+    /// OpenRouter's free models are listed before a key is connected, but can be picked only after a connect in Settings.
+    func testOpenRouterKeyUnlocksItsFreeModels() {
+        launch(["-DexOpenChat", "s-welcome"])
+        XCTAssertTrue(element("chat.transcript").waitForExistence(timeout: 15), "the chat opens")
+        openModelTab("openrouter")
+        let crouton = app.buttons["model.openrouter/stealth/crouton-alpha"]
+        XCTAssertTrue(crouton.waitForExistence(timeout: 5), "its free models are listed before a key is connected")
+        XCTAssertFalse(crouton.isEnabled, "but can't be picked yet")
+        XCTAssertTrue(crouton.label.contains("Free"), "they're marked free: \(crouton.label)")
+        XCTAssertFalse(app.buttons["model.cline-pass/crouton-alpha"].exists, "the tab shows only OpenRouter's models")
+        snapshot("model-openrouter-not-connected")
+        app.buttons["Connect in Settings"].firstMatch.tap()
+
+        let key = app.secureTextFields["openrouter.key"]
+        reveal(key)
+        XCTAssertTrue(key.waitForExistence(timeout: 5))
+        XCTAssertTrue(text("only OpenRouter's free models").exists, "says what Dex lists")
+        key.tap()
+        key.typeText("bad-key")
+        element("openrouter.connect").tap()
+        XCTAssertTrue(element("message.error").waitForExistence(timeout: 5), "A rejected key says why")
+
+        key.tap()
+        key.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 7) + "sk-or-v1-good4321")
+        element("openrouter.connect").tap()
+        let status = element("openrouter.status")
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        XCTAssertEqual(status.label, "…4321")
+        XCTAssertTrue(text("a few dozen free-model requests a day").waitForExistence(timeout: 5), "the free tier's limit")
+        reveal(element("openrouter.disconnect"))
+        snapshot("models-openrouter-connected")
+
+        // Back to the chat.
+        switchTab("Chats")
+        openModelTab("openrouter")
+        XCTAssertTrue(crouton.waitForExistence(timeout: 10))
+        let enabled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: crouton)
+        XCTAssertEqual(XCTWaiter().wait(for: [enabled], timeout: 10), .completed, "its models can be picked once connected")
+        XCTAssertTrue(app.buttons["model.openrouter/google/gemma-4-31b-it:free"].exists)
+        snapshot("model-openrouter")
+        crouton.tap()
+        let picked = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS 'Crouton Alpha'"), object: app.buttons["composer.model"])
+        XCTAssertEqual(XCTWaiter().wait(for: [picked], timeout: 10), .completed, app.buttons["composer.model"].label)
+
+        // Settings is still on Model Subscriptions.
+        switchTab("Settings")
+        let disconnect = element("openrouter.disconnect")
+        reveal(disconnect)
+        disconnect.tap()
+        app.buttons["Disconnect"].firstMatch.tap()
+        XCTAssertTrue(app.secureTextFields["openrouter.key"].waitForExistence(timeout: 5))
+        XCTAssertFalse(element("openrouter.status").exists)
+    }
+
     /// Goes to a tab, keeping its page: the tab bar minimizes on scroll, and tapping it brings the tabs back.
     func switchTab(_ title: String) {
         let collapsed = app.tabBars.buttons.matching(NSPredicate(format: "value == 'Collapsed'")).firstMatch
