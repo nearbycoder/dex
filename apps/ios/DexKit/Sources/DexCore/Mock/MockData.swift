@@ -77,18 +77,25 @@ public enum MockData {
         return state
     }
 
+    /// A release date `days` before today ("2026-11-03"), so the picker's newest models stay new.
+    static func released(_ days: Int) -> String {
+        Date.now.addingTimeInterval(-Double(days) * 86_400).formatted(Date.ISO8601FormatStyle(timeZone: .gmt).year().month().day())
+    }
+
     public static let catalog = ModelCatalog(version: "mock-1", updatedAt: .nowMs, models: [
         DexModel(id: "cline-pass/glm-5.3", provider: "clinepass", name: "GLM-5.3", maker: "zai", contextWindow: 1_048_576, maxTokens: 131_072,
-                 cost: .init(input: 1.4, output: 4.4), thinkingLevelMap: ["off": nil, "minimal": nil, "low": "low", "medium": nil, "high": "high", "xhigh": "max"]),
+                 cost: .init(input: 1.4, output: 4.4), thinkingLevelMap: ["off": nil, "minimal": nil, "low": "low", "medium": nil, "high": "high", "xhigh": "max"], releasedAt: released(41)),
         DexModel(id: "cline-pass/kimi-k3", provider: "clinepass", name: "Kimi K3", maker: "moonshot", input: ["text", "image"], contextWindow: 1_048_576,
-                 cost: .init(input: 3, output: 15), thinkingLevelMap: ["off": nil, "minimal": nil, "low": nil, "medium": nil, "high": "max", "xhigh": nil]),
-        DexModel(id: "cline-pass/deepseek-v4-pro", provider: "clinepass", name: "DeepSeek V4 Pro", maker: "deepseek", contextWindow: 1_000_000, cost: .init(input: 1.74, output: 3.48)),
-        DexModel(id: "cline-pass/qwen3.8-max", provider: "clinepass", name: "Qwen3.8 Max", maker: "qwen", input: ["text", "image"], cost: .init(input: 2, output: 6)),
-        DexModel(id: "opencode-go/glm-5.3", apiId: "glm-5.3", provider: "opencode-go", name: "GLM-5.3", maker: "zai", cost: .init(input: 1.4, output: 4.4)),
-        DexModel(id: "opencode-go/longcat-2.5-preview-free", apiId: "longcat-2.5-preview-free", provider: "opencode-go", name: "LongCat 2.5 Preview (Free)", maker: "meituan", cost: .init(input: 0, output: 0)),
-        DexModel(id: "opencode-go/gemini-4-argon-contributor", apiId: "gemini-4-argon-contributor", provider: "opencode-go", name: "Gemini 4 Argon (Contributor)", maker: "google", input: ["text", "image"], cost: .init(input: 4, output: 20), trainsOnData: true),
+                 cost: .init(input: 3, output: 15), thinkingLevelMap: ["off": nil, "minimal": nil, "low": nil, "medium": nil, "high": "max", "xhigh": nil], releasedAt: released(3)),
+        DexModel(id: "cline-pass/deepseek-v4-pro", provider: "clinepass", name: "DeepSeek V4 Pro", maker: "deepseek", contextWindow: 1_000_000, cost: .init(input: 1.74, output: 3.48), releasedAt: released(130)),
+        DexModel(id: "cline-pass/qwen3.8-max", provider: "clinepass", name: "Qwen3.8 Max", maker: "qwen", input: ["text", "image"], cost: .init(input: 2, output: 6), releasedAt: released(19)),
+        // A stealth model: its maker unannounced, under the Other mark.
+        DexModel(id: "cline-pass/crouton-alpha", provider: "clinepass", name: "Crouton Alpha", maker: "other", contextWindow: 262_144, releasedAt: released(1)),
+        DexModel(id: "opencode-go/glm-5.3", apiId: "glm-5.3", provider: "opencode-go", name: "GLM-5.3", maker: "zai", cost: .init(input: 1.4, output: 4.4), releasedAt: released(41)),
+        DexModel(id: "opencode-go/longcat-2.5-preview-free", apiId: "longcat-2.5-preview-free", provider: "opencode-go", name: "LongCat 2.5 Preview (Free)", maker: "meituan", cost: .init(input: 0, output: 0), releasedAt: released(5)),
+        DexModel(id: "opencode-go/gemini-4-argon-contributor", apiId: "gemini-4-argon-contributor", provider: "opencode-go", name: "Gemini 4 Argon (Contributor)", maker: "google", input: ["text", "image"], cost: .init(input: 4, output: 20), trainsOnData: true, releasedAt: released(12)),
         DexModel(id: "chatgpt/gpt-6.1-sol", apiId: "gpt-6.1-sol", provider: "chatgpt", name: "GPT-6.1 Sol", maker: "openai", input: ["text", "image"], contextWindow: 272_000,
-                 maxTokens: 128_000, cost: .init(input: 2, output: 10), thinkingLevelMap: ["off": nil, "minimal": nil, "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": "max"]),
+                 maxTokens: 128_000, cost: .init(input: 2, output: 10), thinkingLevelMap: ["off": nil, "minimal": nil, "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": "max"], releasedAt: released(64)),
         DexModel(id: "chatgpt/gpt-6-luna", apiId: "gpt-6-luna", provider: "chatgpt", name: "GPT-6 Luna", maker: "openai", input: ["text", "image"], contextWindow: 272_000,
                  maxTokens: 128_000, cost: .init(input: 0.1, output: 0.5), thinkingLevelMap: ["off": "none", "minimal": nil, "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": "max"])
     ])
@@ -98,10 +105,10 @@ public enum MockData {
     /// maker too, and a maker Dex has no logo for goes under Command Code's own mark.
     public static let commandCodeModels: [DexModel] = [
         DexModel(id: "commandcode/deepseek/deepseek-v4.1-flash", apiId: "deepseek/deepseek-v4.1-flash", provider: "commandcode", name: "DeepSeek V4.1 Flash", maker: "deepseek",
-                 contextWindow: 1_000_000, maxTokens: 65_536, cost: .init(input: 0.2, output: 0.8)),
+                 contextWindow: 1_000_000, maxTokens: 65_536, cost: .init(input: 0.2, output: 0.8), releasedAt: released(9)),
         DexModel(id: "commandcode/anthropic/claude-haiku-5.5", apiId: "anthropic/claude-haiku-5.5", provider: "commandcode", name: "Claude Haiku 5.5", maker: "anthropic",
                  input: ["text", "image"], contextWindow: 200_000, maxTokens: 64_000, cost: .init(input: 1, output: 5),
-                 thinkingLevelMap: ["minimal": nil, "xhigh": "max"]),
+                 thinkingLevelMap: ["minimal": nil, "xhigh": "max"], releasedAt: released(33)),
         DexModel(id: "commandcode/mistralai/devstral-3", apiId: "mistralai/devstral-3", provider: "commandcode", name: "Devstral 3", maker: "commandcode",
                  contextWindow: 256_000, cost: .init(input: 0.4, output: 2))
     ]
