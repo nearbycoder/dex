@@ -190,7 +190,8 @@ export const OUTPUTS: Readonly<Record<string, TSchema>> = {
       contextWindow: T.Number(),
       thinkingLevels: T.Array(T.String()),
       cost: T.Object({ input: T.Number(), output: T.Number(), cacheRead: T.Number() }, { description: "USD per million tokens" }),
-      trainsOnData: T.Optional(T.Boolean())
+      trainsOnData: T.Optional(T.Boolean()),
+      releasedAt: T.Optional(T.String({ description: "When it came out, YYYY-MM-DD" }))
     })
   ),
   app_list_vms: T.Array(vm),

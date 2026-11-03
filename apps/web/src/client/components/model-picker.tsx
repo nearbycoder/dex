@@ -1,13 +1,15 @@
 import { Link } from "@tanstack/react-router"
-import { Brain, Check, ChevronDown, Eye, RefreshCw, Search, Type } from "lucide-react"
+import { Brain, CalendarClock, Check, ChevronDown, Eye, RefreshCw, Search, Type } from "lucide-react"
 import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { useDex } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
 import {
   clampThinking,
+  daysSinceRelease,
   type DexModel,
   findModel,
+  isNewModel,
   MODEL_MAKERS,
   MODEL_PROVIDERS,
   type ModelProvider,
@@ -45,8 +47,83 @@ const badges = (model: DexModel) => {
     hasVision(model) ? "Vision" : "Text only",
     ...(levels.length > 0 ? [levels.includes("off") ? "thinking optional" : "always thinks"] : []),
     ...(model.cost.input === 0 && model.cost.output === 0 ? ["Free"] : []),
-    ...(model.trainsOnData ? ["Trains on data"] : [])
+    ...(model.trainsOnData ? ["Trains on data"] : []),
+    ...(isNewModel(model) ? ["New"] : [])
   ]
+}
+
+/** "Nov 3" this year, "Mar 2025" before. */
+const releaseLabel = (model: DexModel) => {
+  if (!model.releasedAt) return undefined
+  const date = new Date(`${model.releasedAt.slice(0, 10)}T12:00:00Z`)
+  if (Number.isNaN(date.getTime())) return undefined
+  const thisYear = date.getUTCFullYear() === new Date().getUTCFullYear()
+  return date.toLocaleDateString(undefined, thisYear ? { month: "short", day: "numeric", timeZone: "UTC" } : { month: "short", year: "numeric", timeZone: "UTC" })
+}
+
+/** The newest-first list's sections, by how long ago a model came out. */
+const PERIODS = [
+  { days: 7, label: "This week" },
+  { days: 30, label: "This month" },
+  { days: 90, label: "Past 3 months" },
+  { days: Infinity, label: "Earlier" }
+] as const
+/** The "released within" filter's choices (0: any time). */
+const WITHIN = [
+  { days: 0, label: "Any time" },
+  { days: 7, label: "7 days" },
+  { days: 30, label: "30 days" },
+  { days: 90, label: "90 days" }
+] as const
+const NEWEST_KEY = "dex-models-newest"
+
+function ModelRow(props: { model: DexModel; selected: boolean; usable: boolean; showProvider: boolean; onSelect: () => void }) {
+  const { model } = props
+  const levels = supportedThinkingLevels(model)
+  const free = model.cost.input === 0 && model.cost.output === 0
+  const released = releaseLabel(model)
+  return (
+    <li>
+      <button
+        type="button"
+        disabled={!props.usable}
+        onClick={props.onSelect}
+        className={`flex w-full items-start gap-2.5 px-3 py-2 text-left hover:bg-zinc-900 disabled:opacity-40 disabled:hover:bg-transparent ${props.selected ? "bg-zinc-900/70" : ""}`}
+      >
+        <ModelLogo modelId={model.id} className="mt-0.5 size-5" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-1.5">
+            <span className="truncate text-sm text-zinc-100">{model.name}</span>
+            {/* By release date, the subscription takes the maker's place (the logo shows the maker). */}
+            {!props.showProvider && <span className="shrink-0 text-[10px] text-zinc-500">{MODEL_MAKERS[model.maker].name}</span>}
+            {(released || props.showProvider) && (
+              <span className="ml-auto shrink-0 text-[10px] text-zinc-500 tabular-nums" title={model.releasedAt && `Released ${model.releasedAt}`}>
+                {[props.showProvider && MODEL_PROVIDERS[model.provider].short, released].filter(Boolean).join(" · ")}
+              </span>
+            )}
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-1">
+            {isNewModel(model) && <span className="rounded bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-medium text-violet-300">New</span>}
+            <VisionBadge vision={hasVision(model)} />
+            <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">{formatTokens(model.contextWindow)} context</span>
+            {levels.length > 0 && (
+              <span className="flex items-center gap-1 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">
+                <Brain className="size-3" />
+                {levels.includes("off") ? "thinking optional" : "always thinks"}
+              </span>
+            )}
+            {free && <span className="rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium text-sky-300">Free</span>}
+            {model.trainsOnData && (
+              <span title="The provider may train on what you send this model" className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
+                Trains on data
+              </span>
+            )}
+          </div>
+        </div>
+        {props.selected && <Check className="mt-0.5 size-4 shrink-0 text-emerald-400" />}
+      </button>
+    </li>
+  )
 }
 
 /** Model menu that shows each model's capabilities: image input, context window, and thinking levels. */
@@ -57,6 +134,15 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
   const menu = useRef<HTMLDivElement>(null)
   const [query, setQuery] = useState("")
   const [only, setOnly] = useState<ModelProvider | "all">("all")
+  // Newest first (remembered on this device), optionally only what came out within some days.
+  const [newest, setNewest] = useState(() => {
+    try {
+      return localStorage.getItem(NEWEST_KEY) === "1"
+    } catch {
+      return false
+    }
+  })
+  const [within, setWithin] = useState<number>(0)
   const root = useRef<HTMLDivElement>(null)
   const current = findModel(props.model)
   const { state, stub, connected: online } = useDex()
@@ -71,6 +157,7 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
   const words = needle.split(/\s+/).filter(Boolean)
   const matches = (model: DexModel) => {
     if (only !== "all" && model.provider !== only) return false
+    if (newest && within > 0 && (daysSinceRelease(model) ?? Infinity) > within) return false
     if (words.length === 0) return true
     const text = `${model.name} ${MODEL_MAKERS[model.maker].name} ${MODEL_PROVIDERS[model.provider].name} ${badges(model).join(" ")}`.toLowerCase()
     return words.every((word) => text.includes(word))
@@ -133,8 +220,44 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
   const toggle = () => {
     setQuery("")
     setOnly("all")
+    setWithin(0)
     setOpen((value) => !value)
   }
+
+  const toggleNewest = () => {
+    const next = !newest
+    setNewest(next)
+    setWithin(0)
+    try {
+      localStorage.setItem(NEWEST_KEY, next ? "1" : "0")
+    } catch {}
+  }
+
+  const select = (model: DexModel) => {
+    props.onSelect(model.id)
+    setOpen(false)
+  }
+  const row = (model: DexModel, showProvider: boolean) => (
+    <ModelRow
+      key={model.id}
+      model={model}
+      selected={model.id === props.model}
+      usable={connected[model.provider] || model.id === props.model}
+      showProvider={showProvider}
+      onSelect={() => select(model)}
+    />
+  )
+  // Newest first: every subscription's models in one list, by release date, in sections by how recent.
+  const byRelease = newest
+    ? MODELS.filter(matches).toSorted((a, b) => (b.releasedAt ?? "").localeCompare(a.releasedAt ?? "") || Number(connected[b.provider]) - Number(connected[a.provider]))
+    : []
+  const sections: Array<{ label: string; models: DexModel[] }> = PERIODS.map((period, index) => ({
+    label: period.label as string,
+    models: byRelease.filter((model) => {
+      const days = daysSinceRelease(model)
+      return days !== undefined && days <= period.days && (index === 0 || days > PERIODS[index - 1]!.days)
+    })
+  })).concat([{ label: "Release date unknown", models: byRelease.filter((model) => daysSinceRelease(model) === undefined) }])
 
   return (
     <div ref={root} className="relative min-w-0">
@@ -173,6 +296,18 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
               aria-label="Search models"
               className="min-w-0 flex-1 bg-transparent text-base text-zinc-100 placeholder:text-zinc-600 focus:outline-none md:text-sm"
             />
+            <button
+              type="button"
+              onClick={toggleNewest}
+              aria-pressed={newest}
+              title={newest ? "Group by subscription" : "Newest first"}
+              className={`flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[11px] ${
+                newest ? "bg-violet-500/15 text-violet-300" : "text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300"
+              }`}
+            >
+              <CalendarClock className="size-3.5" />
+              Newest
+            </button>
           </div>
           {/* One subscription at a time, or all of them. */}
           <div className="scrollbar-none flex shrink-0 gap-1 overflow-x-auto border-b border-zinc-900 px-2 py-1.5">
@@ -194,8 +329,36 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
               </button>
             ))}
           </div>
+          {newest && (
+            <div className="scrollbar-none flex shrink-0 gap-1 overflow-x-auto border-b border-zinc-900 px-2 py-1.5" role="group" aria-label="Released">
+              {WITHIN.map((choice) => (
+                <button
+                  key={choice.days}
+                  type="button"
+                  onClick={() => setWithin(choice.days)}
+                  aria-pressed={within === choice.days}
+                  className={`shrink-0 rounded-full px-2.5 py-1 text-xs ${
+                    within === choice.days ? "bg-violet-500/20 text-violet-200" : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
+                  }`}
+                >
+                  {choice.label}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="scrollbar-thin max-h-80 min-h-0 flex-1 overflow-y-auto overscroll-contain pb-1">
-            {providers.map((provider) => {
+            {newest &&
+              sections.map((section) =>
+                section.models.length === 0 ? null : (
+                  <section key={section.label}>
+                    <div className="sticky top-0 z-10 bg-zinc-950/95 px-3 pt-2.5 pb-1 backdrop-blur">
+                      <span className="text-[11px] font-medium tracking-wide text-zinc-400 uppercase">{section.label}</span>
+                    </div>
+                    <ul>{section.models.map((model) => row(model, true))}</ul>
+                  </section>
+                )
+              )}
+            {!newest && providers.map((provider) => {
               const models = MODELS.filter((model) => model.provider === provider && matches(model))
               if (models.length === 0) return null
               return (
@@ -208,62 +371,14 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
                       </Link>
                     )}
                   </div>
-                  <ul>
-                    {models.map((model) => {
-                      const selected = model.id === props.model
-                      const levels = supportedThinkingLevels(model)
-                      const usable = connected[provider] || selected
-                      const free = model.cost.input === 0 && model.cost.output === 0
-                      return (
-                        <li key={model.id}>
-                          <button
-                            type="button"
-                            disabled={!usable}
-                            onClick={() => {
-                              props.onSelect(model.id)
-                              setOpen(false)
-                            }}
-                            className={`flex w-full items-start gap-2.5 px-3 py-2 text-left hover:bg-zinc-900 disabled:opacity-40 disabled:hover:bg-transparent ${selected ? "bg-zinc-900/70" : ""}`}
-                          >
-                            <ModelLogo modelId={model.id} className="mt-0.5 size-5" />
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-baseline gap-1.5">
-                                <span className="truncate text-sm text-zinc-100">{model.name}</span>
-                                <span className="shrink-0 text-[10px] text-zinc-500">{MODEL_MAKERS[model.maker].name}</span>
-                              </div>
-                              <div className="mt-1 flex flex-wrap items-center gap-1">
-                                <VisionBadge vision={hasVision(model)} />
-                                <span className="rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">
-                                  {formatTokens(model.contextWindow)} context
-                                </span>
-                                {levels.length > 0 && (
-                                  <span className="flex items-center gap-1 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400">
-                                    <Brain className="size-3" />
-                                    {levels.includes("off") ? "thinking optional" : "always thinks"}
-                                  </span>
-                                )}
-                                {free && <span className="rounded bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium text-sky-300">Free</span>}
-                                {model.trainsOnData && (
-                                  <span
-                                    title="The provider may train on what you send this model"
-                                    className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-300"
-                                  >
-                                    Trains on data
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                            {selected && <Check className="mt-0.5 size-4 shrink-0 text-emerald-400" />}
-                          </button>
-                        </li>
-                      )
-                    })}
-                  </ul>
+                  <ul>{models.map((model) => row(model, false))}</ul>
                 </section>
               )
             })}
             {MODELS.every((model) => !matches(model)) && (
-              <p className="px-3 py-4 text-center text-xs text-zinc-500">{needle ? `No model matches “${query}”.` : "No models."}</p>
+              <p className="px-3 py-4 text-center text-xs text-zinc-500">
+                {needle ? `No model matches “${query}”.` : newest && within > 0 ? "Nothing new in that time." : "No models."}
+              </p>
             )}
           </div>
           <p className="shrink-0 border-t border-zinc-900 px-3 py-2 text-[11px] leading-relaxed text-zinc-500">

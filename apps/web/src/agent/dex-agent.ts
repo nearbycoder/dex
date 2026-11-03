@@ -1490,8 +1490,8 @@ export class DexAgent extends Agent<Env, DexState> {
     this.modelsAttemptedAt = Date.now()
     this.modelsRefresh = (async () => {
       const before = [...MODELS]
-      const models = await fetchModelCatalog(before, await this.chatGPTModelIds(), await this.commandCodeCatalog(force), (candidates) =>
-        this.zenAnswering(candidates)
+      const models = await fetchModelCatalog(before, await this.chatGPTModelIds(), await this.commandCodeCatalog(force), (service, candidates) =>
+        this.freeModelsAnswering(service, candidates)
       )
       const catalog = { version: catalogVersion(models), updatedAt: Date.now(), models }
       this.ctx.storage.sql.exec(
@@ -1511,18 +1511,18 @@ export class DexAgent extends Agent<Env, DexState> {
   }
 
   /**
-   * Which of OpenCode Zen's free models answer for the connected OpenCode key. Zen limits them outside OpenCode's own
-   * apps unless the key's workspace allows them (a Go subscription does), so each is tried once with a tiny request
-   * before it's listed, again daily while it answers, and every 6 hours while it doesn't. A try that can't tell
-   * (OpenCode down, a timeout) keeps the last answer.
+   * Which of OpenCode Zen's or Cline's free models (stealth previews, promotions) answer for the connected OpenCode or
+   * ClinePass key. Services may keep them to their own apps (Zen does), so each is tried with a tiny request before
+   * it's listed, again daily while it answers, and every 6 hours while it doesn't. A try that can't tell (the service
+   * down, a timeout) keeps the last answer.
    */
-  private async zenAnswering(candidates: ReadonlyArray<DexModel>): Promise<ReadonlySet<string>> {
-    const resolved = await this.resolveOpenCodeKey()
+  private async freeModelsAnswering(service: "zen" | "cline", candidates: ReadonlyArray<DexModel>): Promise<ReadonlySet<string>> {
+    const resolved = await (service === "zen" ? this.resolveOpenCodeKey() : this.resolveClineKey())
     if (!resolved || candidates.length === 0) return new Set()
     type Checks = { key: string; models: Record<string, { answers: boolean; at: number }> }
     const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(resolved.key))
     const keyHash = [...new Uint8Array(digest)].slice(0, 8).map((byte) => byte.toString(16).padStart(2, "0")).join("")
-    const raw = this.ctx.storage.sql.exec<{ value: string }>(`SELECT value FROM dex_meta WHERE key = 'zen_checks'`).toArray()[0]?.value
+    const raw = this.ctx.storage.sql.exec<{ value: string }>(`SELECT value FROM dex_meta WHERE key = ?`, `${service}_checks`).toArray()[0]?.value
     let stored: Checks | undefined
     try {
       stored = raw ? (JSON.parse(raw) as Checks) : undefined
@@ -1534,14 +1534,18 @@ export class DexAgent extends Agent<Env, DexState> {
       candidates.map(async (model) => {
         const last = before[model.apiId]
         if (last && now - last.at < (last.answers ? 24 : 6) * 60 * 60_000) return void (models[model.apiId] = last)
-        const answers = await this.runtime.runPromise(OpenCodeGoClient.use((client) => client.answers(resolved.key, { apiId: model.apiId, baseUrl: model.baseUrl! })))
+        const answers = await this.runtime.runPromise(
+          service === "zen"
+            ? OpenCodeGoClient.use((client) => client.answers(resolved.key, { apiId: model.apiId, baseUrl: model.baseUrl! }))
+            : ClinePassClient.use((client) => client.answers(resolved.key, model.apiId))
+        )
         if (answers !== undefined) {
-          if (answers !== last?.answers) console.log(`OpenCode Zen: ${model.apiId} ${answers ? "answers" : "is refused"} for this key`)
+          if (answers !== last?.answers) console.log(`${service === "zen" ? "OpenCode Zen" : "Cline"}: ${model.apiId} ${answers ? "answers" : "is refused"} for this key`)
           models[model.apiId] = { answers, at: now }
         } else if (last) models[model.apiId] = last
       })
     )
-    this.ctx.storage.sql.exec(`INSERT OR REPLACE INTO dex_meta (key, value) VALUES ('zen_checks', ?)`, JSON.stringify({ key: keyHash, models }))
+    this.ctx.storage.sql.exec(`INSERT OR REPLACE INTO dex_meta (key, value) VALUES (?, ?)`, `${service}_checks`, JSON.stringify({ key: keyHash, models }))
     return new Set(Object.entries(models).filter(([, check]) => check.answers).map(([id]) => id))
   }
 

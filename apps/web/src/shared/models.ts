@@ -50,7 +50,7 @@ export const dexProvider = (piProvider: string | undefined): ModelProvider =>
 
 export type ModelMaker =
   | "zai" | "moonshot" | "deepseek" | "qwen" | "minimax" | "xiaomi" | "meta"
-  | "anthropic" | "openai" | "xai" | "google" | "meituan" | "tencent" | "stepfun" | "opencode" | "commandcode"
+  | "anthropic" | "openai" | "xai" | "google" | "meituan" | "tencent" | "stepfun" | "opencode" | "commandcode" | "other"
 
 /** Who makes each model family, with a logo under /public/models. */
 export const MODEL_MAKERS: Readonly<Record<ModelMaker, { readonly name: string; readonly logo: string }>> = {
@@ -70,7 +70,9 @@ export const MODEL_MAKERS: Readonly<Record<ModelMaker, { readonly name: string; 
   stepfun: { name: "StepFun", logo: "/models/stepfun.svg" },
   opencode: { name: "OpenCode", logo: "/models/opencode.svg" },
   /** Other makers Command Code serves (Mistral, NVIDIA, Sakana, …), under its mark. */
-  commandcode: { name: "Command Code", logo: "/models/commandcode.svg" }
+  commandcode: { name: "Command Code", logo: "/models/commandcode.svg" },
+  /** Stealth models (their maker unannounced) and makers without a logo here, on Cline. */
+  other: { name: "Other", logo: "/models/other.svg" }
 }
 
 type ThinkingMap = Readonly<Partial<Record<ThinkingLevel | "max", string | null>>>
@@ -95,6 +97,8 @@ export interface DexModel {
   readonly compat?: Readonly<Record<string, unknown>>
   /** The provider may train on prompts sent to it (OpenCode's privacy table). */
   readonly trainsOnData?: boolean
+  /** When the model came out ("2026-11-03"), from the catalogs; missing when none says. */
+  readonly releasedAt?: string
 }
 /** @deprecated The catalog covers both providers now. */
 export type ClinePassModel = DexModel
@@ -213,6 +217,17 @@ export function setModelCatalog(catalog: Pick<ModelCatalog, "models" | "updatedA
   currentUpdatedAt = catalog.updatedAt
   return true
 }
+
+/** How long a model counts as new (a badge in the menus). */
+export const NEW_MODEL_DAYS = 14
+
+/** Days since a model came out, or undefined when that isn't known. */
+export const daysSinceRelease = (model: Pick<DexModel, "releasedAt">, now = Date.now()) => {
+  const released = model.releasedAt ? Date.parse(`${model.releasedAt.slice(0, 10)}T00:00:00Z`) : Number.NaN
+  return Number.isNaN(released) ? undefined : Math.max(0, Math.floor((now - released) / 86_400_000))
+}
+
+export const isNewModel = (model: Pick<DexModel, "releasedAt">, now = Date.now()) => (daysSinceRelease(model, now) ?? Infinity) <= NEW_MODEL_DAYS
 
 /** The models one subscription offers now. */
 export const modelsOf = (provider: ModelProvider) => MODELS.filter((model) => model.provider === provider)

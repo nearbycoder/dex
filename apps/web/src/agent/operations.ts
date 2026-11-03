@@ -689,7 +689,8 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
         contextWindow: model.contextWindow,
         thinkingLevels: supportedThinkingLevels(model),
         cost: { input: model.cost.input, output: model.cost.output, cacheRead: model.cost.cacheRead },
-        ...(model.trainsOnData && { trainsOnData: true })
+        ...(model.trainsOnData && { trainsOnData: true }),
+        ...(model.releasedAt && { releasedAt: model.releasedAt })
       }))
     }
   }),

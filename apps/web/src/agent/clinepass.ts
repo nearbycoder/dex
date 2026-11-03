@@ -1,6 +1,6 @@
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy"
 import { createProvider } from "@earendil-works/pi-ai/models"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Context, Effect, Layer, Option, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { modelsOf } from "~/shared/models"
 
@@ -53,6 +53,8 @@ export class ClinePassError extends Schema.TaggedError<ClinePassError>()("ClineP
 export class ClinePassClient extends Context.Service<ClinePassClient, {
   /** Resolves with an optional note when Cline accepts the key for ClinePass models. */
   verifyKey(key: string): Effect.Effect<{ note?: string }, ClinePassError>
+  /** Whether a model answers for this key: false when Cline turns it away, undefined when that couldn't be told. */
+  answers(key: string, apiId: string): Effect.Effect<boolean | undefined>
 }>()("dex/agent/ClinePassClient") {
   static readonly layer = Layer.effect(
     ClinePassClient,
@@ -97,7 +99,22 @@ export class ClinePassClient extends Context.Service<ClinePassClient, {
         }
       })
 
-      return ClinePassClient.of({ verifyKey })
+      // Room for a reasoning model to think and still answer (a small max_tokens ends in a 500).
+      const answers = Effect.fn("ClinePassClient.answers")(function*(key: string, apiId: string) {
+        const response = yield* HttpClientRequest.post(`${CLINEPASS_BASE_URL}/chat/completions`).pipe(
+          HttpClientRequest.bearerToken(key),
+          HttpClientRequest.bodyJsonUnsafe({ model: apiId, messages: [{ role: "user", content: "Reply with OK" }], max_tokens: 512, stream: false }),
+          client.execute,
+          Effect.timeout("45 seconds"),
+          Effect.option
+        )
+        if (Option.isNone(response)) return undefined
+        const status = response.value.status
+        if (status >= 200 && status < 300) return true
+        return [401, 402, 403, 404, 429].includes(status) ? false : undefined
+      })
+
+      return ClinePassClient.of({ verifyKey, answers })
     })
   ).pipe(Layer.provide(FetchHttpClient.layer))
 }

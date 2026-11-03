@@ -10,12 +10,15 @@ import { OPENCODE_GO_BASE_URL } from "./opencode-go"
  * - OpenCode Go's own model list (`/v1/models`, public): which models it serves right now. It decides what's listed.
  * - OpenCode Zen's list (public): its free models (stealth previews, limited-time promotions) join OpenCode Go's,
  *   on the same key, once the agent has seen one answer for it (outside OpenCode's own apps Zen may refuse them).
+ * - Cline's public list (`/ai/cline/models`): its stealth models and the free ones out in the last 60 days join
+ *   ClinePass's, on the same key, once one has answered for it.
  * - The signed-in ChatGPT account's model list (OpenAI's `/v1/models`, read by the agent with its token, when one is
  *   connected): which chat models the plan offers. It decides ChatGPT's list.
  * - Command Code's own model list (read with the connected key), limited to what the key's plan covers (the agent
  *   checks; see commandcode.ts). It decides Command Code's list.
  * - models.dev, the open catalog pi-ai's is generated from: names, limits, prices, input types, thinking levels, and
- *   each OpenCode Go model's API style. Cline publishes no ClinePass list, so its ClinePass section decides those.
+ *   each OpenCode Go model's API style, and release dates. Cline publishes no ClinePass list, so its ClinePass
+ *   section decides those.
  *
  * Models Dex already knows keep their names and hand-checked settings (API style, compat flags, thinking map) and
  * take the catalog's current limits and prices; new ones are derived from the catalog the way pi-ai's generator
@@ -26,6 +29,9 @@ import { OPENCODE_GO_BASE_URL } from "./opencode-go"
 const MODELS_DEV = "https://models.dev/api.json"
 const OPENCODE_GO_LIST = `${OPENCODE_GO_BASE_URL}/v1/models`
 const OPENCODE_ZEN_LIST = "https://opencode.ai/inference/v1/models"
+const CLINE_LIST = "https://api.cline.bot/api/v1/ai/cline/models"
+/** How recent a free Cline model must be to be offered (Cline lists dozens of older free ones). */
+const CLINE_FREE_DAYS = 60
 const TIMEOUT_MS = 15_000
 
 interface DevCost {
@@ -45,6 +51,7 @@ interface DevModel {
   readonly cost?: DevCost & { readonly tiers?: ReadonlyArray<DevCost & { readonly tier?: { readonly type?: string; readonly size?: number } }> }
   readonly provider?: { readonly npm?: string }
   readonly status?: string
+  readonly release_date?: string
 }
 
 type DevProvider = { readonly models?: Readonly<Record<string, DevModel>> }
@@ -61,6 +68,21 @@ interface ZenModel {
   readonly cost?: { readonly text?: { readonly input?: { readonly price?: number }; readonly output?: { readonly price?: number } } }
   readonly api?: Readonly<Record<string, { readonly base_url?: string } | undefined>>
 }
+
+/** One model in Cline's list (OpenRouter's shape; the fields Dex reads). */
+interface ClineModel {
+  readonly id?: unknown
+  readonly name?: string
+  readonly created?: number
+  readonly context_length?: number
+  readonly architecture?: { readonly input_modalities?: readonly string[] }
+  readonly top_provider?: { readonly max_completion_tokens?: number | null }
+  readonly supported_parameters?: readonly string[]
+  readonly pricing?: { readonly prompt?: string; readonly completion?: string }
+}
+
+/** The catalog's release date, as a day ("2026-11-03"). */
+const released = (date: string | undefined) => (date && /^\d{4}-\d{2}-\d{2}/.test(date) ? { releasedAt: date.slice(0, 10) } : {})
 
 /** Who makes a model, from its id (logos are per maker; OpenCode's own previews get OpenCode's). */
 const MAKERS: ReadonlyArray<readonly [RegExp, ModelMaker]> = [
@@ -99,7 +121,8 @@ const refreshed = (model: DexModel, entry: DevModel | undefined): DexModel => {
     input: input(entry),
     contextWindow: entry.limit?.context ?? model.contextWindow,
     maxTokens: entry.limit?.output ?? model.maxTokens,
-    ...(entry.cost && { cost: cost(entry.cost) })
+    ...(entry.cost && { cost: cost(entry.cost) }),
+    ...released(entry.release_date)
   }
 }
 
@@ -177,12 +200,45 @@ const zenFreeModels = (listed: ReadonlyArray<ZenModel>, goIds: ReadonlySet<strin
       modalities: model.modalities,
       limit: model.limit
     }
-    return [{ ...newOpenCodeModel(apiId, entry), baseUrl: baseUrl.replace(/\/+$/, ""), cost: cost({}) }]
+    return [{ ...newOpenCodeModel(apiId, entry), baseUrl: baseUrl.replace(/\/+$/, ""), cost: cost({}), ...released(model.release_date) }]
   })
 
 /** Whether a model is one of Zen's (served on Zen's address rather than OpenCode Go's). */
 const isZenModel = (model: Pick<DexModel, "provider" | "baseUrl">) =>
   model.provider === "opencode-go" && Boolean(model.baseUrl) && !model.baseUrl!.startsWith(OPENCODE_GO_BASE_URL)
+
+/**
+ * Cline's stealth models and its free ones from the last 60 days that can use tools, newest first, on ClinePass's API
+ * (Cline's, with the same key). Names drop the maker prefix Cline gives them ("Recursive: Flint (free)").
+ */
+const clineFreeModels = (listed: ReadonlyArray<ClineModel>, now = Date.now()): DexModel[] =>
+  listed
+    .toSorted((a, b) => (b.created ?? 0) - (a.created ?? 0))
+    .flatMap((model) => {
+      const apiId = typeof model.id === "string" ? model.id : ""
+      const free = model.pricing?.prompt === "0" && model.pricing.completion === "0"
+      const stealth = apiId.startsWith("stealth/")
+      const recent = typeof model.created === "number" && now - model.created * 1000 < CLINE_FREE_DAYS * 86_400_000
+      if (!apiId || apiId.startsWith("cline-pass/") || !free || !(stealth || recent) || !model.supported_parameters?.includes("tools")) return []
+      const slug = apiId.split("/").pop()!.replace(/:free$/, "")
+      const reasons = model.supported_parameters.includes("reasoning_effort")
+      return [{
+        id: apiId,
+        apiId,
+        provider: "clinepass",
+        name: (model.name ?? titleCase(slug)).replace(/^[^:]+:\s*/, ""),
+        maker: stealth ? "other" : makerOf(slug, "other"),
+        input: model.architecture?.input_modalities?.includes("image") ? ["text", "image"] : ["text"],
+        contextWindow: model.context_length ?? 128_000,
+        maxTokens: Math.min(model.top_provider?.max_completion_tokens ?? 32_768, 131_072),
+        cost: cost({}),
+        ...(reasons && { thinkingLevelMap: { off: null, minimal: null, low: "low", medium: "medium", high: "high", xhigh: null } }),
+        ...(typeof model.created === "number" && { releasedAt: new Date(model.created * 1000).toISOString().slice(0, 10) })
+      } satisfies DexModel]
+    })
+
+/** Whether a ClinePass-listed model is one of Cline's own (not a ClinePass plan model). */
+const isClineFreeModel = (model: Pick<DexModel, "provider" | "apiId">) => model.provider === "clinepass" && !model.apiId.startsWith("cline-pass/")
 
 /** A ClinePass model Dex hasn't seen: Cline's OpenAI-compatible API, named like OpenCode names the same model. */
 const newClinePassModel = (apiId: string, entry: DevModel, names: ReadonlyMap<string, string>): DexModel => {
@@ -234,7 +290,8 @@ const commandCodeModel = (listed: CommandCodeListed, entry: DevModel | undefined
     cost: cost(entry?.cost),
     ...(thinkingLevelMap && { thinkingLevelMap }),
     compat,
-    ...(/contributor|:free$|-free$/.test(listed.id) && { trainsOnData: true })
+    ...(/contributor|:free$|-free$/.test(listed.id) && { trainsOnData: true }),
+    ...released(entry?.release_date)
   }
 }
 
@@ -287,7 +344,7 @@ const providerList = (
   for (const apiId of [...served].filter((id) => !knownIds.has(id)).sort()) {
     const entry = entries[apiId]
     if (!entry) continue // Served but not catalogued yet: its API style and limits are unknown, so it waits.
-    const model = create(apiId, entry)
+    const model = { ...create(apiId, entry), ...released(entry.release_date) }
     const after = list.findLastIndex((other) => other.maker === model.maker)
     list.splice(after === -1 ? list.length : after + 1, 0, model)
   }
@@ -325,13 +382,18 @@ export async function fetchModelCatalog(
   chatgptServed?: ReadonlySet<string>,
   /** What Command Code lists and the key's plan covers; "keep" when it couldn't be read; missing when not connected. */
   commandCode?: { readonly listed: ReadonlyArray<CommandCodeListed>; readonly covered: ReadonlySet<string> } | "keep",
-  /** Which of Zen's free models answer for the connected OpenCode key; Zen's aren't listed without it. */
-  zenAnswering?: (candidates: ReadonlyArray<DexModel>) => Promise<ReadonlySet<string>>
+  /** Which of Zen's and Cline's free models answer for the connected keys; they aren't listed without it. */
+  answering?: (service: "zen" | "cline", candidates: ReadonlyArray<DexModel>) => Promise<ReadonlySet<string>>
 ): Promise<DexModel[]> {
-  const [dev, served, zen] = await Promise.allSettled([
+  const answered = async (service: "zen" | "cline", candidates: DexModel[]) => {
+    const yes = candidates.length > 0 && answering ? await answering(service, candidates) : new Set<string>()
+    return candidates.filter((model) => yes.has(model.apiId))
+  }
+  const [dev, served, zen, clineListed] = await Promise.allSettled([
     getJson(MODELS_DEV) as Promise<Readonly<Record<string, DevProvider>>>,
     getJson(OPENCODE_GO_LIST).then((body) => new Set(((body as { data?: Array<{ id?: unknown }> }).data ?? []).map((model) => String(model.id)))),
-    getJson(OPENCODE_ZEN_LIST).then((body) => (body as { data?: ZenModel[] }).data ?? [])
+    getJson(OPENCODE_ZEN_LIST).then((body) => (body as { data?: ZenModel[] }).data ?? []),
+    getJson(CLINE_LIST).then((body) => (body as { data?: ClineModel[] }).data ?? [])
   ])
   if (dev.status === "rejected" && served.status === "rejected") throw new Error(`Couldn't reach the model lists: ${dev.reason}`)
   const catalog = dev.status === "fulfilled" ? dev.value : {}
@@ -342,17 +404,20 @@ export async function fetchModelCatalog(
     served.status === "fulfilled" && served.value.size > 0
       ? providerList("opencode-go", served.value, openCodeEntries, newOpenCodeModel)
       : keep("opencode-go").filter((model) => !isZenModel(model))
-  const zenCandidates = zen.status === "fulfilled" ? zenFreeModels(zen.value, new Set(go.map((model) => model.apiId))) : undefined
-  const zenListed = zenCandidates
-    ? await (zenAnswering?.(zenCandidates) ?? Promise.resolve(new Set<string>())).then((answering) => zenCandidates.filter((model) => answering.has(model.apiId)))
-    : keep("opencode-go").filter(isZenModel)
+  const zenListed =
+    zen.status === "fulfilled" ? await answered("zen", zenFreeModels(zen.value, new Set(go.map((model) => model.apiId)))) : keep("opencode-go").filter(isZenModel)
   const openCode = go.length > 0 ? [...go, ...zenListed] : []
 
   // ClinePass: the catalog's list, minus what it marks retired.
   const clineEntries = catalog["cline-pass"]?.models ?? {}
   const clineServed = new Set(Object.entries(clineEntries).filter(([, entry]) => entry.status !== "deprecated").map(([id]) => id))
   const names = new Map(openCode.map((model) => [slugOf(model), model.name]))
-  const cline = clineServed.size > 0 ? providerList("clinepass", clineServed, clineEntries, (apiId, entry) => newClinePassModel(apiId, entry, names)) : keep("clinepass")
+  const clinePass =
+    clineServed.size > 0
+      ? providerList("clinepass", clineServed, clineEntries, (apiId, entry) => newClinePassModel(apiId, entry, names))
+      : keep("clinepass").filter((model) => !isClineFreeModel(model))
+  const clineFree = clineListed.status === "fulfilled" ? await answered("cline", clineFreeModels(clineListed.value)) : keep("clinepass").filter(isClineFreeModel)
+  const cline = clinePass.length > 0 ? [...clinePass, ...clineFree] : []
 
   // ChatGPT: the chat models the account lists that the catalog describes (and the built-in ones it lists).
   const openAIEntries = catalog["openai"]?.models ?? {}
@@ -366,7 +431,7 @@ export async function fetchModelCatalog(
   return [
     ...(cline.length > 0 ? cline : keep("clinepass")),
     ...(openCode.length > 0 ? openCode : keep("opencode-go")),
-    ...(chatgpt.length > 0 ? chatgpt : BUILT_IN_MODELS.filter((model) => model.provider === "chatgpt")),
+    ...(chatgpt.length > 0 ? chatgpt : BUILT_IN_MODELS.filter((model) => model.provider === "chatgpt").map((model) => refreshed(model, openAIEntries[model.apiId]))),
     ...commandCodeModels
   ]
 }
