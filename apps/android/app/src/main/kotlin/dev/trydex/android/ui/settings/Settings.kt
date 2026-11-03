@@ -285,15 +285,17 @@ fun GeneralSettingsScreen() {
                 )
             }
             SectionCard(title = "OpenRouter", info = "OpenRouter's free models (stealth previews and promotions) are in the model menu under OpenRouter. Connect any or all of these.") {
+                // A deployment can lend its owner its own key (OPENROUTER_API_KEY), which can't be removed here.
+                val user = current.openrouter.source == "user"
                 SecretConnect(
                     connected = current.openrouter.connected,
-                    status = current.openrouter.keyHint ?: "",
-                    monospace = true,
-                    placeholder = if (current.openrouter.connected) "New OpenRouter API key" else "OpenRouter API key",
+                    status = if (user) current.openrouter.keyHint ?: "" else "This deployment's key",
+                    monospace = user,
+                    placeholder = if (user) "New OpenRouter API key" else "OpenRouter API key",
                     help = "Create a key in OpenRouter's settings. Dex lists only OpenRouter's free models, so a chat on one costs nothing. They're limited to a few dozen requests a day until the account has bought \$10 of credits, and their providers may keep or train on what you send (OpenRouter's privacy settings decide which ones your key can use). Dex checks the key with OpenRouter, then stores it encrypted in your agent; it's never sent to this device.",
                     helpLink = "https://openrouter.ai/settings/keys" to "OpenRouter's settings",
                     onConnect = { repository.api.connectOpenRouter(it) },
-                    onDisconnect = if (current.openrouter.connected) ({ repository.api.disconnectOpenRouter(); ConnectResult(ok = true) }) else null,
+                    onDisconnect = if (user) ({ repository.api.disconnectOpenRouter(); ConnectResult(ok = true) }) else null,
                     tag = "openrouter",
                 )
             }

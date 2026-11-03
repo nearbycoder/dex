@@ -17,6 +17,7 @@ import dev.trydex.android.ui.nav.ChatList
 import dev.trydex.android.ui.nav.GeneralSettings
 import dev.trydex.android.ui.nav.NewChat
 import dev.trydex.android.ui.nav.SettingsHome
+import dev.trydex.android.ui.nav.Usage
 import dev.trydex.core.model.ProviderStatus
 import org.junit.After
 import org.junit.Rule
@@ -83,5 +84,33 @@ class OpenRouterTest {
         rule.waitUntil(10_000) { !harness.fake.state.openrouter.connected }
         rule.awaitTag("connect-openrouter-key")
         assertThat(harness.fake.calls.any { it.first == "disconnectOpenRouter" }).isTrue()
+    }
+
+    @Test fun usageShowsTheFreeRequestsAndTheAccount() {
+        harness.setContent(rule)
+        rule.awaitText("Weekly metrics dashboard")
+        rule.runOnIdle { harness.links.send(listOf(SettingsHome, Usage)) }
+        rule.awaitTag("service-openrouter").performScrollTo()
+        assertThat(rule.onAllNodes(hasText("558K tokens · 12 of 50 free today") and hasAnyAncestor(hasTestTag("service-openrouter")), useUnmergedTree = true).fetchSemanticsNodes()).isNotEmpty()
+        rule.onNodeWithTag("service-openrouter").performClick()
+        rule.awaitTag("account-openrouter").performScrollTo()
+        rule.awaitText("Free requests today")
+        rule.awaitText("Credits used")
+        rule.awaitText("The key's spending. Free models cost nothing, so this is paid models it ran elsewhere.")
+        assertThat(rule.onAllNodes(hasText("This key's limit")).fetchSemanticsNodes()).isEmpty()
+        assertThat(rule.onAllNodes(hasText("Free") and hasAnyAncestor(hasTestTag("usage-stats")), useUnmergedTree = true).fetchSemanticsNodes()).isNotEmpty()
+    }
+
+    @Test fun usageWithoutAKeySaysToConnectOne() {
+        harness.fake.update { it.copy(openrouter = ProviderStatus()) }
+        harness.setContent(rule)
+        rule.awaitText("Weekly metrics dashboard")
+        rule.runOnIdle { harness.links.send(listOf(SettingsHome, Usage)) }
+        // It was used this period, so it's still listed, without the live meter.
+        rule.awaitTag("service-openrouter").performScrollTo()
+        assertThat(rule.onAllNodes(hasText("558K tokens · free models") and hasAnyAncestor(hasTestTag("service-openrouter")), useUnmergedTree = true).fetchSemanticsNodes()).isNotEmpty()
+        rule.onNodeWithTag("service-openrouter").performClick()
+        rule.awaitTag("account-openrouter").performScrollTo()
+        rule.awaitText("Connect an OpenRouter key in Settings to see its numbers here.")
     }
 }
