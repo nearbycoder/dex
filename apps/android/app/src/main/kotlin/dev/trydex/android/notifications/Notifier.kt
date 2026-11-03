@@ -26,7 +26,9 @@ import dev.trydex.android.MainActivity
 import dev.trydex.android.R
 import dev.trydex.android.data.Faces
 import dev.trydex.android.ui.theme.AppThemes
+import dev.trydex.android.ui.components.SidekickArt
 import dev.trydex.core.model.CharacterProfile
+import dev.trydex.core.model.SidekickLooks
 import dev.trydex.core.model.DexState
 import dev.trydex.core.model.InboxState
 import dev.trydex.core.model.McpStatus
@@ -278,9 +280,11 @@ class Notifier(private val context: Context, private val graph: AppGraph, privat
             NotificationManagerCompat.from(context).notify(alert.tag, 0, build(context, alert, character, face))
         }
 
-        /** A sidekick's face for a notification, from their picture (or their initial). */
-        fun faceOf(character: CharacterProfile): Bitmap =
-            Faces.round(Faces.decode(Faces.dataUrlBytes(character.image)), character.color, character.face, FACE_PX)
+        /** A sidekick's face for a notification: their look (drawn here), their picture, or their initial. */
+        fun faceOf(character: CharacterProfile): Bitmap {
+            val look = character.look?.let { runCatching { SidekickArt.bitmap(SidekickLooks.clean(it), character.color, FACE_PX) }.getOrNull() }
+            return Faces.round(look ?: Faces.decode(Faces.dataUrlBytes(character.image)), character.color, character.face, FACE_PX)
+        }
 
         const val FACE_PX = 192
 

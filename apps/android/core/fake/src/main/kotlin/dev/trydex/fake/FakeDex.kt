@@ -39,6 +39,9 @@ import dev.trydex.core.model.SkillPreview
 import dev.trydex.core.model.ThinkingLevel
 import dev.trydex.core.model.UsageReport
 import dev.trydex.core.model.VmActivity
+import dev.trydex.core.model.VmChanges
+import dev.trydex.core.model.VmDirectory
+import dev.trydex.core.model.VmFile
 import dev.trydex.core.model.VmInfo
 import dev.trydex.core.model.VmSetup
 import dev.trydex.core.model.VmStatus
@@ -119,6 +122,7 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
         "/workspace/data/sales.csv" to "month,revenue\nJul,120\nAug,135\nSep,142\n",
         Characters.memoryPath("muse") to "# Muse's notes\n\n- Mona is making a tiny game for her niece's 8th birthday (space cats).\n- Likes bold colors and silly names.\n",
     )
+    private val vmFiles = FakeVmFiles(clock())
     private val vmActivity = ConcurrentHashMap<String, MutableList<VmActivity>>()
     private var activityId = 100L
     private var uiStates = ConcurrentHashMap<String, JsonObject>()
@@ -687,6 +691,20 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
                 finishActivity(key, id, "done", 0, "ok\n")
             }, chunkMs * 4, TimeUnit.MILLISECONDS)
             buildJsonObject { put("exitCode", 0); put("output", output) }
+        }
+        "vmFiles" -> {
+            val vm = state.vms.firstOrNull { it.key == args.s(0) }
+            if (vm?.running != true) buildJsonObject { put("running", false); put("status", (vm?.status ?: VmStatus.None).name.lowercase()) }
+            else buildJsonObject {
+                put("running", true)
+                val path = args.getOrNull(2).str ?: "~/work"
+                put("data", when (args.s(1)) {
+                    "directory" -> encode(VmDirectory.serializer(), vmFiles.directory(path, args.getOrNull(3).long?.toInt() ?: 0))
+                    "changes" -> encode(VmChanges.serializer(), vmFiles.changes(path))
+                    "file" -> encode(VmFile.serializer(), vmFiles.file(path))
+                    else -> error("Unknown filesystem view")
+                })
+            }
         }
         "vmPeek" -> buildJsonObject { put("running", true); put("status", "running"); put("view", args.s(1)) }
         "vmDesktopUrl" -> if (state.vms.any { it.key == args.s(0) && it.running }) {

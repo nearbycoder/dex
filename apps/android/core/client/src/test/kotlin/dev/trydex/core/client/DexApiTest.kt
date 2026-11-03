@@ -47,6 +47,22 @@ class DexApiTest {
         assertThat(calls.map { it.args }).containsExactly("""["MY_KEY","v","for tests"]""", """["MY_KEY",null,"for tests"]""").inOrder()
     }
 
+    @Test fun vmFiles() = runBlocking<Unit> {
+        result = """{"running":true,"data":{"path":"/home/u/work","parent":"/home/u","entries":[{"path":"/home/u/work/dex","name":"dex","directory":true,"size":4096,"modifiedAt":1,"link":false}],"next":null}}"""
+        val folder = api.vmDirectory("chat-1")!!
+        assertThat(folder.entries.single().directory).isTrue()
+        result = """{"running":true,"data":{"path":"/home/u/work/dex/a.ts","size":3,"modifiedAt":1,"content":"b\n","before":"a\n","change":"modified","binary":false,"truncated":false,"message":null}}"""
+        assertThat(api.vmFile("chat-1", "/home/u/work/dex/a.ts")!!.before).isEqualTo("a\n")
+        // A stopped VM isn't woken: there's nothing to show.
+        result = """{"running":false,"status":"stopped"}"""
+        assertThat(api.vmChanges("chat-1")).isNull()
+        assertThat(calls.map { it.args }).containsExactly(
+            """["chat-1","directory","~/work",0]""",
+            """["chat-1","file","/home/u/work/dex/a.ts",0]""",
+            """["chat-1","changes","~/work",0]""",
+        ).inOrder()
+    }
+
     @Test fun triage() = runBlocking<Unit> {
         api.settle("s1", true)
         api.snooze("s1", 1234L)

@@ -11,6 +11,10 @@ import { githubFullName, normalizeRepoUrl, repoDirName, repoLabel } from "../../
 import { formatInstalls, invokedSkill, skillSlug } from "../../../web/src/shared/skills.ts"
 import { splitUiNotes } from "../../../web/src/shared/ui-notes.ts"
 import { attachmentSummary, attachmentTag, splitAttachments } from "../../../web/src/shared/attachments.ts"
+import { BODIES, cleanLook, EXTRAS, EYES, LOOK_PRESETS, MOUTHS, sidekickSvg, SKINS } from "../../../web/src/shared/sidekick-look.ts"
+import { AGENT_COLORS } from "../../../web/src/shared/agents.ts"
+// The jsdiff that @pierre/diffs (the web's Files panel) diffs with.
+import { structuredPatch } from "../../../../node_modules/@pierre/diffs/node_modules/diff/libesm/index.js"
 
 const OUT = new URL("../../core/model/src/test/resources/golden/", import.meta.url)
 mkdirSync(OUT, { recursive: true })
@@ -268,6 +272,51 @@ write("attachments.json", {
   split: attachmentCases.map((input) => ({ input, ...splitAttachments(input) })),
   summary: [[], ["a.png"], ["a.png", "b.pdf"], ["a.png", "b.pdf", "c.txt"]].map((names) => ({ names, text: attachmentSummary(names.map((name) => ({ name }))) })),
   items: displayItems(withAttachments)
+})
+
+// ── VM files ─────────────────────────────────────────────────────────────────
+
+const { relative } = load("client/components/vm-files.tsx", ["relative"])
+const base = Array.from({ length: 30 }, (_, i) => `line ${i + 1}\n`).join("")
+const diffCases: Array<[string, string]> = [
+  ["", ""],
+  ["", "x\ny\n"],
+  ["x\ny\n", ""],
+  ["a\nb\nc\n", "a\nB\nc\n"],
+  ["a\nb\nc", "a\nb\nc\nd"],
+  ["a\nb\nc\n", "a\nb\nc"],
+  ["a\r\nb\r\n", "a\r\nc\r\n"],
+  [base, base.replace("line 3\n", "line three\n").replace("line 25\n", "")],
+  [base, base.replace("line 10\n", "line ten\n").replace("line 13\n", "line 13\nnew\n")],
+  [base, "header\n" + base + "footer\n"],
+  ["one\ntwo\nthree\nfour\n", "four\nthree\ntwo\none\n"],
+  ["same\nsame\nsame\n", "same\nother\nsame\nsame\nsame\n"],
+  ["fun a() {\n  return 1\n}\n\nfun b() {\n  return 2\n}\n", "fun a() {\n  return 1\n}\n\nfun c() {\n  return 3\n}\n\nfun b() {\n  return 2\n}\n"]
+]
+write("vmfiles.json", {
+  relative: [["/home/u/work", "/home/u/work/dex/src/a.ts"], ["/home/u/work", "/home/u/workshop/a"], ["/", "/etc/hosts"], ["/home/u/work", "/home/u/work"]]
+    .map(([root, path]) => ({ root, path, text: relative(root, path) })),
+  diffs: diffCases.map(([before, after]) => ({ before, after, hunks: structuredPatch("a", "b", before, after, undefined, undefined, { context: 4 }).hunks }))
+})
+
+// ── Sidekick looks ───────────────────────────────────────────────────────────
+
+const background = (color: string) => AGENT_COLORS[color as keyof typeof AGENT_COLORS][0]
+const lookVariants = [
+  ...BODIES.map((body) => ({ ...LOOK_PRESETS[0]!.look, body })),
+  ...EYES.map((eyes) => ({ ...LOOK_PRESETS[1]!.look, eyes })),
+  ...MOUTHS.map((mouth) => ({ ...LOOK_PRESETS[2]!.look, mouth })),
+  ...EXTRAS.flatMap((extra) => BODIES.map((body) => ({ ...LOOK_PRESETS[4]!.look, body, extra }))),
+  ...Object.keys(SKINS).map((skin) => ({ ...LOOK_PRESETS[5]!.look, skin, blush: !LOOK_PRESETS[5]!.look.blush }))
+]
+write("sidekicks.json", {
+  presets: LOOK_PRESETS.map((preset) => ({ key: preset.key, background: background(preset.color), svg: sidekickSvg(preset.look, background(preset.color)) })),
+  looks: lookVariants.map((look, i) => {
+    const color = Object.keys(AGENT_COLORS)[i % 8]!
+    return { look, background: background(color), svg: sidekickSvg(look, background(color)) }
+  }),
+  clean: [{}, { body: "cube", skin: "teal", eyes: "visor", mouth: "o", extra: "crown", blush: true }, { body: "dragon", skin: "plaid", eyes: "laser", mouth: "", extra: "cape", blush: false }]
+    .map((input) => ({ input, look: cleanLook(input) }))
 })
 
 console.log("Goldens written to", OUT.pathname)

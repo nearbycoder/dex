@@ -151,6 +151,7 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
     implementation(libs.coil.svg)
+    implementation(libs.androidsvg)
     implementation(libs.commonmark)
     implementation(libs.commonmark.gfm.tables)
     implementation(libs.commonmark.gfm.strikethrough)

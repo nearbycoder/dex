@@ -23,6 +23,7 @@ import dev.trydex.android.ui.library.SkillEditorScreen
 import dev.trydex.android.ui.library.SkillListScreen
 import dev.trydex.android.ui.machine.MachineListScreen
 import dev.trydex.android.ui.machine.MachineScreen
+import dev.trydex.android.ui.machine.VmFilesScreen
 import dev.trydex.android.ui.nav.Access
 import dev.trydex.android.ui.nav.AgentEditor
 import dev.trydex.android.ui.nav.AgentList
@@ -32,10 +33,12 @@ import dev.trydex.android.ui.nav.CharacterPage
 import dev.trydex.android.ui.nav.NewCharacter
 import dev.trydex.android.ui.nav.Chat
 import dev.trydex.android.ui.nav.ChatList
+import dev.trydex.android.ui.nav.ChatFiles
 import dev.trydex.android.ui.nav.ChatMachine
 import dev.trydex.android.ui.nav.GeneralSettings
 import dev.trydex.android.ui.nav.LibraryHome
 import dev.trydex.android.ui.nav.Machine
+import dev.trydex.android.ui.nav.MachineFiles
 import dev.trydex.android.ui.nav.MachineList
 import dev.trydex.android.ui.nav.McpEditor
 import dev.trydex.android.ui.nav.McpList
@@ -69,11 +72,14 @@ fun EntryProviderScope<NavKey>.screens(@Suppress("UNUSED_PARAMETER") wide: Boole
     entry<NewChat>(metadata = detail) { NewChatScreen(it) }
     entry<Chat>(metadata = detail) { ChatScreen(it.id) }
     entry<ChatMachine>(metadata = extra) { MachineScreen(it.key, beside = true) }
+    entry<ChatFiles>(metadata = extra) { VmFilesScreen(it.key) }
     entry<NewCharacter>(metadata = detail) { CharacterEditorScreen(NEW_CHARACTER, it) }
     entry<CharacterPage>(metadata = extra) { CharacterEditorScreen(it.id, it) }
 
     entry<MachineList>(metadata = list("Pick a machine to watch or control it.")) { MachineListScreen() }
     entry<Machine>(metadata = detail) { MachineScreen(it.key) }
+    // In place of the Machine page (back returns to it), so the files get the room to show their list and a file.
+    entry<MachineFiles>(metadata = detail) { VmFilesScreen(it.key) }
 
     entry<LibraryHome>(metadata = list("Projects, agents, sidekicks, skills, MCP servers, and the workspace.")) { LibraryHomeScreen() }
     entry<ProjectList>(metadata = detail) { ProjectListScreen() }

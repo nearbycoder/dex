@@ -1,6 +1,9 @@
 package dev.trydex.android.ui
 
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -13,6 +16,8 @@ import dev.trydex.android.ui.nav.Chat
 import dev.trydex.android.ui.nav.ChatList
 import dev.trydex.android.ui.nav.GeneralSettings
 import dev.trydex.android.ui.nav.AgentEditor
+import dev.trydex.android.ui.nav.CharacterEditor
+import dev.trydex.android.ui.nav.CharacterList
 import dev.trydex.android.ui.nav.AgentList
 import dev.trydex.android.ui.nav.LibraryHome
 import dev.trydex.android.ui.nav.McpEditor
@@ -23,6 +28,7 @@ import dev.trydex.android.ui.nav.SkillList
 import dev.trydex.android.ui.nav.Workspace
 import dev.trydex.android.ui.nav.WorkspaceFile
 import dev.trydex.android.ui.nav.Machine
+import dev.trydex.android.ui.nav.MachineFiles
 import dev.trydex.android.ui.nav.MachineList
 import dev.trydex.android.ui.nav.NewChat
 import dev.trydex.android.ui.nav.Route
@@ -83,7 +89,9 @@ class ScreenshotTest(private val device: String, private val qualifiers: String)
     @Test fun chats() {
         start()
         shot("1-chats")
-        rule.awaitText("Weekly metrics dashboard").performClick()
+        // On a flip phone's cover screen the sidekicks push the first chat under the navigation bar: a tap at its
+        // center would land on the bar, so bring it into view first.
+        rule.awaitText("Weekly metrics dashboard").performScrollTo().performClick()
         rule.awaitTag("openui-card-host")
         shot("2-chat-generated-ui")
         open(ChatList, Chat("chat-tests"))
@@ -103,6 +111,24 @@ class ScreenshotTest(private val device: String, private val qualifiers: String)
         open(MachineList, Machine("chat-tests"))
         rule.awaitTag("vm-activity")
         shot("6-machine")
+        open(MachineList, Machine("chat-tests"), MachineFiles("chat-tests"))
+        rule.awaitTag("file-row-dex").performClick()
+        rule.awaitTag("file-row-src").performClick()
+        // A cover screen shows only a few rows: scroll the tree to the file.
+        rule.waitUntil(10_000) { rule.onAllNodes(hasTestTag("file-row-agent"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        rule.onNodeWithTag("files-tree").performScrollToNode(hasTestTag("file-row-server.ts"))
+        shot("6b-files")
+        rule.awaitTag("file-row-server.ts").performClick()
+        rule.awaitTag("file-source-view")
+        shot("6c-file-source")
+        // Leaving the route drops its saved selection, so Files opens on its list again.
+        open(MachineList, Machine("chat-tests"))
+        rule.awaitTag("vm-activity")
+        open(MachineList, Machine("chat-tests"), MachineFiles("chat-tests"))
+        rule.awaitTag("files-tab-changes").performClick()
+        rule.awaitText("dex/src/server.ts").performClick()
+        rule.awaitTag("diff-gap")
+        shot("6d-file-diff")
     }
 
     @Test fun libraryAndSettings() {
@@ -128,6 +154,12 @@ class ScreenshotTest(private val device: String, private val qualifiers: String)
         open(LibraryHome, McpList, McpEditor("new"))
         rule.awaitTag("mcp-save")
         shot("7g-mcp-editor")
+        open(LibraryHome, CharacterList, CharacterEditor("muse"))
+        rule.awaitTag("character-editor")
+        rule.onNodeWithTag("character-look-muse").performScrollTo()
+        shot("7g2-sidekick-looks")
+        rule.onNodeWithTag("look-cheeks-plain").performScrollTo()
+        shot("7g3-sidekick-parts")
         open(LibraryHome, Workspace, WorkspaceFile("/workspace/MEMORY.md"))
         rule.awaitTag("file-screen")
         shot("7h-file")

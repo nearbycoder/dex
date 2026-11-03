@@ -1,0 +1,302 @@
+{
+ "relative": [
+  {
+   "root": "/home/u/work",
+   "path": "/home/u/work/dex/src/a.ts",
+   "text": "dex/src/a.ts"
+  },
+  {
+   "root": "/home/u/work",
+   "path": "/home/u/workshop/a",
+   "text": "/home/u/workshop/a"
+  },
+  {
+   "root": "/",
+   "path": "/etc/hosts",
+   "text": "etc/hosts"
+  },
+  {
+   "root": "/home/u/work",
+   "path": "/home/u/work",
+   "text": "/home/u/work"
+  }
+ ],
+ "diffs": [
+  {
+   "before": "",
+   "after": "",
+   "hunks": []
+  },
+  {
+   "before": "",
+   "after": "x\ny\n",
+   "hunks": [
+    {
+     "oldStart": 1,
+     "oldLines": 0,
+     "newStart": 1,
+     "newLines": 2,
+     "lines": [
+      "+x",
+      "+y"
+     ]
+    }
+   ]
+  },
+  {
+   "before": "x\ny\n",
+   "after": "",
+   "hunks": [
+    {
+     "oldStart": 1,
+     "oldLines": 2,
+     "newStart": 1,
+     "newLines": 0,
+     "lines": [
+      "-x",
+      "-y"
+     ]
+    }
+   ]
+  },
+  {
+   "before": "a\nb\nc\n",
+   "after": "a\nB\nc\n",
+   "hunks": [
+    {
+     "oldStart": 1,
+     "oldLines": 3,
+     "newStart": 1,
+     "newLines": 3,
+     "lines": [
+      " a",
+      "-b",
+      "+B",
+      " c"
+     ]
+    }
+   ]
+  },
+  {
+   "before": "a\nb\nc",
+   "after": "a\nb\nc\nd",
+   "hunks": [
+    {
+     "oldStart": 1,
+     "oldLines": 3,
+     "newStart": 1,
+     "newLines": 4,
+     "lines": [
+      " a",
+      " b",
+      "-c",
+      "\\ No newline at end of file",
+      "+c",
+      "+d",
+      "\\ No newline at end of file"
+     ]
+    }
+   ]
+  },
+  {
+   "before": "a\nb\nc\n",
+   "after": "a\nb\nc",
+   "hunks": [
+    {
+     "oldStart": 1,
+     "oldLines": 3,
+     "newStart": 1,
+     "newLines": 3,
+     "lines": [
+      " a",
+      " b",
+      "-c",
+      "+c",
+      "\\ No newline at end of file"
+     ]
+    }
+   ]
+  },
+  {
+   "before": "a\r\nb\r\n",
+   "after": "a\r\nc\r\n",
+   "hunks": [
+    {
+     "oldStart": 1,
+     "oldLines": 2,
+     "newStart": 1,
+     "newLines": 2,
+     "lines": [
+      " a\r",
+      "-b\r",
+      "+c\r"
+     ]
+    }
+   ]
+  },
+  {
+   "before": "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11\nline 12\nline 13\nline 14\nline 15\nline 16\nline 17\nline 18\nline 19\nline 20\nline 21\nline 22\nline 23\nline 24\nline 25\nline 26\nline 27\nline 28\nline 29\nline 30\n",
+   "after": "line 1\nline 2\nline three\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11\nline 12\nline 13\nline 14\nline 15\nline 16\nline 17\nline 18\nline 19\nline 20\nline 21\nline 22\nline 23\nline 24\nline 26\nline 27\nline 28\nline 29\nline 30\n",
+   "hunks": [
+    {
+     "oldStart": 1,
+     "oldLines": 7,
+     "newStart": 1,
+     "newLines": 7,
+     "lines": [
+      " line 1",
+      " line 2",
+      "-line 3",
+      "+line three",
+      " line 4",
+      " line 5",
+      " line 6",
+      " line 7"
+     ]
+    },
+    {
+     "oldStart": 21,
+     "oldLines": 9,
+     "newStart": 21,
+     "newLines": 8,
+     "lines": [
+      " line 21",
+      " line 22",
+      " line 23",
+      " line 24",
+      "-line 25",
+      " line 26",
+      " line 27",
+      " line 28",
+      " line 29"
+     ]
+    }
+   ]
+  },
+  {
+   "before": "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11\nline 12\nline 13\nline 14\nline 15\nline 16\nline 17\nline 18\nline 19\nline 20\nline 21\nline 22\nline 23\nline 24\nline 25\nline 26\nline 27\nline 28\nline 29\nline 30\n",
+   "after": "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline ten\nline 11\nline 12\nline 13\nnew\nline 14\nline 15\nline 16\nline 17\nline 18\nline 19\nline 20\nline 21\nline 22\nline 23\nline 24\nline 25\nline 26\nline 27\nline 28\nline 29\nline 30\n",
+   "hunks": [
+    {
+     "oldStart": 6,
+     "oldLines": 12,
+     "newStart": 6,
+     "newLines": 13,
+     "lines": [
+      " line 6",
+      " line 7",
+      " line 8",
+      " line 9",
+      "-line 10",
+      "+line ten",
+      " line 11",
+      " line 12",
+      " line 13",
+      "+new",
+      " line 14",
+      " line 15",
+      " line 16",
+      " line 17"
+     ]
+    }
+   ]
+  },
+  {
+   "before": "line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11\nline 12\nline 13\nline 14\nline 15\nline 16\nline 17\nline 18\nline 19\nline 20\nline 21\nline 22\nline 23\nline 24\nline 25\nline 26\nline 27\nline 28\nline 29\nline 30\n",
+   "after": "header\nline 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11\nline 12\nline 13\nline 14\nline 15\nline 16\nline 17\nline 18\nline 19\nline 20\nline 21\nline 22\nline 23\nline 24\nline 25\nline 26\nline 27\nline 28\nline 29\nline 30\nfooter\n",
+   "hunks": [
+    {
+     "oldStart": 1,
+     "oldLines": 4,
+     "newStart": 1,
+     "newLines": 5,
+     "lines": [
+      "+header",
+      " line 1",
+      " line 2",
+      " line 3",
+      " line 4"
+     ]
+    },
+    {
+     "oldStart": 27,
+     "oldLines": 4,
+     "newStart": 28,
+     "newLines": 5,
+     "lines": [
+      " line 27",
+      " line 28",
+      " line 29",
+      " line 30",
+      "+footer"
+     ]
+    }
+   ]
+  },
+  {
+   "before": "one\ntwo\nthree\nfour\n",
+   "after": "four\nthree\ntwo\none\n",
+   "hunks": [
+    {
+     "oldStart": 1,
+     "oldLines": 4,
+     "newStart": 1,
+     "newLines": 4,
+     "lines": [
+      "-one",
+      "-two",
+      "-three",
+      " four",
+      "+three",
+      "+two",
+      "+one"
+     ]
+    }
+   ]
+  },
+  {
+   "before": "same\nsame\nsame\n",
+   "after": "same\nother\nsame\nsame\nsame\n",
+   "hunks": [
+    {
+     "oldStart": 1,
+     "oldLines": 3,
+     "newStart": 1,
+     "newLines": 5,
+     "lines": [
+      " same",
+      "+other",
+      " same",
+      " same",
+      "+same"
+     ]
+    }
+   ]
+  },
+  {
+   "before": "fun a() {\n  return 1\n}\n\nfun b() {\n  return 2\n}\n",
+   "after": "fun a() {\n  return 1\n}\n\nfun c() {\n  return 3\n}\n\nfun b() {\n  return 2\n}\n",
+   "hunks": [
+    {
+     "oldStart": 1,
+     "oldLines": 7,
+     "newStart": 1,
+     "newLines": 11,
+     "lines": [
+      " fun a() {",
+      "   return 1",
+      " }",
+      " ",
+      "+fun c() {",
+      "+  return 3",
+      "+}",
+      "+",
+      " fun b() {",
+      "   return 2",
+      " }"
+     ]
+    }
+   ]
+  }
+ ]
+}

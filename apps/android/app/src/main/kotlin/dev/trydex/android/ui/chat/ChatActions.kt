@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Face
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.MarkChatUnread
@@ -41,6 +42,7 @@ import dev.trydex.android.ui.LocalApp
 import dev.trydex.android.ui.components.ConfirmState
 import dev.trydex.android.ui.components.haptics
 import dev.trydex.android.ui.nav.CharacterPage
+import dev.trydex.android.ui.nav.ChatFiles
 import dev.trydex.android.ui.nav.Chat
 import dev.trydex.core.client.DexApi
 import dev.trydex.core.model.CharacterProfile
@@ -141,7 +143,7 @@ fun rememberChatActions(snackbar: SnackbarHostState, confirm: ConfirmState): Cha
 
 /** The chat's menu as a bottom sheet (long press on a row, or ⋯ in its header). */
 @Composable
-fun ChatMenuSheet(session: SessionMeta, actions: ChatActions, onDismiss: () -> Unit, showMute: Boolean = false, character: CharacterProfile? = null) {
+fun ChatMenuSheet(session: SessionMeta, actions: ChatActions, onDismiss: () -> Unit, showMute: Boolean = false, character: CharacterProfile? = null, showFiles: Boolean = false) {
     val app = LocalApp.current
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val haptics = haptics()
@@ -166,6 +168,8 @@ fun ChatMenuSheet(session: SessionMeta, actions: ChatActions, onDismiss: () -> U
                     },
                 )
             }
+            // On a phone the chat's bar has no room for Files: it's here.
+            if (showFiles && !picking) item(Icons.Outlined.FolderOpen, "Files", "Browse and diff the files on this chat's VM", null) { app.navigator.open(ChatFiles(session.id)) }
             if (character != null) {
                 // A character's conversation isn't in the inbox: no settling or snoozing, and its title is their name.
                 item(Icons.Outlined.Face, "About ${character.name}", "Their profile, memory, and conversations", null) {

@@ -24,6 +24,7 @@ import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Monitor
 import androidx.compose.material.icons.outlined.Notifications
@@ -79,6 +80,7 @@ import dev.trydex.android.ui.components.haptics
 import dev.trydex.android.ui.components.rememberConfirm
 import dev.trydex.android.ui.machine.VmPreview
 import dev.trydex.android.ui.nav.AgentEditor
+import dev.trydex.android.ui.nav.ChatFiles
 import dev.trydex.android.ui.nav.ChatMachine
 import dev.trydex.android.ui.nav.GeneralSettings
 import dev.trydex.android.ui.nav.NewChat
@@ -240,8 +242,17 @@ fun ChatScreen(id: String) {
         }
     }
 
-    if (menu && session != null) ChatMenuSheet(session, actions, onDismiss = { menu = false }, showMute = true, character = character)
+    if (menu && session != null) ChatMenuSheet(session, actions, onDismiss = { menu = false }, showMute = true, character = character, showFiles = vm != null && narrowBar())
     if (renaming && session != null) RenameDialog(session, onDismiss = { renaming = false }) { title -> model.rename(title) }
+}
+
+/** Whether the chat's bar is phone-width: the machine as an icon, Files and mute in the menu. */
+@Composable
+private fun narrowBar(): Boolean {
+    val app = LocalApp.current
+    val window = androidx.compose.ui.platform.LocalWindowInfo.current
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    return with(density) { window.containerSize.width.toDp() } / maxOf(1, app.panes) < 600.dp
 }
 
 private fun queueActions(sessionId: String, app: dev.trydex.android.ui.AppContext) = object : QueueActions {
@@ -290,10 +301,8 @@ private fun ChatTopBar(
     val agent = session?.agentId?.let { id -> state?.agents?.firstOrNull { it.id == id } }
     val project = session?.projectId?.let { id -> state?.projects?.firstOrNull { it.id == id } }
     val naming = session != null && session.id in Naming.ids
-    // A phone-width pane keeps room for the title: the machine as an icon, mute in the menu.
-    val window = androidx.compose.ui.platform.LocalWindowInfo.current
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    val narrow = with(density) { window.containerSize.width.toDp() } / maxOf(1, app.panes) < 600.dp
+    // A phone-width pane keeps room for the title: the machine as an icon, Files and mute in the menu.
+    val narrow = narrowBar()
     CompactTopBar(
         scrollBehavior = scroll,
         title = {
@@ -350,6 +359,13 @@ private fun ChatTopBar(
                         }
                     }
                 } else {
+                    // The web's Files button: the chat VM's files and their changes, beside the chat.
+                    AssistChip(
+                        onClick = { app.navigator.open(ChatFiles(vm.key)) },
+                        label = { Text("Files") },
+                        leadingIcon = { Icon(Icons.Outlined.FolderOpen, contentDescription = null, modifier = Modifier.size(AssistChipDefaults.IconSize)) },
+                        modifier = Modifier.padding(end = 6.dp).testTag("files-chip").semantics { contentDescription = "Browse this chat's VM files" },
+                    )
                     AssistChip(
                         onClick = { app.navigator.open(ChatMachine(vm.key)) },
                         label = { Text(if (vm.settingUp) "Setting up" else "Machine") },

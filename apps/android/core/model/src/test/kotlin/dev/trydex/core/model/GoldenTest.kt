@@ -273,4 +273,46 @@ class GoldenTest {
             }
         }.ifEmpty { "" }
     }
+
+    @Test fun vmFileDiffs() {
+        val golden = golden("vmfiles.json")
+        for (case in golden.items("relative")) {
+            assertThat(VmFiles.relative(case["root"].str!!, case["path"].str!!)).isEqualTo(case["text"].str)
+        }
+        for (case in golden.items("diffs")) {
+            val before = case["before"].str!!
+            val after = case["after"].str!!
+            val expected = case["hunks"]!!.jsonArray.map { it.jsonObject }.map { hunk ->
+                VmFiles.Hunk(
+                    hunk["oldStart"].long!!.toInt(), hunk["oldLines"].long!!.toInt(), hunk["newStart"].long!!.toInt(), hunk["newLines"].long!!.toInt(),
+                    hunk["lines"]!!.jsonArray.map { it.str!! },
+                )
+            }
+            assertWithMessage("hunks(${DexJson.encodeToString(before)}, ${DexJson.encodeToString(after)})").that(VmFiles.hunks(before, after)).isEqualTo(expected)
+            // The rows on screen number every line of both sides once, gaps included.
+            val rows = VmFiles.rows(before, after)
+            val lines = rows.flatMap { row -> if (row is VmFiles.Row.Gap) VmFiles.expand(row, after) else listOf(row as VmFiles.Row.Line) }
+            if (expected.isNotEmpty()) {
+                assertThat(lines.mapNotNull { it.oldNumber }).isEqualTo((1..VmFiles.lines(before).size).toList())
+                assertThat(lines.mapNotNull { it.newNumber }).isEqualTo((1..VmFiles.lines(after).size).toList())
+            }
+        }
+    }
+
+    @Test fun sidekickLooks() {
+        val golden = golden("sidekicks.json")
+        for (case in golden.items("presets")) {
+            val preset = Characters.preset(case["key"].str!!)!!
+            assertThat(SidekickLooks.background(preset.color)).isEqualTo(case["background"].str)
+            assertWithMessage(preset.key).that(SidekickLooks.svg(preset.look, case["background"].str!!)).isEqualTo(case["svg"].str)
+        }
+        for (case in golden.items("looks")) {
+            val look = DexJson.decodeFromJsonElement(SidekickLook.serializer(), case["look"]!!)
+            assertWithMessage(look.toString()).that(SidekickLooks.svg(look, case["background"].str!!)).isEqualTo(case["svg"].str)
+        }
+        for (case in golden.items("clean")) {
+            val input = DexJson.decodeFromJsonElement(SidekickLook.serializer(), case["input"]!!)
+            assertThat(SidekickLooks.clean(input)).isEqualTo(DexJson.decodeFromJsonElement(SidekickLook.serializer(), case["look"]!!))
+        }
+    }
 }

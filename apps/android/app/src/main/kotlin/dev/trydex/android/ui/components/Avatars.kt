@@ -50,6 +50,7 @@ import androidx.compose.foundation.shape.CircleShape
 import dev.trydex.core.model.Catalogs
 import dev.trydex.core.model.CharacterProfile
 import dev.trydex.core.model.ModelRegistry
+import dev.trydex.core.model.SidekickLooks
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -108,12 +109,18 @@ fun AgentAvatar(icon: String, color: String, size: Dp = 32.dp, image: String? = 
 }
 
 /**
- * A character's face: their picture, or their emoji (else their initial) on their color. Round, unlike agents and
- * projects, so a character reads as someone rather than something.
+ * A character's face: their look (drawn here, as the web draws it), their picture, or their emoji (else their initial)
+ * on their color. Round, unlike agents and projects, so a character reads as someone rather than something.
  */
 @Composable
 fun CharacterAvatar(character: CharacterProfile, size: Dp = 32.dp, modifier: Modifier = Modifier) {
     val (background, foreground) = Catalogs.AGENT_COLORS[character.color] ?: Catalogs.agentColor("violet")
+    character.look?.let { look ->
+        Box(modifier.size(size).clip(CircleShape).border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)) {
+            SidekickFace(SidekickLooks.clean(look), character.color, size)
+        }
+        return
+    }
     val image = character.image
     if (!image.isNullOrEmpty()) {
         Box(modifier.size(size).clip(CircleShape).background(Color(background)).border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)) {

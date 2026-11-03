@@ -165,6 +165,32 @@ class FakeDexTest {
         connection.stop()
     }
 
+    @Test fun vmFilesBrowseAndDiff() = runBlocking<Unit> {
+        val url = fake.start()
+        val connection = AgentConnection(OkHttpClient(), url, FakeData.USER_ID, { fake.token }, scope)
+        val api = DexApi(connection.asRpc())
+        connection.start()
+        withTimeout(5_000) { connection.status.first { it == ConnectionStatus.Connected } }
+
+        val work = api.vmDirectory("chat-tests")!!
+        assertThat(work.path).isEqualTo("/home/user/work")
+        assertThat(work.entries.map { it.name }).containsExactly("dex", "notes.txt").inOrder()
+        // Folders first; a deleted file isn't on disk any more.
+        val repo = api.vmDirectory("chat-tests", "/home/user/work/dex")!!
+        assertThat(repo.entries.first().directory).isTrue()
+        assertThat(repo.entries.map { it.name }).doesNotContain("docs")
+        val changes = api.vmChanges("chat-tests")!!
+        assertThat(changes.repositories).containsExactly("/home/user/work/dex")
+        assertThat(changes.changes.map { it.letter }).containsExactly("M", "M", "A", "D", "U")
+        val server = api.vmFile("chat-tests", "/home/user/work/dex/src/server.ts")!!
+        assertThat(server.change).isEqualTo("modified")
+        assertThat(server.before).isNotEqualTo(server.content)
+        assertThat(api.vmFile("chat-tests", "/home/user/work/dex/.env")!!.content).isNull()
+        // A stopped VM isn't woken to look.
+        assertThat(api.vmDirectory("chat-dashboard")).isNull()
+        connection.stop()
+    }
+
     @Test fun charactersLiveInTheirOwnConversations() = runBlocking {
         val url = fake.start()
         val connection = AgentConnection(OkHttpClient(), url, FakeData.USER_ID, { fake.token }, scope)

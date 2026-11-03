@@ -40,6 +40,7 @@ import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Build
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Monitor
 import androidx.compose.material.icons.outlined.PanTool
 import androidx.compose.material.icons.outlined.SmartToy
@@ -101,6 +102,8 @@ import dev.trydex.android.ui.components.EmptyState
 import dev.trydex.android.ui.components.Tone
 import dev.trydex.android.ui.components.rememberConfirm
 import dev.trydex.android.ui.nav.Chat
+import dev.trydex.android.ui.nav.ChatFiles
+import dev.trydex.android.ui.nav.MachineFiles
 import dev.trydex.android.ui.nav.MachineList
 import dev.trydex.android.ui.nav.ProjectEditor
 import dev.trydex.android.ui.theme.DexTheme
@@ -224,6 +227,10 @@ fun MachineScreen(key: String, beside: Boolean = false) {
                         if (vm.id != null) IconButton(onClick = {
                             confirm.ask("Delete the VM of “${label?.title}”?", "Everything on its disk is deleted. This cannot be undone.") { act("delete") { repository.api.vmDestroy(key) } }
                         }, enabled = busy == null) { Icon(Icons.Outlined.DeleteOutline, contentDescription = "Delete the VM and its disk") }
+                        // Its files open beside it: next to the chat when it's a chat's machine.
+                        IconButton(onClick = { app.navigator.open(if (beside) ChatFiles(key) else MachineFiles(key)) }, modifier = Modifier.testTag("vm-files-open")) {
+                            Icon(Icons.Outlined.FolderOpen, contentDescription = "Files")
+                        }
                         IconButton(onClick = { act("refresh") { repository.api.vmRefresh(key) } }, modifier = Modifier.testTag("vm-refresh")) {
                             Icon(Icons.Rounded.Refresh, contentDescription = "Refresh")
                         }

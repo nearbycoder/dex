@@ -34,6 +34,10 @@ import dev.trydex.core.model.TranscriptImage
 import dev.trydex.core.model.UiOperationResult
 import dev.trydex.core.model.UsageReport
 import dev.trydex.core.model.VmActivity
+import dev.trydex.core.model.VmChanges
+import dev.trydex.core.model.VmDirectory
+import dev.trydex.core.model.VmFile
+import dev.trydex.core.model.VmFiles
 import dev.trydex.core.model.VmInfo
 import dev.trydex.core.model.VmRunResult
 import dev.trydex.core.model.WorkspaceFile
@@ -251,6 +255,25 @@ class DexApi(private val rpc: AgentRpc) {
     suspend fun vmDesktopUrl(key: String, mode: String): String? =
         raw("vmDesktopUrl", key, mode, timeout = 300_000)?.str
     suspend fun vmExposePort(key: String, port: Int, public: Boolean): String = typed(String.serializer(), "vmExposePort", key, port, public, timeout = VM_TIMEOUT_MS)
+
+    // A running VM's files (`vmFiles`): each is null when the VM isn't running, since looking never starts or wakes
+    // it. Agents from before the Files panel don't have the callable (the call throws).
+
+    /** A folder, up to 500 entries from [offset] (pass `next` for more). */
+    suspend fun vmDirectory(key: String, path: String = VmFiles.HOME, offset: Int = 0): VmDirectory? =
+        vmFiles(VmDirectory.serializer(), key, "directory", path, offset)
+
+    /** Staged, unstaged, and untracked Git changes in the repository at [path], or in the repositories just inside it. */
+    suspend fun vmChanges(key: String, path: String = VmFiles.HOME): VmChanges? = vmFiles(VmChanges.serializer(), key, "changes", path, 0)
+
+    /** A file's text (the first 64 KB) and its version in Git HEAD. */
+    suspend fun vmFile(key: String, path: String): VmFile? = vmFiles(VmFile.serializer(), key, "file", path, 0)
+
+    private suspend fun <T> vmFiles(serializer: KSerializer<T>, key: String, view: String, path: String, offset: Int): T? {
+        val result = raw("vmFiles", key, view, path, offset, timeout = 60_000) as? JsonObject ?: return null
+        if (result["running"]?.let { it as? JsonPrimitive }?.content != "true") return null
+        return DexJson.decodeFromJsonElement(serializer, result["data"] ?: JsonNull)
+    }
 
     // ── Usage, notifications, access ─────────────────────────────────────────
 

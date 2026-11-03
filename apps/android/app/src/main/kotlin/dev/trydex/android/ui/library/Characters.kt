@@ -83,7 +83,6 @@ import dev.trydex.android.ui.components.BoneRows
 import dev.trydex.android.ui.components.CharacterAvatar
 import dev.trydex.android.ui.components.EmptyState
 import dev.trydex.android.ui.components.ErrorText
-import dev.trydex.android.ui.components.Hint
 import dev.trydex.android.ui.components.InfoTip
 import dev.trydex.android.ui.components.ModelLogo
 import dev.trydex.android.ui.components.PageColumn
@@ -102,9 +101,9 @@ import dev.trydex.core.model.Characters
 import dev.trydex.core.model.DexState
 import dev.trydex.core.model.Format
 import dev.trydex.core.model.SessionMeta
-import dev.trydex.core.model.SidekickPreset
+import dev.trydex.core.model.SidekickLooks
+import dev.trydex.android.ui.components.SidekickArt
 import androidx.compose.foundation.border
-import androidx.compose.foundation.shape.CircleShape
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -259,9 +258,17 @@ fun CharacterEditorScreen(id: String, route: Route) {
         saving = true
         error = null
         scope.launch {
-            // The picture and look go only when they changed: left out, the agent keeps them as they are.
-            val picture = isNew || value.image != base?.image || value.look != base?.look
-            attempt { repository.api.saveCharacter(DexApi.characterDraft(value, picture)) }
+            // The picture and look go only when they changed: left out, the agent keeps them as they are. A look goes
+            // with its PNG (the bundled one for a ready-made look) for widgets, notifications, and other apps.
+            val look = value.look?.let(SidekickLooks::clean)
+            val picture = isNew || value.image != base?.image || look != base?.look || (look != null && value.color != base?.color)
+            attempt {
+                val sent = if (look == null || !picture) value else withContext(Dispatchers.Default) {
+                    val preset = Characters.PRESETS.firstOrNull { it.look == look && it.color == value.color }
+                    value.copy(look = look, image = preset?.dataUrl ?: SidekickArt.png(look, value.color))
+                }
+                repository.api.saveCharacter(DexApi.characterDraft(sent, picture))
+            }
                 .onSuccess { result ->
                     haptics.confirm()
                     if (isNew) {
@@ -410,20 +417,9 @@ private fun CharacterForm(draft: CharacterProfile, state: DexState, onChange: ((
     }
 
     SectionCard {
-        ProfileField("Look", "Pick a ready-made sidekick, or use a photo.") {
-            LookPicker(draft) { preset -> onChange { preset.applyTo(it) } }
+        ProfileField("Look", "Pick a ready-made sidekick, shuffle, mix your own, or use a photo.") {
+            SidekickLookPicker(draft, onChange)
         }
-        Text(
-            "To mix your own look (body, eyes, mouth, extras), edit them in Dex on the web.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.testTag("character-look-web"),
-        )
-        ProfileField("Photo", "Shown instead of their look, cropped to a circle.") {
-            // A photo replaces the look; removing it leaves their initial until you pick a look.
-            CharacterPicture(draft.image?.takeIf { draft.look == null }) { image -> onChange { it.copy(image = image, look = null) } }
-        }
-        ProfileField("Background") { ProfileColorPicker(draft.color) { key -> onChange { it.copy(color = key) } } }
     }
 
     SectionCard {
@@ -509,42 +505,9 @@ fun SidekickNotifyChoices(selected: SidekickNotify, enabled: Boolean = true, onP
     }
 }
 
-/** The twelve ready-made looks; picking one sets their look, its picture, and its background color. */
-@Composable
-private fun LookPicker(draft: CharacterProfile, onPick: (SidekickPreset) -> Unit) {
-    val scheme = MaterialTheme.colorScheme
-    val current = Characters.presetOf(draft)?.key
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Characters.PRESETS.forEach { preset ->
-            val on = preset.key == current
-            Hint(preset.name) {
-                Box(
-                    Modifier
-                        .size(60.dp)
-                        .then(if (on) Modifier.border(2.dp, scheme.primary, CircleShape) else Modifier)
-                        .padding(4.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Surface(
-                        onClick = { onPick(preset) },
-                        shape = CircleShape,
-                        color = Color.Transparent,
-                        modifier = Modifier.size(52.dp).semantics {
-                            contentDescription = preset.name
-                            selected = on
-                        }.testTag("character-look-${preset.key}"),
-                    ) {
-                        CharacterAvatar(CharacterProfile(preset.key, name = preset.name, color = preset.color, image = preset.dataUrl), size = 52.dp)
-                    }
-                }
-            }
-        }
-    }
-}
-
 /** Choose a photo from the device (center-cropped and shrunk to fit the agent's 48 KB), or remove it. */
 @Composable
-private fun CharacterPicture(image: String?, onChange: (String?) -> Unit) {
+internal fun CharacterPicture(image: String?, onChange: (String?) -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var encoding by remember { mutableStateOf(false) }
@@ -569,12 +532,12 @@ private fun CharacterPicture(image: String?, onChange: (String?) -> Unit) {
             ) {
                 if (encoding) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                 else Icon(Icons.Rounded.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(18.dp))
-                Text(if (image != null) "Change picture" else "Choose a photo", modifier = Modifier.padding(start = 8.dp))
+                Text(if (image != null) "Change photo" else "Use a photo", modifier = Modifier.padding(start = 8.dp))
             }
             if (image != null) {
                 TextButton(onClick = { onChange(null) }, modifier = Modifier.testTag("character-picture-remove")) {
                     Icon(Icons.Rounded.Close, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Text("Remove", modifier = Modifier.padding(start = 6.dp))
+                    Text("Remove photo", modifier = Modifier.padding(start = 6.dp))
                 }
             }
         }

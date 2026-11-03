@@ -11,6 +11,9 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.common.truth.Truth.assertThat
+import dev.trydex.core.model.Characters
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import dev.trydex.android.testing.Harness
 import dev.trydex.android.testing.awaitTag
 import dev.trydex.android.testing.awaitText
@@ -20,10 +23,13 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 /** Characters against the fake Dex: pinned above the chats, their conversations, their page, and making one. */
 @RunWith(AndroidJUnit4::class)
 @Config(qualifiers = "w411dp-h891dp-xxhdpi")
+// Looks are drawn (and their PNGs made) with real graphics.
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class CharactersTest {
     @get:Rule val rule = createComposeRule()
     private val harness = Harness(chunkMs = 0)
@@ -123,7 +129,19 @@ class CharactersTest {
         assertThat(picked).contains("\"image\":\"data:image/png;base64,")
         assertThat(picked).contains("\"color\":\"zinc\"")
         assertThat(picked).contains("\"look\":{")
-        rule.onNodeWithTag("character-look-web").performScrollTo().assertIsDisplayed()
+        rule.awaitText("Saved")
+
+        // A part of their own: the look goes with a PNG drawn here, small enough for the agent.
+        rule.onNodeWithTag("look-extra-crown").performScrollTo().performClick()
+        rule.onNodeWithTag("look-cheeks-rosy").performScrollTo().performClick()
+        rule.onNodeWithTag("character-save").performClick()
+        rule.waitUntil(10_000) { harness.fake.calls.count { it.first == "saveCharacter" } == 3 }
+        val mixed = harness.fake.calls.last { it.first == "saveCharacter" }.second[0].jsonObject
+        assertThat(mixed["look"].toString()).isEqualTo("""{"body":"bot","skin":"sky","eyes":"visor","mouth":"flat","extra":"crown","blush":true}""")
+        val image = mixed["image"]!!.jsonPrimitive.content
+        assertThat(image).startsWith("data:image/png;base64,")
+        assertThat(image.length).isLessThan(63_000)
+        assertThat(image).isNotEqualTo(Characters.preset("byte")!!.dataUrl)
     }
 
     private fun ComposeContentTestRule.count(matcher: androidx.compose.ui.test.SemanticsMatcher) =
