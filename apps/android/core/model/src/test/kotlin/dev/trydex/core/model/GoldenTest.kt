@@ -54,6 +54,7 @@ class GoldenTest {
                 ModelProvider.OpenCodeGo to (connection["opencode-go"].bool == true),
                 ModelProvider.ChatGPT to (connection["chatgpt"].bool == true),
                 ModelProvider.CommandCode to (connection["commandcode"].bool == true),
+                ModelProvider.OpenRouter to (connection["openrouter"].bool == true),
             )
         }
         for (case in golden.items("models")) {
@@ -81,6 +82,9 @@ class GoldenTest {
         }
         unknown["commandcodeUsable"]!!.jsonArray.forEachIndexed { index, expected ->
             assertWithMessage("commandcode #$index").that(registry.usableModel("commandcode/deepseek/retired", connections[index])).isEqualTo(expected.str)
+        }
+        unknown["openrouterUsable"]!!.jsonArray.forEachIndexed { index, expected ->
+            assertWithMessage("openrouter #$index").that(registry.usableModel("openrouter/nvidia/retired:free", connections[index])).isEqualTo(expected.str)
         }
     }
 

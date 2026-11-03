@@ -168,4 +168,17 @@ class DexApiTest {
         // Both wait for the model list to refresh, which takes longer than an ordinary call.
         assertThat(calls.map { it.timeout }.distinct()).containsExactly(60_000L)
     }
+
+    @Test fun openRouter() = runBlocking<Unit> {
+        result = """{"ok":true,"note":"Without credits on the account, OpenRouter allows a few dozen free-model requests a day."}"""
+        val connected = api.connectOpenRouter("sk-or-v1-0123456789")
+        assertThat(connected.ok).isTrue()
+        assertThat(connected.note).isEqualTo("Without credits on the account, OpenRouter allows a few dozen free-model requests a day.")
+        result = """{"ok":false,"error":"OpenRouter didn't accept that key. Create a new one in OpenRouter's settings."}"""
+        assertThat(api.connectOpenRouter("nope").error).isEqualTo("OpenRouter didn't accept that key. Create a new one in OpenRouter's settings.")
+        result = "null"
+        api.disconnectOpenRouter()
+        assertThat(calls.map { it.method }).containsExactly("connectOpenRouter", "connectOpenRouter", "disconnectOpenRouter").inOrder()
+        assertThat(calls.map { it.args }).containsExactly("""["sk-or-v1-0123456789"]""", """["nope"]""", "[]").inOrder()
+    }
 }

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -48,6 +49,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -117,20 +119,29 @@ private val reports = mutableStateMapOf<String, UsageReport>()
 private enum class UsageTab(val label: String) { Overview("Overview"), Models("Models"), Machines("Machines"), Cloudflare("Cloudflare") }
 
 /** A model subscription: which part of the report is theirs, and how their token costs are priced. */
-private data class Subscription(val id: String, val key: String, val rates: String, val column: String, val fee: Double?)
+private data class Subscription(val id: String, val key: String, val rates: String, val column: String, val fee: Double?, val plan: Plan? = null)
+
+/** How a subscription without a monthly fee reads: in the Services list, and as the Plan stat and its detail. */
+private data class Plan(val price: String, val value: String, val detail: String)
 
 private val SUBSCRIPTIONS = listOf(
     Subscription("clinepass", "cline", "at API list prices", "List price", UsageFormat.CLINE_PASS_FEE),
     Subscription("opencode-go", "opencode", "at Go's rates", "Go rates", UsageFormat.OPENCODE_GO_FEE),
     Subscription("commandcode", "commandcode", "at the plan's rates", "Plan rates", UsageFormat.COMMAND_CODE_FEE),
     // Paid for with your ChatGPT plan, outside Dex's estimate.
-    Subscription("chatgpt", "chatgpt", "at API list prices", "List price", null),
+    Subscription("chatgpt", "chatgpt", "at API list prices", "List price", null, Plan("ChatGPT plan", "ChatGPT", "your ChatGPT plan")),
+    // Free models only.
+    Subscription("openrouter", "openrouter", "free models", "Cost", null, Plan("Free", "Free", "free models only")),
 )
+
+/** Its monthly fee, or what pays for it. */
+private fun Subscription.planOf(): Plan = plan ?: Plan("${Format.usd(fee ?: 0.0)}/mo", "${Format.usd(fee ?: 0.0)}/mo", "flat fee")
 
 private fun UsageReport.tokens(subscription: Subscription): TokenUsage? = when (subscription.key) {
     "cline" -> cline
     "opencode" -> opencode
     "chatgpt" -> chatgpt
+    "openrouter" -> openrouter
     else -> commandcode
 }
 
@@ -173,6 +184,7 @@ fun UsageScreen() {
                 "clinepass" -> clineConnected
                 "opencode-go" -> r.opencode.connected
                 "chatgpt" -> r.chatgpt.connected
+                "openrouter" -> r.openrouter?.connected == true
                 else -> r.commandcode?.connected == true
             }
             linked || usage.totalTokens > 0
@@ -235,7 +247,7 @@ fun UsageScreen() {
             Text(
                 "Estimates from Dex's own records (model responses, VM run times) and Cloudflare's analytics, priced at public list rates " +
                     "(ClinePass ${Format.usd(UsageFormat.CLINE_PASS_FEE)}/mo, OpenCode Go ${Format.usd(UsageFormat.OPENCODE_GO_FEE)}/mo, " +
-                    "Command Code Goat ${Format.usd(UsageFormat.COMMAND_CODE_FEE)}/mo plus a processing fee, Workers Paid ${Format.usd(UsageFormat.WORKERS_PAID_FEE)}/mo, " +
+                    "Command Code Goat ${Format.usd(UsageFormat.COMMAND_CODE_FEE)}/mo plus a processing fee, OpenRouter's free models \$0, Workers Paid ${Format.usd(UsageFormat.WORKERS_PAID_FEE)}/mo, " +
                     "boat.dev small \$0.018/h). Your invoices are the source of truth. VM time before usage tracking started is not included.",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -352,17 +364,24 @@ private fun Overview(report: UsageReport, visible: List<Subscription>, clineConn
     val plans = parts.filter { it.first != "boat" }.sumOf { it.second }
     val bill = plans + report.boat.cost
 
+    // OpenRouter's free requests today, read live (the web shows it in the Overview's Status).
+    val freeRequests = report.openrouter?.takeIf { it.connected }?.account?.freeRequests
     val services = visible.map { s ->
         val usage = report.tokens(s)!!
         val meter = when {
             s.id == "opencode-go" && report.opencode.limits != null -> report.opencode.limits!!.monthly.percent to "of this month's allowance"
             s.id == "commandcode" && report.commandcode?.spent != null -> report.commandcode!!.spent!!.month / UsageFormat.CommandCodeLimits.MONTH * 100 to "of 30 days' allowance"
+            s.id == "openrouter" && freeRequests != null -> UsageFormat.share(freeRequests.used, freeRequests.limit) to "of today's free requests"
             else -> null
         }
         Service(
             s.key, UsageFormat.series(s.key).label,
-            if (s.fee == null) "ChatGPT plan" else "${Format.usd(s.fee)}/mo",
-            "${Format.compact(usage.totalTokens)} tokens · ${Format.usd(usage.listCost)} ${s.rates}",
+            s.planOf().price,
+            when {
+                s.id == "openrouter" && freeRequests != null -> "${Format.compact(usage.totalTokens)} tokens · ${UsageFormat.freeRequests(freeRequests)} free today"
+                s.id == "openrouter" -> "${Format.compact(usage.totalTokens)} tokens · free models"
+                else -> "${Format.compact(usage.totalTokens)} tokens · ${Format.usd(usage.listCost)} ${s.rates}"
+            },
             meter, false,
         ) { onOpen(UsageTab.Models, s.id) }
     } + listOf(
@@ -782,7 +801,7 @@ private fun SubscriptionDetail(report: UsageReport, subscription: Subscription) 
         return
     }
     Stats(listOf(
-        Triple("Plan", if (subscription.fee == null) "ChatGPT" else "${Format.usd(subscription.fee)}/mo", if (subscription.fee == null) "your ChatGPT plan" else "flat fee"),
+        Triple("Plan", subscription.planOf().value, subscription.planOf().detail),
         Triple("Responses", Format.compact(usage.responses), null),
         Triple("Tokens", Format.compact(usage.totalTokens), "${Format.compact(usage.inputTokens + usage.cacheReadTokens)} in · ${Format.compact(usage.outputTokens)} out"),
         Triple("Worth", Format.usd(usage.listCost), subscription.rates),
@@ -790,6 +809,7 @@ private fun SubscriptionDetail(report: UsageReport, subscription: Subscription) 
     when (subscription.id) {
         "opencode-go" -> OpenCodeAllowance(report.opencode)
         "commandcode" -> report.commandcode?.let { CommandCodeAllowance(it) }
+        "openrouter" -> report.openrouter?.let { OpenRouterAccountCard(it) }
     }
     SideBySide(
         { modifier -> SectionCard(title = "By model", contentPadding = false, modifier = modifier) { ModelTable(usage.byModel.map { ModelRow(it, null) }, subscription.column) } },
@@ -844,6 +864,47 @@ private fun CommandCodeAllowance(usage: TokenUsage) {
             Meter(label, used / cap * 100, "${Format.usd(used)} of ${Format.usd(cap)}", color("commandcode"))
         }
         Text("Estimated from Dex's chats only.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** OpenRouter's live numbers for the connected key: free requests today, the account's credits, and spending. */
+@Composable
+private fun OpenRouterAccountCard(usage: TokenUsage) {
+    val openInBrowser = LocalOpenInBrowser.current
+    val tint = color("openrouter")
+    SectionCard(
+        title = "Account",
+        info = "Read live from OpenRouter for the connected key, so it counts every app that uses the key, not only Dex. Free requests reset at midnight UTC; the daily allowance is 50 until the account has bought \$10 of credits, then 1,000.",
+        aside = { TextButton(onClick = { openInBrowser("https://openrouter.ai/activity") }) { Text("Activity") } },
+        modifier = Modifier.testTag("account-openrouter"),
+    ) {
+        val account = usage.account
+        if (account == null) {
+            Text(usage.accountError ?: "Connect an OpenRouter key in Settings to see its numbers here.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            return@SectionCard
+        }
+        account.freeRequests?.let { Meter("Free requests today", UsageFormat.share(it.used, it.limit), UsageFormat.freeRequests(it), tint) }
+        account.credits?.takeIf { it.total > 0 }?.let { Meter("Credits used", UsageFormat.share(it.used, it.total), "${Format.usd(it.used)} of ${Format.usd(it.total)}", tint) }
+        account.keyLimit?.let {
+            val used = it.limit - it.remaining
+            Meter("This key's limit", UsageFormat.share(used, it.limit), "${Format.usd(used)} of ${Format.usd(it.limit)}", tint)
+        }
+        Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth().testTag("openrouter-spent")) {
+            Row(Modifier.height(IntrinsicSize.Min)) {
+                listOf("Today" to account.spent.day, "This week" to account.spent.week, "This month" to account.spent.month).forEachIndexed { i, (label, value) ->
+                    if (i > 0) VerticalDivider(color = MaterialTheme.colorScheme.surfaceContainerLow)
+                    Column(
+                        Modifier.weight(1f).padding(horizontal = 8.dp, vertical = 10.dp).semantics(mergeDescendants = true) {},
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(Format.usd(value), style = MaterialTheme.typography.titleSmall.copy(fontFeatureSettings = Tnum, fontWeight = FontWeight.SemiBold), maxLines = 1)
+                        // Two lines in a narrow pane, where "This month" doesn't fit on one.
+                        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, maxLines = 2)
+                    }
+                }
+            }
+        }
+        Text("The key's spending. Free models cost nothing, so this is paid models it ran elsewhere.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

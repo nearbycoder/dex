@@ -59,17 +59,22 @@ write("format.json", {
 // ── Models ───────────────────────────────────────────────────────────────────
 
 const connections = [
-  { clinepass: true, "opencode-go": true, chatgpt: false, commandcode: false },
-  { clinepass: true, "opencode-go": false, chatgpt: false, commandcode: false },
-  { clinepass: false, "opencode-go": true, chatgpt: false, commandcode: false },
-  { clinepass: false, "opencode-go": false, chatgpt: false, commandcode: false },
-  { clinepass: false, "opencode-go": false, chatgpt: true, commandcode: false },
-  { clinepass: false, "opencode-go": true, chatgpt: true, commandcode: false },
-  { clinepass: true, "opencode-go": true, chatgpt: true, commandcode: false },
+  { clinepass: true, "opencode-go": true, chatgpt: false, commandcode: false, openrouter: false },
+  { clinepass: true, "opencode-go": false, chatgpt: false, commandcode: false, openrouter: false },
+  { clinepass: false, "opencode-go": true, chatgpt: false, commandcode: false, openrouter: false },
+  { clinepass: false, "opencode-go": false, chatgpt: false, commandcode: false, openrouter: false },
+  { clinepass: false, "opencode-go": false, chatgpt: true, commandcode: false, openrouter: false },
+  { clinepass: false, "opencode-go": true, chatgpt: true, commandcode: false, openrouter: false },
+  { clinepass: true, "opencode-go": true, chatgpt: true, commandcode: false, openrouter: false },
   // Command Code has no built-in models, so a chat moved onto it alone keeps its model.
-  { clinepass: false, "opencode-go": false, chatgpt: false, commandcode: true },
-  { clinepass: false, "opencode-go": false, chatgpt: true, commandcode: true },
-  { clinepass: true, "opencode-go": true, chatgpt: true, commandcode: true }
+  { clinepass: false, "opencode-go": false, chatgpt: false, commandcode: true, openrouter: false },
+  { clinepass: false, "opencode-go": false, chatgpt: true, commandcode: true, openrouter: false },
+  { clinepass: true, "opencode-go": true, chatgpt: true, commandcode: true, openrouter: false },
+  // Nor has OpenRouter, and it comes last: any other connected subscription is picked before it.
+  { clinepass: false, "opencode-go": false, chatgpt: false, commandcode: false, openrouter: true },
+  { clinepass: false, "opencode-go": true, chatgpt: false, commandcode: false, openrouter: true },
+  { clinepass: false, "opencode-go": false, chatgpt: false, commandcode: true, openrouter: true },
+  { clinepass: true, "opencode-go": true, chatgpt: true, commandcode: true, openrouter: true }
 ]
 write("models.json", {
   models: BUILT_IN_MODELS.map((model) => ({
@@ -80,7 +85,9 @@ write("models.json", {
   })),
   unknown: { supported: supportedThinkingLevels(findModel("nope/none")), usable: connections.map((connected) => usableModel("opencode-go/retired", connected)), chatgptUsable: connections.map((connected) => usableModel("chatgpt/retired", connected)),
     // Command Code's apiIds carry their maker, so its ids have two slashes; an unlisted one goes by its prefix.
-    commandcodeUsable: connections.map((connected) => usableModel("commandcode/deepseek/retired", connected)) },
+    commandcodeUsable: connections.map((connected) => usableModel("commandcode/deepseek/retired", connected)),
+    // OpenRouter's ids keep its vendor and ":free" ("openrouter/nvidia/nemotron-3.5-lightning:free").
+    openrouterUsable: connections.map((connected) => usableModel("openrouter/nvidia/retired:free", connected)) },
   connections
 })
 

@@ -271,7 +271,7 @@ fun GeneralSettingsScreen() {
             SectionCard(title = "ChatGPT", info = "Models marked ChatGPT in the model menu run on your ChatGPT Plus or Pro plan.") {
                 ChatGPTConnect(current.chatgpt)
             }
-            SectionCard(title = "Command Code", info = "Models marked Command in the model menu run on your Command Code plan. Connect any or all of these.") {
+            SectionCard(title = "Command Code", info = "Models marked Command in the model menu run on your Command Code plan.") {
                 SecretConnect(
                     connected = current.commandcode.connected,
                     status = current.commandcode.keyHint ?: "",
@@ -282,6 +282,21 @@ fun GeneralSettingsScreen() {
                     onConnect = { repository.api.connectCommandCode(it) },
                     onDisconnect = if (current.commandcode.connected) ({ repository.api.disconnectCommandCode(); ConnectResult(ok = true) }) else null,
                     tag = "commandcode",
+                )
+            }
+            SectionCard(title = "OpenRouter", info = "OpenRouter's free models (stealth previews and promotions) are in the model menu under OpenRouter. Connect any or all of these.") {
+                // A deployment can lend its owner its own key (OPENROUTER_API_KEY), which can't be removed here.
+                val user = current.openrouter.source == "user"
+                SecretConnect(
+                    connected = current.openrouter.connected,
+                    status = if (user) current.openrouter.keyHint ?: "" else "This deployment's key",
+                    monospace = user,
+                    placeholder = if (user) "New OpenRouter API key" else "OpenRouter API key",
+                    help = "Create a key in OpenRouter's settings. Dex lists only OpenRouter's free models, so a chat on one costs nothing. They're limited to a few dozen requests a day until the account has bought \$10 of credits, and their providers may keep or train on what you send (OpenRouter's privacy settings decide which ones your key can use). Dex checks the key with OpenRouter, then stores it encrypted in your agent; it's never sent to this device.",
+                    helpLink = "https://openrouter.ai/settings/keys" to "OpenRouter's settings",
+                    onConnect = { repository.api.connectOpenRouter(it) },
+                    onDisconnect = if (user) ({ repository.api.disconnectOpenRouter(); ConnectResult(ok = true) }) else null,
+                    tag = "openrouter",
                 )
             }
             SectionCard(title = "Cloud VMs", info = "Chats run code, browsers, and servers on VMs in your boat.dev account.") {

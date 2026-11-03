@@ -105,9 +105,19 @@ object UsageFormat {
         Series("opencode", "OpenCode Go", "at Go rates", 0xFFC98500),
         Series("chatgpt", "ChatGPT", "at API list prices", 0xFFD55181),
         Series("commandcode", "Command Code", "at the plan's rates", 0xFF8B6FE0),
+        Series("openrouter", "OpenRouter", "free models", 0xFF1FA3B5),
     )
 
     fun series(key: String): Series = SERIES.first { it.key == key }
+
+    /** A count as the web's `toLocaleString()` writes it in English: 1,000. */
+    fun count(value: Double): String = String.format(java.util.Locale.US, "%,d", Format.jsRound(value))
+
+    /** How much of a limit is used, in percent; 0 when there's no limit to measure against. */
+    fun share(used: Double, limit: Double): Double = if (limit > 0) used / limit * 100 else 0.0
+
+    /** OpenRouter's free-request allowance as the Usage page writes it: "12 of 50". */
+    fun freeRequests(requests: OpenRouterAccount.FreeRequests): String = "${count(requests.used)} of ${count(requests.limit)}"
 
     val RANGES = listOf("month" to "This month", "30d" to "Last 30 days", "all" to "All time")
 
@@ -137,6 +147,8 @@ data class DailySpend(
     val opencode: Double = 0.0,
     val chatgpt: Double = 0.0,
     val commandcode: Double = 0.0,
+    /** OpenRouter's free models cost nothing, so this is 0 unless a paid one ran. Missing from an older agent's report. */
+    val openrouter: Double = 0.0,
     val boat: Double = 0.0,
     val cloudflare: Double = 0.0,
 ) {
@@ -145,6 +157,7 @@ data class DailySpend(
         "opencode" -> opencode
         "chatgpt" -> chatgpt
         "commandcode" -> commandcode
+        "openrouter" -> openrouter
         "boat" -> boat
         else -> cloudflare
     }
@@ -172,16 +185,38 @@ data class TokenUsage(
     val listCost: Double = 0.0,
     val byModel: List<ModelUsageRow> = emptyList(),
     val byChat: List<ChatUsageRow> = emptyList(),
-    /** OpenCode Go, ChatGPT, and Command Code only. */
+    /** OpenCode Go, ChatGPT, Command Code, and OpenRouter only. */
     val connected: Boolean = false,
     val limits: OpenCodeLimits? = null,
     val limitsError: String? = null,
     /** Command Code only: what Dex used in the last 5 hours, 7 days, and 30 days, against its allowance. */
     val spent: CommandCodeSpent? = null,
+    /** OpenRouter only: the key's live numbers from OpenRouter; null when it isn't connected or they couldn't be read. */
+    val account: OpenRouterAccount? = null,
+    /** OpenRouter only: why the account's numbers couldn't be read. */
+    val accountError: String? = null,
 )
 
 @Serializable
 data class CommandCodeSpent(val fiveHours: Double = 0.0, val week: Double = 0.0, val month: Double = 0.0)
+
+/** OpenRouter's own numbers for the connected key, across every app that uses it (apps/web/src/shared/usage.ts). */
+@Serializable
+data class OpenRouterAccount(
+    /** Free-model requests today (UTC) against the daily allowance: 50, or 1,000 once the account has bought $10 of credits. */
+    val freeRequests: FreeRequests? = null,
+    /** USD this key spent today, this week, and this month (UTC), and in all. */
+    val spent: Spent = Spent(),
+    /** The key's own spending cap and what's left of it; null when it has none. */
+    val keyLimit: KeyLimit? = null,
+    /** The account's credits, bought and used; null when the key can't read them. */
+    val credits: Credits? = null,
+) {
+    @Serializable data class FreeRequests(val used: Double = 0.0, val limit: Double = 0.0)
+    @Serializable data class Spent(val day: Double = 0.0, val week: Double = 0.0, val month: Double = 0.0, val total: Double = 0.0)
+    @Serializable data class KeyLimit(val limit: Double = 0.0, val remaining: Double = 0.0)
+    @Serializable data class Credits(val total: Double = 0.0, val used: Double = 0.0)
+}
 
 @Serializable
 data class BoatSizeUsage(val size: String, val hours: Double = 0.0, val cost: Double = 0.0)
@@ -228,6 +263,8 @@ data class UsageReport(
     val chatgpt: TokenUsage = TokenUsage(),
     /** At the plan's rates; missing from an older agent's report. */
     val commandcode: TokenUsage? = null,
+    /** Its free models' tokens (at $0) and the key's live numbers; missing from an older agent's report. */
+    val openrouter: TokenUsage? = null,
     val boat: BoatUsage = BoatUsage(),
     val cloudflare: CloudflareUsage = CloudflareUsage(),
     val daily: List<DailySpend> = emptyList(),

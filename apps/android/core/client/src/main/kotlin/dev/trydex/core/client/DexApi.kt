@@ -165,6 +165,9 @@ class DexApi(private val rpc: AgentRpc) {
     /** Both refresh the model list before answering (connecting also checks which models the key's plan covers): a list refresh's time. */
     suspend fun connectCommandCode(key: String): ConnectResult = typed(ConnectResult.serializer(), "connectCommandCode", key, timeout = 60_000)
     suspend fun disconnectCommandCode() { raw("disconnectCommandCode", timeout = 60_000) }
+    /** OpenRouter's free models are listed with or without a key, so neither waits for the model list. */
+    suspend fun connectOpenRouter(key: String): ConnectResult = typed(ConnectResult.serializer(), "connectOpenRouter", key)
+    suspend fun disconnectOpenRouter() { raw("disconnectOpenRouter") }
     suspend fun connectBoat(key: String): ConnectResult = typed(ConnectResult.serializer(), "connectBoat", key)
     suspend fun disconnectBoat(): ConnectResult = typed(ConnectResult.serializer(), "disconnectBoat")
     suspend fun connectGitHub(token: String): ConnectResult = typed(ConnectResult.serializer(), "connectGitHub", token, "token")

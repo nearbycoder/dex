@@ -187,7 +187,7 @@ private fun ThinkingPicker(thinking: ThinkingLevel, levels: List<ThinkingLevel>,
 }
 
 /**
- * The searchable model menu: All / ClinePass / OpenCode Go / ChatGPT / Command Code, with badges, grouped by
+ * The searchable model menu: All / ClinePass / OpenCode Go / ChatGPT / Command Code / OpenRouter, with badges, grouped by
  * subscription; or, with Newest on (remembered on this device), every subscription's models by release date, newest
  * first, which a "released within" filter narrows.
  */
@@ -321,7 +321,8 @@ private fun ModelSheet(selected: String, onDismiss: () -> Unit, onSelect: (Strin
                     }
                 }
                 // A subscription that lists models only once connected (Command Code: its plan decides them) has none yet.
-                val unlisted = tab?.takeIf { connected[it] != true && registry.of(it).isEmpty() }
+                // OpenRouter's free models are listed without a key, so an empty list there isn't for want of one.
+                val unlisted = tab?.takeIf { it != ModelProvider.OpenRouter && connected[it] != true && registry.of(it).isEmpty() }
                 if (!any && unlisted != null && needle.isEmpty()) item {
                     Column(Modifier.padding(24.dp).testTag("model-sheet-unlisted"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Connect ${unlisted.displayName} in Settings to see the models your plan covers.", color = MaterialTheme.colorScheme.onSurfaceVariant)

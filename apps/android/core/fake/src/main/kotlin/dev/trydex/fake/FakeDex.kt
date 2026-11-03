@@ -48,6 +48,7 @@ import dev.trydex.core.model.VmStatus
 import dev.trydex.core.model.DailySpend
 import dev.trydex.core.model.TokenUsage
 import dev.trydex.core.model.ModelUsageRow
+import dev.trydex.core.model.OpenRouterAccount
 import dev.trydex.core.model.ChatUsageRow
 import dev.trydex.core.model.BoatUsage
 import dev.trydex.core.model.BoatRun
@@ -485,6 +486,19 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
             }
         }
         "disconnectCommandCode" -> { update { it.copy(commandcode = ProviderStatus()).withModelList() }; null }
+        // OpenRouter's free models are listed with or without a key, so the list stays as it is.
+        "connectOpenRouter" -> {
+            val key = args.s(0).trim()
+            if (key.isEmpty()) buildJsonObject { put("ok", false); put("error", "Paste your OpenRouter API key.") }
+            else if (key.length > 512 || key.any { it.isWhitespace() }) buildJsonObject { put("ok", false); put("error", "That doesn't look like an OpenRouter API key.") }
+            else if (key == "bad") buildJsonObject { put("ok", false); put("error", "OpenRouter didn't accept that key. Create a new one in OpenRouter's settings.") }
+            else {
+                val hint = if (key.length > 8) key.take(4) + "…" + key.takeLast(4) else "••••"
+                update { s -> s.copy(openrouter = ProviderStatus(connected = true, source = "user", keyHint = hint, verifiedAt = clock())) }
+                buildJsonObject { put("ok", true); put("note", "${FakeData.openRouterModels.size} free models are in the model menu.") }
+            }
+        }
+        "disconnectOpenRouter" -> { update { it.copy(openrouter = ProviderStatus()) }; null }
         "disconnectBoat" -> {
             if (state.vms.any { it.id != null }) buildJsonObject { put("ok", false); put("error", "Delete your ${state.vms.size} VMs on the Machines page first: they belong to the boat.dev account you're using now.") }
             else { update { it.copy(boat = it.boat.copy(connected = false, source = null, keyHint = null), vmConfigured = false) }; buildJsonObject { put("ok", true) } }
@@ -873,13 +887,25 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
         val day = 86_400_000L
         val days = (0 until if (range == "month") 19 else 30).map { i ->
             val date = Format.utcDay(clock() - (if (range == "month") 18 - i else 29 - i) * day)
-            DailySpend(date, cline = 0.4 + (i % 5) * 0.31, opencode = 0.2 + (i % 3) * 0.18, commandcode = if (i % 3 == 0) 0.0 else 0.15 * (i % 4), boat = if (i % 4 == 0) 0.0 else 0.09 * (i % 6), cloudflare = 0.02)
+            DailySpend(date, cline = 0.4 + (i % 5) * 0.31, opencode = 0.2 + (i % 3) * 0.18, commandcode = if (i % 3 == 0) 0.0 else 0.15 * (i % 4), openrouter = if (i == 7) 0.04 else 0.0, boat = if (i % 4 == 0) 0.0 else 0.09 * (i % 6), cloudflare = 0.02)
         }
         return UsageReport(
             range, clock() - days.size * day, clock(),
             cline = TokenUsage(412, 2_900_000, 410_000, 1_200_000, 3_310_000, 18.42, byModel = listOf(ModelUsageRow("cline-pass/glm-5.3", 280, 2_100_000, 11.5), ModelUsageRow("cline-pass/kimi-k3", 132, 1_210_000, 6.92)), byChat = listOf(ChatUsageRow("chat-dashboard", "Weekly metrics dashboard", 900_000, 4.1), ChatUsageRow("gone", "Deleted chat", 120_000, 0.5))),
             opencode = TokenUsage(120, 800_000, 90_000, 0, 890_000, 3.12, byModel = listOf(ModelUsageRow("opencode-go/kimi-k3", 120, 890_000, 3.12)), connected = true, limits = OpenCodeLimits(OpenCodeWindow(12.0, "2026-10-20T03:00:00Z", false), OpenCodeWindow(46.0, "2026-10-26T00:00:00Z", false), OpenCodeWindow(83.5, "2026-11-01T00:00:00Z", false))),
             commandcode = TokenUsage(64, 520_000, 61_000, 210_000, 791_000, 4.86, byModel = listOf(ModelUsageRow("commandcode/claude-sonnet-5-5", 64, 791_000, 4.86)), byChat = listOf(ChatUsageRow("chat-dashboard", "Weekly metrics dashboard", 300_000, 1.9)), connected = true, spent = dev.trydex.core.model.CommandCodeSpent(3.4, 21.7, 41.2)),
+            // Free models at $0, with the key's live numbers while it's connected.
+            openrouter = TokenUsage(
+                38, 410_000, 52_000, 96_000, 558_000, 0.0,
+                byModel = listOf(ModelUsageRow("openrouter/stealth/crouton-alpha", 31, 470_000, 0.0), ModelUsageRow("openrouter/nvidia/nemotron-3.5-lightning:free", 7, 88_000, 0.0)),
+                byChat = listOf(ChatUsageRow("chat-research", "Compare vector databases", 470_000, 0.0)),
+                connected = state.openrouter.connected,
+                account = if (state.openrouter.connected) OpenRouterAccount(
+                    freeRequests = OpenRouterAccount.FreeRequests(used = 12.0, limit = 50.0),
+                    spent = OpenRouterAccount.Spent(day = 0.0, week = 0.04, month = 0.04, total = 1.37),
+                    credits = OpenRouterAccount.Credits(total = 5.0, used = 1.37),
+                ) else null,
+            ),
             boat = BoatUsage(11.5, 0.21, true, listOf(BoatSizeUsage("small", 11.5, 0.21)), listOf(BoatRun(clock() - 2 * 3_600_000, null, "small", 2.0, 0.036), BoatRun(clock() - day, clock() - day + 5_400_000, "small", 1.5, 0.027))),
             cloudflare = CloudflareUsage(true, null, clock() - 18 * day, listOf(CloudflareLine("Worker requests", 412_000.0, "requests", 0.12, 0.04), CloudflareLine("Durable Object duration", 18_200.0, "GB-s", 0.23, 0.05), CloudflareLine("Workers AI", 3_200.0, "neurons", 0.03, null, accountWide = true)), 0.38),
             daily = days,
