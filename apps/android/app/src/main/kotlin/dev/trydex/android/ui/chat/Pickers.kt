@@ -45,6 +45,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,6 +56,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -75,6 +78,15 @@ import dev.trydex.core.model.clampThinking
 import dev.trydex.core.model.formatTokens
 import dev.trydex.core.model.supportedThinkingLevels
 import kotlinx.coroutines.launch
+
+/**
+ * How far the composer's chips step down to fit its width (the composer raises it while they overflow): 1 drops the
+ * provider badge and the vision eye, 2 counts MCP servers instead of naming them, 3 drops the model's chevron, 4
+ * shortens thinking to its first letter, and 5 leaves the model as its logo, its name shortening along the way.
+ * Labels for TalkBack stay whole.
+ */
+val LocalChipFit = compositionLocalOf { 0 }
+const val CHIP_FIT_STEPS = 5
 
 /** A small toolbar button in the composer. */
 @Composable
@@ -111,14 +123,28 @@ fun ModelPicker(model: String, thinking: ThinkingLevel, onChange: (String, Think
     var open by remember { mutableStateOf(false) }
     // With more than one subscription connected, the same model can come from several: say which.
     val both = (state?.connectedProviders?.values?.count { it } ?: 0) > 1
-    ToolbarButton(onClick = { open = true }, modifier = Modifier.testTag("model-picker")) {
+    val fit = LocalChipFit.current
+    val label = listOfNotNull(
+        "Model: ${current?.name ?: model}",
+        current?.modelProvider?.displayName?.takeIf { both },
+        "sees images".takeIf { current?.hasVision == true },
+    ).joinToString(", ")
+    ToolbarButton(onClick = { open = true }, modifier = Modifier.testTag("model-picker").semantics(mergeDescendants = true) { contentDescription = label }) {
         ModelLogo(model, registry, size = 16.dp)
-        Text(current?.name ?: model, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = if (compact) 120.dp else 180.dp))
-        if (both && current != null) {
+        if (fit < 5) {
+            val max = when (fit) {
+                0, 1 -> if (compact) 120.dp else 180.dp
+                2 -> 120.dp
+                3 -> 96.dp
+                else -> 64.dp
+            }
+            Text(current?.name ?: model, style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = max))
+        }
+        if (both && current != null && fit < 1) {
             Text(current.modelProvider.short, style = MaterialTheme.typography.labelSmall, modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(MaterialTheme.colorScheme.surfaceContainer).padding(horizontal = 4.dp, vertical = 1.dp))
         }
-        if (current?.hasVision == true) Icon(Icons.Outlined.Visibility, contentDescription = "Can see images", modifier = Modifier.size(16.dp))
-        Icon(Icons.Rounded.ExpandMore, contentDescription = null, modifier = Modifier.size(16.dp))
+        if (current?.hasVision == true && fit < 1) Icon(Icons.Outlined.Visibility, contentDescription = null, modifier = Modifier.size(16.dp))
+        if (fit < 3) Icon(Icons.Rounded.ExpandMore, contentDescription = null, modifier = Modifier.size(16.dp))
     }
     val levels = supportedThinkingLevels(current)
     if (levels.isNotEmpty()) ThinkingPicker(thinking, levels) { onChange(model, it) }
@@ -132,9 +158,11 @@ fun ModelPicker(model: String, thinking: ThinkingLevel, onChange: (String, Think
 private fun ThinkingPicker(thinking: ThinkingLevel, levels: List<ThinkingLevel>, onChange: (ThinkingLevel) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
-        ToolbarButton(onClick = { open = true }, modifier = Modifier.testTag("thinking-picker")) {
-            Icon(Icons.Outlined.Psychology, contentDescription = "Thinking level", modifier = Modifier.size(16.dp))
-            Text(thinking.id, style = MaterialTheme.typography.labelLarge)
+        val fit = LocalChipFit.current
+        ToolbarButton(onClick = { open = true }, modifier = Modifier.testTag("thinking-picker").semantics(mergeDescendants = true) { contentDescription = "Thinking level: ${thinking.id}" }) {
+            Icon(Icons.Outlined.Psychology, contentDescription = null, modifier = Modifier.size(16.dp))
+            // Narrow, the first letter says the level (o, m, l, h, x); the menu has the words.
+            Text(if (fit >= 4) thinking.id.take(1).uppercase() else thinking.id, style = MaterialTheme.typography.labelLarge)
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             Text("Thinking level", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
@@ -321,11 +349,17 @@ fun McpPicker(servers: List<McpServerInfo>, selected: List<String>, onChange: (L
     val attention = attached.any { it.status.needsAttention }
     val haptics = haptics()
     ToolbarButton(onClick = { open = true }, highlighted = attached.isNotEmpty(), modifier = Modifier.testTag("mcp-picker")) {
-        Icon(Icons.Outlined.Extension, contentDescription = if (attached.isEmpty()) "MCP servers" else "MCP servers: ${attached.size}", modifier = Modifier.size(16.dp))
-        Text(
-            when (attached.size) {
-                0 -> "MCP"
-                1 -> attached.single().name
+        val fit = LocalChipFit.current
+        Icon(
+            Icons.Outlined.Extension,
+            contentDescription = if (attached.isEmpty()) "MCP servers" else "MCP servers: ${attached.joinToString { it.name }}",
+            modifier = Modifier.size(16.dp),
+        )
+        if (fit < 2 || attached.isNotEmpty()) Text(
+            when {
+                fit >= 2 -> "${attached.size}"
+                attached.isEmpty() -> "MCP"
+                attached.size == 1 -> attached.single().name
                 else -> "${attached.size} MCP"
             },
             style = MaterialTheme.typography.labelLarge,
