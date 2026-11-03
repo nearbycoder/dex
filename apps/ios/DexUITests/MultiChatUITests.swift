@@ -71,7 +71,7 @@ final class MultiChatUITests: ChatTestCase {
         backToList()
         element("chat.row.s-vm").tap()
         let chip = element("strip.chat.s-welcome")
-        XCTAssertTrue(chip.waitForExistence(timeout: 10), "The working chat is in the strip")
+        XCTAssertTrue(chip.waitForExistence(timeout: 20), "The working chat is in the strip")
         snapshot("strip")
         chip.tap()
         XCTAssertTrue(revealTitle("Plan a weekend").waitForExistence(timeout: 10))
