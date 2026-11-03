@@ -68,7 +68,7 @@ fun SignInScreen(controller: SignInController, graph: AppGraph) {
                 Image(painterResource(R.drawable.ic_launcher_foreground), contentDescription = null, modifier = Modifier.size(112.dp))
                 Text("Sign in to Dex", style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center)
                 Text(
-                    "Your durable agent, powered by Pi, ClinePass, OpenCode Go, ChatGPT, and Command Code.",
+                    "Your durable agent, powered by Pi, ClinePass, OpenCode Go, ChatGPT, Command Code, and OpenRouter.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
