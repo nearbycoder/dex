@@ -4,7 +4,7 @@ import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completio
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy"
 import type { ProviderStreams } from "@earendil-works/pi-ai"
 import { createProvider } from "@earendil-works/pi-ai/models"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Context, Effect, Layer, Option, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { modelsOf } from "~/shared/models"
 import type { OpenCodeLimits } from "~/shared/usage"
@@ -93,6 +93,11 @@ export class OpenCodeGoClient extends Context.Service<OpenCodeGoClient, {
    * what its console reads), so callers treat a failure as "unknown".
    */
   usage(key: string): Effect.Effect<OpenCodeLimits, OpenCodeGoError>
+  /**
+   * Whether a model answers for this key: false when OpenCode turns it away (Zen's free models are limited outside
+   * OpenCode's own apps unless the key's workspace allows them), undefined when that couldn't be told.
+   */
+  answers(key: string, model: { readonly apiId: string; readonly baseUrl: string }): Effect.Effect<boolean | undefined>
 }>()("dex/agent/OpenCodeGoClient") {
   static readonly layer = Layer.effect(
     OpenCodeGoClient,
@@ -148,7 +153,22 @@ export class OpenCodeGoClient extends Context.Service<OpenCodeGoClient, {
         return { rolling: window(body.usage.rolling), weekly: window(body.usage.weekly), monthly: window(body.usage.monthly) }
       })
 
-      return OpenCodeGoClient.of({ verifyKey, usage })
+      const answers = Effect.fn("OpenCodeGoClient.answers")(function*(key: string, model: { readonly apiId: string; readonly baseUrl: string }) {
+        const response = yield* HttpClientRequest.post(`${model.baseUrl}/chat/completions`).pipe(
+          HttpClientRequest.bearerToken(key),
+          HttpClientRequest.setHeaders({ "user-agent": USER_AGENT, [SESSION_HEADER]: `dex-check-${crypto.randomUUID()}` }),
+          HttpClientRequest.bodyJsonUnsafe({ model: model.apiId, messages: [{ role: "user", content: "Reply with OK" }], max_tokens: 512, stream: false }),
+          client.execute,
+          Effect.timeout("45 seconds"),
+          Effect.option
+        )
+        if (Option.isNone(response)) return undefined
+        const status = response.value.status
+        if (status >= 200 && status < 300) return true
+        return [401, 402, 403, 404, 429].includes(status) ? false : undefined
+      })
+
+      return OpenCodeGoClient.of({ verifyKey, usage, answers })
     })
   ).pipe(Layer.provide(FetchHttpClient.layer))
 }

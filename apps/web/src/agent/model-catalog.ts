@@ -8,6 +8,8 @@ import { OPENCODE_GO_BASE_URL } from "./opencode-go"
  * gets its real name, a preview becomes a release), and a chat on a model that's gone just fails. Three sources:
  *
  * - OpenCode Go's own model list (`/v1/models`, public): which models it serves right now. It decides what's listed.
+ * - OpenCode Zen's list (public): its free models (stealth previews, limited-time promotions) join OpenCode Go's,
+ *   on the same key, once the agent has seen one answer for it (outside OpenCode's own apps Zen may refuse them).
  * - The signed-in ChatGPT account's model list (OpenAI's `/v1/models`, read by the agent with its token, when one is
  *   connected): which chat models the plan offers. It decides ChatGPT's list.
  * - Command Code's own model list (read with the connected key), limited to what the key's plan covers (the agent
@@ -23,6 +25,7 @@ import { OPENCODE_GO_BASE_URL } from "./opencode-go"
 
 const MODELS_DEV = "https://models.dev/api.json"
 const OPENCODE_GO_LIST = `${OPENCODE_GO_BASE_URL}/v1/models`
+const OPENCODE_ZEN_LIST = "https://opencode.ai/inference/v1/models"
 const TIMEOUT_MS = 15_000
 
 interface DevCost {
@@ -45,6 +48,19 @@ interface DevModel {
 }
 
 type DevProvider = { readonly models?: Readonly<Record<string, DevModel>> }
+
+/** One model in OpenCode Zen's list (the fields Dex reads). */
+interface ZenModel {
+  readonly id?: unknown
+  readonly name?: string
+  readonly type?: string
+  readonly release_date?: string
+  readonly modalities?: { readonly input?: readonly string[] }
+  readonly capabilities?: { readonly reasoning?: { readonly supported?: boolean; readonly effort?: readonly string[] } }
+  readonly limit?: { readonly context?: number; readonly output?: number }
+  readonly cost?: { readonly text?: { readonly input?: { readonly price?: number }; readonly output?: { readonly price?: number } } }
+  readonly api?: Readonly<Record<string, { readonly base_url?: string } | undefined>>
+}
 
 /** Who makes a model, from its id (logos are per maker; OpenCode's own previews get OpenCode's). */
 const MAKERS: ReadonlyArray<readonly [RegExp, ModelMaker]> = [
@@ -141,6 +157,32 @@ const newOpenCodeModel = (apiId: string, entry: DevModel): DexModel => {
     ...(/contributor/.test(apiId) && { trainsOnData: true })
   }
 }
+
+/**
+ * Zen's free chat models that OpenCode Go doesn't also serve, as OpenCode models on Zen's Chat Completions API
+ * (the same key works on both), newest first. Free while OpenCode lists them at no cost; a model whose promotion ends
+ * drops out.
+ */
+const zenFreeModels = (listed: ReadonlyArray<ZenModel>, goIds: ReadonlySet<string>): DexModel[] =>
+  listed.toSorted((a, b) => (b.release_date ?? "").localeCompare(a.release_date ?? "")).flatMap((model) => {
+    const apiId = typeof model.id === "string" ? model.id : ""
+    const baseUrl = model.api?.["chat-completions"]?.base_url
+    const free = model.cost?.text?.input?.price === 0 && model.cost.text.output?.price === 0
+    if (!apiId || !baseUrl || !free || model.type !== "chat" || goIds.has(apiId)) return []
+    const efforts = model.capabilities?.reasoning?.supported ? model.capabilities.reasoning.effort : undefined
+    const entry: DevModel = {
+      name: model.name,
+      reasoning: Boolean(efforts?.length),
+      ...(efforts && { reasoning_options: [{ type: "effort", values: efforts }] }),
+      modalities: model.modalities,
+      limit: model.limit
+    }
+    return [{ ...newOpenCodeModel(apiId, entry), baseUrl: baseUrl.replace(/\/+$/, ""), cost: cost({}) }]
+  })
+
+/** Whether a model is one of Zen's (served on Zen's address rather than OpenCode Go's). */
+const isZenModel = (model: Pick<DexModel, "provider" | "baseUrl">) =>
+  model.provider === "opencode-go" && Boolean(model.baseUrl) && !model.baseUrl!.startsWith(OPENCODE_GO_BASE_URL)
 
 /** A ClinePass model Dex hasn't seen: Cline's OpenAI-compatible API, named like OpenCode names the same model. */
 const newClinePassModel = (apiId: string, entry: DevModel, names: ReadonlyMap<string, string>): DexModel => {
@@ -282,21 +324,29 @@ export async function fetchModelCatalog(
   current: ReadonlyArray<DexModel>,
   chatgptServed?: ReadonlySet<string>,
   /** What Command Code lists and the key's plan covers; "keep" when it couldn't be read; missing when not connected. */
-  commandCode?: { readonly listed: ReadonlyArray<CommandCodeListed>; readonly covered: ReadonlySet<string> } | "keep"
+  commandCode?: { readonly listed: ReadonlyArray<CommandCodeListed>; readonly covered: ReadonlySet<string> } | "keep",
+  /** Which of Zen's free models answer for the connected OpenCode key; Zen's aren't listed without it. */
+  zenAnswering?: (candidates: ReadonlyArray<DexModel>) => Promise<ReadonlySet<string>>
 ): Promise<DexModel[]> {
-  const [dev, served] = await Promise.allSettled([
+  const [dev, served, zen] = await Promise.allSettled([
     getJson(MODELS_DEV) as Promise<Readonly<Record<string, DevProvider>>>,
-    getJson(OPENCODE_GO_LIST).then((body) => new Set(((body as { data?: Array<{ id?: unknown }> }).data ?? []).map((model) => String(model.id))))
+    getJson(OPENCODE_GO_LIST).then((body) => new Set(((body as { data?: Array<{ id?: unknown }> }).data ?? []).map((model) => String(model.id)))),
+    getJson(OPENCODE_ZEN_LIST).then((body) => (body as { data?: ZenModel[] }).data ?? [])
   ])
   if (dev.status === "rejected" && served.status === "rejected") throw new Error(`Couldn't reach the model lists: ${dev.reason}`)
   const catalog = dev.status === "fulfilled" ? dev.value : {}
   const keep = (provider: ModelProvider) => current.filter((model) => model.provider === provider)
 
   const openCodeEntries = catalog["opencode-go"]?.models ?? {}
-  const openCode =
+  const go =
     served.status === "fulfilled" && served.value.size > 0
       ? providerList("opencode-go", served.value, openCodeEntries, newOpenCodeModel)
-      : keep("opencode-go")
+      : keep("opencode-go").filter((model) => !isZenModel(model))
+  const zenCandidates = zen.status === "fulfilled" ? zenFreeModels(zen.value, new Set(go.map((model) => model.apiId))) : undefined
+  const zenListed = zenCandidates
+    ? await (zenAnswering?.(zenCandidates) ?? Promise.resolve(new Set<string>())).then((answering) => zenCandidates.filter((model) => answering.has(model.apiId)))
+    : keep("opencode-go").filter(isZenModel)
+  const openCode = go.length > 0 ? [...go, ...zenListed] : []
 
   // ClinePass: the catalog's list, minus what it marks retired.
   const clineEntries = catalog["cline-pass"]?.models ?? {}
