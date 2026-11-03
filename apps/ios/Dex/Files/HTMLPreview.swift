@@ -24,7 +24,17 @@ struct HTMLPreview: UIViewRepresentable {
         view.navigationDelegate = context.coordinator
         view.uiDelegate = context.coordinator
         view.isInspectable = true
-        show(in: view)
+        // A spinner until the page has drawn: a slow page (its scripts, its fonts) was a blank white screen meanwhile.
+        let spinner = UIActivityIndicatorView(style: .medium)
+        spinner.hidesWhenStopped = true
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(spinner)
+        NSLayoutConstraint.activate([
+            spinner.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            spinner.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 40),
+        ])
+        context.coordinator.spinner = spinner
+        show(in: view, context.coordinator)
         context.coordinator.loaded = html
         return view
     }
@@ -32,10 +42,11 @@ struct HTMLPreview: UIViewRepresentable {
     func updateUIView(_ view: WKWebView, context: Context) {
         guard context.coordinator.loaded != html else { return }
         context.coordinator.loaded = html
-        show(in: view)
+        show(in: view, context.coordinator)
     }
 
-    private func show(in view: WKWebView) {
+    private func show(in view: WKWebView, _ coordinator: Coordinator) {
+        coordinator.spinner?.startAnimating()
         let adaptive = Self.followsAppearance(html)
         // An adaptive page's overscroll matches the app's background; others stay white, as written.
         view.underPageBackgroundColor = adaptive ? .systemBackground : .white
@@ -70,6 +81,11 @@ struct HTMLPreview: UIViewRepresentable {
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         var loaded: String?
+        weak var spinner: UIActivityIndicatorView?
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { spinner?.stopAnimating() }
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { spinner?.stopAnimating() }
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { spinner?.stopAnimating() }
 
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
             // The page's own loads (and its frames) are fine; a link you tap leaves for the browser.
