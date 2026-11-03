@@ -562,6 +562,42 @@ final class SettingsUITests: DexUITestCase {
         XCTAssertTrue(chat.waitForNonExistence(timeout: 10), "The chat opens in Chats")
     }
 
+    /// With an OpenRouter key connected, Usage reads its free requests today, credits, and spending live from OpenRouter.
+    func testOpenRouterUsage() {
+        launch()
+        openSettings("models")
+        let key = app.secureTextFields["openrouter.key"]
+        reveal(key)
+        XCTAssertTrue(key.waitForExistence(timeout: 5))
+        key.tap()
+        key.typeText("sk-or-v1-good4321")
+        element("openrouter.connect").tap()
+        XCTAssertTrue(element("openrouter.status").waitForExistence(timeout: 5))
+        goBack()
+
+        openSettings("usage")
+        XCTAssertTrue(element("usage.headline").waitForExistence(timeout: 10))
+        let service = element("usage.service.openrouter")
+        reveal(service)
+        XCTAssertTrue(service.waitForExistence(timeout: 5))
+        XCTAssertTrue(service.label.contains("Free"), "priced Free: \(service.label)")
+        XCTAssertTrue(service.label.contains("214 of 1,000 free today"), "with today's free requests: \(service.label)")
+        snapshot("usage-openrouter-service")
+        service.tap()
+        XCTAssertTrue(app.segmentedControls["usage.tab"].buttons["Models"].waitForSelected(timeout: 5))
+        XCTAssertTrue(text("free models only").waitForExistence(timeout: 5), "the Plan stat")
+        let free = element("usage.allowance.Free requests today")
+        reveal(free)
+        XCTAssertTrue(free.exists)
+        XCTAssertTrue(element("usage.allowance.Credits used").exists)
+        XCTAssertTrue(element("usage.allowance.This key's limit").exists)
+        let spent = element("usage.openrouter.spent")
+        reveal(spent)
+        XCTAssertTrue(spent.exists)
+        XCTAssertTrue(text("paid models it ran elsewhere").exists)
+        snapshot("usage-openrouter")
+    }
+
     private func pickRange(_ label: String) {
         element("usage.range").tap()
         app.buttons[label].firstMatch.tap()
