@@ -243,3 +243,21 @@ struct FormSkeleton: View {
         .redacted(reason: .placeholder)
     }
 }
+
+/// A switch beside its label, or under it at the accessibility text sizes, where a one-word label beside it broke
+/// mid-word ("Notifica-tions" on a small phone).
+struct StackedAtLargeTextToggleStyle: ToggleStyle {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    func makeBody(configuration: Configuration) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 8) {
+                // VoiceOver reads it once, as the switch's own (hidden) label.
+                configuration.label.accessibilityHidden(true)
+                Toggle(isOn: configuration.$isOn) { configuration.label }.labelsHidden()
+            }
+        } else {
+            Toggle(isOn: configuration.$isOn) { configuration.label }
+        }
+    }
+}
