@@ -26,14 +26,18 @@ public struct DexModel: Codable, Sendable, Hashable, Identifiable {
     /// null marks a level the model rejects; a missing key uses the provider's default.
     public var thinkingLevelMap: [String: String?]?
     public var trainsOnData: Bool?
+    /// When the model came out ("2026-11-03"), from the catalogs; nil when none says (and from older agents).
+    public var releasedAt: String?
 
     public init(id: String, apiId: String? = nil, provider: String, name: String, maker: String, input: [String] = ["text"], contextWindow: Int = 128_000,
-                maxTokens: Int = 32_000, cost: Cost = .init(input: 0, output: 0, cacheRead: 0, cacheWrite: 0), thinkingLevelMap: [String: String?]? = nil, trainsOnData: Bool? = nil) {
+                maxTokens: Int = 32_000, cost: Cost = .init(input: 0, output: 0, cacheRead: 0, cacheWrite: 0), thinkingLevelMap: [String: String?]? = nil, trainsOnData: Bool? = nil,
+                releasedAt: String? = nil) {
         self.id = id; self.apiId = apiId ?? id; self.provider = provider; self.name = name; self.maker = maker; self.input = input
         self.contextWindow = contextWindow; self.maxTokens = maxTokens; self.cost = cost; self.thinkingLevelMap = thinkingLevelMap; self.trainsOnData = trainsOnData
+        self.releasedAt = releasedAt
     }
 
-    enum CodingKeys: String, CodingKey { case id, apiId, provider, name, maker, input, contextWindow, maxTokens, cost, thinkingLevelMap, trainsOnData }
+    enum CodingKeys: String, CodingKey { case id, apiId, provider, name, maker, input, contextWindow, maxTokens, cost, thinkingLevelMap, trainsOnData, releasedAt }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
@@ -52,6 +56,7 @@ public struct DexModel: Codable, Sendable, Hashable, Identifiable {
             thinkingLevelMap = nil
         }
         trainsOnData = c.value(.trainsOnData, default: nil)
+        releasedAt = c.value(.releasedAt, default: nil)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -59,6 +64,7 @@ public struct DexModel: Codable, Sendable, Hashable, Identifiable {
         try c.encode(id, forKey: .id); try c.encode(apiId, forKey: .apiId); try c.encode(provider, forKey: .provider); try c.encode(name, forKey: .name)
         try c.encode(maker, forKey: .maker); try c.encode(input, forKey: .input); try c.encode(contextWindow, forKey: .contextWindow)
         try c.encode(maxTokens, forKey: .maxTokens); try c.encode(cost, forKey: .cost); try c.encodeIfPresent(trainsOnData, forKey: .trainsOnData)
+        try c.encodeIfPresent(releasedAt, forKey: .releasedAt)
         if let map = thinkingLevelMap {
             try c.encode(JSONValue.object(map.mapValues { $0.map(JSONValue.string) ?? .null }), forKey: .thinkingLevelMap)
         }
@@ -66,6 +72,36 @@ public struct DexModel: Codable, Sendable, Hashable, Identifiable {
 
     public var isFree: Bool { cost.input == 0 && cost.output == 0 }
     public var acceptsImages: Bool { input.contains("image") }
+
+    /// How long a model counts as new (a badge in the picker), as on the web.
+    public static let newDays = 14
+
+    /// The day it came out (midnight UTC), or nil when that isn't known or isn't a date.
+    public var releaseDate: Date? {
+        guard let releasedAt else { return nil }
+        let parts = releasedAt.prefix(10).split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3, (1...12).contains(parts[1]), (1...31).contains(parts[2]) else { return nil }
+        let date = DateComponents(calendar: .utc, timeZone: .gmt, year: parts[0], month: parts[1], day: parts[2]).date
+        // Not a day that exists (Feb 30 rolls over).
+        guard let date, Calendar.utc.component(.day, from: date) == parts[2] else { return nil }
+        return date
+    }
+
+    /// Days since it came out, or nil when that isn't known (`daysSinceRelease` in models.ts).
+    public func daysSinceRelease(now: Date = .now) -> Int? {
+        releaseDate.map { max(0, Int((now.timeIntervalSince($0) / 86_400).rounded(.down))) }
+    }
+
+    /// It came out within the last two weeks (`isNewModel`).
+    public func isNew(now: Date = .now) -> Bool { daysSinceRelease(now: now).map { $0 <= Self.newDays } ?? false }
+
+    /// When it came out, short: "Nov 3" this year, "Mar 2025" before (in UTC, like the date itself).
+    public func releaseLabel(now: Date = .now, locale: Locale = .current) -> String? {
+        guard let date = releaseDate else { return nil }
+        var style = Date.FormatStyle(locale: locale, calendar: .utc, timeZone: .gmt).month(.abbreviated)
+        style = Calendar.utc.component(.year, from: date) == Calendar.utc.component(.year, from: now) ? style.day() : style.year()
+        return date.formatted(style)
+    }
 
     /// Levels the menu offers: null is rejected, a missing level up to `high` is the provider default, and `xhigh`
     /// needs to be listed (or `max`).
@@ -88,6 +124,15 @@ public struct DexModel: Codable, Sendable, Hashable, Identifiable {
     }
 }
 
+extension Calendar {
+    /// Gregorian in UTC: release dates are days, not moments.
+    static let utc: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .gmt
+        return calendar
+    }()
+}
+
 public struct ModelCatalog: Codable, Sendable, Hashable {
     public var version: String
     public var updatedAt: Double
@@ -108,8 +153,34 @@ public struct ModelCatalog: Codable, Sendable, Hashable {
         "meta": "Meta", "anthropic": "Anthropic", "openai": "OpenAI", "xai": "xAI", "google": "Google", "meituan": "Meituan",
         "tencent": "Tencent", "stepfun": "StepFun", "opencode": "OpenCode",
         // Other makers Command Code serves (Mistral, NVIDIA, Sakana, …), under its mark.
-        "commandcode": "Command Code"
+        "commandcode": "Command Code",
+        // Stealth models (their maker unannounced) and makers without a logo here.
+        "other": "Other"
     ]
+
+    /// The newest-first list's sections, by how many days ago a model came out (then "Release date unknown").
+    public static let releasePeriods: [(days: Int, label: String)] = [(7, "This week"), (30, "This month"), (90, "Past 3 months"), (.max, "Earlier")]
+    /// The "released within" filter's choices (0: any time).
+    public static let releaseWithin: [(days: Int, label: String)] = [(0, "Any time"), (7, "7 days"), (30, "30 days"), (90, "90 days")]
+
+    /// `models` newest first (then connected subscriptions first, else as listed), in `releasePeriods`' sections and
+    /// one for those without a date, leaving out the empty ones.
+    public static func byRelease(_ models: [DexModel], connected: [String: Bool] = [:], now: Date = .now) -> [(label: String, models: [DexModel])] {
+        let sorted = models.enumerated().sorted { a, b in
+            let (x, y) = (a.element, b.element)
+            if x.releasedAt ?? "" != y.releasedAt ?? "" { return x.releasedAt ?? "" > y.releasedAt ?? "" }
+            let (cx, cy) = (connected[x.provider] == true, connected[y.provider] == true)
+            return cx != cy ? cx : a.offset < b.offset
+        }.map(\.element)
+        var sections: [(label: String, models: [DexModel])] = []
+        var after = -1
+        for period in releasePeriods {
+            sections.append((period.label, sorted.filter { $0.daysSinceRelease(now: now).map { $0 > after && $0 <= period.days } ?? false }))
+            after = period.days
+        }
+        sections.append(("Release date unknown", sorted.filter { $0.daysSinceRelease(now: now) == nil }))
+        return sections.filter { !$0.models.isEmpty }
+    }
 
     public func model(_ id: String) -> DexModel? { models.first { $0.id == id } }
     public func models(of provider: String) -> [DexModel] { models.filter { $0.provider == provider } }

@@ -209,6 +209,61 @@ import Testing
         #expect(catalog.usableModel("commandcode/anthropic/claude-haiku-5.5", connected: ["commandcode": true]) == "commandcode/anthropic/claude-haiku-5.5")
     }
 
+    @Test func releaseDates() throws {
+        let now = try Date("2026-11-03T18:30:00Z", strategy: .iso8601)
+        func model(_ releasedAt: String?, provider: String = "clinepass", id: String = UUID().uuidString) -> DexModel {
+            DexModel(id: id, provider: provider, name: id, maker: "other", releasedAt: releasedAt)
+        }
+        #expect(model("2026-11-03").daysSinceRelease(now: now) == 0)
+        #expect(model("2026-10-20").daysSinceRelease(now: now) == 14)
+        #expect(model("2026-10-20T09:00:00Z").daysSinceRelease(now: now) == 14, "only the day counts")
+        #expect(model("2026-11-05").daysSinceRelease(now: now) == 0, "a date ahead is today")
+        #expect(model(nil).daysSinceRelease(now: now) == nil)
+        #expect(model("soon").daysSinceRelease(now: now) == nil)
+        #expect(model("2026-02-30").daysSinceRelease(now: now) == nil)
+        #expect(model("2026-10-20").isNew(now: now))
+        #expect(!model("2026-10-19").isNew(now: now))
+        #expect(!model(nil).isNew(now: now))
+
+        let english = Locale(identifier: "en_US")
+        #expect(model("2026-11-03").releaseLabel(now: now, locale: english) == "Nov 3")
+        #expect(model("2026-01-01").releaseLabel(now: now, locale: english) == "Jan 1", "in UTC, whatever the device's zone")
+        #expect(model("2025-03-14").releaseLabel(now: now, locale: english) == "Mar 2025")
+        #expect(model(nil).releaseLabel(now: now) == nil)
+
+        // Older agents send no date; it round-trips when they do.
+        let json = #"{"id":"a","provider":"clinepass","name":"A","maker":"other","releasedAt":"2026-11-01"}"#
+        #expect(try JSONDecoder.dex.decode(DexModel.self, from: Data(json.utf8)).releasedAt == "2026-11-01")
+        #expect(try JSONDecoder.dex.decode(DexModel.self, from: Data(#"{"id":"a"}"#.utf8)).releasedAt == nil)
+        let round = try JSONDecoder.dex.decode(DexModel.self, from: JSONEncoder.dex.encode(model("2026-11-01")))
+        #expect(round.releasedAt == "2026-11-01")
+        #expect(ModelCatalog.makers["other"] == "Other")
+        #expect(ModelCatalog.releaseWithin.map(\.label) == ["Any time", "7 days", "30 days", "90 days"])
+    }
+
+    @Test func newestFirstSections() throws {
+        let now = try Date("2026-11-03T12:00:00Z", strategy: .iso8601)
+        let models = [
+            DexModel(id: "old", provider: "clinepass", name: "Old", maker: "zai", releasedAt: "2025-01-01"),
+            DexModel(id: "unknown", provider: "clinepass", name: "Unknown", maker: "zai"),
+            DexModel(id: "week-go", provider: "opencode-go", name: "Week", maker: "zai", releasedAt: "2026-10-27"),
+            DexModel(id: "week-cline", provider: "clinepass", name: "Week", maker: "zai", releasedAt: "2026-10-27"),
+            DexModel(id: "today", provider: "opencode-go", name: "Today", maker: "other", releasedAt: "2026-11-03"),
+            DexModel(id: "month", provider: "chatgpt", name: "Month", maker: "openai", releasedAt: "2026-10-04"),
+            DexModel(id: "quarter", provider: "chatgpt", name: "Quarter", maker: "openai", releasedAt: "2026-08-05")
+        ]
+        let sections = ModelCatalog.byRelease(models, connected: ["clinepass": true], now: now)
+        #expect(sections.map(\.label) == ["This week", "This month", "Past 3 months", "Earlier", "Release date unknown"])
+        // Newest first; on the same day, a connected subscription's first.
+        #expect(sections[0].models.map(\.id) == ["today", "week-cline", "week-go"])
+        #expect(sections[1].models.map(\.id) == ["month"])
+        #expect(sections[2].models.map(\.id) == ["quarter"])
+        #expect(sections[3].models.map(\.id) == ["old"])
+        #expect(sections[4].models.map(\.id) == ["unknown"])
+        // Empty sections are left out.
+        #expect(ModelCatalog.byRelease(models.filter { $0.id == "month" }, now: now).map(\.label) == ["This month"])
+    }
+
     @Test func catalogRoundTripKeepsNulls() throws {
         let decoded = try JSONDecoder.dex.decode(ModelCatalog.self, from: JSONEncoder.dex.encode(MockData.catalog))
         #expect(decoded.model("cline-pass/kimi-k3")!.supportedThinkingLevels == ["high"])
