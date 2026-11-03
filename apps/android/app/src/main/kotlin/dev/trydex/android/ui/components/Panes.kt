@@ -30,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
+import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,6 +40,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.window.core.layout.WindowSizeClass
 import dev.trydex.android.R
 import dev.trydex.android.ui.LocalApp
 
@@ -55,8 +57,16 @@ fun BackButton(onBack: (() -> Unit)? = null) {
 }
 
 /**
- * A page in a pane: a large, collapsing title (Material 3 Expressive's flexible app bar) over scrolling content. The
- * back arrow shows only when the pane is alone on screen.
+ * Whether the window is tall enough for a large title: not a flip phone's cover screen or a phone on its side, where
+ * it would take a third of the screen before you scroll.
+ */
+@Composable
+fun roomForLargeTitle(): Boolean =
+    currentWindowAdaptiveInfo().windowSizeClass.isHeightAtLeastBreakpoint(WindowSizeClass.HEIGHT_DP_MEDIUM_LOWER_BOUND)
+
+/**
+ * A page in a pane: a large, collapsing title (Material 3 Expressive's flexible app bar) over scrolling content, or
+ * the title in the bar in a short window. The back arrow shows only when the pane is alone on screen.
  */
 @Composable
 fun PaneScaffold(
@@ -73,13 +83,28 @@ fun PaneScaffold(
     Scaffold(
         modifier = modifier.nestedScroll(scroll.nestedScrollConnection),
         topBar = {
-            LargeFlexibleTopAppBar(
-                title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                subtitle = subtitle?.let { { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
-                navigationIcon = { if (back) BackButton() },
-                actions = actions,
-                scrollBehavior = scroll,
-            )
+            if (roomForLargeTitle()) {
+                LargeFlexibleTopAppBar(
+                    title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    subtitle = subtitle?.let { { Text(it, maxLines = 1, overflow = TextOverflow.Ellipsis) } },
+                    navigationIcon = { if (back) BackButton() },
+                    actions = actions,
+                    scrollBehavior = scroll,
+                )
+            } else {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                        }
+                    },
+                    navigationIcon = { if (back) BackButton() },
+                    actions = actions,
+                    scrollBehavior = scroll,
+                    colors = TopAppBarDefaults.topAppBarColors(scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer),
+                )
+            }
         },
         floatingActionButton = floatingActionButton,
         bottomBar = bottomBar,

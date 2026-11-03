@@ -51,9 +51,12 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.trydex.android.ui.theme.DexTheme
@@ -118,6 +121,40 @@ fun Hint(text: String, content: @Composable () -> Unit) {
         state = rememberTooltipState(),
         content = content,
     )
+}
+
+/**
+ * A button's icon and one-line label that gives way in a narrow button (a card in a split pane, a large font): the
+ * label alone once both don't fit, then the icon alone, labelled for TalkBack.
+ */
+@Composable
+fun IconLabel(icon: ImageVector, text: String, modifier: Modifier = Modifier) {
+    Layout(
+        content = {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
+            Text(text, maxLines = 1, softWrap = false)
+        },
+        // Read as its label either way, shown or not.
+        modifier = modifier.clearAndSetSemantics { contentDescription = text },
+    ) { measurables, constraints ->
+        val gap = 8.dp.roundToPx()
+        val iconPlaceable = measurables[0].measure(Constraints())
+        val textWidth = measurables[1].maxIntrinsicWidth(Constraints.Infinity)
+        val showIcon = iconPlaceable.width + gap + textWidth <= constraints.maxWidth || textWidth > constraints.maxWidth
+        val showText = textWidth <= constraints.maxWidth
+        val textPlaceable = if (showText) measurables[1].measure(Constraints(maxWidth = constraints.maxWidth)) else null
+        val width = (if (showIcon) iconPlaceable.width else 0) + (if (showIcon && textPlaceable != null) gap else 0) + (textPlaceable?.width ?: 0)
+        val height = maxOf(if (showIcon) iconPlaceable.height else 0, textPlaceable?.height ?: 0)
+        val boxWidth = width.coerceIn(constraints.minWidth, constraints.maxWidth)
+        layout(boxWidth, height.coerceAtLeast(constraints.minHeight)) {
+            var x = (boxWidth - width) / 2
+            if (showIcon) {
+                iconPlaceable.place(x, (height - iconPlaceable.height) / 2)
+                x += iconPlaceable.width + gap
+            }
+            textPlaceable?.place(x, (height - textPlaceable.height) / 2)
+        }
+    }
 }
 
 /** A small status dot; pulsing while something is in progress. */

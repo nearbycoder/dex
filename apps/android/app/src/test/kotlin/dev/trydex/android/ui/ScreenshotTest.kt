@@ -45,7 +45,8 @@ import org.robolectric.shadows.ShadowLooper
 
 /**
  * Screens at each form factor, in light and dark, for checking styling and adaptive layouts: a phone, a flip phone's
- * cover screen, a book foldable open, a tablet in landscape, and a desktop window. Record with
+ * cover screen, a book foldable open, a tablet in landscape, and a desktop window; and a small phone with the largest
+ * common font size, where text wraps and controls crowd first. Record with
  * `./gradlew :app:recordRoborazziDebug`.
  */
 @RunWith(ParameterizedRobolectricTestRunner::class)
@@ -62,7 +63,7 @@ class ScreenshotTest(private val device: String, private val qualifiers: String)
             Triple("desktop", "w1600dp-h1000dp-land", "mdpi"),
         ).flatMap { (name, screen, density) ->
             listOf(arrayOf(name, "$screen-notnight-$density"), arrayOf("$name-dark", "$screen-night-$density"))
-        }
+        } + listOf(arrayOf("small-large-font", "w360dp-h740dp-port-notnight-xhdpi"))
     }
 
     @get:Rule val rule = createComposeRule()
@@ -82,6 +83,7 @@ class ScreenshotTest(private val device: String, private val qualifiers: String)
 
     private fun start() {
         org.robolectric.RuntimeEnvironment.setQualifiers(qualifiers)
+        if (device.endsWith("large-font")) org.robolectric.RuntimeEnvironment.setFontScale(1.3f)
         harness.setContent(rule)
         rule.awaitText("Weekly metrics dashboard")
     }

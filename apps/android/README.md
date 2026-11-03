@@ -59,7 +59,7 @@ Goldens come from the web's TypeScript run by Node: `TZ=America/Chicago node app
 
 ```sh
 ./gradlew test                         # unit and Robolectric UI tests (all modules)
-./gradlew :app:recordRoborazziDebug    # every screen at five sizes, light and dark, into app/src/test/screenshots
+./gradlew :app:recordRoborazziDebug    # every screen at five sizes, light and dark, and a small phone with a large font
 ./gradlew :app:connectedDebugAndroidTest   # on a running emulator or device
 ```
 

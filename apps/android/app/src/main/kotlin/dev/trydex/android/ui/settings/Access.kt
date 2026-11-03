@@ -4,7 +4,11 @@ import android.content.ClipData
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -123,10 +127,15 @@ fun AccessScreen() {
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(action.summary, style = MaterialTheme.typography.bodyLarge)
                                 val title = current.sessions.firstOrNull { it.id == action.sessionId }?.title ?: "a chat"
-                                TextButton(onClick = { app.navigator.open(Chat(action.sessionId)) }, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
-                                    Text("from $title · ${Format.timeAgo(action.createdAt)}", style = MaterialTheme.typography.bodySmall)
-                                }
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                // Text, not a button: a centered button label clips its first letters once it wraps.
+                                Text(
+                                    "from $title · ${Format.timeAgo(action.createdAt)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.clip(MaterialTheme.shapes.small).clickable(role = Role.Button) { app.navigator.open(Chat(action.sessionId)) }.padding(vertical = 6.dp),
+                                )
+                                // Side by side while they fit, Decline under Confirm in a narrow pane.
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     fun answer(approve: Boolean) {
                                         answering = action.id
                                         answerError = null

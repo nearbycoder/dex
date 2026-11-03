@@ -53,6 +53,7 @@ import dev.trydex.android.ui.components.AgentAvatar
 import dev.trydex.android.ui.components.BoneRows
 import dev.trydex.android.ui.components.EmptyState
 import dev.trydex.android.ui.components.ErrorText
+import dev.trydex.android.ui.components.IconLabel
 import dev.trydex.android.ui.components.InfoTip
 import dev.trydex.android.ui.components.ModelLogo
 import dev.trydex.android.ui.components.PageColumn
@@ -147,14 +148,13 @@ private fun AgentCard(agent: AgentProfile, chats: Int, selected: Boolean) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilledTonalButton(
                     onClick = { app.navigator.open(NewChat(agentId = agent.id, nonce = System.nanoTime())) },
+                    contentPadding = CardButtonPadding,
                     modifier = Modifier.weight(1f).testTag("agent-start-${agent.id}"),
                 ) {
-                    Icon(Icons.Rounded.AddComment, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Text("Start chat", modifier = Modifier.padding(start = 8.dp))
+                    IconLabel(Icons.Rounded.AddComment, "Start chat")
                 }
-                OutlinedButton(onClick = { app.navigator.open(AgentEditor(agent.id)) }) {
-                    Icon(Icons.Rounded.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Text("Edit", modifier = Modifier.padding(start = 8.dp))
+                OutlinedButton(onClick = { app.navigator.open(AgentEditor(agent.id)) }, contentPadding = CardButtonPadding) {
+                    IconLabel(Icons.Rounded.Edit, "Edit")
                 }
             }
         }

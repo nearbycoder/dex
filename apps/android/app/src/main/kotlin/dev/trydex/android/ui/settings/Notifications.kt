@@ -325,6 +325,7 @@ private fun SidekickNotifyRow(character: CharacterProfile, onError: (String) -> 
         leading = { CharacterAvatar(character, size = 32.dp) },
         onClick = { app.navigator.open(CharacterEditor(character.id)) },
         modifier = Modifier.testTag("sidekick-notify-${character.id}"),
+        wideTrailingBelow = 420.dp,
         trailing = {
             Box {
                 TextButton(onClick = { open = true }, modifier = Modifier.semantics { contentDescription = "Notifications from ${character.name}: ${level.label}" }.testTag("sidekick-notify-menu-${character.id}")) {

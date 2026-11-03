@@ -69,7 +69,13 @@ class MainActivity : ComponentActivity() {
     /** Opens a page in a Custom Tab: the same browser that holds Dex's sign-in, for GitHub and MCP sign-ins. */
     fun openInBrowser(url: String) {
         runCatching {
-            CustomTabsIntent.Builder().setShowTitle(true).build().launchUrl(this, url.toUri())
+            // In the app's light or dark, not only the system's (Settings → Appearance can differ).
+            val scheme = when (graph.preferences.prefs.value.appearance) {
+                "light" -> CustomTabsIntent.COLOR_SCHEME_LIGHT
+                "dark" -> CustomTabsIntent.COLOR_SCHEME_DARK
+                else -> CustomTabsIntent.COLOR_SCHEME_SYSTEM
+            }
+            CustomTabsIntent.Builder().setShowTitle(true).setColorScheme(scheme).build().launchUrl(this, url.toUri())
         }.onFailure {
             runCatching { startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) }
         }

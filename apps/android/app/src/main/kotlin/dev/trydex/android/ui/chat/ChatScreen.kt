@@ -22,7 +22,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.rememberTextFieldState
-import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Key
@@ -60,6 +59,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -248,11 +248,14 @@ fun ChatScreen(id: String) {
 
 /** Whether the chat's bar is phone-width: the machine as an icon, Files and mute in the menu. */
 @Composable
-private fun narrowBar(): Boolean {
+private fun narrowBar(): Boolean = barNarrowerThan(600.dp)
+
+@Composable
+private fun barNarrowerThan(width: androidx.compose.ui.unit.Dp): Boolean {
     val app = LocalApp.current
     val window = androidx.compose.ui.platform.LocalWindowInfo.current
     val density = androidx.compose.ui.platform.LocalDensity.current
-    return with(density) { window.containerSize.width.toDp() } / maxOf(1, app.panes) < 600.dp
+    return with(density) { window.containerSize.width.toDp() } / maxOf(1, app.panes) < width
 }
 
 private fun queueActions(sessionId: String, app: dev.trydex.android.ui.AppContext) = object : QueueActions {
@@ -412,12 +415,15 @@ private fun ChatTopBar(
                     Icon(Icons.Rounded.RestartAlt, contentDescription = "Start a new conversation with ${character.name}", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            // On a phone the list isn't beside the chat: a new chat and the other chats are one tap away instead, and
-            // settling is in the menu (and a swipe on the list).
+            // On a phone the list isn't beside the chat: the other chats are one tap away instead (the switcher starts
+            // a new chat too, and a wide bar has its own button for it), and settling is in the menu (and a swipe on
+            // the list). A portrait phone keeps its room for the title.
             val phone = app.panes < 2
             if (session != null && phone) {
-                IconButton(onClick = { haptics.tap(); app.navigator.open(NewChat(nonce = System.nanoTime())) }, modifier = Modifier.testTag("chat-new-chat")) {
-                    Icon(Icons.Rounded.Edit, contentDescription = "New chat")
+                if (!barNarrowerThan(480.dp)) {
+                    IconButton(onClick = { haptics.tap(); app.navigator.open(NewChat(nonce = System.nanoTime())) }, modifier = Modifier.testTag("chat-new-chat")) {
+                        Icon(Icons.Rounded.Edit, contentDescription = "New chat")
+                    }
                 }
                 ChatSwitcherButton(session.id)
             }
@@ -441,7 +447,19 @@ private fun ChatTopBar(
 @Composable
 private fun RenameDialog(session: SessionMeta, onDismiss: () -> Unit, onRename: (String) -> Unit) {
     val text = rememberTextFieldState(session.title)
-    LaunchedEffect(Unit) { text.setTextAndPlaceCursorAtEnd(session.title) }
+    // The keyboard comes up with the whole title selected, ready to type over.
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(Unit) {
+        text.edit { selection = androidx.compose.ui.text.TextRange(0, length) }
+        focus.requestFocus()
+    }
+    val title = text.text.toString().trim()
+    val rename = {
+        if (title.isNotEmpty()) {
+            onRename(title)
+            onDismiss()
+        }
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Rename chat") },
@@ -449,14 +467,13 @@ private fun RenameDialog(session: SessionMeta, onDismiss: () -> Unit, onRename: 
             OutlinedTextField(
                 state = text,
                 lineLimits = TextFieldLineLimits.SingleLine,
-                modifier = Modifier.fillMaxWidth().testTag("rename-input"),
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(capitalization = androidx.compose.ui.text.input.KeyboardCapitalization.Sentences, imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                onKeyboardAction = { rename() },
+                modifier = Modifier.fillMaxWidth().focusRequester(focus).testTag("rename-input"),
             )
         },
         confirmButton = {
-            TextButton(onClick = {
-                onRename(text.text.toString())
-                onDismiss()
-            }, modifier = Modifier.testTag("rename-save")) { Text("Rename") }
+            TextButton(onClick = rename, enabled = title.isNotEmpty(), modifier = Modifier.testTag("rename-save")) { Text("Rename") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )

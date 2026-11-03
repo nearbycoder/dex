@@ -3,6 +3,7 @@ package dev.trydex.android.ui
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Settings
@@ -50,6 +51,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
 import androidx.navigation3.runtime.NavKey
@@ -154,10 +156,12 @@ fun AppShell(graph: AppGraph, links: LinkInbox) {
             primaryActionContent = {
                 if (medium) {
                     val newChat = { navigator.open(NewChat(nonce = System.nanoTime())) }
+                    // The rail leaves its header's inset to the header: line it up with the items' indicators.
+                    val inset = Modifier.padding(start = 20.dp)
                     if (suiteType == NavigationSuiteType.WideNavigationRailExpanded) {
-                        ExtendedFloatingActionButton(onClick = newChat, icon = { Icon(Icons.Rounded.Edit, null) }, text = { Text("New chat") })
+                        ExtendedFloatingActionButton(onClick = newChat, icon = { Icon(Icons.Rounded.Edit, null) }, text = { Text("New chat") }, modifier = inset)
                     } else {
-                        FloatingActionButton(onClick = newChat) { Icon(Icons.Rounded.Edit, contentDescription = "New chat") }
+                        FloatingActionButton(onClick = newChat, modifier = inset) { Icon(Icons.Rounded.Edit, contentDescription = "New chat") }
                     }
                 }
             },

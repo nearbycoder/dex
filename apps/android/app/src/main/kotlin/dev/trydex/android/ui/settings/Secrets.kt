@@ -1,10 +1,12 @@
 package dev.trydex.android.ui.settings
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -78,23 +80,33 @@ fun SecretsScreen() {
             SectionCard(title = "Saved", contentPadding = false, aside = { if (current.secrets.isNotEmpty()) Text("${current.secrets.size}", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(end = 8.dp)) }) {
                 if (current.secrets.isEmpty()) Text("No secrets yet.", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
                 current.secrets.forEach { secret ->
-                    ListItem(
-                        headlineContent = { Text(secret.name, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                        supportingContent = { Text((if (secret.note.isNotEmpty()) "${secret.note} · " else "") + "updated ${Format.timeAgo(secret.updatedAt)}") },
-                        leadingContent = { Icon(Icons.Outlined.Lock, contentDescription = null) },
-                        trailingContent = {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                if (replacing != secret.name) TextButton(onClick = { replacing = secret.name }) { Text("Replace") }
-                                IconButton(onClick = {
-                                    confirm.ask("Delete ${secret.name}?", "VMs stop getting it from their next command.") {
-                                        scope.launch { runCatching { app.graph.repository.api.removeSecret(secret.name) } }
-                                    }
-                                }) { Icon(Icons.Outlined.DeleteOutline, contentDescription = "Delete ${secret.name}") }
-                            }
-                        },
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                        modifier = Modifier.testTag("secret-${secret.name}"),
-                    )
+                    // In a narrow pane Replace goes under the note, leaving the name and note their room.
+                    BoxWithConstraints {
+                        val narrow = maxWidth < 380.dp
+                        val replace = @Composable { if (replacing != secret.name) TextButton(onClick = { replacing = secret.name }) { Text("Replace") } }
+                        ListItem(
+                            headlineContent = { Text(secret.name, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            supportingContent = {
+                                Column {
+                                    Text((if (secret.note.isNotEmpty()) "${secret.note} · " else "") + "updated ${Format.timeAgo(secret.updatedAt)}")
+                                    if (narrow) Box(Modifier.offset(x = (-12).dp)) { replace() }
+                                }
+                            },
+                            leadingContent = { Icon(Icons.Outlined.Lock, contentDescription = null) },
+                            trailingContent = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (!narrow) replace()
+                                    IconButton(onClick = {
+                                        confirm.ask("Delete ${secret.name}?", "VMs stop getting it from their next command.") {
+                                            scope.launch { runCatching { app.graph.repository.api.removeSecret(secret.name) } }
+                                        }
+                                    }) { Icon(Icons.Outlined.DeleteOutline, contentDescription = "Delete ${secret.name}") }
+                                }
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            modifier = Modifier.testTag("secret-${secret.name}"),
+                        )
+                    }
                     if (replacing == secret.name) {
                         Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
                             SecretForm(fixedName = secret.name, note = secret.note, onDone = { replacing = null })

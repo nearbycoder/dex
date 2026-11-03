@@ -1,5 +1,6 @@
 package dev.trydex.android.ui.chat
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -39,6 +40,7 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -53,6 +55,7 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -68,9 +71,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -86,6 +92,7 @@ import dev.trydex.android.ui.components.ModelLogo
 import dev.trydex.android.ui.components.StatusDot
 import dev.trydex.android.ui.components.haptics
 import dev.trydex.android.ui.components.rememberConfirm
+import dev.trydex.android.ui.components.roomForLargeTitle
 import dev.trydex.android.ui.nav.Chat
 import dev.trydex.android.ui.nav.NewChat
 import dev.trydex.android.ui.theme.DexTheme
@@ -98,6 +105,8 @@ import dev.trydex.core.model.SessionMeta
 import dev.trydex.core.model.Snooze
 import dev.trydex.core.model.inboxGroups
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 
 @Composable
 fun ChatListScreen() {
@@ -112,6 +121,7 @@ fun ChatListScreen() {
     val snackbar = remember { SnackbarHostState() }
     val confirm = rememberConfirm()
     val actions = rememberChatActions(snackbar, confirm)
+    val haptics = haptics()
     var menu by remember { mutableStateOf<SessionMeta?>(null) }
     var searching by rememberSaveable { mutableStateOf(false) }
     val query = rememberTextFieldState()
@@ -128,35 +138,48 @@ fun ChatListScreen() {
     val selected = (app.navigator.stack(dev.trydex.android.ui.nav.Tab.Chats).getOrNull(1) as? Chat)?.id
     val listState = rememberLazyListState()
     val expandedFab by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
-    val scroll = TopAppBarDefaults.pinnedScrollBehavior()
+    val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    // Back closes the search first.
+    BackHandler(enabled = searching) {
+        searching = false
+        query.edit { replace(0, length, "") }
+    }
 
     Scaffold(
         modifier = Modifier.nestedScroll(scroll.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = {
-                    if (searching) {
-                        TextField(
-                            state = query,
-                            placeholder = { Text("Search chats and sidekicks") },
-                            lineLimits = androidx.compose.foundation.text.input.TextFieldLineLimits.SingleLine,
-                            colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent),
-                            modifier = Modifier.fillMaxWidth().testTag("search-chats"),
-                        )
-                    } else {
-                        Text("Chats")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = {
-                        searching = !searching
-                        if (!searching) query.edit { replace(0, length, "") }
-                    }) {
-                        Icon(if (searching) Icons.Outlined.Close else Icons.Outlined.Search, contentDescription = if (searching) "Close search" else "Search chats")
-                    }
-                },
-                scrollBehavior = scroll,
-            )
+            val searchButton = @Composable {
+                IconButton(onClick = {
+                    searching = !searching
+                    if (!searching) query.edit { replace(0, length, "") }
+                }) {
+                    Icon(if (searching) Icons.Outlined.Close else Icons.Outlined.Search, contentDescription = if (searching) "Close search" else "Search chats")
+                }
+            }
+            if (searching || !roomForLargeTitle()) {
+                TopAppBar(
+                    title = {
+                        if (searching) {
+                            val focus = remember { FocusRequester() }
+                            LaunchedEffect(Unit) { focus.requestFocus() }
+                            TextField(
+                                state = query,
+                                placeholder = { Text("Search chats and sidekicks") },
+                                lineLimits = androidx.compose.foundation.text.input.TextFieldLineLimits.SingleLine,
+                                colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent),
+                                modifier = Modifier.fillMaxWidth().focusRequester(focus).testTag("search-chats"),
+                            )
+                        } else {
+                            Text("Chats")
+                        }
+                    },
+                    actions = { searchButton() },
+                    scrollBehavior = scroll,
+                )
+            } else {
+                // The same large title as the other tabs, folding into the bar as the list scrolls.
+                LargeFlexibleTopAppBar(title = { Text("Chats") }, actions = { searchButton() }, scrollBehavior = scroll)
+            }
         },
         floatingActionButton = {
             // On rails the new-chat button lives in the rail.
@@ -173,7 +196,21 @@ fun ChatListScreen() {
         snackbarHost = { SnackbarHost(snackbar) },
         contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
     ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
+        // The list is live; pulling it reconnects now when the socket is down (after a dropped network), instead of
+        // waiting for the next retry, and stays up until it's back.
+        var refreshing by remember { mutableStateOf(false) }
+        LaunchedEffect(refreshing) {
+            if (!refreshing) return@LaunchedEffect
+            repository.retryNow()
+            delay(600)
+            withTimeoutOrNull(10_000) { repository.connected.first { it } }
+            refreshing = false
+        }
+        PullToRefreshBox(
+            isRefreshing = refreshing,
+            onRefresh = { haptics.tick(); refreshing = true },
+            modifier = Modifier.fillMaxSize().padding(padding),
+        ) {
             val current = state
             AnimatedVisibility(status is ConnectionStatus.Connecting || status is ConnectionStatus.Waiting, modifier = Modifier.align(Alignment.TopCenter)) {
                 LinearWavyProgressIndicator(Modifier.fillMaxWidth().semantics { contentDescription = "Connecting to your agent" })
@@ -407,7 +444,8 @@ fun ChatRow(session: SessionMeta, agent: AgentProfile?, project: ProjectProfile?
                 project != null -> AgentAvatar(project.icon, project.color, 40.dp, project.image)
                 agent != null -> AgentAvatar(agent.icon, agent.color, 40.dp)
                 else -> Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh), contentAlignment = Alignment.Center) {
-                    ModelLogo(session.model, app.graph.models, size = 22.dp)
+                    // The model's name is in the line under the title: TalkBack needn't read its maker first.
+                    ModelLogo(session.model, app.graph.models, size = 22.dp, modifier = Modifier.clearAndSetSemantics {})
                 }
             }
         },
