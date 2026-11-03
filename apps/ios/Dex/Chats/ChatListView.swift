@@ -263,6 +263,7 @@ struct ChatRow: View {
             }
         }
         .contextMenu { menu }
+        .modifier(DragToNewWindow(chat: session.id, title: session.title))
         .confirmationDialog("Snooze “\(session.title)” until", isPresented: $choosingSnooze, titleVisibility: .visible) {
             ForEach(Inbox.snoozeOptions()) { option in
                 Button("\(option.label) (\(snoozeTime(option.at)))") {
@@ -320,6 +321,9 @@ struct ChatRow: View {
                 renaming = true
             } label: { Label("Rename", systemImage: "pencil") }
         }
+        if Router.canOpenWindows {
+            Button { Router.openInNewWindow(session.id) } label: { Label("Open in New Window", systemImage: "macwindow.badge.plus") }
+        }
         MarkUnreadButton(session: session)
         if place == .settled {
             Button { client.perform { try await ChatActions.settle(session.id, false, client: client) } } label: { Label("Move to Inbox", systemImage: "tray.and.arrow.up") }
@@ -350,6 +354,28 @@ struct ChatRow: View {
         }
         Divider()
         Button(role: .destructive) { confirmDelete = true } label: { Label("Delete", systemImage: "trash") }
+    }
+}
+
+/// iPad: drag a chat out of the list to open it in a window of its own, beside this one. (iPhone has one window.)
+struct DragToNewWindow: ViewModifier {
+    let chat: String
+    let title: String
+
+    func body(content: Content) -> some View {
+        if Router.canOpenWindows {
+            content.onDrag {
+                let activity = NSUserActivity(activityType: Router.chatActivity)
+                activity.userInfo = ["chat": chat]
+                activity.targetContentIdentifier = "dex://chat/\(chat)"
+                let provider = NSItemProvider()
+                provider.registerObject(activity, visibility: .all)
+                provider.suggestedName = title
+                return provider
+            }
+        } else {
+            content
+        }
     }
 }
 

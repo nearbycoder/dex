@@ -373,6 +373,9 @@ struct ChatMenu: View {
             }
             Button { router.switcherOpen = true } label: { Label("Switch Chat…", systemImage: "rectangle.stack") }
                 .accessibilityIdentifier("chat.menu.switch")
+            if Router.canOpenWindows {
+                Button { Router.openInNewWindow(session.id) } label: { Label("Open in New Window", systemImage: "macwindow.badge.plus") }
+            }
             if place == .snoozed, let until = session.snoozedUntil {
                 Button { client.perform { try await feed.snooze(until: nil) } } label: {
                     Label("Unsnooze (\(Inbox.snoozedLabel(until)))", systemImage: "alarm.waves.left.and.right")

@@ -235,6 +235,20 @@ final class Router {
         }
     }
 
+    /// The activity that opens a chat in a window of its own (iPad: two chats side by side).
+    static let chatActivity = "dev.trydex.Dex.chat"
+
+    /// Whether this device can open another window (iPad; not iPhone).
+    static var canOpenWindows: Bool { UIApplication.shared.supportsMultipleScenes && UIDevice.current.userInterfaceIdiom == .pad }
+
+    /// Opens a chat in a new window.
+    static func openInNewWindow(_ chat: String) {
+        let activity = NSUserActivity(activityType: chatActivity)
+        activity.userInfo = ["chat": chat]
+        activity.targetContentIdentifier = "dex://chat/\(chat)"
+        UIApplication.shared.requestSceneSessionActivation(nil, userActivity: activity, options: nil)
+    }
+
     /// Opens what a `dex://` link points at: `dex://chat/<id>` (`?compose=1` puts the caret in its message box, from a
     /// widget's Message button), `dex://machine/<key>`, `dex://file/<path>`, `dex://settings/<page>`,
     /// `dex://sidekicks/new`, `dex://new`.

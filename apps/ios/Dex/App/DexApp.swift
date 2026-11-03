@@ -95,6 +95,10 @@ struct SignedInView: View {
         .onChange(of: scenePhase) { _, phase in client?.setVisible(phase == .active) }
         // dex:// links: widgets, notifications, other apps.
         .onOpenURL { url in _ = router.handle(url) }
+        // A chat opened in a window of its own (Open in New Window, or a chat dragged out of the list).
+        .onContinueUserActivity(Router.chatActivity) { activity in
+            if let chat = activity.userInfo?["chat"] as? String { router.openChat(chat) }
+        }
         .onReceive(NotificationCenter.default.publisher(for: Notifications.openURL)) { _ in
             // The first window to take it opens it.
             if let url = Notifications.shared.takePending() { _ = router.handle(url) }
