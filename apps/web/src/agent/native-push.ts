@@ -88,7 +88,9 @@ export class ApnsSender {
             alert: { title: message.title, body: message.body },
             sound: "default",
             "thread-id": message.sessionId ?? message.kind,
-            ...(message.badge !== undefined && { badge: message.badge })
+            ...(message.badge !== undefined && { badge: message.badge }),
+            // The app's notification extension puts the sidekick's face on it (a communication notification).
+            ...(message.kind === "sidekick" && message.sessionId && { "mutable-content": 1 })
           },
           url: message.url,
           sessionId: message.sessionId ?? null,

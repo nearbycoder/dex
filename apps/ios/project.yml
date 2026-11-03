@@ -39,6 +39,7 @@ targets:
         product: DexCore
       - package: Markdown
       - target: DexWidgets
+      - target: DexNotifications
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.trydex.Dex
@@ -47,7 +48,8 @@ targets:
         INFOPLIST_FILE: Dex/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
-        # Push notifications (aps-environment) and a Keychain access group shared with the widgets
+        # Push notifications (aps-environment), communication notifications (sidekicks' faces, drawn by DexNotifications),
+        # and a Keychain access group shared with the widgets and DexNotifications
         # ($(AppIdentifierPrefix)dev.trydex.Dex.shared, also in DexWidgets.entitlements). No App Group: signing with an
         # App Store Connect API key can't register one, and team-prefixed Keychain groups need no registration. The
         # first group is the app's own, so its sign-in items stay where they were. Info.plist's DexAppIdentifierPrefix
@@ -84,6 +86,29 @@ targets:
         GENERATE_INFOPLIST_FILE: "NO"
         SKIP_INSTALL: "YES"
         # WidgetKit and App Intents call the provider and queries off the main actor.
+        SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
+  # Puts a sidekick's face on their notifications (communication notifications; see NotificationService.swift).
+  DexNotifications:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: DexNotifications
+        type: syncedFolder
+      - path: Shared/AgentColors.swift
+    dependencies:
+      - package: DexKit
+        product: DexCore
+      - sdk: Intents.framework
+      - sdk: UserNotifications.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.trydex.Dex.Notifications
+        PRODUCT_NAME: DexNotifications
+        TARGETED_DEVICE_FAMILY: "1,2"
+        INFOPLIST_FILE: DexNotifications/Info.plist
+        CODE_SIGN_ENTITLEMENTS: DexNotifications/DexNotifications.entitlements
+        GENERATE_INFOPLIST_FILE: "NO"
+        SKIP_INSTALL: "YES"
         SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
   DexTests:
     type: bundle.unit-test
