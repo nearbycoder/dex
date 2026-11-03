@@ -72,6 +72,7 @@ import { CLINEPASS_PROVIDER_ID, ClinePassClient, clinePassProvider } from "./cli
 import { type ChatGPTCredential, ChatGPTClient, type ChatGPTPending, chatGPTProvider, CHATGPT_REDIRECT_URI, parseChatGPTCallback, startChatGPTSignIn } from "./chatgpt"
 import { catalogChanges, catalogVersion, fetchModelCatalog } from "./model-catalog"
 import { OpenCodeGoClient, openCodeGoProvider } from "./opencode-go"
+import { checkOpenRouterKey, OpenRouterError, openRouterProvider } from "./openrouter"
 import { CommandCodeError, commandCodeProvider, type CommandCodeListed, listCommandCodeModels, planModels } from "./commandcode"
 import { isMcpExtension, type McpCallResult, mcpExtension, mcpExtensionName, type McpToolSpec, toToolResult } from "./mcp-tools"
 import { AccessCenter, parseAccessToken } from "./access"
@@ -316,6 +317,7 @@ export class DexAgent extends Agent<Env, DexState> {
     opencode: { connected: false, source: null, keyHint: null, verifiedAt: null },
     chatgpt: { connected: false, source: null, keyHint: null, verifiedAt: null },
     commandcode: { connected: false, source: null, keyHint: null, verifiedAt: null },
+    openrouter: { connected: false, source: null, keyHint: null, verifiedAt: null },
     boat: { connected: false, source: null, keyHint: null },
     settings: DEFAULT_SETTINGS,
     sessions: [],
@@ -592,6 +594,7 @@ export class DexAgent extends Agent<Env, DexState> {
     this.refreshOpenCodeStatus()
     this.refreshChatGPTStatus()
     this.refreshCommandCodeStatus()
+    this.refreshOpenRouterStatus()
     await this.refreshSessions()
     for (const vm of this.vms.values()) void vm.refresh()
     this.ctx.waitUntil(this.reapOrphanVms())
@@ -1118,6 +1121,50 @@ export class DexAgent extends Agent<Env, DexState> {
     await this.refreshModels({ force: true }).catch(() => undefined)
   }
 
+  // ── OpenRouter connection ─────────────────────────────────────────────────
+
+  private async resolveOpenRouterKey(): Promise<{ key: string; source: string } | undefined> {
+    const stored = this.secret("openrouter_api_key")
+    if (!stored) return undefined
+    const key = await this.runtime.runPromise(Keys.use((keys) => keys.decrypt(stored)).pipe(Effect.option))
+    return Option.isSome(key) ? { key: key.value, source: "OpenRouter (connected)" } : undefined
+  }
+
+  private refreshOpenRouterStatus() {
+    const connected = Boolean(this.secret("openrouter_api_key"))
+    const verifiedAt = Number(this.secret("openrouter_verified_at") ?? 0) || null
+    this.publish({
+      openrouter: { connected, source: connected ? "user" : null, keyHint: connected ? (this.secret("openrouter_key_hint") ?? null) : null, verifiedAt: connected ? verifiedAt : null }
+    })
+  }
+
+  @callable()
+  async connectOpenRouter(apiKey: string): Promise<ConnectClineResult> {
+    const key = apiKey.trim()
+    if (!key) return { ok: false, error: "Paste your OpenRouter API key." }
+    if (key.length > 512 || /\s/.test(key)) return { ok: false, error: "That doesn't look like an OpenRouter API key." }
+    let note: string | undefined
+    try {
+      note = (await checkOpenRouterKey(key)).note
+    } catch (error) {
+      return { ok: false, error: error instanceof OpenRouterError ? error.message : String(error) }
+    }
+    const sealed = await this.runtime.runPromise(Keys.use((keys) => keys.encrypt(key)))
+    const upsert = `INSERT INTO dex_secrets (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value`
+    this.ctx.storage.sql.exec(upsert, "openrouter_api_key", sealed)
+    this.ctx.storage.sql.exec(upsert, "openrouter_key_hint", keyHint(key))
+    this.ctx.storage.sql.exec(upsert, "openrouter_verified_at", String(Date.now()))
+    this.refreshOpenRouterStatus()
+    const count = modelsOf("openrouter").length
+    return { ok: true, note: note ?? (count ? `${count} free models are in the model menu.` : undefined) }
+  }
+
+  @callable()
+  async disconnectOpenRouter() {
+    this.ctx.storage.sql.exec(`DELETE FROM dex_secrets WHERE name IN ('openrouter_api_key', 'openrouter_key_hint', 'openrouter_verified_at')`)
+    this.refreshOpenRouterStatus()
+  }
+
   // ── ChatGPT sign-in ───────────────────────────────────────────────────────
 
   /**
@@ -1462,6 +1509,7 @@ export class DexAgent extends Agent<Env, DexState> {
     models.setProvider(openCodeGoProvider(() => this.resolveOpenCodeKey()))
     models.setProvider(chatGPTProvider(() => this.resolveChatGPTToken()))
     models.setProvider(commandCodeProvider(() => this.resolveCommandCodeKey()))
+    models.setProvider(openRouterProvider(() => this.resolveOpenRouterKey()))
   }
 
   private storedCatalog(): (ModelCatalog & { build?: string }) | undefined {
@@ -1595,13 +1643,14 @@ export class DexAgent extends Agent<Env, DexState> {
     const session = this.state.sessions.find((candidate) => candidate.id === sessionId)
     const own = providerOf(session?.model ?? DEFAULT_MODEL_ID)
     const provider = connected[own] ? own : (Object.keys(connected) as Array<keyof typeof connected>).find((candidate) => connected[candidate])
-    if (!provider) throw new Error("Connect ClinePass, OpenCode Go, ChatGPT, or Command Code in Settings first.")
+    if (!provider) throw new Error("Connect ClinePass, OpenCode Go, ChatGPT, Command Code, or OpenRouter in Settings first.")
     // A fast, cheap model per subscription, or its cheapest one if that's been retired.
     const preferred = {
       clinepass: "cline-pass/deepseek-v4.1-flash",
       "opencode-go": "opencode-go/deepseek-v4.1-flash",
       chatgpt: "chatgpt/gpt-6-luna",
-      commandcode: "commandcode/deepseek/deepseek-v4.1-flash"
+      commandcode: "commandcode/deepseek/deepseek-v4.1-flash",
+      openrouter: "openrouter/nvidia/nemotron-3.5-lightning:free"
     }[provider]
     const fast = findModel(preferred) ?? modelsOf(provider).toSorted((a, b) => a.cost.output - b.cost.output)[0]
     const model = fast && this.models().getModel(PI_PROVIDER_IDS[provider], fast.apiId)

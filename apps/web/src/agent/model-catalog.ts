@@ -16,6 +16,8 @@ import { OPENCODE_GO_BASE_URL } from "./opencode-go"
  *   connected): which chat models the plan offers. It decides ChatGPT's list.
  * - Command Code's own model list (read with the connected key), limited to what the key's plan covers (the agent
  *   checks; see commandcode.ts). It decides Command Code's list.
+ * - OpenRouter's public list: its free models that can use tools, listed whether or not a key is connected (like the
+ *   other subscriptions', which the menu then offers to connect).
  * - models.dev, the open catalog pi-ai's is generated from: names, limits, prices, input types, thinking levels, and
  *   each OpenCode Go model's API style, and release dates. Cline publishes no ClinePass list, so its ClinePass
  *   section decides those.
@@ -30,6 +32,7 @@ const MODELS_DEV = "https://models.dev/api.json"
 const OPENCODE_GO_LIST = `${OPENCODE_GO_BASE_URL}/v1/models`
 const OPENCODE_ZEN_LIST = "https://opencode.ai/inference/v1/models"
 const CLINE_LIST = "https://api.cline.bot/api/v1/ai/cline/models"
+const OPENROUTER_LIST = "https://openrouter.ai/api/v1/models"
 /** How recent a free Cline model must be to be offered (Cline lists dozens of older free ones). */
 const CLINE_FREE_DAYS = 60
 const TIMEOUT_MS = 15_000
@@ -209,7 +212,7 @@ const isZenModel = (model: Pick<DexModel, "provider" | "baseUrl">) =>
 
 /**
  * Cline's stealth models and its free ones from the last 60 days that can use tools, newest first, on ClinePass's API
- * (Cline's, with the same key). Names drop the maker prefix Cline gives them ("Recursive: Flint (free)").
+ * (Cline's, with the same key). Names drop the maker prefix Cline gives them and the "(free)" the badge already says ("Recursive: Flint (free)").
  */
 const clineFreeModels = (listed: ReadonlyArray<ClineModel>, now = Date.now()): DexModel[] =>
   listed
@@ -226,8 +229,43 @@ const clineFreeModels = (listed: ReadonlyArray<ClineModel>, now = Date.now()): D
         id: apiId,
         apiId,
         provider: "clinepass",
-        name: (model.name ?? titleCase(slug)).replace(/^[^:]+:\s*/, ""),
+        name: (model.name ?? titleCase(slug)).replace(/^[^:]+:\s*/, "").replace(/\s*\(free\)$/i, "").replace(/\s+/g, " "),
         maker: stealth ? "other" : makerOf(slug, "other"),
+        input: model.architecture?.input_modalities?.includes("image") ? ["text", "image"] : ["text"],
+        contextWindow: model.context_length ?? 128_000,
+        maxTokens: Math.min(model.top_provider?.max_completion_tokens ?? 32_768, 131_072),
+        cost: cost({}),
+        ...(reasons && { thinkingLevelMap: { off: null, minimal: null, low: "low", medium: "medium", high: "high", xhigh: null } }),
+        ...(typeof model.created === "number" && { releasedAt: new Date(model.created * 1000).toISOString().slice(0, 10) })
+      } satisfies DexModel]
+    })
+
+/** OpenRouter's vendor prefixes for makers Dex has a logo for (the rest show as Other). */
+const OPENROUTER_VENDORS: Readonly<Record<string, ModelMaker>> = {
+  google: "google", openai: "openai", anthropic: "anthropic", "x-ai": "xai", "z-ai": "zai", moonshotai: "moonshot", deepseek: "deepseek",
+  qwen: "qwen", minimax: "minimax", xiaomi: "xiaomi", "meta-llama": "meta", meituan: "meituan", tencent: "tencent", stepfun: "stepfun"
+}
+
+/**
+ * OpenRouter's free models that can use tools, newest first. Its own routers ("openrouter/free", which picks a model
+ * per request) are left out. Names drop the maker prefix OpenRouter gives them and the "(free)" the badge already says ("NVIDIA: Nemotron 3.5 (free)").
+ */
+const openRouterFreeModels = (listed: ReadonlyArray<ClineModel>): DexModel[] =>
+  listed
+    .toSorted((a, b) => (b.created ?? 0) - (a.created ?? 0))
+    .flatMap((model) => {
+      const apiId = typeof model.id === "string" ? model.id : ""
+      const free = model.pricing?.prompt === "0" && model.pricing.completion === "0"
+      if (!apiId || apiId.startsWith("openrouter/") || !free || !model.supported_parameters?.includes("tools")) return []
+      const [vendor = "", rest = apiId] = apiId.split("/")
+      const slug = rest.replace(/:free$/, "")
+      const reasons = model.supported_parameters.includes("reasoning")
+      return [{
+        id: `openrouter/${apiId}`,
+        apiId,
+        provider: "openrouter",
+        name: (model.name ?? titleCase(slug)).replace(/^[^:]+:\s*/, "").replace(/\s*\(free\)$/i, "").replace(/\s+/g, " "),
+        maker: OPENROUTER_VENDORS[vendor] ?? makerOf(slug, "other"),
         input: model.architecture?.input_modalities?.includes("image") ? ["text", "image"] : ["text"],
         contextWindow: model.context_length ?? 128_000,
         maxTokens: Math.min(model.top_provider?.max_completion_tokens ?? 32_768, 131_072),
@@ -389,11 +427,12 @@ export async function fetchModelCatalog(
     const yes = candidates.length > 0 && answering ? await answering(service, candidates) : new Set<string>()
     return candidates.filter((model) => yes.has(model.apiId))
   }
-  const [dev, served, zen, clineListed] = await Promise.allSettled([
+  const [dev, served, zen, clineListed, openRouterListed] = await Promise.allSettled([
     getJson(MODELS_DEV) as Promise<Readonly<Record<string, DevProvider>>>,
     getJson(OPENCODE_GO_LIST).then((body) => new Set(((body as { data?: Array<{ id?: unknown }> }).data ?? []).map((model) => String(model.id)))),
     getJson(OPENCODE_ZEN_LIST).then((body) => (body as { data?: ZenModel[] }).data ?? []),
-    getJson(CLINE_LIST).then((body) => (body as { data?: ClineModel[] }).data ?? [])
+    getJson(CLINE_LIST).then((body) => (body as { data?: ClineModel[] }).data ?? []),
+    getJson(OPENROUTER_LIST).then((body) => (body as { data?: ClineModel[] }).data ?? [])
   ])
   if (dev.status === "rejected" && served.status === "rejected") throw new Error(`Couldn't reach the model lists: ${dev.reason}`)
   const catalog = dev.status === "fulfilled" ? dev.value : {}
@@ -424,6 +463,8 @@ export async function fetchModelCatalog(
   const chatgptChat = new Set([...(chatgptServed ?? [])].filter((id) => CHATGPT_CHAT_MODEL.test(id) && !CHATGPT_NOT_CHAT.test(id)))
   const chatgpt = chatgptChat.size > 0 ? providerList("chatgpt", chatgptChat, openAIEntries, newChatGPTModel) : keep("chatgpt")
 
+  const openRouter = openRouterListed.status === "fulfilled" ? openRouterFreeModels(openRouterListed.value) : []
+
   // Command Code: only with a connected key (its plan decides the list).
   const commandCodeModels =
     commandCode === "keep" ? keep("commandcode") : commandCode ? commandCodeList(commandCode.listed, commandCode.covered, catalog["commandcode"]?.models ?? {}) : []
@@ -432,7 +473,8 @@ export async function fetchModelCatalog(
     ...(cline.length > 0 ? cline : keep("clinepass")),
     ...(openCode.length > 0 ? openCode : keep("opencode-go")),
     ...(chatgpt.length > 0 ? chatgpt : BUILT_IN_MODELS.filter((model) => model.provider === "chatgpt").map((model) => refreshed(model, openAIEntries[model.apiId]))),
-    ...commandCodeModels
+    ...commandCodeModels,
+    ...(openRouter.length > 0 ? openRouter : keep("openrouter"))
   ]
 }
 

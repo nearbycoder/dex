@@ -184,7 +184,7 @@ export const OUTPUTS: Readonly<Record<string, TSchema>> = {
     T.Object({
       id: T.String(),
       name: T.String(),
-      provider: T.String({ description: "ClinePass, OpenCode Go, ChatGPT, or Command Code" }),
+      provider: T.String({ description: "ClinePass, OpenCode Go, ChatGPT, Command Code, or OpenRouter" }),
       available: T.Boolean({ description: "Its subscription is connected" }),
       input: T.Array(T.String()),
       contextWindow: T.Number(),

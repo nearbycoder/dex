@@ -149,7 +149,7 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
   const [checking, setChecking] = useState(false)
   const connected: Record<ModelProvider, boolean> = state
     ? connectedProviders(state)
-    : { clinepass: true, "opencode-go": true, chatgpt: true, commandcode: true }
+    : { clinepass: true, "opencode-go": true, chatgpt: true, commandcode: true, openrouter: true }
   // Connected subscriptions first; a model matches when every word of the search is in its name, maker, subscription,
   // or badges ("free vision" finds the free models that see images).
   const providers = (Object.keys(MODEL_PROVIDERS) as ModelProvider[]).sort((a, b) => Number(connected[b]) - Number(connected[a]))

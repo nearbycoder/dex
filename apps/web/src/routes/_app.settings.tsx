@@ -6,6 +6,7 @@ import { ClineConnect } from "~/client/components/cline-connect"
 import { OpenCodeConnect } from "~/client/components/opencode-connect"
 import { ChatGPTConnect } from "~/client/components/chatgpt-connect"
 import { CommandCodeConnect } from "~/client/components/commandcode-connect"
+import { OpenRouterConnect } from "~/client/components/openrouter-connect"
 import { GitHubConnect } from "~/client/components/github-connect"
 import { InstallApp } from "~/client/components/install-app"
 import { ModelPicker } from "~/client/components/model-picker"
@@ -68,8 +69,12 @@ function SettingsPage() {
         <ChatGPTConnect />
       </Section>
 
-      <Section title="Command Code" info="Models marked Command in the model menu run on your Command Code plan. Connect any or all of these.">
+      <Section title="Command Code" info="Models marked Command in the model menu run on your Command Code plan.">
         <CommandCodeConnect />
+      </Section>
+
+      <Section title="OpenRouter" info="OpenRouter's free models (stealth previews and promotions) are in the model menu under OpenRouter. Connect any or all of these.">
+        <OpenRouterConnect />
       </Section>
 
       <Section title="Cloud VMs" info="Chats run code, browsers, and servers on VMs in your boat.dev account.">

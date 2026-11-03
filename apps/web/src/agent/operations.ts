@@ -137,6 +137,8 @@ export const EXCLUDED: Readonly<Record<string, string>> = {
   connectCommandCode: "Credentials are entered only in Settings, never through a chat or an external agent.",
   disconnectOpenCode: "Credentials are managed only in Settings.",
   disconnectCommandCode: "Credentials are managed only in Settings.",
+  connectOpenRouter: "Credentials are entered only in Settings, never through a chat or an external agent.",
+  disconnectOpenRouter: "Credentials are managed only in Settings.",
   startChatGPTSignIn: "Signing in to ChatGPT happens only in Settings, never through a chat or an external agent.",
   finishChatGPTSignIn: "Signing in to ChatGPT happens only in Settings, never through a chat or an external agent.",
   disconnectChatGPT: "Credentials are managed only in Settings.",
@@ -369,7 +371,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
         projects: state.projects.length,
         mcpServers: state.mcp.map((server) => ({ id: server.id, name: server.name, status: server.status })),
         vms: { configured: state.vmConfigured, running: state.vms.filter((vm) => vm.status === "running").length, total: state.vms.length },
-        connected: { clinePass: state.cline.connected, openCodeGo: state.opencode.connected, chatGPT: state.chatgpt.connected, commandCode: state.commandcode.connected, github: state.github.connected ? state.github.login : null },
+        connected: { clinePass: state.cline.connected, openCodeGo: state.opencode.connected, chatGPT: state.chatgpt.connected, commandCode: state.commandcode.connected, openRouter: state.openrouter.connected, github: state.github.connected ? state.github.login : null },
         pushDevices: state.push.devices.length,
         settings: state.settings
       }
@@ -671,7 +673,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
   define({
     name: "app_list_models",
     description:
-      "Models chats and agents can use: each runs on a subscription (ClinePass, OpenCode Go, a ChatGPT plan, or Command Code), usable only while that one is connected. With image input, context window, thinking levels, and cost per million tokens. The list refreshes from the providers hourly; `refresh` looks it up now (when a model seems missing or renamed).",
+      "Models chats and agents can use: each runs on a subscription (ClinePass, OpenCode Go, a ChatGPT plan, Command Code, or OpenRouter's free models), usable only while that one is connected. With image input, context window, thinking levels, and cost per million tokens. The list refreshes from the providers hourly; `refresh` looks it up now (when a model seems missing or renamed).",
     risk: "read",
     parameters: Type.Object({ refresh: Type.Optional(Type.Boolean()) }),
     covers: ["modelCatalog", "refreshModelList"],

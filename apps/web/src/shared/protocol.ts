@@ -152,11 +152,12 @@ export const noVm = (key: string): VmInfo => ({
 })
 
 /** Which model subscriptions this user can run on (see usableModel in shared/models.ts). */
-export const connectedProviders = (state: Pick<DexState, "cline" | "opencode" | "chatgpt" | "commandcode">) => ({
+export const connectedProviders = (state: Pick<DexState, "cline" | "opencode" | "chatgpt" | "commandcode" | "openrouter">) => ({
   clinepass: state.cline.connected,
   "opencode-go": state.opencode.connected,
   chatgpt: state.chatgpt?.connected ?? false,
-  commandcode: state.commandcode?.connected ?? false
+  commandcode: state.commandcode?.connected ?? false,
+  openrouter: state.openrouter?.connected ?? false
 })
 
 /** Fills fields an agent saved before they existed, so older state never breaks the UI. */
@@ -168,6 +169,7 @@ export const withStateDefaults = (state: DexState): DexState => ({
   opencode: state.opencode ?? { connected: false, source: null, keyHint: null, verifiedAt: null },
   chatgpt: state.chatgpt ?? { connected: false, source: null, keyHint: null, verifiedAt: null },
   commandcode: state.commandcode ?? { connected: false, source: null, keyHint: null, verifiedAt: null },
+  openrouter: state.openrouter ?? { connected: false, source: null, keyHint: null, verifiedAt: null },
   projects: state.projects ?? [],
   github: state.github ?? { connected: false, login: null },
   push: state.push ?? { configured: false, publicKey: null, devices: [] },
@@ -202,6 +204,8 @@ export interface DexState {
   readonly chatgpt: ClineStatus
   /** The Command Code key models with the commandcode provider run on (same shape). Missing in state an older agent saved. */
   readonly commandcode: ClineStatus
+  /** The OpenRouter key its free models run on (same shape). Missing in state an older agent saved. */
+  readonly openrouter: ClineStatus
   /** Whose boat.dev account this user's VMs run on. */
   readonly boat: BoatStatus
   readonly settings: DexSettings

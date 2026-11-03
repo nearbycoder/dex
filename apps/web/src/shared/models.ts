@@ -10,7 +10,9 @@
  * - Command Code (https://commandcode.ai/docs/provider): its plans' models over an OpenAI-compatible API (Claude over
  *   Anthropic Messages). It has no built-in list: the agent builds it from Command Code's own list, limited to the
  *   models the connected key's plan covers, with details from models.dev.
- * `id` is unique across all three (it's what chats store); `apiId` is what the provider's API calls the model.
+ * - OpenRouter (https://openrouter.ai): its free models only (stealth previews and promotions), to try new ones out.
+ *   No built-in list either: the agent builds it from OpenRouter's public list.
+ * `id` is unique across all of them (it's what chats store); `apiId` is what the provider's API calls the model.
  * In a thinking map, `null` marks a level the model rejects; a missing key uses the provider's default.
  *
  * This list is built in, so a fresh agent has models before it has looked anything up. Providers add, rename, and
@@ -20,14 +22,15 @@
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const
 export type ThinkingLevel = (typeof THINKING_LEVELS)[number]
 
-export type ModelProvider = "clinepass" | "opencode-go" | "chatgpt" | "commandcode"
+export type ModelProvider = "clinepass" | "opencode-go" | "chatgpt" | "commandcode" | "openrouter"
 
 /** The subscriptions models run on, as Settings and the model menu name them. */
 export const MODEL_PROVIDERS: Readonly<Record<ModelProvider, { readonly name: string; readonly short: string }>> = {
   clinepass: { name: "ClinePass", short: "Cline" },
   "opencode-go": { name: "OpenCode Go", short: "OpenCode" },
   chatgpt: { name: "ChatGPT", short: "ChatGPT" },
-  commandcode: { name: "Command Code", short: "Command" }
+  commandcode: { name: "Command Code", short: "Command" },
+  openrouter: { name: "OpenRouter", short: "OpenRouter" }
 }
 
 /** Each subscription's id in pi-ai: ChatGPT's is `openai`, which is how pi-ai knows to send a ChatGPT token. */
@@ -35,7 +38,8 @@ export const PI_PROVIDER_IDS: Readonly<Record<ModelProvider, string>> = {
   clinepass: "clinepass",
   "opencode-go": "opencode-go",
   chatgpt: "openai",
-  commandcode: "commandcode"
+  commandcode: "commandcode",
+  openrouter: "openrouter"
 }
 
 /** The Dex subscription for a pi-ai provider id (what responses and pi's usage records carry). */
@@ -46,7 +50,9 @@ export const dexProvider = (piProvider: string | undefined): ModelProvider =>
       ? "chatgpt"
       : piProvider === "commandcode"
         ? "commandcode"
-        : "clinepass"
+        : piProvider === "openrouter"
+          ? "openrouter"
+          : "clinepass"
 
 export type ModelMaker =
   | "zai" | "moonshot" | "deepseek" | "qwen" | "minimax" | "xiaomi" | "meta"
@@ -243,7 +249,7 @@ export const defaultModelId = () => (findModel(DEFAULT_MODEL_ID) ? DEFAULT_MODEL
 /** Which subscription a chat's model runs on (a stored id that's no longer listed goes by its prefix, else ClinePass). */
 export const providerOf = (id: string): ModelProvider =>
   findModel(id)?.provider ??
-  (id.startsWith("opencode-go/") ? "opencode-go" : id.startsWith("chatgpt/") ? "chatgpt" : id.startsWith("commandcode/") ? "commandcode" : "clinepass")
+  (id.startsWith("opencode-go/") ? "opencode-go" : id.startsWith("chatgpt/") ? "chatgpt" : id.startsWith("commandcode/") ? "commandcode" : id.startsWith("openrouter/") ? "openrouter" : "clinepass")
 
 /** The same model on the other provider, when it offers it (switching providers keeps a chat's model). */
 export const counterpart = (id: string, provider: ModelProvider) => {
