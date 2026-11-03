@@ -124,7 +124,9 @@ struct ThinkingPicker: View {
 }
 
 /// Every model, by subscription (connected ones first), searchable by name, maker, or subscription, with what each
-/// can do: see images, its context, whether it thinks, free, and whether the provider trains on what you send.
+/// can do: see images, its context, whether it thinks, free, whether the provider trains on what you send, and when it
+/// came out. Newest (remembered on the device) lists every subscription's models together by release date instead,
+/// optionally only those out within some days, to spot new (often stealth) ones.
 struct ModelPickerSheet: View {
     @Environment(DexClient.self) private var client
     @Environment(Router.self) private var router
@@ -138,14 +140,25 @@ struct ModelPickerSheet: View {
     @State private var only = "all"
     @State private var search = ""
     @State private var checking = false
+    @AppStorage("dex.models.newest") private var newest = false
+    /// Newest's "released within" days (0: any time).
+    @State private var within = 0
+
+    /// A reset launch (UI tests) starts grouped by subscription, as on a new device.
+    private static let resetNewest: Void = {
+        guard LaunchOptions.current.resetState else { return }
+        UserDefaults.standard.removeObject(forKey: "dex.models.newest")
+    }()
 
     init(model: String, onSelect: @escaping (String) -> Void) {
+        _ = Self.resetNewest
         self.model = model
         self.onSelect = onSelect
     }
 
     /// The sheet with the thinking level as well: `onChange` gets a new model (thinking clamped to it) or a new level.
     init(model: String, thinking: ThinkingLevel, onChange: @escaping (_ model: String?, _ thinking: ThinkingLevel?) -> Void) {
+        _ = Self.resetNewest
         self.model = model
         self.thinking = thinking
         self.onSelect = { onChange($0, nil) }
@@ -168,39 +181,51 @@ struct ModelPickerSheet: View {
                     }
                 }
                 Section {
-                    // Capsules that scroll sideways rather than a segmented control, whose names get cut short on a phone.
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            filterChip("all", title: "All", count: client.catalog.models.count)
-                            ForEach(providers, id: \.id) { provider in
-                                filterChip(provider.id, title: provider.name, count: client.catalog.models(of: provider.id).count)
+                    VStack(alignment: .leading, spacing: 8) {
+                        // Capsules that scroll sideways rather than a segmented control, whose names get cut short on a phone.
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                filterChip("all", title: "All", count: client.catalog.models.count)
+                                ForEach(providers, id: \.id) { provider in
+                                    filterChip(provider.id, title: provider.name, count: client.catalog.models(of: provider.id).count)
+                                }
                             }
+                            .padding(.horizontal, 16)
                         }
-                        .padding(.horizontal, 16)
+                        .scrollClipDisabled()
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("model.tabs")
+                        if newest {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 6) {
+                                    ForEach(ModelCatalog.releaseWithin, id: \.days) { choice in
+                                        chip(choice.label, chosen: within == choice.days, id: "model.within.\(choice.days)") { within = choice.days }
+                                    }
+                                }
+                                .padding(.horizontal, 16)
+                            }
+                            .scrollClipDisabled()
+                            .accessibilityElement(children: .contain)
+                            .accessibilityLabel("Released")
+                            .accessibilityIdentifier("model.within")
+                        }
                     }
-                    .scrollClipDisabled()
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets())
-                    .accessibilityElement(children: .contain)
-                    .accessibilityIdentifier("model.tabs")
                 }
-                ForEach(providers, id: \.id) { provider in
+                if newest {
+                    // Every subscription's models in one list, newest first, in sections by how recent.
+                    ForEach(ModelCatalog.byRelease(client.catalog.models.filter(matches), connected: connected), id: \.label) { section in
+                        Section(section.label) {
+                            ForEach(section.models) { candidate in row(candidate, connected: connected, showProvider: true) }
+                        }
+                    }
+                }
+                ForEach(newest ? [] : providers, id: \.id) { provider in
                     let models = client.catalog.models(of: provider.id).filter(matches)
                     if !models.isEmpty {
                         Section {
-                            ForEach(models) { candidate in
-                                let selected = candidate.id == model
-                                Button {
-                                    onSelect(candidate.id)
-                                    dismiss()
-                                } label: {
-                                    ModelRow(model: candidate, selected: selected)
-                                }
-                                // Rows read as text, not links; only the checkmark carries the theme.
-                                .tint(.primary)
-                                .disabled(!(connected[provider.id] == true || selected))
-                                .accessibilityIdentifier("model.\(candidate.id)")
-                            }
+                            ForEach(models) { candidate in row(candidate, connected: connected, showProvider: false) }
                         } header: {
                             HStack {
                                 Text(provider.name)
@@ -233,8 +258,13 @@ struct ModelPickerSheet: View {
                     }
                     .listRowBackground(Color.clear)
                 } else if !client.catalog.models.contains(where: matches) {
-                    ContentUnavailableView(search.isEmpty ? "No Models" : "No model matches “\(search)”", systemImage: "cpu")
-                        .listRowBackground(Color.clear)
+                    if !search.isEmpty {
+                        ContentUnavailableView("No model matches “\(search)”", systemImage: "cpu").listRowBackground(Color.clear)
+                    } else if newest, within > 0 {
+                        ContentUnavailableView("Nothing New in That Time", systemImage: "calendar.badge.clock").listRowBackground(Color.clear)
+                    } else {
+                        ContentUnavailableView("No Models", systemImage: "cpu").listRowBackground(Color.clear)
+                    }
                 }
                 Section {
                     VStack(alignment: .leading, spacing: 6) {
@@ -274,21 +304,48 @@ struct ModelPickerSheet: View {
             .navigationTitle("Model")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Toggle(isOn: Binding(get: { newest }, set: { newest = $0; within = 0 })) {
+                        Label("Newest", systemImage: "calendar.badge.clock").labelStyle(.titleAndIcon)
+                    }
+                    .toggleStyle(.button)
+                    .accessibilityHint(newest ? "Groups the models by subscription again" : "Lists the newest models first")
+                    .accessibilityIdentifier("model.newest")
+                }
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.accessibilityIdentifier("model.done") }
             }
         }
         .accessibilityIdentifier("model.sheet")
     }
 
-    /// One subscription filter: its name and how many models it has; the chosen one is filled in.
-    private func filterChip(_ id: String, title: String, count: Int) -> some View {
-        let chosen = only == id
+    /// A model you can pick (one on a subscription that isn't connected only if it's the current one).
+    private func row(_ candidate: DexModel, connected: [String: Bool], showProvider: Bool) -> some View {
+        let selected = candidate.id == model
         return Button {
-            only = id
+            onSelect(candidate.id)
+            dismiss()
         } label: {
+            ModelRow(model: candidate, selected: selected, showProvider: showProvider)
+        }
+        // Rows read as text, not links; only the checkmark carries the theme.
+        .tint(.primary)
+        .disabled(!(connected[candidate.provider] == true || selected))
+        .accessibilityIdentifier("model.\(candidate.id)")
+    }
+
+    /// One subscription filter: its name and how many models it has.
+    private func filterChip(_ id: String, title: String, count: Int) -> some View {
+        chip(title, count: count, chosen: only == id, id: "model.tab.\(id)") { only = id }
+    }
+
+    /// A filter capsule; the chosen one is filled in.
+    private func chip(_ title: String, count: Int? = nil, chosen: Bool, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             HStack(spacing: 4) {
                 Text(title)
-                Text("\(count)").foregroundStyle(chosen ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.secondary))
+                if let count {
+                    Text("\(count)").foregroundStyle(chosen ? AnyShapeStyle(.white.opacity(0.8)) : AnyShapeStyle(.secondary))
+                }
             }
             .font(.subheadline.weight(.medium))
             .lineLimit(1)
@@ -301,11 +358,12 @@ struct ModelPickerSheet: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(chosen ? .isSelected : [])
-        .accessibilityIdentifier("model.tab.\(id)")
+        .accessibilityIdentifier(id)
     }
 
     private func matches(_ candidate: DexModel) -> Bool {
         guard only == "all" || candidate.provider == only else { return false }
+        if newest, within > 0, (candidate.daysSinceRelease() ?? .max) > within { return false }
         // Every word of the search must be in the name, maker, subscription, or badges ("free vision").
         let words = search.lowercased().split(whereSeparator: \.isWhitespace)
         if words.isEmpty { return true }
@@ -314,24 +372,43 @@ struct ModelPickerSheet: View {
             candidate.acceptsImages ? "vision" : "text only",
             levels.isEmpty ? "" : levels.contains("off") ? "thinking optional" : "always thinks",
             candidate.isFree ? "free" : "",
-            candidate.trainsOnData == true ? "trains on prompts" : ""
+            candidate.trainsOnData == true ? "trains on prompts" : "",
+            candidate.isNew() ? "new" : ""
         ]
         let text = "\(candidate.name) \(ModelCatalog.makers[candidate.maker] ?? candidate.maker) \(ModelCatalog.providerName(candidate.provider)) \(badges.joined(separator: " "))".lowercased()
         return words.allSatisfy { text.contains($0) }
     }
 }
 
+/// A model in the picker: its logo, name, and maker (or in the newest-first list, its subscription), when it came
+/// out at the trailing edge, and its badges.
 struct ModelRow: View {
     let model: DexModel
     let selected: Bool
+    var showProvider = false
 
     var body: some View {
+        let released = model.releaseLabel()
+        let short = showProvider ? ModelCatalog.providers.first { $0.id == model.provider }?.short ?? model.provider : nil
         HStack(alignment: .top, spacing: 12) {
             MakerLogo(maker: model.maker, size: 22).padding(.top, 2)
             VStack(alignment: .leading, spacing: 5) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(model.name).foregroundStyle(.primary)
-                    Text(ModelCatalog.makers[model.maker] ?? model.maker).font(.caption2).foregroundStyle(.secondary)
+                    // The logo already says who makes it where the subscription goes instead.
+                    if !showProvider {
+                        Text(ModelCatalog.makers[model.maker] ?? model.maker).font(.caption2).foregroundStyle(.secondary)
+                    }
+                    if short != nil || released != nil {
+                        Spacer(minLength: 4)
+                        Text([short, released].compactMap { $0 }.joined(separator: " · "))
+                            .font(.caption2)
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .fixedSize()
+                            .accessibilityLabel([short, released.map { "released \($0)" }].compactMap { $0 }.joined(separator: ", "))
+                    }
                 }
                 FlowBadges(model: model)
             }
@@ -349,6 +426,7 @@ private struct FlowBadges: View {
     var body: some View {
         let levels = model.supportedThinkingLevels
         ChipFlowLayout(spacing: 4) {
+            if model.isNew() { Badge(text: "New", color: .purple) }
             if model.acceptsImages { Badge(text: "Vision", symbol: "eye", color: .green) } else { Badge(text: "Text only", symbol: "textformat", color: .secondary) }
             Badge(text: "\(Self.tokens(model.contextWindow)) context", color: .secondary)
             if !levels.isEmpty { Badge(text: levels.contains("off") ? "Thinking optional" : "Always thinks", symbol: "brain", color: .secondary) }
