@@ -19,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.Search
@@ -33,6 +34,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -73,9 +75,13 @@ import dev.trydex.core.model.Format
 import dev.trydex.core.model.McpServerInfo
 import dev.trydex.core.model.McpStatus
 import dev.trydex.core.model.ModelProvider
+import dev.trydex.core.model.ReleasedWithin
 import dev.trydex.core.model.ThinkingLevel
 import dev.trydex.core.model.clampThinking
 import dev.trydex.core.model.formatTokens
+import dev.trydex.core.model.isNewModel
+import dev.trydex.core.model.newestFirst
+import dev.trydex.core.model.releaseLabel
 import dev.trydex.core.model.supportedThinkingLevels
 import kotlinx.coroutines.launch
 
@@ -180,15 +186,23 @@ private fun ThinkingPicker(thinking: ThinkingLevel, levels: List<ThinkingLevel>,
     }
 }
 
-/** The searchable model menu: All / ClinePass / OpenCode Go / ChatGPT / Command Code, with badges, grouped by subscription. */
+/**
+ * The searchable model menu: All / ClinePass / OpenCode Go / ChatGPT / Command Code, with badges, grouped by
+ * subscription; or, with Newest on (remembered on this device), every subscription's models by release date, newest
+ * first, which a "released within" filter narrows.
+ */
 @Composable
 private fun ModelSheet(selected: String, onDismiss: () -> Unit, onSelect: (String) -> Unit) {
     val app = LocalApp.current
     val state by app.graph.repository.state.collectAsStateWithLifecycle()
+    val prefs by app.graph.preferences.prefs.collectAsStateWithLifecycle()
     val registry = app.graph.models
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val query = rememberTextFieldState()
     var tab by remember { mutableStateOf<ModelProvider?>(null) }
+    val newest = prefs.modelsNewest
+    var within by remember { mutableStateOf(ReleasedWithin.AnyTime) }
+    val now = remember { System.currentTimeMillis() }
     val connected = state?.connectedProviders ?: ModelProvider.entries.associateWith { true }
     val providers = ModelProvider.entries.sortedByDescending { connected[it] == true }
     val needle = query.text.toString().trim().lowercase()
@@ -196,13 +210,15 @@ private fun ModelSheet(selected: String, onDismiss: () -> Unit, onSelect: (Strin
     val words = needle.split(Regex("\\s+")).filter { it.isNotEmpty() }
     fun matches(model: DexModel): Boolean {
         if (tab != null && model.modelProvider != tab) return false
+        if (newest && !within.includes(model, now)) return false
         if (words.isEmpty()) return true
         val levels = supportedThinkingLevels(model)
         val badges = listOfNotNull(
             if (model.hasVision) "vision" else "text only",
             if (levels.isEmpty()) null else if (ThinkingLevel.Off in levels) "thinking optional" else "always thinks",
             "free".takeIf { model.free },
-            "trains on data".takeIf { model.trainsOnData }
+            "trains on data".takeIf { model.trainsOnData },
+            "new".takeIf { isNewModel(model, now) },
         )
         val text = "${model.name} ${model.modelMaker?.displayName} ${model.modelProvider.displayName} ${badges.joinToString(" ")}".lowercase()
         return words.all { it in text }
@@ -212,14 +228,32 @@ private fun ModelSheet(selected: String, onDismiss: () -> Unit, onSelect: (Strin
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet, modifier = Modifier.testTag("model-sheet")) {
         Column(Modifier.navigationBarsPadding()) {
-            OutlinedTextField(
-                state = query,
-                placeholder = { Text("Search models") },
-                leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
-                lineLimits = androidx.compose.foundation.text.input.TextFieldLineLimits.SingleLine,
-                shape = RoundedCornerShape(50),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            val freshChip = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = DexTheme.colors.freshContainer,
+                selectedLabelColor = DexTheme.colors.onFreshContainer,
+                selectedLeadingIconColor = DexTheme.colors.onFreshContainer,
             )
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    state = query,
+                    placeholder = { Text("Search models") },
+                    leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
+                    lineLimits = androidx.compose.foundation.text.input.TextFieldLineLimits.SingleLine,
+                    shape = RoundedCornerShape(50),
+                    modifier = Modifier.weight(1f),
+                )
+                FilterChip(
+                    selected = newest,
+                    onClick = {
+                        app.graph.preferences.setModelsNewest(!newest)
+                        within = ReleasedWithin.AnyTime
+                    },
+                    label = { Text("Newest") },
+                    leadingIcon = { Icon(Icons.Outlined.CalendarMonth, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize)) },
+                    colors = freshChip,
+                    modifier = Modifier.testTag("model-newest").semantics { contentDescription = if (newest) "Newest first, on" else "Newest first" },
+                )
+            }
             Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = tab == null, onClick = { tab = null }, label = { Text("All ${registry.models.size}") })
                 providers.forEach { provider ->
@@ -232,9 +266,38 @@ private fun ModelSheet(selected: String, onDismiss: () -> Unit, onSelect: (Strin
                     )
                 }
             }
+            // While Newest is on: only what came out within some days.
+            if (newest) {
+                Row(Modifier.horizontalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ReleasedWithin.entries.forEach { choice ->
+                        FilterChip(
+                            selected = within == choice,
+                            onClick = { within = choice },
+                            label = { Text(choice.label) },
+                            colors = freshChip,
+                            modifier = Modifier.testTag("model-within-${choice.days}"),
+                        )
+                    }
+                }
+            }
             LazyColumn(Modifier.heightIn(max = 520.dp)) {
                 var any = false
-                for (provider in providers) {
+                if (newest) for ((period, models) in newestFirst(registry.models.filter(::matches), connected, now)) {
+                    any = true
+                    stickyHeader(key = "period-${period.name}") {
+                        Text(
+                            period.label.uppercase(),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerLow).padding(horizontal = 24.dp, vertical = 12.dp),
+                        )
+                    }
+                    items(models, key = { it.id }) { model ->
+                        val enabled = connected[model.modelProvider] == true || model.id == selected
+                        ModelRow(model, model.id == selected, enabled, now, newest = true) { onSelect(model.id) }
+                    }
+                }
+                if (!newest) for (provider in providers) {
                     val models = registry.of(provider).filter(::matches)
                     if (models.isEmpty()) continue
                     any = true
@@ -254,7 +317,7 @@ private fun ModelSheet(selected: String, onDismiss: () -> Unit, onSelect: (Strin
                     }
                     items(models, key = { it.id }) { model ->
                         val enabled = connected[provider] == true || model.id == selected
-                        ModelRow(model, model.id == selected, enabled) { onSelect(model.id) }
+                        ModelRow(model, model.id == selected, enabled, now, newest = false) { onSelect(model.id) }
                     }
                 }
                 // A subscription that lists models only once connected (Command Code: its plan decides them) has none yet.
@@ -268,7 +331,15 @@ private fun ModelSheet(selected: String, onDismiss: () -> Unit, onSelect: (Strin
                         }, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 0.dp)) { Text("Connect in Settings") }
                     }
                 } else if (!any) item {
-                    Text(if (needle.isNotEmpty()) "No model matches “$needle”." else "No models.", modifier = Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        when {
+                            needle.isNotEmpty() -> "No model matches “$needle”."
+                            newest && within != ReleasedWithin.AnyTime -> "Nothing new in that time."
+                            else -> "No models."
+                        },
+                        modifier = Modifier.padding(24.dp).testTag("model-sheet-empty"),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
             Column(Modifier.padding(horizontal = 24.dp, vertical = 12.dp)) {
@@ -294,16 +365,34 @@ private fun ModelSheet(selected: String, onDismiss: () -> Unit, onSelect: (Strin
     }
 }
 
+/**
+ * A model in the menu: its name with when it came out at the end of the line, then its maker and badges. In the
+ * Newest list the line also says which subscription it's on, and the maker is left to the logo.
+ */
 @Composable
-private fun ModelRow(model: DexModel, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
+private fun ModelRow(model: DexModel, selected: Boolean, enabled: Boolean, now: Long, newest: Boolean, onClick: () -> Unit) {
     val app = LocalApp.current
     val levels = supportedThinkingLevels(model)
+    val released = releaseLabel(model, now)
+    val meta = listOfNotNull(model.modelProvider.short.takeIf { newest }, released).joinToString(" · ")
     ListItem(
-        headlineContent = { Text(model.name) },
+        headlineContent = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(model.name, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                if (meta.isNotEmpty()) Text(
+                    meta,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    modifier = Modifier.semantics { contentDescription = listOfNotNull(model.modelProvider.displayName.takeIf { newest }, released?.let { "released $it" }).joinToString(", ") },
+                )
+            }
+        },
         supportingContent = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(model.modelMaker?.displayName ?: model.maker, style = MaterialTheme.typography.bodySmall)
+                if (!newest) Text(model.modelMaker?.displayName ?: model.maker, style = MaterialTheme.typography.bodySmall)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    if (isNewModel(model, now)) Badge(null, "New", DexTheme.colors.onFreshContainer, DexTheme.colors.freshContainer)
                     if (model.hasVision) Badge(Icons.Outlined.Visibility, "Vision", MaterialTheme.colorScheme.primary) else Badge(Icons.Outlined.TextFields, "Text only", null)
                     Badge(null, "${formatTokens(model.contextWindow)} context", null)
                     if (levels.isNotEmpty()) Badge(Icons.Outlined.Psychology, if (ThinkingLevel.Off in levels) "thinking optional" else "always thinks", null)
@@ -321,9 +410,9 @@ private fun ModelRow(model: DexModel, selected: Boolean, enabled: Boolean, onCli
 }
 
 @Composable
-private fun Badge(icon: androidx.compose.ui.graphics.vector.ImageVector?, text: String, tint: Color?) {
+private fun Badge(icon: androidx.compose.ui.graphics.vector.ImageVector?, text: String, tint: Color?, container: Color? = null) {
     Row(
-        Modifier.clip(RoundedCornerShape(6.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest).padding(horizontal = 6.dp, vertical = 2.dp),
+        Modifier.clip(RoundedCornerShape(6.dp)).background(container ?: MaterialTheme.colorScheme.surfaceContainerHighest).padding(horizontal = 6.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(3.dp),
     ) {

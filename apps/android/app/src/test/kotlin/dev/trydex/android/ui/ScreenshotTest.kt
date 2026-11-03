@@ -105,6 +105,32 @@ class ScreenshotTest(private val device: String, private val qualifiers: String)
         shot("4-new-chat")
     }
 
+    @Test fun modelMenu() {
+        start()
+        open(ChatList, NewChat(nonce = 1))
+        rule.awaitTag("new-chat-headline")
+        rule.waitUntil(10_000) { harness.graph.models.find("cline-pass/crouton-alpha") != null }
+        awaitPrefs { !it.modelsNewest }
+        rule.awaitTag("model-picker").performScrollTo().performClick()
+        rule.awaitTag("model-sheet")
+        shot("4b-model-menu")
+        rule.awaitTag("model-newest").performClick()
+        awaitPrefs { it.modelsNewest }
+        rule.awaitText("THIS WEEK")
+        shot("4c-model-menu-newest")
+        rule.awaitTag("model-within-30").performScrollTo().performClick()
+        shot("4d-model-menu-newest-30-days")
+        // Off again: the choice is kept on the device, which the other tests share.
+        rule.awaitTag("model-newest").performClick()
+        awaitPrefs { !it.modelsNewest }
+    }
+
+    /** Waits for the saved preferences (DataStore answers on the main looper, which the compose rule doesn't run). */
+    private fun awaitPrefs(check: (dev.trydex.android.data.AppPrefs) -> Boolean) = rule.waitUntil(5_000) {
+        ShadowLooper.idleMainLooper()
+        check(harness.graph.preferences.prefs.value)
+    }
+
     @Test fun machines() {
         start()
         open(MachineList)

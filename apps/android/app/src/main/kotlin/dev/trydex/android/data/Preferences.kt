@@ -47,6 +47,8 @@ data class AppPrefs(
     val theme: String = "emerald",
     /** system, light, or dark. */
     val appearance: String = "system",
+    /** The model menu lists every subscription's models newest first (its Newest toggle). */
+    val modelsNewest: Boolean = false,
     /** False until read from disk (the defaults show until then). */
     val loaded: Boolean = false,
 )
@@ -75,6 +77,7 @@ class Preferences(context: Context, private val scope: CoroutineScope) {
         val dynamicColor = booleanPreferencesKey("dynamic_color")
         val theme = stringPreferencesKey("theme")
         val appearance = stringPreferencesKey("appearance")
+        val modelsNewest = booleanPreferencesKey("models_newest")
     }
 
     val prefs: StateFlow<AppPrefs> = store.data.map { p ->
@@ -99,6 +102,7 @@ class Preferences(context: Context, private val scope: CoroutineScope) {
             dynamicColor = p[Keys.dynamicColor] ?: false,
             theme = p[Keys.theme] ?: defaults.theme,
             appearance = p[Keys.appearance] ?: defaults.appearance,
+            modelsNewest = p[Keys.modelsNewest] ?: false,
             loaded = true,
         )
     }.stateIn(scope, SharingStarted.Eagerly, AppPrefs())
@@ -136,6 +140,7 @@ class Preferences(context: Context, private val scope: CoroutineScope) {
         it[Keys.dynamicColor] = false
     }
     fun setAppearance(mode: String) = edit { it[Keys.appearance] = mode }
+    fun setModelsNewest(on: Boolean) = edit { it[Keys.modelsNewest] = on }
 
     /** Signing out forgets what this device kept about the account (the server address stays). */
     suspend fun forgetAccount() {

@@ -84,6 +84,26 @@ class GoldenTest {
         }
     }
 
+    @Test fun releaseDates() {
+        val golden = golden("releases.json")
+        assertThat(NEW_MODEL_DAYS).isEqualTo(golden["newDays"].long!!.toInt())
+        val nows = golden["nows"]!!.jsonArray.map { it.long!! }
+        for (case in golden.items("cases")) {
+            val model = DexModel("x", releasedAt = case["releasedAt"].str)
+            case["at"]!!.jsonArray.forEachIndexed { index, at ->
+                val now = nows[index]
+                val label = "${model.releasedAt} at $now"
+                assertWithMessage("days $label").that(daysSinceRelease(model, now)?.toLong()).isEqualTo(at.jsonObject["days"].long)
+                assertWithMessage("new $label").that(isNewModel(model, now)).isEqualTo(at.jsonObject["isNew"].bool)
+                assertWithMessage("label $label").that(releaseLabel(model, now, java.util.Locale.US)).isEqualTo(at.jsonObject["label"].str)
+            }
+        }
+        val periods = ReleasePeriod.entries.filter { it != ReleasePeriod.Unknown }
+        assertThat(periods.map { it.label }).isEqualTo(golden.items("periods").map { it["label"].str })
+        assertThat(periods.map { it.days.takeIf { days -> days != Int.MAX_VALUE }?.toLong() }).isEqualTo(golden.items("periods").map { it["days"].long })
+        assertThat(ReleasedWithin.entries.map { it.days.toLong() to it.label }).isEqualTo(golden.items("within").map { it["days"].long to it["label"].str })
+    }
+
     @Test fun toolsSkillsAndNotes() {
         val golden = golden("tools.json")
         for (case in golden.items("activity")) assertThat(Tools.activity(case["name"].str!!)).isEqualTo(case["text"].str)
