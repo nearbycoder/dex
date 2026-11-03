@@ -66,12 +66,29 @@ object FakeData {
         DexModel("commandcode/mistralai/devstral-3", "mistralai/devstral-3", "commandcode", "Devstral 3", "commandcode", listOf("text"), 256_000, 64_000, ModelCost(0.2, 0.8)),
     )
 
+    /**
+     * OpenRouter's free models that can use tools, newest first, as the agent lists them with or without a key. Ids are
+     * `openrouter/<apiId>`, and OpenRouter's apiIds carry the vendor (and `:free` when a paid version exists too).
+     */
+    val openRouterModels: List<DexModel> = run {
+        val thinks = JsonObject(mapOf("off" to JsonNull, "minimal" to JsonNull, "low" to JsonPrimitive("low"), "medium" to JsonPrimitive("medium"), "high" to JsonPrimitive("high"), "xhigh" to JsonNull))
+        listOf(
+            // A stealth drop: its maker unannounced.
+            DexModel("openrouter/stealth/crouton-alpha", "stealth/crouton-alpha", "openrouter", "Crouton Alpha", "other", listOf("text", "image"), 1_000_000, 65_536, ModelCost(), thinks),
+            DexModel("openrouter/nvidia/nemotron-3.5-lightning:free", "nvidia/nemotron-3.5-lightning:free", "openrouter", "Nemotron 3.5 Lightning", "other", listOf("text"), 256_000, 32_768, ModelCost(), thinks),
+            DexModel("openrouter/qwen/qwen3.8-coder:free", "qwen/qwen3.8-coder:free", "openrouter", "Qwen3.8 Coder", "qwen", listOf("text"), 262_144, 32_768, ModelCost()),
+        )
+    }
+
     /** A stealth model on Cline, its maker unannounced: new this week. */
     val stealthModel = DexModel("cline-pass/crouton-alpha", "cline-pass/crouton-alpha", "clinepass", "Crouton Alpha", "other", listOf("text", "image"), 256_000, 32_000)
 
     /** How many days ago some models came out, so the menu's dates, New badges, and Newest sections have something to show; the rest have no date. */
     private val releasedDaysAgo = mapOf(
         "cline-pass/crouton-alpha" to 2,
+        "openrouter/stealth/crouton-alpha" to 1,
+        "openrouter/nvidia/nemotron-3.5-lightning:free" to 6,
+        "openrouter/qwen/qwen3.8-coder:free" to 20,
         "opencode-go/hy4-preview" to 5,
         "chatgpt/gpt-6.1-sol" to 9,
         "chatgpt/gpt-6.1-terra" to 9,
@@ -97,9 +114,9 @@ object FakeData {
         "chatgpt/gpt-5.5" to 400,
     )
 
-    /** The model list the agent sends: the built-in one with a stealth model, plus Command Code's while a key is connected. */
+    /** The model list the agent sends: the built-in one with a stealth model, Command Code's while a key is connected, and OpenRouter's free ones. */
     fun models(state: DexState, now: Long = System.currentTimeMillis()): List<DexModel> =
-        (BuiltInModels.list + stealthModel + if (state.commandcode.connected) commandCodeModels else emptyList()).map { model ->
+        (BuiltInModels.list + stealthModel + (if (state.commandcode.connected) commandCodeModels else emptyList()) + openRouterModels).map { model ->
             val days = releasedDaysAgo[model.id] ?: return@map model
             model.copy(releasedAt = java.time.Instant.ofEpochMilli(now - days * 86_400_000L).toString().take(10))
         }
@@ -114,6 +131,7 @@ object FakeData {
         return DexState(
             cline = ProviderStatus(connected = true, source = "user", keyHint = "sk-c…9f2a", verifiedAt = now - 3 * day),
             opencode = ProviderStatus(connected = true, source = "user", keyHint = "oc_…41b7", verifiedAt = now - day),
+            openrouter = ProviderStatus(connected = true, source = "user", keyHint = "sk-o…3f9a", verifiedAt = now - 2 * day),
             boat = BoatStatus(connected = true, source = "user", keyHint = "boat…77ad"),
             settings = DexSettings(defaultModel = "cline-pass/glm-5.3", defaultThinking = ThinkingLevel.Low, instructions = "Be concise. Prefer tables for comparisons.", vmSize = "small", vmMinutes = 5),
             sessions = listOf(

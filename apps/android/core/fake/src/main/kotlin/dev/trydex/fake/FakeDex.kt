@@ -485,6 +485,19 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
             }
         }
         "disconnectCommandCode" -> { update { it.copy(commandcode = ProviderStatus()).withModelList() }; null }
+        // OpenRouter's free models are listed with or without a key, so the list stays as it is.
+        "connectOpenRouter" -> {
+            val key = args.s(0).trim()
+            if (key.isEmpty()) buildJsonObject { put("ok", false); put("error", "Paste your OpenRouter API key.") }
+            else if (key.length > 512 || key.any { it.isWhitespace() }) buildJsonObject { put("ok", false); put("error", "That doesn't look like an OpenRouter API key.") }
+            else if (key == "bad") buildJsonObject { put("ok", false); put("error", "OpenRouter didn't accept that key. Create a new one in OpenRouter's settings.") }
+            else {
+                val hint = if (key.length > 8) key.take(4) + "…" + key.takeLast(4) else "••••"
+                update { s -> s.copy(openrouter = ProviderStatus(connected = true, source = "user", keyHint = hint, verifiedAt = clock())) }
+                buildJsonObject { put("ok", true); put("note", "${FakeData.openRouterModels.size} free models are in the model menu.") }
+            }
+        }
+        "disconnectOpenRouter" -> { update { it.copy(openrouter = ProviderStatus()) }; null }
         "disconnectBoat" -> {
             if (state.vms.any { it.id != null }) buildJsonObject { put("ok", false); put("error", "Delete your ${state.vms.size} VMs on the Machines page first: they belong to the boat.dev account you're using now.") }
             else { update { it.copy(boat = it.boat.copy(connected = false, source = null, keyHint = null), vmConfigured = false) }; buildJsonObject { put("ok", true) } }

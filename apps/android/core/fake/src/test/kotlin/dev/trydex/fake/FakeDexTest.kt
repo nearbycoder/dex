@@ -337,6 +337,42 @@ class FakeDexTest {
         connection.stop()
     }
 
+    @Test fun openRouterListsItsFreeModelsAndConnectsAKey() = runBlocking {
+        val url = fake.start()
+        val connection = AgentConnection(OkHttpClient(), url, FakeData.USER_ID, { fake.token }, scope)
+        val api = DexApi(connection.asRpc())
+        connection.start()
+        withTimeout(5_000) { connection.status.first { it == ConnectionStatus.Connected } }
+        suspend fun until(check: (dev.trydex.core.model.DexState) -> Boolean) = withTimeout(5_000) { while (!check(connection.state.value!!)) kotlinx.coroutines.delay(10) }
+        // Connected in the demo, after the other subscriptions.
+        val seeded = connection.state.value!!
+        assertThat(seeded.openrouter.keyHint).isEqualTo("sk-o…3f9a")
+        assertThat(seeded.connectedProviders[ModelProvider.OpenRouter]).isTrue()
+        val registry = ModelRegistry()
+        assertThat(registry.install(api.modelCatalog())).isTrue()
+        val models = registry.of(ModelProvider.OpenRouter)
+        assertThat(models.map { it.name }).containsExactly("Crouton Alpha", "Nemotron 3.5 Lightning", "Qwen3.8 Coder").inOrder()
+        assertThat(models.all { it.free && it.releasedAt != null }).isTrue()
+        assertThat(registry.providerOf("openrouter/stealth/crouton-alpha")).isEqualTo(ModelProvider.OpenRouter)
+
+        api.disconnectOpenRouter()
+        until { !it.openrouter.connected }
+        assertThat(connection.state.value!!.openrouter.keyHint).isNull()
+        // Its models stay listed without a key: the menu offers to connect it.
+        assertThat(connection.state.value!!.models!!.version).isEqualTo(seeded.models!!.version)
+        assertThat(api.modelCatalog().models.count { it.provider == "openrouter" }).isEqualTo(3)
+
+        assertThat(api.connectOpenRouter("  ").error).isEqualTo("Paste your OpenRouter API key.")
+        assertThat(api.connectOpenRouter("two words").error).isEqualTo("That doesn't look like an OpenRouter API key.")
+        assertThat(api.connectOpenRouter("bad").ok).isFalse()
+        val connected = api.connectOpenRouter("sk-or-v1-0123456789abcd")
+        assertThat(connected.ok).isTrue()
+        assertThat(connected.note).isEqualTo("3 free models are in the model menu.")
+        until { it.openrouter.connected }
+        assertThat(connection.state.value!!.openrouter.keyHint).isEqualTo("sk-o…abcd")
+        connection.stop()
+    }
+
     @Test fun sidekicksForTheWidgets() = runBlocking<Unit> {
         val url = fake.start()
         val session = DexSession(url.toString(), fake.token, DexUser(FakeData.USER_ID, FakeData.LOGIN), Long.MAX_VALUE)
