@@ -5,7 +5,7 @@ import { Predicate } from "effect"
 import { load } from "./extract.mts"
 import { applyEvent, displayItems, emptyTranscript, fromSnapshot, toolResults } from "../../../web/src/client/lib/transcript.ts"
 import { formatBytes, timeAgo } from "../../../web/src/client/lib/format.ts"
-import { BUILT_IN_MODELS, clampThinking, findModel, supportedThinkingLevels, THINKING_LEVELS, usableModel } from "../../../web/src/shared/models.ts"
+import { BUILT_IN_MODELS, clampThinking, daysSinceRelease, findModel, isNewModel, NEW_MODEL_DAYS, supportedThinkingLevels, THINKING_LEVELS, usableModel } from "../../../web/src/shared/models.ts"
 import { MEDIA_PREFIX, mediaTypeOf, vmMediaLinks, vmMediaSource } from "../../../web/src/shared/media.ts"
 import { githubFullName, normalizeRepoUrl, repoDirName, repoLabel } from "../../../web/src/shared/projects.ts"
 import { formatInstalls, invokedSkill, skillSlug } from "../../../web/src/shared/skills.ts"
@@ -39,7 +39,7 @@ globalThis.Date = FakeDate as DateConstructor
 const { videoSource } = load("client/components/media.tsx", ["DIRECT_VIDEO", "videoSource"], { MEDIA_PREFIX, mediaTypeOf, vmMediaSource })
 const { summarize, toolActivity } = load("client/components/tool-card.tsx", ["summaryKeys", "summarize", "toolActivity", "activities"], { Predicate })
 const { inboxState, snoozeOptions, snoozedLabel } = load("client/components/session-menu.tsx", ["inboxState", "at", "when", "snoozeOptions", "snoozedLabel"])
-const { formatTokens } = load("client/components/model-picker.tsx", ["formatTokens"])
+const { formatTokens, releaseLabel, PERIODS, WITHIN } = load("client/components/model-picker.tsx", ["formatTokens", "releaseLabel", "PERIODS", "WITHIN"])
 const { usd, compact } = load("routes/_app.usage.tsx", ["usd", "compact"])
 
 // ── Formatting ───────────────────────────────────────────────────────────────
@@ -83,6 +83,25 @@ write("models.json", {
     commandcodeUsable: connections.map((connected) => usableModel("commandcode/deepseek/retired", connected)) },
   connections
 })
+
+// Release dates: days since, the New badge, and the row's label, at the fixed clock and just before its midnight.
+const releases = [undefined, "", "soon", "2026-10-19", "2026-10-18", "2026-10-12", "2026-10-05", "2026-10-04", "2026-09-19", "2026-07-21",
+  "2026-07-20", "2026-01-01", "2025-12-31", "2025-03-14", "2026-10-20", "2026-12-25", "2026-10-19T23:59:59Z", "2026-02-30", "2026-04-31",
+  "2026-13-01", "2026-10-00", "2026-10-32", "2026-1-5", "20261019", "1969-12-31"]
+write("releases.json", {
+  newDays: NEW_MODEL_DAYS,
+  nows: [NOW, Date.UTC(2026, 9, 19, 23, 59, 59, 999), Date.UTC(2027, 0, 1)],
+  cases: releases.map((releasedAt) => ({
+    releasedAt: releasedAt ?? null,
+    at: [NOW, Date.UTC(2026, 9, 19, 23, 59, 59, 999), Date.UTC(2027, 0, 1)].map((now) => {
+      fakeNow = now
+      return { days: daysSinceRelease({ releasedAt }, now) ?? null, isNew: isNewModel({ releasedAt }, now), label: releaseLabel({ releasedAt }) ?? null }
+    })
+  })),
+  periods: PERIODS.map((period: { days: number; label: string }) => ({ days: Number.isFinite(period.days) ? period.days : null, label: period.label })),
+  within: WITHIN
+})
+fakeNow = NOW
 
 // ── Tools, skills, UI notes ──────────────────────────────────────────────────
 

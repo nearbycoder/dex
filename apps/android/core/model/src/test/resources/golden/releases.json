@@ -1,0 +1,546 @@
+{
+ "newDays": 14,
+ "nows": [
+  1792447710000,
+  1792454399999,
+  1798761600000
+ ],
+ "cases": [
+  {
+   "releasedAt": null,
+   "at": [
+    {
+     "days": null,
+     "isNew": false,
+     "label": null
+    },
+    {
+     "days": null,
+     "isNew": false,
+     "label": null
+    },
+    {
+     "days": null,
+     "isNew": false,
+     "label": null
+    }
+   ]
+  },
+  {
+   "releasedAt": "",
+   "at": [
+    {
+     "days": null,
+     "isNew": false,
+     "label": null
+    },
+    {
+     "days": null,
+     "isNew": false,
+     "label": null
+    },
+    {
+     "days": null,
+     "isNew": false,
+     "label": null
+    }
+   ]
+  },
+  {
+   "releasedAt": "soon",
+   "at": [
+    {
+     "days": null,
+     "isNew": false,
+     "label": null
+    },
+    {
+     "days": null,
+     "isNew": false,
+     "label": null
+    },
+    {
+     "days": null,
+     "isNew": false,
+     "label": null
+    }
+   ]
+  },
+  {
+   "releasedAt": "2026-10-19",
+   "at": [
+    {
+     "days": 0,
+     "isNew": true,
+     "label": "Oct 19"
+    },
+    {
+     "days": 0,
+     "isNew": true,
+     "label": "Oct 19"
+    },
+    {
+     "days": 74,
+     "isNew": false,
+     "label": "Oct 2026"
+    }
+   ]
+  },
+  {
+   "releasedAt": "2026-10-18",
+   "at": [
+    {
+     "days": 1,
+     "isNew": true,
+     "label": "Oct 18"
+    },
+    {
+     "days": 1,
+     "isNew": true,
+     "label": "Oct 18"
+    },
+    {
+     "days": 75,
+     "isNew": false,
+     "label": "Oct 2026"
+    }
+   ]
+  },
+  {
+   "releasedAt": "2026-10-12",
+   "at": [
+    {
+     "days": 7,
+     "isNew": true,
+     "label": "Oct 12"
+    },
+    {
+     "days": 7,
+     "isNew": true,
+     "label": "Oct 12"
+    },
+    {
+     "days": 81,
+     "isNew": false,
+     "label": "Oct 2026"
+    }
+   ]
+  },
+  {
+   "releasedAt": "2026-10-05",
+   "at": [
+    {
+     "days": 14,
+     "isNew": true,
+     "label": "Oct 5"
+    },
+    {
+     "days": 14,
+     "isNew": true,
+     "label": "Oct 5"
+    },
+    {
+     "days": 88,
+     "isNew": false,
+     "label": "Oct 2026"
+    }
+   ]
+  },
+  {
+   "releasedAt": "2026-10-04",
+   "at": [
+    {
+     "days": 15,
+     "isNew": false,
+     "label": "Oct 4"
+    },
+    {
+     "days": 15,
+     "isNew": false,
+     "label": "Oct 4"
+    },
+    {
+     "days": 89,
+     "isNew": false,
+     "label": "Oct 2026"
+    }
+   ]
+  },
+  {
+   "releasedAt": "2026-09-19",
+   "at": [
+    {
+     "days": 30,
+     "isNew": false,
+     "label": "Sep 19"
+    },
+    {
+     "days": 30,
+     "isNew": false,
+     "label": "Sep 19"
+    },
+    {
+     "days": 104,
+     "isNew": false,
+     "label": "Sep 2026"
+    }
+   ]
+  },
+  {
+   "releasedAt": "2026-07-21",
+   "at": [
+    {
+     "days": 90,
+     "isNew": false,
+     "label": "Jul 21"
+    },
+    {
+     "days": 90,
+     "isNew": false,
+     "label": "Jul 21"
+    },
+    {
+     "days": 164,
+     "isNew": false,
+     "label": "Jul 2026"
+    }
+   ]
+  },
+  {
+   "releasedAt": "2026-07-20",
+   "at": [
+    {
+     "days": 91,
+     "isNew": false,
+     "label": "Jul 20"
+    },
+    {
+     "days": 91,
+     "isNew": false,
+     "label": "Jul 20"
+    },
+    {
+     "days": 165,
+     "isNew": false,
+     "label": "Jul 2026"
+    }
+   ]
+  },
+  {
+   "releasedAt": "2026-01-01",
+   "at": [
+    {
+     "days": 291,
+     "isNew": false,
+     "label": "Jan 1"
+    },
+    {
+     "days": 291,
+     "isNew": false,
+     "label": "Jan 1"
+    },
+    {
+     "days": 365,
+     "isNew": false,
+     "label": "Jan 2026"
+    }
+   ]
+  },
+  {
+   "releasedAt": "2025-12-31",
+   "at": [
+    {
+     "days": 292,
+     "isNew": false,
+     "label": "Dec 2025"
+    },
+    {
+     "days": 292,
+     "isNew": false,
+     "label": "Dec 2025"
+    },
+    {
+     "days": 366,
+     "isNew": false,
+     "label": "Dec 2025"
+    }
+   ]
+  },
+  {
+   "releasedAt": "2025-03-14",
+   "at": [
+    {
+     "days": 584,
+     "isNew": false,
+     "label": "Mar 2025"
+    },
+    {
+     "days": 584,
+     "isNew": false,
+     "label": "Mar 2025"
+    },
+    {
+     "days": 658,
+     "isNew": false,
+     "label": "Mar 2025"
+    }
+   ]
+  },
+  {
+   "releasedAt": "2026-10-20",
+   "at": [
+    {
+     "days": 0,
+     "isNew": true,
+     "label": "Oct 20"
+    },
+    {
+     "days": 0,
+     "isNew": true,
+     "label": "Oct 20"
+    },
+    {
+     "days": 73,
+     "isNew": false,
+     "label": "Oct 2026"
+    }
+   ]
+  },
+  {
+   "releasedAt": "2026-12-25",
+   "at": [
+    {
+     "days": 0,
+     "isNew": true,
+     "label": "Dec 25"
+    },
+    {
+     "days": 0,
+     "isNew": true,
+     "label": "Dec 25"
+    },
+    {
+     "days": 7,
+     "isNew": true,
+     "label": "Dec 2026"
+    }
+   ]
+  },
+  {
+   "releasedAt": "2026-10-19T23:59:59Z",
+   "at": [
+    {
+     "days": 0,
+     "isNew": true,
+     "label": "Oct 19"
+    },
+    {
+     "days": 0,
+     "isNew": true,
+     "label": "Oct 19"
+    },
+    {
+     "days": 74,
+     "isNew": false,
+     "label": "Oct 2026"
+    }
+   ]
+  },
+  {
+   "releasedAt": "2026-02-30",
+   "at": [
+    {
+     "days": 231,
+     "isNew": false,
+     "label": "Mar 2"
+    },
+    {
+     "days": 231,
+     "isNew": false,
+     "label": "Mar 2"
+    },
+    {
+     "days": 305,
+     "isNew": false,
+     "label": "Mar 2026"
+    }
+   ]
+  },
+  {
+   "releasedAt": "2026-04-31",
+   "at": [
+    {
+     "days": 171,
+     "isNew": false,
+     "label": "May 1"
+    },
+    {
+     "days": 171,
+     "isNew": false,
+     "label": "May 1"
+    },
+    {
+     "days": 245,
+     "isNew": false,
+     "label": "May 2026"
+    }
+   ]
+  },
+  {
+   "releasedAt": "2026-13-01",
+   "at": [
+    {
+     "days": null,
+     "isNew": false,
+     "label": null
+    },
+    {
+     "days": null,
+     "isNew": false,
+     "label": null
+    },
+    {
+     "days": null,
+     "isNew": false,
+     "label": null
+    }
+   ]
+  },
+  {
+   "releasedAt": "2026-10-00",
+   "at": [
+    {
+     "days": null,
+     "isNew": false,
+     "label": null
+    },
+    {
+     "days": null,
+     "isNew": false,
+     "label": null
+    },
+    {
+     "days": null,
+     "isNew": false,
+     "label": null
+    }
+   ]
+  },
+  {
+   "releasedAt": "2026-10-32",
+   "at": [
+    {
+     "days": null,
+     "isNew": false,
+     "label": null
+    },
+    {
+     "days": null,
+     "isNew": false,
+     "label": null
+    },
+    {
+     "days": null,
+     "isNew": false,
+     "label": null
+    }
+   ]
+  },
+  {
+   "releasedAt": "2026-1-5",
+   "at": [
+    {
+     "days": null,
+     "isNew": false,
+     "label": null
+    },
+    {
+     "days": null,
+     "isNew": false,
+     "label": null
+    },
+    {
+     "days": null,
+     "isNew": false,
+     "label": null
+    }
+   ]
+  },
+  {
+   "releasedAt": "20261019",
+   "at": [
+    {
+     "days": null,
+     "isNew": false,
+     "label": null
+    },
+    {
+     "days": null,
+     "isNew": false,
+     "label": null
+    },
+    {
+     "days": null,
+     "isNew": false,
+     "label": null
+    }
+   ]
+  },
+  {
+   "releasedAt": "1969-12-31",
+   "at": [
+    {
+     "days": 20746,
+     "isNew": false,
+     "label": "Dec 1969"
+    },
+    {
+     "days": 20746,
+     "isNew": false,
+     "label": "Dec 1969"
+    },
+    {
+     "days": 20820,
+     "isNew": false,
+     "label": "Dec 1969"
+    }
+   ]
+  }
+ ],
+ "periods": [
+  {
+   "days": 7,
+   "label": "This week"
+  },
+  {
+   "days": 30,
+   "label": "This month"
+  },
+  {
+   "days": 90,
+   "label": "Past 3 months"
+  },
+  {
+   "days": null,
+   "label": "Earlier"
+  }
+ ],
+ "within": [
+  {
+   "days": 0,
+   "label": "Any time"
+  },
+  {
+   "days": 7,
+   "label": "7 days"
+  },
+  {
+   "days": 30,
+   "label": "30 days"
+  },
+  {
+   "days": 90,
+   "label": "90 days"
+  }
+ ]
+}
