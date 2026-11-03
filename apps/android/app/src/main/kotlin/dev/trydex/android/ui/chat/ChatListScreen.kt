@@ -40,6 +40,7 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
@@ -90,6 +91,7 @@ import dev.trydex.android.ui.components.ModelLogo
 import dev.trydex.android.ui.components.StatusDot
 import dev.trydex.android.ui.components.haptics
 import dev.trydex.android.ui.components.rememberConfirm
+import dev.trydex.android.ui.components.roomForLargeTitle
 import dev.trydex.android.ui.nav.Chat
 import dev.trydex.android.ui.nav.NewChat
 import dev.trydex.android.ui.theme.DexTheme
@@ -135,7 +137,7 @@ fun ChatListScreen() {
     val selected = (app.navigator.stack(dev.trydex.android.ui.nav.Tab.Chats).getOrNull(1) as? Chat)?.id
     val listState = rememberLazyListState()
     val expandedFab by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
-    val scroll = TopAppBarDefaults.pinnedScrollBehavior()
+    val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     // Back closes the search first.
     BackHandler(enabled = searching) {
         searching = false
@@ -145,32 +147,38 @@ fun ChatListScreen() {
     Scaffold(
         modifier = Modifier.nestedScroll(scroll.nestedScrollConnection),
         topBar = {
-            TopAppBar(
-                title = {
-                    if (searching) {
-                        val focus = remember { FocusRequester() }
-                        LaunchedEffect(Unit) { focus.requestFocus() }
-                        TextField(
-                            state = query,
-                            placeholder = { Text("Search chats and sidekicks") },
-                            lineLimits = androidx.compose.foundation.text.input.TextFieldLineLimits.SingleLine,
-                            colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent),
-                            modifier = Modifier.fillMaxWidth().focusRequester(focus).testTag("search-chats"),
-                        )
-                    } else {
-                        Text("Chats")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = {
-                        searching = !searching
-                        if (!searching) query.edit { replace(0, length, "") }
-                    }) {
-                        Icon(if (searching) Icons.Outlined.Close else Icons.Outlined.Search, contentDescription = if (searching) "Close search" else "Search chats")
-                    }
-                },
-                scrollBehavior = scroll,
-            )
+            val searchButton = @Composable {
+                IconButton(onClick = {
+                    searching = !searching
+                    if (!searching) query.edit { replace(0, length, "") }
+                }) {
+                    Icon(if (searching) Icons.Outlined.Close else Icons.Outlined.Search, contentDescription = if (searching) "Close search" else "Search chats")
+                }
+            }
+            if (searching || !roomForLargeTitle()) {
+                TopAppBar(
+                    title = {
+                        if (searching) {
+                            val focus = remember { FocusRequester() }
+                            LaunchedEffect(Unit) { focus.requestFocus() }
+                            TextField(
+                                state = query,
+                                placeholder = { Text("Search chats and sidekicks") },
+                                lineLimits = androidx.compose.foundation.text.input.TextFieldLineLimits.SingleLine,
+                                colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent),
+                                modifier = Modifier.fillMaxWidth().focusRequester(focus).testTag("search-chats"),
+                            )
+                        } else {
+                            Text("Chats")
+                        }
+                    },
+                    actions = { searchButton() },
+                    scrollBehavior = scroll,
+                )
+            } else {
+                // The same large title as the other tabs, folding into the bar as the list scrolls.
+                LargeFlexibleTopAppBar(title = { Text("Chats") }, actions = { searchButton() }, scrollBehavior = scroll)
+            }
         },
         floatingActionButton = {
             // On rails the new-chat button lives in the rail.
