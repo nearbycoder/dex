@@ -22,6 +22,11 @@ final class PerformanceUITests: DexUITestCase {
         app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", words)).firstMatch
     }
 
+    /// The open chat's title in the bar (the chat is on screen).
+    private func title(_ words: String) -> XCUIElement {
+        app.navigationBars.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", words)).firstMatch
+    }
+
     private var options: XCTMeasureOptions {
         let options = XCTMeasureOptions()
         options.iterationCount = 5
@@ -98,7 +103,7 @@ final class PerformanceUITests: DexUITestCase {
         XCTAssertTrue(text(containing: "Module 119 is tidy").waitForExistence(timeout: 30))
         backToList()
         short.tap()
-        XCTAssertTrue(text(containing: "Here's an easy weekend").waitForExistence(timeout: 30))
+        XCTAssertTrue(title("Plan a weekend").waitForExistence(timeout: 30))
         backToList()
         measure(metrics: [XCTClockMetric(), XCTCPUMetric(application: app)], options: options) {
             startMeasuring()
@@ -106,7 +111,7 @@ final class PerformanceUITests: DexUITestCase {
             XCTAssertTrue(text(containing: "Module 119 is tidy").waitForExistence(timeout: 30))
             backToList()
             short.tap()
-            XCTAssertTrue(text(containing: "Here's an easy weekend").waitForExistence(timeout: 30))
+            XCTAssertTrue(title("Plan a weekend").waitForExistence(timeout: 30))
             stopMeasuring()
             backToList()
         }
