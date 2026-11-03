@@ -47,7 +47,7 @@ struct ReplyView: View {
             ForEach(layout.shown) { step in
                 switch step.block {
                 case .text(let text) where !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty:
-                    MarkdownView(text: text) { url in links.open(url, router: router) }
+                    MarkdownView(text: text, onLink: { url in links.open(url, router: router) }, live: step.live)
                 case .thinking(let text, _):
                     ThinkingStep(text: text, live: step.live)
                 case .toolCall(let call) where ReplyLayout.isUI(step.block):
@@ -246,7 +246,7 @@ struct ActivityStep: View {
         case .thinking(let text, _):
             ThinkingStep(text: text, live: step.live)
         case .text(let text) where !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty:
-            MarkdownView(text: text, font: .footnote)
+            MarkdownView(text: text, font: .footnote, live: step.live)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 4)

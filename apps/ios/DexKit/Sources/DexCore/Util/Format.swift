@@ -6,11 +6,16 @@ public enum Format {
     public static func ago(_ milliseconds: Double, now: Date = .now) -> String {
         let date = Date(timeIntervalSince1970: milliseconds / 1000)
         if abs(now.timeIntervalSince(date)) < 60 { return "just now" }
+        return relative.localizedString(for: date, relativeTo: now)
+    }
+
+    /// Made once: every chat row asks for one, every time the list is drawn. (Formatters are safe to share.)
+    nonisolated(unsafe) private static let relative: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .short
         formatter.dateTimeStyle = .named
-        return formatter.localizedString(for: date, relativeTo: now)
-    }
+        return formatter
+    }()
 
     /// "Oct 19" (or "Oct 19, 2025" in another year).
     public static func date(_ milliseconds: Double, now: Date = .now) -> String {

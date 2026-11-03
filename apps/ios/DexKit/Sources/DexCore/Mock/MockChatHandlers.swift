@@ -424,7 +424,7 @@ extension MockAgent {
             stopRun(id, stopReason: "error")
             return
         }
-        let answer = step?.answer ?? "Sure. Here's a **short** answer to “\(prompt)”."
+        let answer = step?.answer ?? (lower.contains("essay") ? MockLongChat.essay : "Sure. Here's a **short** answer to “\(prompt)”.")
         let textIndex = blocks.count
         events(id, [["type": "message_update", "usage": [:], "changes": [["type": "text_start", "contentIndex": .number(Double(textIndex)), "block": ["type": "text", "text": ""]]]]])
         for word in answer.split(separator: " ", omittingEmptySubsequences: false) {

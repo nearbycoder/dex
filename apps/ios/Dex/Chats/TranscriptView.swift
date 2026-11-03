@@ -32,8 +32,8 @@ struct TranscriptView: View {
 
     var body: some View {
         let transcript = feed.transcript
-        let items = transcript.displayItems
-        let results = transcript.toolResults
+        let items = feed.displayItems
+        let results = feed.toolResults
         let lastUser = items.last { if case .user = $0 { true } else { false } }
         ScrollView(.vertical) {
             LazyVStack(alignment: .leading, spacing: 20) {
@@ -57,11 +57,13 @@ struct TranscriptView: View {
                         if let prompt = UserText.scheduledPrompt(text) {
                             ScheduledNote(prompt: prompt)
                         } else {
-                            UserBubble(text: text, images: images, feed: feed, files: files, imageParts: imageParts, onEdit: { composer.fill(text) })
+                            // The composer, not a closure: a new closure each time would draw every bubble again on every streamed chunk.
+                            UserBubble(text: text, images: images, feed: feed, files: files, imageParts: imageParts, editInto: composer)
                         }
                     case .assistant(_, let messages, let streaming, let endedAt):
+                        // Live tools belong to the latest reply; earlier ones get none, so they don't redraw as a tool's output streams.
                         let reply = ReplyView(feed: feed, messages: messages, streaming: streaming, running: transcript.running && index == items.count - 1,
-                                              endedAt: endedAt, results: results, tools: transcript.tools,
+                                              endedAt: endedAt, results: results, tools: index == items.count - 1 ? transcript.tools : Self.noTools,
                                               onRetry: index == items.count - 1 ? lastUser.flatMap(Self.text).map { text in { send(text) } } : nil)
                         if let speaker {
                             HStack(alignment: .top, spacing: 10) {
@@ -197,6 +199,8 @@ struct TranscriptView: View {
         }
     }
 
+    private static let noTools: [String: LiveTool] = [:]
+
     static func isAssistant(_ item: DisplayItem) -> Bool { if case .assistant = item { true } else { false } }
     static func text(_ item: DisplayItem) -> String? { if case .user(_, let text, _, _, _) = item { text } else { nil } }
 
@@ -215,7 +219,8 @@ struct UserBubble: View {
     var files: [AttachedFile] = []
     var imageParts: [ImagePart] = []
     var pending = false
-    var onEdit: (() -> Void)? = nil
+    /// Its menu's "Edit as New Message" puts the text in this box.
+    var editInto: ComposerModel? = nil
 
     var body: some View {
         let split = UserText.splitUiNotes(text)
@@ -251,8 +256,8 @@ struct UserBubble: View {
                 .opacity(pending ? 0.65 : 1)
                 .contextMenu {
                     Button { UIPasteboard.general.string = split.text } label: { Label("Copy", systemImage: "doc.on.doc") }
-                    if let onEdit {
-                        Button(action: onEdit) { Label("Edit as New Message", systemImage: "pencil") }
+                    if let editInto {
+                        Button { editInto.fill(text) } label: { Label("Edit as New Message", systemImage: "pencil") }
                     }
                     ShareLink(item: split.text)
                 }
