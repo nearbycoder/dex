@@ -22,7 +22,7 @@ import {
   SlidersHorizontal,
   X
 } from "lucide-react"
-import { type ReactNode, type TouchEvent, useEffect, useRef, useState } from "react"
+import { type MouseEvent, type ReactNode, type RefObject, type TouchEvent, useEffect, useRef, useState } from "react"
 import { forgetSavedState, useDex } from "~/client/lib/dex"
 import { haptic } from "~/client/lib/haptics"
 import { timeAgo } from "~/client/lib/format"
@@ -37,6 +37,7 @@ import { AgentAvatar, CharacterAvatar } from "./agent-avatar"
 import { mcpNeedsAttention } from "./mcp-picker"
 import { ModelLogo } from "./model-logo"
 import { inboxState, SessionMenu, type SessionMenuHandle, snoozedLabel, useNaming } from "./session-menu"
+import { SelectionBar } from "./selection-bar"
 import { ChatListSkeleton } from "./skeleton"
 import { UsageGlanceLink, UsageSettingsIcon } from "./usage-glance"
 import { useNow } from "./vm-status"
@@ -87,6 +88,9 @@ export function Sidebar() {
   // Where "Chats" goes back to: the chat you were last in.
   const lastChat = useRef<string | null>(null)
   if (activeId) lastChat.current = activeId
+
+  const chatList = useRef<HTMLElement>(null)
+  const selection = useChatSelection(chatList, activeId, state?.sessions, settingsMode)
 
   const running = state?.vms.filter((vm) => vm.status === "running").length ?? 0
   const vmChanging = state?.vms.some((vm) => vm.status === "starting" || vm.status === "stopping") ?? false
@@ -217,9 +221,11 @@ export function Sidebar() {
                 <MessageSquarePlus className="size-4" /> New chat
               </Link>
             </div>
-            <nav className="scrollbar-thin mt-4 flex-1 space-y-0.5 overflow-y-auto px-3">
+            <nav ref={chatList} className="scrollbar-thin mt-4 flex-1 space-y-0.5 overflow-y-auto px-3">
               {state && <Characters characters={state.characters} sessions={state.sessions} activeId={activeId} onPick={onClose} />}
-              <div className="px-2 pb-1 text-[11px] font-medium tracking-wide text-zinc-600 uppercase">Chats</div>
+              <div className="px-2 pb-1 text-[11px] font-medium tracking-wide text-zinc-600 uppercase" title="Shift-click chats to select several">
+                Chats
+              </div>
               {!state && <ChatListSkeleton />}
               {state && (
                 <ChatGroups
@@ -228,11 +234,22 @@ export function Sidebar() {
                   activeId={activeId}
                   onPick={onClose}
                   renderRow={(session, group) => (
-                    <ChatRow key={session.id} session={session} group={group} active={session.id === activeId} onPick={onClose} />
+                    <ChatRow
+                      key={session.id}
+                      session={session}
+                      group={group}
+                      active={session.id === activeId}
+                      selected={selection.ids.has(session.id)}
+                      onSelect={selection.click}
+                      onPick={onClose}
+                    />
                   )}
                 />
               )}
             </nav>
+            {state && selection.ids.size > 0 && (
+              <SelectionBar sessions={state.sessions.filter((session) => selection.ids.has(session.id))} activeId={activeId} onClear={selection.clear} />
+            )}
           </div>
         )}
         <div className="space-y-0.5 border-t border-zinc-900 p-3">
@@ -377,7 +394,21 @@ function Characters({
 }
 
 /** One chat in the sidebar: title, its agent / project / model, and when it last did something (or when it wakes). */
-function ChatRow({ session, group, active, onPick }: { session: SessionMeta; group: ChatGroup; active: boolean; onPick: () => void }) {
+function ChatRow({
+  session,
+  group,
+  active,
+  selected,
+  onSelect,
+  onPick
+}: {
+  session: SessionMeta
+  group: ChatGroup
+  active: boolean
+  selected: boolean
+  onSelect: (event: MouseEvent, sessionId: string) => boolean
+  onPick: () => void
+}) {
   const { state } = useDex()
   const naming = useNaming(session.id)
   const menu = useRef<SessionMenuHandle>(null)
@@ -391,7 +422,7 @@ function ChatRow({ session, group, active, onPick }: { session: SessionMeta; gro
         {...press.handlers}
         onClick={(event) => {
           // The tap that ends a long press opened the menu; it doesn't open the chat too.
-          if (press.consume()) {
+          if (press.consume() || onSelect(event, session.id)) {
             event.preventDefault()
             return
           }
@@ -404,8 +435,12 @@ function ChatRow({ session, group, active, onPick }: { session: SessionMeta; gro
         }}
         // No iOS link preview or text selection on a long press.
         style={{ WebkitTouchCallout: "none" }}
+        data-chat-row={session.id}
+        aria-selected={selected || undefined}
         className={`block rounded-lg py-2 pr-8 pl-2.5 select-none [@media(hover:none)]:pr-2.5 ${
-          active
+          selected
+            ? "bg-sky-500/10 text-zinc-100 ring-1 ring-sky-500/30 ring-inset"
+            : active
             ? "bg-zinc-900 text-zinc-100"
             : group === "settled"
               ? "text-zinc-500 hover:bg-zinc-900/60 hover:text-zinc-200"
@@ -464,6 +499,62 @@ function ChatRow({ session, group, active, onPick }: { session: SessionMeta; gro
       />
     </div>
   )
+}
+
+/**
+ * Picking several chats at once, the way a file list does: shift-click selects every chat between the last one clicked
+ * (or the open one) and this one, and once some are picked ⌘/Ctrl-click adds or drops one. A plain click opens the chat
+ * and clears the pick; so does Escape. Rows are read in the order they're shown, collapsed groups left out.
+ */
+function useChatSelection(list: RefObject<HTMLElement | null>, activeId: string | undefined, sessions: ReadonlyArray<SessionMeta> | undefined, off: boolean) {
+  const [ids, setIds] = useState<ReadonlySet<string>>(() => new Set())
+  const anchor = useRef<string | null>(null)
+  const clear = () => setIds(new Set())
+
+  // Chats deleted elsewhere drop out; the settings sidebar has no chats to pick.
+  useEffect(() => {
+    if (off) return clear()
+    if (!sessions) return
+    const known = new Set(sessions.map((session) => session.id))
+    setIds((current) => ([...current].every((id) => known.has(id)) ? current : new Set([...current].filter((id) => known.has(id)))))
+  }, [sessions, off])
+
+  useEffect(() => {
+    if (ids.size === 0) return
+    const key = (event: KeyboardEvent) => {
+      // Escape in the confirm dialog only closes the dialog.
+      if (event.key === "Escape" && !document.querySelector('[role="alertdialog"]')) clear()
+    }
+    document.addEventListener("keydown", key)
+    return () => document.removeEventListener("keydown", key)
+  }, [ids.size])
+
+  const click = (event: MouseEvent, id: string) => {
+    if (event.shiftKey) {
+      const order = [...(list.current?.querySelectorAll<HTMLElement>("[data-chat-row]") ?? [])].map((row) => row.dataset.chatRow ?? "")
+      const to = order.indexOf(id)
+      const from = order.indexOf(anchor.current ?? activeId ?? id)
+      const range = order.slice(Math.min(from < 0 ? to : from, to), Math.max(from < 0 ? to : from, to) + 1)
+      setIds((current) => new Set(event.metaKey || event.ctrlKey ? [...current, ...range] : range))
+      if (from < 0) anchor.current = id
+      return true
+    }
+    // ⌘-click on its own still opens a new tab; it only toggles once you're picking.
+    if ((event.metaKey || event.ctrlKey) && ids.size > 0) {
+      setIds((current) => {
+        const next = new Set(current)
+        if (!next.delete(id)) next.add(id)
+        return next
+      })
+      anchor.current = id
+      return true
+    }
+    anchor.current = id
+    if (ids.size > 0) clear()
+    return false
+  }
+
+  return { ids, click, clear }
 }
 
 /**

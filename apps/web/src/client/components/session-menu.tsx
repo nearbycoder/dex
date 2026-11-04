@@ -17,7 +17,7 @@ const at = (base: Date, days: number, hour: number) => {
   return date
 }
 
-const when = (date: Date) => {
+export const when = (date: Date) => {
   const today = new Date()
   const sameDay = date.toDateString() === today.toDateString()
   const time = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
