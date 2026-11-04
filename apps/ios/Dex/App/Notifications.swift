@@ -13,12 +13,13 @@ import UIKit
 @Observable
 final class Notifications: NSObject, UNUserNotificationCenterDelegate {
     static let shared = Notifications()
-    /// Posted when a notification was tapped: a window takes the link (`takePending`) and opens it.
+    /// Posted when a notification or a Home Screen quick action was tapped: a window takes the link (`takePending`) and
+    /// opens it.
     static let openURL = Notification.Name("dex.openURL")
     /// The person allowed notifications on this device.
     private(set) var authorized = false
     @ObservationIgnored private var asked = false
-    /// What a tapped notification opens, until a window takes it (one may not exist yet on a cold launch).
+    /// What a tapped notification or quick action opens, until a window takes it (one may not exist yet on a cold launch).
     @ObservationIgnored private var pending: URL?
     /// The chat each foreground window shows, by window.
     @ObservationIgnored private var onScreen: [UUID: String] = [:]
@@ -97,13 +98,13 @@ final class Notifications: NSObject, UNUserNotificationCenterDelegate {
 
     func isOnScreen(_ sessionId: String) -> Bool { onScreen.values.contains(sessionId) }
 
-    /// The link a tapped notification opens, for the first window to ask.
+    /// The link a tapped notification or quick action opens, for the first window to ask.
     func takePending() -> URL? {
         defer { pending = nil }
         return pending
     }
 
-    private func open(_ url: URL) {
+    func open(_ url: URL) {
         pending = url
         NotificationCenter.default.post(name: Self.openURL, object: nil)
     }

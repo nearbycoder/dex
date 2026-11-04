@@ -22,12 +22,39 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         return true
     }
 
+    func application(_ application: UIApplication, configurationForConnecting connectingSceneSession: UISceneSession,
+                     options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+        // A Home Screen quick action that launched the app: the window opens its link once it's up.
+        if let item = options.shortcutItem { QuickActions.perform(item) }
+        let configuration = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
+        configuration.delegateClass = SceneDelegate.self
+        return configuration
+    }
+
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         PushRegistration.shared.didRegister(deviceToken)
     }
 
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
         PushRegistration.shared.didFail(error)
+    }
+}
+
+/// Hears Home Screen quick actions while the app is running.
+final class SceneDelegate: NSObject, UIWindowSceneDelegate {
+    func windowScene(_ windowScene: UIWindowScene, performActionFor shortcutItem: UIApplicationShortcutItem) async -> Bool {
+        QuickActions.perform(shortcutItem)
+    }
+}
+
+/// Home Screen quick actions (a long press on the app icon), from Info.plist's UIApplicationShortcutItems: each carries
+/// the dex:// link it opens in its `url`, which goes the way a tapped notification's does.
+enum QuickActions {
+    @discardableResult
+    static func perform(_ item: UIApplicationShortcutItem) -> Bool {
+        guard let link = item.userInfo?["url"] as? String, let url = URL(string: link) else { return false }
+        Notifications.shared.open(url)
+        return true
     }
 }
 
@@ -69,6 +96,7 @@ struct SignedInView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var client: DexClient?
     @State private var router = Router()
+    @State private var usage = UsageGlanceStore()
 
     var body: some View {
         Group {
@@ -77,6 +105,7 @@ struct SignedInView: View {
                     .chatNotifications()
                     .environment(client)
                     .environment(router)
+                    .environment(usage)
                     .focusedSceneValue(router)
                     .focusedSceneValue(client)
             } else {
@@ -88,7 +117,7 @@ struct SignedInView: View {
             client = made
             made.start()
             if let chat = model.launch.openChat { router.openChat(chat) }
-            // A notification tapped to launch the app.
+            // A notification tapped, or a Home Screen quick action, to launch the app.
             if let url = Notifications.shared.takePending() { _ = router.handle(url) }
         }
         .onDisappear { client?.stop() }

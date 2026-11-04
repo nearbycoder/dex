@@ -56,6 +56,22 @@
 		<key>UIApplicationSupportsMultipleScenes</key>
 		<true/>
 	</dict>
+	<key>UIApplicationShortcutItems</key>
+	<array>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>dev.trydex.Dex.usage</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Usage</string>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>chart.bar.xaxis</string>
+			<key>UIApplicationShortcutItemUserInfo</key>
+			<dict>
+				<key>url</key>
+				<string>dex://settings/usage</string>
+			</dict>
+		</dict>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>
