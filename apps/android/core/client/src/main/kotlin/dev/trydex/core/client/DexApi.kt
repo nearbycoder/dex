@@ -32,6 +32,7 @@ import dev.trydex.core.model.SkillPreview
 import dev.trydex.core.model.ThinkingLevel
 import dev.trydex.core.model.TranscriptImage
 import dev.trydex.core.model.UiOperationResult
+import dev.trydex.core.model.UsageGlance
 import dev.trydex.core.model.UsageReport
 import dev.trydex.core.model.VmActivity
 import dev.trydex.core.model.VmChanges
@@ -281,6 +282,9 @@ class DexApi(private val rpc: AgentRpc) {
     // ── Usage, notifications, access ─────────────────────────────────────────
 
     suspend fun usageReport(range: String): UsageReport = typed(UsageReport.serializer(), "usageReport", range, timeout = 60_000)
+
+    /** The allowances, most used first, and today's tokens (the agent keeps it 30 seconds). Agents from before the meter don't have it (the call throws). */
+    suspend fun usageGlance(): UsageGlance = typed(UsageGlance.serializer(), "usageGlance")
 
     suspend fun pushUpdate(id: String, kinds: List<String>? = null, onlyWhenAway: Boolean? = null) {
         raw("pushUpdate", id, buildJsonObject {

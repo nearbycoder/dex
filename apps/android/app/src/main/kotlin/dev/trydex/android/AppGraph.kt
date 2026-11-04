@@ -11,6 +11,7 @@ import dev.trydex.android.data.KeystoreSessionStore
 import dev.trydex.android.data.LocalCache
 import dev.trydex.android.data.Preferences
 import dev.trydex.android.data.SessionStore
+import dev.trydex.android.data.UsageGlances
 import dev.trydex.android.notifications.FirebaseTokens
 import dev.trydex.android.notifications.Notifier
 import dev.trydex.android.notifications.PushRegistrar
@@ -48,6 +49,9 @@ class AppGraph(
         .build()
 
     val repository = DexRepository(scope, http, sessionStore, LocalCache(cacheDir), models)
+
+    /** The usage meter in the Chats bar and on Settings, fetched once for both. */
+    val usage = UsageGlances(scope, repository)
 
     /** Unsent text in each chat, kept per chat; forgotten on sign-out and when its chat is deleted. */
     val drafts = ChatDrafts(context, scope).also { drafts ->

@@ -168,6 +168,7 @@ fun SettingsHomeScreen() {
     val selected = app.navigator.stack(Tab.Settings).getOrNull(1)
     val waiting = waitingCount(state)
     val providerMissing = state?.let { !it.anyProviderConnected } == true
+    val usage by app.graph.usage.glance.collectAsStateWithLifecycle()
     PaneScaffold(title = "Settings", back = false, modifier = Modifier.testTag("settings-home")) { padding ->
         PageColumn(padding) {
             session?.user?.let { user ->
@@ -186,7 +187,7 @@ fun SettingsHomeScreen() {
                 HubRow(Icons.Outlined.Palette, "Appearance", "Theme, and light or dark", AppearanceSettings, selected)
                 HubRow(Icons.Outlined.Notifications, "Notifications", "What this device tells you about", NotificationSettings, selected)
                 HubRow(Icons.Outlined.Lock, "Secrets", "API keys VMs get as environment variables", Secrets, selected)
-                HubRow(Icons.Outlined.BarChart, "Usage", "Tokens, cost, and VM time", Usage, selected)
+                HubRow(Icons.Outlined.BarChart, "Usage", usage?.summary ?: "Tokens, cost, and VM time", Usage, selected)
                 HubRow(Icons.Outlined.VpnKey, "Access & API", "MCP tokens, confirmations, and activity", Access, selected, badge = waiting)
             }
         }

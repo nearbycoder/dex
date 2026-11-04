@@ -181,4 +181,12 @@ class DexApiTest {
         assertThat(calls.map { it.method }).containsExactly("connectOpenRouter", "connectOpenRouter", "disconnectOpenRouter").inOrder()
         assertThat(calls.map { it.args }).containsExactly("""["sk-or-v1-0123456789"]""", """["nope"]""", "[]").inOrder()
     }
+
+    @Test fun usageGlance() = runBlocking<Unit> {
+        result = """{"meters":[{"provider":"opencode-go","service":"OpenCode Go","window":"5 hours","percent":42,"limited":false,"resetsAt":null,"detail":null,"estimated":false}],"today":{"tokens":1200,"responses":3}}"""
+        val glance = api.usageGlance()
+        assertThat(glance.top!!.service).isEqualTo("OpenCode Go")
+        assertThat(glance.today.tokens).isEqualTo(1200.0)
+        assertThat(calls.single()).isEqualTo(Call("usageGlance", "[]", AgentConnection.DEFAULT_TIMEOUT_MS))
+    }
 }
