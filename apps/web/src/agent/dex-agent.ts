@@ -596,6 +596,11 @@ export class DexAgent extends Agent<Env, DexState> {
     this.refreshCommandCodeStatus()
     this.refreshOpenRouterStatus()
     await this.refreshSessions()
+    // Runs going when the object restarted (a deploy) resume on their own, but what waited for their end didn't
+    // survive: without this they'd read "working" after they finish, with no notification and the queue held.
+    for (const { session, operationId } of await this.harness.pending()) {
+      if (this.hasSession(session)) this.afterRun(session, operationId, "reply")
+    }
     for (const vm of this.vms.values()) void vm.refresh()
     this.ctx.waitUntil(this.reapOrphanVms())
     this.ctx.waitUntil(this.drainQueues().catch(() => undefined))
@@ -1374,14 +1379,21 @@ export class DexAgent extends Agent<Env, DexState> {
     // Something new in it: back to the inbox, whether it was settled or snoozed.
     await this.returnToInbox(sessionId)
     await this.refreshSessions()
-    // Clears the busy flag even when nobody is watching this chat, tells your devices, and sends what's queued next.
+    this.afterRun(sessionId, receipt.operationId, "reply")
+  }
+
+  /**
+   * When the operation settles: clears the busy flag even when nobody is watching this chat, tells your devices, and
+   * sends what's queued next. The wait lives in memory, so onStart waits again for runs a restart left going.
+   */
+  private afterRun(sessionId: string, operationId: string, kind: "reply" | "scheduled", prompt?: string) {
     const finished = async () => {
       this.ctx.storage.sql.exec(`UPDATE dex_sessions SET updated_at = ? WHERE id = ?`, Date.now(), sessionId)
       await this.refreshSessions()
-      await this.notifyRunEnd(sessionId, "reply")
+      await this.notifyRunEnd(sessionId, kind, prompt)
       await this.drainQueue(sessionId)
     }
-    this.ctx.waitUntil(session.wait(receipt.operationId).then(finished, finished))
+    this.ctx.waitUntil(this.harness.session(sessionId).wait(operationId).then(finished, finished))
   }
 
   /**
@@ -3899,14 +3911,8 @@ export class DexAgent extends Agent<Env, DexState> {
     await this.returnToInbox(sessionId)
     this.ctx.storage.sql.exec(`UPDATE dex_sessions SET updated_at = ? WHERE id = ?`, Date.now(), sessionId)
     await this.refreshSessions()
-    const finished = async () => {
-      this.ctx.storage.sql.exec(`UPDATE dex_sessions SET updated_at = ? WHERE id = ?`, Date.now(), sessionId)
-      await this.refreshSessions()
-      await this.notifyRunEnd(sessionId, "scheduled", payload.prompt)
-      await this.drainQueue(sessionId)
-    }
     // In the background, so a long run doesn't hold up the scheduler.
-    this.ctx.waitUntil(session.wait(receipt.operationId).then(finished, finished))
+    this.afterRun(sessionId, receipt.operationId, "scheduled", payload.prompt)
   }
 }
 
