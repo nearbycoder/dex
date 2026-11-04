@@ -166,6 +166,73 @@ import Testing
     }
 }
 
+@Suite struct UsageGlanceTests {
+    /// The shape `usageGlance()` sends (apps/web/src/shared/usage.ts).
+    static let json = #"""
+    {"meters":[
+      {"provider":"opencode-go","service":"OpenCode Go","window":"5 hours","percent":42.4,"limited":false,"resetsAt":"2026-11-04T17:00:00.000Z","detail":null,"estimated":false},
+      {"provider":"commandcode","service":"Command Code","window":"7 days","percent":30,"limited":false,"resetsAt":null,"detail":"$15.00 of $50","estimated":true}],
+     "today":{"tokens":1240000,"responses":86}}
+    """#
+
+    @Test func decodesRealShape() throws {
+        let glance = try JSONDecoder.dex.decode(UsageGlance.self, from: Data(Self.json.utf8))
+        #expect(glance.meters.count == 2)
+        #expect(glance.top?.service == "OpenCode Go")
+        #expect(glance.top?.resetsAt == "2026-11-04T17:00:00.000Z")
+        #expect(glance.meters[1].detail == "$15.00 of $50" && glance.meters[1].estimated)
+        #expect(glance.today == .init(tokens: 1_240_000, responses: 86))
+        #expect(glance.summary == "OpenCode Go · 5 hours · 42%")
+        #expect(glance.spokenSummary == "OpenCode Go 5 hours 42% used")
+    }
+
+    @Test func lenientDecoding() throws {
+        // A provider this app doesn't know, an estimate past its cap, and fields a newer agent may drop or add.
+        let json = #"{"meters":[{"provider":"someday","service":"Someday","window":"Day","percent":135.5,"limited":false,"extra":1}],"today":{"tokens":0}}"#
+        let glance = try JSONDecoder.dex.decode(UsageGlance.self, from: Data(json.utf8))
+        let meter = try #require(glance.top)
+        #expect(meter.provider == "someday" && meter.percent == 135.5)
+        #expect(meter.fraction == 1 && meter.tone == .critical && meter.percentLabel == "100%")
+        #expect(meter.resetsAt == nil && meter.detail == nil && !meter.estimated)
+        #expect(glance.today.responses == 0)
+        let empty = try JSONDecoder.dex.decode(UsageGlance.self, from: Data("{}".utf8))
+        #expect(empty.meters.isEmpty && empty.top == nil)
+    }
+
+    @Test func tonesAndLabels() {
+        let meter = { (percent: Double, limited: Bool) in UsageMeter(provider: "opencode-go", service: "OpenCode Go", window: "Week", percent: percent, limited: limited) }
+        #expect(meter(79.9, false).tone == .normal)
+        #expect(meter(80, false).tone == .warning)
+        #expect(meter(100, false).tone == .critical)
+        #expect(meter(12, true).tone == .critical)
+        #expect(meter(0.4, false).percentLabel == "<1%")
+        #expect(meter(0, false).percentLabel == "0%")
+        #expect(meter(-3, false).fraction == 0)
+        let limited = UsageGlance(meters: [meter(100, true)])
+        #expect(limited.summary == "OpenCode Go · Week · Limit reached")
+        #expect(limited.spokenSummary == "OpenCode Go Week limit reached")
+        // No allowance: today's tokens instead.
+        let tokens = UsageGlance(today: .init(tokens: 1_240_000, responses: 9))
+        #expect(tokens.summary == "1.2M tokens today")
+        #expect(tokens.spokenSummary == "1.2M tokens today")
+    }
+
+    @MainActor @Test func callsTheAgent() async throws {
+        let agent = MockAgent()
+        agent.state.opencode = ClineStatus(connected: true, source: "user", keyHint: "…c3d4", verifiedAt: .nowMs)
+        let client = DexClient(credentials: nil, factory: MockTransportFactory(agent: agent), cache: nil)
+        client.start()
+        await eventually { client.isConnected }
+        let glance = try await client.usageGlance()
+        #expect(glance.top?.percent == 42)
+        #expect(glance.meters.map(\.percent) == glance.meters.map(\.percent).sorted(by: >), "most used first")
+        #expect(try JSONValue(encoding: glance).decode(UsageGlance.self) == glance)
+        // An agent from before usageGlance.
+        agent.handlers["usageGlance"] = nil
+        await #expect(throws: AgentError.remote("Method usageGlance does not exist")) { try await client.usageGlance() }
+    }
+}
+
 @Suite struct AccessTests {
     @Test func decodesCreatedToken() throws {
         let json = #"{"token":{"id":"t-9","label":"Claude Code","scope":"admin","createdAt":1,"lastUsedAt":null,"expiresAt":null},"secret":"dexk.abc"}"#

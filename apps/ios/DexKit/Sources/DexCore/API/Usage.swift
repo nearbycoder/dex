@@ -632,3 +632,107 @@ public enum UsageFormat {
         value.formatted(.number.notation(.compactName).precision(.fractionLength(0...(value < 1000 ? 0 : 1))).locale(Locale(identifier: "en_US")))
     }
 }
+
+/// One allowance at a glance (OpenCode Go's 5 hours, Command Code's estimated week, OpenRouter's free requests today).
+public struct UsageMeter: Codable, Sendable, Hashable {
+    /// The subscription it belongs to: "opencode-go", "commandcode", "openrouter", or one this app doesn't know yet.
+    public var provider: String
+    /// "OpenCode Go"
+    public var service: String
+    /// "5 hours", "Week", "Free requests today"
+    public var window: String
+    /// Share used, 0–100 (an estimate can pass 100).
+    public var percent: Double
+    /// Requests are blocked until it resets.
+    public var limited: Bool
+    /// When it resets (ISO 8601), when the service says.
+    public var resetsAt: String?
+    /// "$4.20 of $20", "12 of 1,000"; nil when the percentage is all there is.
+    public var detail: String?
+    /// Worked out from Dex's own chats rather than read from the service.
+    public var estimated: Bool
+
+    public init(provider: String, service: String, window: String, percent: Double, limited: Bool = false, resetsAt: String? = nil,
+                detail: String? = nil, estimated: Bool = false) {
+        self.provider = provider; self.service = service; self.window = window; self.percent = percent; self.limited = limited
+        self.resetsAt = resetsAt; self.detail = detail; self.estimated = estimated
+    }
+
+    enum CodingKeys: String, CodingKey { case provider, service, window, percent, limited, resetsAt, detail, estimated }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        provider = c.value(.provider, default: "")
+        service = c.value(.service, default: "")
+        window = c.value(.window, default: "")
+        let percent: Double = c.value(.percent, default: 0)
+        self.percent = percent.isFinite ? percent : 0
+        limited = c.value(.limited, default: false)
+        resetsAt = c.value(.resetsAt, default: nil)
+        detail = c.value(.detail, default: nil)
+        estimated = c.value(.estimated, default: false)
+    }
+
+    /// The share used, held to 0–1 for drawing.
+    public var fraction: Double { min(100, max(0, percent)) / 100 }
+
+    public enum Tone: Sendable { case normal, warning, critical }
+    /// Amber from 80%, red at the limit (the web's tint).
+    public var tone: Tone { limited || percent >= 100 ? .critical : percent >= 80 ? .warning : .normal }
+
+    /// "42%", "<1%", or "limit reached".
+    public var percentLabel: String {
+        if limited { return "limit reached" }
+        let clamped = min(100, max(0, percent))
+        return clamped > 0 && clamped < 1 ? "<1%" : "\(Int(clamped.rounded()))%"
+    }
+}
+
+/// What the apps' usage buttons show (`usageGlance()`): the allowances, most used first, and today's tokens.
+public struct UsageGlance: Codable, Sendable, Hashable {
+    public struct Today: Codable, Sendable, Hashable {
+        public var tokens: Double
+        public var responses: Int
+        public init(tokens: Double = 0, responses: Int = 0) { self.tokens = tokens; self.responses = responses }
+
+        enum CodingKeys: String, CodingKey { case tokens, responses }
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            tokens = c.value(.tokens, default: 0)
+            responses = c.value(.responses, default: 0)
+        }
+    }
+
+    /// Most used first; empty when no plan has an allowance.
+    public var meters: [UsageMeter]
+    /// Model tokens and responses today (UTC), across every subscription.
+    public var today: Today
+
+    public init(meters: [UsageMeter] = [], today: Today = .init()) { self.meters = meters; self.today = today }
+
+    enum CodingKeys: String, CodingKey { case meters, today }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        meters = c.value(.meters, default: [])
+        today = c.value(.today, default: .init())
+    }
+
+    /// The busiest allowance (the agent sends them most used first).
+    public var top: UsageMeter? { meters.first }
+
+    /// One line for Settings' Usage row: "OpenCode Go · 5 hours · 42%", or "1.2M tokens today" without an allowance.
+    public var summary: String {
+        guard let top else { return "\(UsageFormat.compact(today.tokens)) tokens today" }
+        return "\(top.service) · \(top.window) · \(top.limited ? "Limit reached" : top.percentLabel)"
+    }
+
+    /// For VoiceOver: "OpenCode Go 5 hours 42% used", or "1.2M tokens today".
+    public var spokenSummary: String {
+        guard let top else { return "\(UsageFormat.compact(today.tokens)) tokens today" }
+        return "\(top.service) \(top.window) \(top.limited ? "limit reached" : "\(top.percentLabel) used")"
+    }
+}
+
+public extension DexClient {
+    /// The agent caches it for 30 seconds. An agent from before it throws ("Method usageGlance does not exist").
+    func usageGlance() async throws -> UsageGlance { try await call("usageGlance") }
+}

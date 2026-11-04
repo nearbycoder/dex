@@ -7,6 +7,7 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @Environment(DexClient.self) private var client
     @Environment(Router.self) private var router
+    @Environment(UsageGlanceStore.self) private var usage
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var confirmSignOut = false
 
@@ -32,7 +33,8 @@ struct SettingsView: View {
                 Section("Access") {
                     row(.access, badge: client.state?.access.pending.filter { $0.isWaiting() }.count ?? 0)
                     row(.notifications, detail: NotificationsPage.summary(client))
-                    row(.usage)
+                    row(.usage, detail: usage.glance?.summary)
+                        .usageGlanceUpdates()
                 }
                 Section {
                     row(.about)

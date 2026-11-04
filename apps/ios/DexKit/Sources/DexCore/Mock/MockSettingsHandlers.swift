@@ -306,6 +306,9 @@ extension MockAgent {
             return try JSONValue(encoding: MockUsage.report(range: range, openCodeConnected: self.state.opencode.connected, commandCodeConnected: self.state.commandcode.connected,
                                                                openRouterConnected: self.state.openrouter.connected))
         }
+        register("usageGlance") { [unowned self] _, _ in
+            try JSONValue(encoding: MockUsage.glance(openCodeConnected: self.state.opencode.connected))
+        }
     }
 
     // MARK: Workspace
@@ -385,6 +388,17 @@ extension MockAgent {
 /// OpenRouter's used in the period even while they aren't connected), VM runs, Cloudflare meters, OpenCode Go's live
 /// allowance, Command Code's estimated one, and OpenRouter's account while its key is connected.
 public enum MockUsage {
+    /// OpenCode Go's windows while it's connected, otherwise today's tokens alone.
+    public static func glance(openCodeConnected: Bool, now: Date = .now) -> UsageGlance {
+        let resets = { (hours: Double) in now.addingTimeInterval(hours * 3600).ISO8601Format() }
+        let meters = openCodeConnected ? [
+            UsageMeter(provider: "opencode-go", service: "OpenCode Go", window: "5 hours", percent: 42, resetsAt: resets(3)),
+            UsageMeter(provider: "opencode-go", service: "OpenCode Go", window: "Month", percent: 31, resetsAt: resets(24 * 12)),
+            UsageMeter(provider: "opencode-go", service: "OpenCode Go", window: "Week", percent: 18, resetsAt: resets(24 * 4)),
+        ] : []
+        return UsageGlance(meters: meters, today: .init(tokens: 1_240_000, responses: 86))
+    }
+
     public static func report(range: UsageRange, openCodeConnected: Bool, commandCodeConnected: Bool = false, openRouterConnected: Bool = false,
                               now: Date = .now) -> UsageReport {
         var calendar = Calendar(identifier: .gregorian)

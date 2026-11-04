@@ -10,6 +10,7 @@ struct ChatListView: View {
     @Environment(Router.self) private var router
     @State private var filter = ""
     @State private var now = Date.now
+    @State private var showingUsage = false
     /// The list has the keyboard (after you pick a chat in it), so ↑/↓ move through it.
     @FocusState private var listFocused: Bool
     @AppStorage("dex.inbox.snoozedOpen") private var snoozedOpen = false
@@ -96,6 +97,9 @@ struct ChatListView: View {
             ToolbarItem(placement: .topBarLeading) {
                 ConnectionIndicator()
             }
+            ToolbarItem(placement: .topBarLeading) {
+                UsageGaugeButton { showingUsage = true }
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     router.newChat()
@@ -105,6 +109,18 @@ struct ChatListView: View {
                 // ⌘N is the File menu's (DexCommands): a view's shortcut stays live in a hidden tab and would win.
                 .accessibilityIdentifier("chats.new")
             }
+        }
+        // Over the chats, so a swipe down comes straight back.
+        .sheet(isPresented: $showingUsage) {
+            NavigationStack {
+                UsagePage()
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { showingUsage = false }.accessibilityIdentifier("usage.done")
+                        }
+                    }
+            }
+            .tint(.dexAccent)
         }
         .focusable()
         .focusEffectDisabled()
