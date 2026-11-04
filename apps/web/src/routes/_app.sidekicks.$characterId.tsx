@@ -14,6 +14,7 @@ import { timeAgo } from "~/client/lib/format"
 import { AGENT_COLORS } from "~/shared/agents"
 import { CHARACTER_TEMPLATES, type CharacterDraft, characterMemoryPath, NOTIFY_LABELS, NOTIFY_LEVELS } from "~/shared/characters"
 import { DEFAULT_MODEL_ID, DEFAULT_THINKING } from "~/shared/models"
+import { ask } from "~/client/components/confirm-dialog"
 
 export const Route = createFileRoute("/_app/sidekicks/$characterId")({ component: CharacterEditorPage })
 
@@ -337,7 +338,7 @@ function CharacterEditor() {
                 <button
                   type="button"
                   onClick={async () => {
-                    if (!confirm(`Delete ${existing.name}? Your conversations with them stay, as ordinary chats.`)) return
+                    if (!(await ask({ title: `Delete ${existing.name}?`, body: "Your conversations with them stay, as ordinary chats.", confirm: "Delete" }))) return
                     await stub.deleteCharacter(existing.id)
                     await navigate({ to: "/sidekicks" })
                   }}
@@ -359,7 +360,7 @@ function CharacterEditor() {
               <button
                 type="button"
                 onClick={async () => {
-                  if (!confirm(`Start a new conversation with ${existing.name}? They keep their memory, and the current one stays here.`)) return
+                  if (!(await ask({ title: `Start a new conversation with ${existing.name}?`, body: "They keep their memory, and the current one stays here.", confirm: "Start new", tone: "default" }))) return
                   const next = await stub.restartCharacter(existing.id)
                   await navigate({ to: "/chat/$sessionId", params: { sessionId: next.sessionId } })
                 }}

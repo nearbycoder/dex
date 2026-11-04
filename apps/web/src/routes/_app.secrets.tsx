@@ -5,6 +5,7 @@ import { SecretsSkeleton } from "~/client/components/skeleton"
 import { inputClass, Page, Section } from "~/client/components/ui"
 import { useDex } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
+import { ask } from "~/client/components/confirm-dialog"
 
 export const Route = createFileRoute("/_app/secrets")({ component: SecretsPage })
 
@@ -119,7 +120,7 @@ function SecretRow({ name, note, updatedAt }: { name: string; note: string; upda
           title="Delete"
           aria-label={`Delete ${name}`}
           onClick={async () => {
-            if (!confirm(`Delete ${name}? VMs stop getting it from their next command.`)) return
+            if (!(await ask({ title: `Delete ${name}?`, body: "VMs stop getting it from their next command.", confirm: "Delete" }))) return
             await stub.removeSecret(name)
           }}
           className="shrink-0 rounded-md p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-red-400"

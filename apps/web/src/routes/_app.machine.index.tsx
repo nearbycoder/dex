@@ -9,6 +9,7 @@ import { timeAgo } from "~/client/lib/format"
 import { MenuButton } from "~/client/lib/mobile-nav"
 import { InfoTip } from "~/client/components/info-tip"
 import { VM_SIZES, type VmInfo, type VmSize } from "~/shared/protocol"
+import { ask } from "~/client/components/confirm-dialog"
 
 /** Every chat's VM at a glance; each opens its desktop, activity, and terminal. */
 export const Route = createFileRoute("/_app/machine/")({ component: MachinesPage })
@@ -106,8 +107,8 @@ function MachineCard({ vm, index }: { vm: VmInfo; index: number }) {
           <button
             type="button"
             disabled={busy !== null}
-            onClick={() => {
-              if (confirm(`Delete “${title}” and everything on its disk? This cannot be undone.`)) void act("delete")
+            onClick={async () => {
+              if (await ask({ title: `Delete “${title}”?`, body: "Everything on its disk goes too. This can't be undone.", confirm: "Delete" })) void act("delete")
             }}
             className="ml-auto flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-800 hover:text-red-400 disabled:opacity-40"
           >

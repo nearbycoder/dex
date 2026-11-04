@@ -16,6 +16,7 @@ import { Field, inputClass, Page, Row, Section, Switch } from "~/client/componen
 import { forgetSavedState, useDex } from "~/client/lib/dex"
 import { hapticsEnabled, hapticsSupported, onHapticsChange, setHapticsEnabled } from "~/client/lib/haptics"
 import type { ScheduledPrompt } from "~/shared/protocol"
+import { ask } from "~/client/components/confirm-dialog"
 
 export const Route = createFileRoute("/_app/settings")({ component: SettingsPage })
 
@@ -181,7 +182,7 @@ function SettingsPage() {
             action="/auth/logout"
             onSubmit={async (event) => {
               event.preventDefault()
-              if (!confirm("Sign out of Dex on every device, including this one?")) return
+              if (!(await ask({ title: "Sign out everywhere?", body: "Every device signed in to Dex, including this one, has to sign in again.", confirm: "Sign out" }))) return
               await stub.signOutEverywhere().catch(() => undefined)
               forgetSavedState()
               signOutAll.current?.submit()

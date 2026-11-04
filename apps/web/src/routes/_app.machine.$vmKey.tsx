@@ -28,6 +28,7 @@ import { useDex } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
 import { MenuButton } from "~/client/lib/mobile-nav"
 import { noVm, type VmActivity } from "~/shared/protocol"
+import { ask } from "~/client/components/confirm-dialog"
 
 /** One VM: its live desktop, activity, terminal, and ports. `vmKey` is the chat id, or `shared`. */
 export const Route = createFileRoute("/_app/machine/$vmKey")({ component: MachinePage })
@@ -338,8 +339,9 @@ function MachinePage() {
               type="button"
               disabled={busy !== null}
               title="Delete the VM and its disk"
-              onClick={() => {
-                if (confirm(`Delete the VM of “${info.title}” and everything on its disk? This cannot be undone.`)) void act("delete", () => stub.vmDestroy(vm.key))
+              onClick={async () => {
+                if (await ask({ title: `Delete the VM of “${info.title}”?`, body: "Everything on its disk goes too. This can't be undone.", confirm: "Delete" }))
+                  void act("delete", () => stub.vmDestroy(vm.key))
               }}
               className={`${iconButton} hover:text-red-400`}
             >

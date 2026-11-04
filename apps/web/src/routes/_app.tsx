@@ -1,6 +1,7 @@
 import { createFileRoute, Link, Outlet, redirect, useLocation, useMatch, useRouter } from "@tanstack/react-router"
 import { MessageSquarePlus } from "lucide-react"
 import { useEffect } from "react"
+import { ConfirmHost } from "~/client/components/confirm-dialog"
 import { Sidebar } from "~/client/components/sidebar"
 import { ShellSkeleton } from "~/client/components/skeleton"
 import { DexProvider, forgetSavedState } from "~/client/lib/dex"
@@ -150,6 +151,7 @@ function AppLayout() {
             <Outlet />
           </main>
         </div>
+        <ConfirmHost />
       </NavContext.Provider>
     </DexProvider>
   )

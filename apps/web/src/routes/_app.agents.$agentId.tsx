@@ -9,6 +9,7 @@ import { InfoTip } from "~/client/components/info-tip"
 import { useDex } from "~/client/lib/dex"
 import { AGENT_COLORS, AGENT_ICONS, type AgentColor, type AgentDraft } from "~/shared/agents"
 import { DEFAULT_MODEL_ID, DEFAULT_THINKING } from "~/shared/models"
+import { ask } from "~/client/components/confirm-dialog"
 
 export const Route = createFileRoute("/_app/agents/$agentId")({ component: AgentEditorPage })
 
@@ -261,7 +262,7 @@ function AgentEditor() {
                 <button
                   type="button"
                   onClick={async () => {
-                    if (!confirm(`Delete “${draft.name}”? Its chats stay, as plain chats.`)) return
+                    if (!(await ask({ title: `Delete “${draft.name}”?`, body: "Its chats stay, as plain chats.", confirm: "Delete" }))) return
                     await stub.deleteAgent(agentId)
                     await navigate({ to: "/agents" })
                   }}

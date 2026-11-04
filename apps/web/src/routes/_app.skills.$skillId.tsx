@@ -5,6 +5,7 @@ import { SkillEditorSkeleton } from "~/client/components/skeleton"
 import { Field, FormBar, inputClass, Switch } from "~/client/components/ui"
 import { useDex } from "~/client/lib/dex"
 import { type SkillDetail, skillSlug } from "~/shared/skills"
+import { ask } from "~/client/components/confirm-dialog"
 
 export const Route = createFileRoute("/_app/skills/$skillId")({ component: SkillEditorPage })
 
@@ -203,7 +204,7 @@ function SkillEditor() {
               <button
                 type="button"
                 onClick={async () => {
-                  if (!confirm(`Remove /${skillId}? Chats stop using it.`)) return
+                  if (!(await ask({ title: `Remove /${skillId}?`, body: "Chats stop using it.", confirm: "Remove" }))) return
                   await stub.removeSkill(skillId)
                   await navigate({ to: "/skills" })
                 }}

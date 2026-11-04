@@ -8,6 +8,7 @@ import { useDex } from "~/client/lib/dex"
 import { AUTH_ICON, AUTH_LABEL, followConnect } from "~/client/lib/mcp"
 import { MCP_STATUS_LABEL, type McpAuth, type McpServerDraft, type McpTransport } from "~/shared/mcp"
 import { MCP_TEMPLATES } from "~/shared/mcp-templates"
+import { ask } from "~/client/components/confirm-dialog"
 
 export const Route = createFileRoute("/_app/mcp/$serverId")({
   // `template`: one of the popular servers. `name`/`url`/`auth`/`header`: prefilled from an MCP Registry result.
@@ -414,7 +415,7 @@ function McpEditor() {
               <button
                 type="button"
                 onClick={async () => {
-                  if (!confirm(`Remove “${draft.name}”? Chats and agents using it lose its tools.`)) return
+                  if (!(await ask({ title: `Remove “${draft.name}”?`, body: "Chats and agents using it lose its tools.", confirm: "Remove" }))) return
                   await stub.deleteMcpServer(serverId)
                   await navigate({ to: "/mcp" })
                 }}

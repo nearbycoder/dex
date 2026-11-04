@@ -4,6 +4,7 @@ import { type ReactNode, type Ref, useEffect, useImperativeHandle, useRef, useSt
 import { createPortal } from "react-dom"
 import { useDex } from "~/client/lib/dex"
 import type { SessionMeta } from "~/shared/protocol"
+import { ask } from "./confirm-dialog"
 
 /** Where a chat sits: the inbox, snoozed until a time, or settled (done for now). */
 export const inboxState = (session: SessionMeta, now: number) =>
@@ -228,7 +229,7 @@ export function SessionMenu({
                 icon={<Trash2 className="size-4" />}
                 onClick={() =>
                   run(async () => {
-                    if (!confirm(`Delete “${session.title}”?`)) return
+                    if (!(await ask({ title: `Delete “${session.title}”?`, body: "Its messages go, and its VM with everything on the disk. This can't be undone.", confirm: "Delete" }))) return
                     await stub.deleteSession(session.id)
                     if ("sessionId" in params && params.sessionId === session.id) await navigate({ to: "/chat" })
                   })

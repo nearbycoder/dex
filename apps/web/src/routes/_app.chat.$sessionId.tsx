@@ -18,6 +18,7 @@ import { MenuButton } from "~/client/lib/mobile-nav"
 import { MODEL_PROVIDERS, providerOf } from "~/shared/models"
 import { connectedProviders } from "~/shared/protocol"
 import { attachmentSummary, type ChatAttachment } from "~/shared/attachments"
+import { ask } from "~/client/components/confirm-dialog"
 
 export const Route = createFileRoute("/_app/chat/$sessionId")({ component: Chat })
 
@@ -256,7 +257,7 @@ function Chat() {
             <button
               type="button"
               onClick={async () => {
-                if (!confirm(`Start a new conversation with ${character.name}? They keep their memory, and this one stays on their page.`)) return
+                if (!(await ask({ title: `Start a new conversation with ${character.name}?`, body: "They keep their memory, and this one stays on their page.", confirm: "Start new", tone: "default" }))) return
                 const next = await stub.restartCharacter(character.id)
                 await navigate({ to: "/chat/$sessionId", params: { sessionId: next.sessionId } })
               }}

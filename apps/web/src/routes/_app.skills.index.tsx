@@ -7,6 +7,7 @@ import { Switch } from "~/client/components/ui"
 import { useDex } from "~/client/lib/dex"
 import { useSkillSearch } from "~/client/lib/skills"
 import { type DirectorySkill, formatInstalls, type SkillInfo, type SkillPreview } from "~/shared/skills"
+import { ask } from "~/client/components/confirm-dialog"
 
 export const Route = createFileRoute("/_app/skills/")({ component: SkillsPage })
 
@@ -159,7 +160,7 @@ function SkillCard({ skill, index }: { skill: SkillInfo; index: number }) {
             title="Remove"
             aria-label={`Remove ${skill.id}`}
             onClick={async () => {
-              if (!confirm(`Remove /${skill.id}? Chats stop using it.`)) return
+              if (!(await ask({ title: `Remove /${skill.id}?`, body: "Chats stop using it.", confirm: "Remove" }))) return
               await stub.removeSkill(skill.id)
             }}
             className={`${iconButton} hover:text-red-400`}

@@ -8,6 +8,7 @@ import { useCachedFetch } from "~/client/lib/cache"
 import { useDex } from "~/client/lib/dex"
 import { formatBytes, timeAgo } from "~/client/lib/format"
 import type { WorkspaceFile } from "~/shared/protocol"
+import { ask } from "~/client/components/confirm-dialog"
 
 export const Route = createFileRoute("/_app/files")({
   component: FilesPage,
@@ -174,7 +175,7 @@ function FilesPage() {
                     type="button"
                     title="Delete"
                     onClick={async () => {
-                      if (!confirm(`Delete ${open.path}?`)) return
+                      if (!(await ask({ title: `Delete ${open.path}?`, confirm: "Delete" }))) return
                       await stub.deleteFile(open.path)
                       setOpen(null)
                       await refresh()

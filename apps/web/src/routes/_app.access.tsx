@@ -6,6 +6,7 @@ import { Page, Section } from "~/client/components/ui"
 import { useDex } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
 import { ACCESS_RISKS, type AccessRisk, type CreatedAccessToken } from "~/shared/access"
+import { ask } from "~/client/components/confirm-dialog"
 
 /** Chats and external agents managing Dex: MCP tokens, confirmations waiting on you, and what ran. */
 export const Route = createFileRoute("/_app/access")({ component: AccessPage })
@@ -229,8 +230,8 @@ function AccessPage() {
                       <button
                         type="button"
                         title="Revoke"
-                        onClick={() => {
-                          if (confirm(`Revoke “${item.label}”? Agents using it lose access immediately.`)) void stub.revokeAccessToken(item.id)
+                        onClick={async () => {
+                          if (await ask({ title: `Revoke “${item.label}”?`, body: "Agents using it lose access immediately.", confirm: "Revoke" })) void stub.revokeAccessToken(item.id)
                         }}
                         className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-800 hover:text-red-400"
                       >

@@ -11,6 +11,7 @@ import { MCP_VM } from "~/shared/protocol"
 import { AUTH_ICON, AUTH_LABEL, followConnect } from "~/client/lib/mcp"
 import { MCP_STATUS_LABEL, type McpServerInfo } from "~/shared/mcp"
 import { MCP_TEMPLATES } from "~/shared/mcp-templates"
+import { ask } from "~/client/components/confirm-dialog"
 
 export const Route = createFileRoute("/_app/mcp/")({
   // Set by the OAuth callback on the way back from a server's sign-in page.
@@ -78,7 +79,7 @@ function ServerCard({ server, index }: { server: McpServerInfo; index: number })
             title="Remove"
             aria-label={`Remove ${server.name}`}
             onClick={async () => {
-              if (!confirm(`Remove “${server.name}”? Chats and agents using it lose its tools, and its sign-in is forgotten.`)) return
+              if (!(await ask({ title: `Remove “${server.name}”?`, body: "Chats and agents using it lose its tools, and its sign-in is forgotten.", confirm: "Remove" }))) return
               await stub.deleteMcpServer(server.id)
             }}
             className={`${iconButton} hover:text-red-400`}

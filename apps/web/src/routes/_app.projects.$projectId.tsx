@@ -9,6 +9,7 @@ import { useDex } from "~/client/lib/dex"
 import { AGENT_COLORS, AGENT_ICONS, type AgentColor } from "~/shared/agents"
 import { githubFullName, normalizeRepoUrl, type ProjectDraft, type ProjectImageCandidate, type ProjectRepo, repoLabel } from "~/shared/projects"
 import { VM_SIZES, type VmSize } from "~/shared/protocol"
+import { ask } from "~/client/components/confirm-dialog"
 
 export const Route = createFileRoute("/_app/projects/$projectId")({ component: ProjectEditorPage })
 
@@ -407,7 +408,7 @@ function ProjectEditor() {
                 <button
                   type="button"
                   onClick={async () => {
-                    if (!confirm(`Delete “${draft.name}”? Its chats and their VMs stay.`)) return
+                    if (!(await ask({ title: `Delete “${draft.name}”?`, body: "Its chats and their VMs stay.", confirm: "Delete" }))) return
                     await stub.deleteProject(projectId)
                     await navigate({ to: "/projects" })
                   }}
