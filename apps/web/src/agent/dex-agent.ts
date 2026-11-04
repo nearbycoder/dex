@@ -304,6 +304,13 @@ export function withRecentScreenshots(messages: readonly PiMessage[]): readonly 
   return changed ? out : messages
 }
 
+/** The chat a connection is streaming, kept on the connection so it survives the object restarting under it. Pass a value to set it. */
+function watching(connection: Connection, sessionId?: string | null): string | null {
+  const state = (connection.state ?? {}) as { watching?: string | null }
+  if (sessionId !== undefined && state.watching !== sessionId) connection.setState({ ...state, watching: sessionId })
+  return sessionId === undefined ? (state.watching ?? null) : sessionId
+}
+
 const keyHint = (key: string) => (key.length > 8 ? `${key.slice(0, 4)}…${key.slice(-4)}` : "••••")
 
 /**
@@ -600,6 +607,13 @@ export class DexAgent extends Agent<Env, DexState> {
     // survive: without this they'd read "working" after they finish, with no notification and the queue held.
     for (const { session, operationId } of await this.harness.pending()) {
       if (this.hasSession(session)) this.afterRun(session, operationId, "reply")
+    }
+    // Sockets can outlive the object: a deploy's code update keeps hibernated connections open, but the streams
+    // they had are gone with the old instance. Each one remembers its chat, so the stream picks up at once rather
+    // than at the app's next ping.
+    for (const connection of this.getConnections()) {
+      const sessionId = watching(connection)
+      if (sessionId) void this.subscribe(connection, sessionId, { force: true })
     }
     for (const vm of this.vms.values()) void vm.refresh()
     this.ctx.waitUntil(this.reapOrphanVms())
@@ -1755,8 +1769,11 @@ export class DexAgent extends Agent<Env, DexState> {
       case "dex.ping":
         // Open apps ping every 20 seconds, so a list older than an hour is looked up again while someone's using Dex.
         void this.refreshModels().catch(() => undefined)
-        return msg.sessionId ? this.subscribe(connection, msg.sessionId) : this.unsubscribe(connection.id)
+        if (msg.sessionId) return this.subscribe(connection, msg.sessionId)
+        watching(connection, null)
+        return this.unsubscribe(connection.id)
       case "dex.unsubscribe":
+        watching(connection, null)
         return this.unsubscribe(connection.id)
       case "dex.presence":
         this.presence.set(connection.id, { visible: msg.visible, sessionId: msg.sessionId })
@@ -1791,6 +1808,7 @@ export class DexAgent extends Agent<Env, DexState> {
       }
       const stream = await this.harness.session(sessionId).events()
       this.subscriptions.set(connection.id, { sessionId, stream })
+      watching(connection, sessionId)
       // Screenshots load when shown (transcriptImage), so opening a long VM chat doesn't send megabytes.
       this.send(connection, { type: "dex.snapshot", sessionId, snapshot: withoutImages(stream.snapshot) })
       this.send(connection, this.artifactsMessage(sessionId))
