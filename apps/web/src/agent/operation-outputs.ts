@@ -214,6 +214,22 @@ export const OUTPUTS: Readonly<Record<string, TSchema>> = {
     changes: T.Array(T.Object({ status: T.String({ description: "git's two-letter code, e.g. M, ??" }), path: T.String() })),
     commits: T.Array(T.Object({ hash: T.String(), author: T.String(), at: ms("Committed"), subject: T.String() }))
   }),
+  app_usage_glance: T.Object({
+    meters: T.Array(
+      T.Object({
+        provider: T.String({ description: "opencode-go, commandcode, or openrouter" }),
+        service: T.String(),
+        window: T.String({ description: "e.g. 5 hours, Week, Free requests today" }),
+        percent: T.Number({ description: "0–100 used" }),
+        limited: T.Boolean({ description: "Blocked until it resets" }),
+        resetsAt: nullable(iso("Resets")),
+        detail: nullable(T.String({ description: "e.g. $4.20 of $20" })),
+        estimated: T.Boolean({ description: "From Dex's own chats, not read from the service" })
+      }),
+      { description: "Most used first" }
+    ),
+    today: T.Object({ tokens: T.Number(), responses: T.Number() }, { description: "Model use today (UTC)" })
+  }),
   app_usage_report: T.Object({
     range: T.String(),
     since: ms("From"),

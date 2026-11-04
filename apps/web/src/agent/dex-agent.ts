@@ -54,7 +54,7 @@ import { withUiNotes } from "~/shared/ui-notes"
 import { AUDIO_UNLOCK_SCRIPT } from "~/shared/web-audio"
 import { attachmentSummary, type ChatAttachment, splitAttachments } from "~/shared/attachments"
 import { githubFullName, isProjectImage, normalizeRepoUrl, type ProjectDraft, type ProjectImageCandidate, type ProjectProfile, type ProjectRepo, PROJECT_ROOT, repoDirName, repoLabel } from "~/shared/projects"
-import { CLOUDFLARE_RATES, type CloudflareLine, type OpenCodeLimits, type OpenRouterAccount, type UsageRange, type UsageReport } from "~/shared/usage"
+import { CLOUDFLARE_RATES, COMMANDCODE_LIMITS, type CloudflareLine, type OpenCodeLimits, type OpenRouterAccount, type UsageGlance, type UsageMeter, type UsageRange, type UsageReport } from "~/shared/usage"
 import { AGENT_COLORS, AGENT_ICONS, type AgentDraft, type AgentProfile, STARTER_AGENTS } from "~/shared/agents"
 import { type CharacterDraft, characterMemoryPath, type CharacterProfile, MAX_CHARACTER_MEMORY_CHARS, NOTIFY_LEVELS } from "~/shared/characters"
 import { cleanLook, LOOK_PRESETS, randomLook } from "~/shared/sidekick-look"
@@ -674,6 +674,7 @@ export class DexAgent extends Agent<Env, DexState> {
           beforeRequest: (request) => ({ messages: withRecentScreenshots(request.messages) }),
           afterResponse: (message, api) => {
             this.ledger.recordResponse(String(api.conversationId), message)
+            this.glanceCache = undefined
             // Remembered for the notification when the run ends.
             const text = message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("\n")
             this.lastResponses.set(String(api.conversationId), { text, stopReason: message.stopReason, error: message.errorMessage ?? null })
@@ -2659,6 +2660,55 @@ export class DexAgent extends Agent<Env, DexState> {
         }
       })
     }
+  }
+
+  private glanceCache?: { at: number; glance: UsageGlance }
+
+  /**
+   * Every plan's allowance, most used first, and today's tokens: what the sidebar's meter and the apps' usage buttons
+   * show. Every open app asks for it, so it's reused for 30 seconds.
+   */
+  @callable()
+  async usageGlance(): Promise<UsageGlance> {
+    if (this.glanceCache && Date.now() - this.glanceCache.at < 30_000) return this.glanceCache.glance
+    const DAY = 86_400_000
+    const until = Date.now()
+    const meters: UsageMeter[] = []
+    const [opencode, openrouter] = await Promise.all([this.openCodeLimits(), this.openRouterAccount()])
+    if (opencode.limits) {
+      const { rolling, weekly, monthly } = opencode.limits
+      for (const [window, value] of [["5 hours", rolling], ["Week", weekly], ["Month", monthly]] as const)
+        meters.push({ provider: "opencode-go", service: "OpenCode Go", window, percent: value.percent, limited: value.limited, resetsAt: value.resetsAt, detail: null, estimated: false })
+    }
+    if (this.state.commandcode?.connected) {
+      const money = (value: number) => `$${value < 100 ? value.toFixed(2) : Math.round(value)}`
+      for (const [window, ms, limit] of [["5 hours", 5 * 3_600_000, COMMANDCODE_LIMITS.fiveHours], ["7 days", 7 * DAY, COMMANDCODE_LIMITS.week], ["30 days", 30 * DAY, COMMANDCODE_LIMITS.month]] as const) {
+        const spent = this.ledger.modelSpend("commandcode", until - ms, until)
+        meters.push({ provider: "commandcode", service: "Command Code", window, percent: (spent / limit) * 100, limited: false, resetsAt: null, detail: `${money(spent)} of $${limit}`, estimated: true })
+      }
+    }
+    const free = this.state.openrouter?.connected ? openrouter.account?.freeRequests : undefined
+    if (free) {
+      const midnight = new Date(until)
+      midnight.setUTCHours(24, 0, 0, 0)
+      meters.push({
+        provider: "openrouter",
+        service: "OpenRouter",
+        window: "Free requests today",
+        percent: (free.used / free.limit) * 100,
+        limited: free.used >= free.limit,
+        resetsAt: midnight.toISOString(),
+        detail: `${free.used.toLocaleString("en-US")} of ${free.limit.toLocaleString("en-US")}`,
+        estimated: false
+      })
+    }
+    meters.sort((a, b) => Number(b.limited) - Number(a.limited) || b.percent - a.percent)
+    const startOfDay = new Date(until)
+    startOfDay.setUTCHours(0, 0, 0, 0)
+    const today = this.ledger.tokensDaily(startOfDay.getTime(), until).get(utcDate(until)) ?? { tokens: 0, responses: 0 }
+    const glance = { meters, today }
+    this.glanceCache = { at: until, glance }
+    return glance
   }
 
   // ── VMs (one per chat) ────────────────────────────────────────────────────

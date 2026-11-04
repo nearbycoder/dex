@@ -67,6 +67,7 @@ export type OperationHost = Pick<
   | "deleteMcpServer"
   | "updateSettings"
   | "usageReport"
+  | "usageGlance"
   | "vmRefresh"
   | "vmStart"
   | "vmStop"
@@ -757,6 +758,16 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     covers: ["usageReport"],
     summarize: (args) => `Usage report (${args.range ?? "month"})`,
     run: async (host, args) => host.usageReport((args.range ?? "month") as UsageRange)
+  }),
+  define({
+    name: "app_usage_glance",
+    description:
+      "Usage right now, in one quick call: how much of each plan's allowance is used (OpenCode Go's 5-hour, weekly, and monthly windows, Command Code's estimated windows, OpenRouter's free requests today), most used first, with when each resets, and model tokens today. Use app_usage_report for costs and breakdowns.",
+    risk: "read",
+    parameters: Type.Object({}),
+    covers: ["usageGlance"],
+    summarize: () => "Usage at a glance",
+    run: async (host) => host.usageGlance()
   }),
   define({
     name: "app_list_schedules",

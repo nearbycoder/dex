@@ -1,7 +1,6 @@
 import { Link, useLocation, useNavigate, useParams } from "@tanstack/react-router"
 import {
   AlarmClock,
-  BarChart3,
   Bell,
   Bot,
   CheckCheck,
@@ -39,6 +38,7 @@ import { mcpNeedsAttention } from "./mcp-picker"
 import { ModelLogo } from "./model-logo"
 import { inboxState, SessionMenu, type SessionMenuHandle, snoozedLabel, useNaming } from "./session-menu"
 import { ChatListSkeleton } from "./skeleton"
+import { UsageGlanceLink } from "./usage-glance"
 import { useNow } from "./vm-status"
 
 /** Configuration pages: on these the sidebar shows the settings links instead of the chats. */
@@ -140,7 +140,6 @@ export function Sidebar() {
     },
     { to: "/secrets", label: "Secrets", icon: <LockKeyhole className="size-4" /> },
     { to: "/files", label: "Workspace", icon: <FolderOpen className="size-4" /> },
-    { to: "/usage", label: "Usage", icon: <BarChart3 className="size-4" /> },
     {
       to: "/access",
       label: "Access & API",
@@ -236,6 +235,8 @@ export function Sidebar() {
           </div>
         )}
         <div className="space-y-0.5 border-t border-zinc-900 p-3">
+          {/* Usage stays one tap away from anywhere, with its busiest meter. */}
+          <UsageGlanceLink onPick={onClose} />
           {!settingsMode && (
             <button type="button" onClick={openSettings} className={`${linkClass} w-full`}>
               <Settings className="size-4" /> Settings

@@ -177,3 +177,30 @@ export interface UsageReport {
   readonly cloudflare: CloudflareUsage
   readonly daily: ReadonlyArray<DailySpend>
 }
+
+/** One allowance window at a glance, e.g. OpenCode Go's 5 hours at 42%. */
+export interface UsageMeter {
+  /** The subscription it belongs to: "opencode-go", "commandcode", or "openrouter". */
+  readonly provider: string
+  /** "OpenCode Go" */
+  readonly service: string
+  /** "5 hours", "Week", "Free requests today" */
+  readonly window: string
+  /** Share used, 0–100 (can pass 100 for an estimate). */
+  readonly percent: number
+  /** Requests are blocked until it resets. */
+  readonly limited: boolean
+  /** When it resets (ISO 8601), when the service says. */
+  readonly resetsAt: string | null
+  /** "$4.20 of $20", "12 of 1,000"; null when the percentage is all there is. */
+  readonly detail: string | null
+  /** Worked out from Dex's own chats rather than read from the service. */
+  readonly estimated: boolean
+}
+
+/** What the sidebar and the apps' usage buttons show: the allowances, most used first, and today's tokens. Cheap to ask for. */
+export interface UsageGlance {
+  readonly meters: ReadonlyArray<UsageMeter>
+  /** Model tokens and responses today (UTC), across every subscription. */
+  readonly today: { readonly tokens: number; readonly responses: number }
+}
