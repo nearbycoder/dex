@@ -37,6 +37,8 @@ import dev.trydex.core.model.SkillFileInfo
 import dev.trydex.core.model.SkillInfo
 import dev.trydex.core.model.SkillPreview
 import dev.trydex.core.model.ThinkingLevel
+import dev.trydex.core.model.UsageGlance
+import dev.trydex.core.model.UsageMeter
 import dev.trydex.core.model.UsageReport
 import dev.trydex.core.model.VmActivity
 import dev.trydex.core.model.VmChanges
@@ -88,6 +90,7 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okio.Buffer
 import java.security.MessageDigest
+import java.time.Instant
 import java.util.Base64
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -112,6 +115,8 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
     val requests = CopyOnWriteArrayList<String>()
     /** RPC calls the app made, as `method(args)`, for tests. */
     val calls = CopyOnWriteArrayList<Pair<String, JsonArray>>()
+    /** Callables this agent doesn't have yet, like a live agent still on an older build. */
+    @Volatile var missing: Set<String> = emptySet()
 
     private val connections = CopyOnWriteArrayList<Connection>()
     private val chats = ConcurrentHashMap<String, FakeChat>()
@@ -309,6 +314,7 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
                 val args = message["args"] as? JsonArray ?: JsonArray(emptyList())
                 calls += method to args
                 val reply = try {
+                    if (method in missing) error("Method $method does not exist")
                     buildJsonObject { put("type", "rpc"); put("id", id); put("success", true); put("result", rpc(connection, method, args) ?: JsonNull); put("done", true) }
                 } catch (error: Exception) {
                     buildJsonObject { put("type", "rpc"); put("id", id); put("success", false); put("error", error.message ?: "Failed") }
@@ -733,6 +739,7 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
             JsonPrimitive("https://sb-1f2e-${args[1]}.on.boat.dev/?_token=abc123")
         }
         "usageReport" -> encode(UsageReport.serializer(), usage(args.s(0)))
+        "usageGlance" -> encode(UsageGlance.serializer(), glance())
         "registerNativePush" -> {
             val platform = args.s(0)
             if (platform != "ios" && platform != "android") error("Unknown platform.")
@@ -881,6 +888,19 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
             RegistryServer(source, "@smithery/exa", "Exa search", "Web search for agents.", "1.2.0", "https://github.com/exa-labs/exa-mcp", if (source == "registry") "https://mcp.exa.ai/mcp" else "", "streamable-http", headers = listOf(dev.trydex.core.model.RegistryHeader("Authorization", "Your Exa key", required = true, secret = true)), uses = 48_000, verified = true),
             RegistryServer(source, "io.github.modelcontextprotocol/everything", "Everything", "A server that exercises every MCP feature.", "0.6.0", null, "", "stdio", run = dev.trydex.core.model.RegistryRun("npx -y @modelcontextprotocol/server-everything", emptyList()), uses = 1_200, verified = false),
         ).filter { it.title.contains(query, ignoreCase = true) || it.description.contains(query, ignoreCase = true) || query.equals("mcp", true) }
+    }
+
+    /** The same plans as [usage]: OpenCode Go's limits, Command Code's estimate, and OpenRouter's free requests while it's connected. */
+    private fun glance(): UsageGlance {
+        val opencode = listOf("5 hours" to 12.0, "Week" to 46.0, "Month" to 83.5).map { (window, percent) ->
+            UsageMeter("opencode-go", "OpenCode Go", window, percent, resetsAt = Instant.ofEpochMilli(clock() + 3 * 3_600_000).toString())
+        }
+        val commandcode = listOf(Triple("5 hours", 3.4, 20), Triple("7 days", 21.7, 50), Triple("30 days", 41.2, 100)).map { (window, spent, limit) ->
+            UsageMeter("commandcode", "Command Code", window, spent / limit * 100, detail = "$${Format.fixed(spent, 2)} of $$limit", estimated = true)
+        }
+        val openrouter = if (state.openrouter.connected) listOf(UsageMeter("openrouter", "OpenRouter", "Free requests today", 24.0, detail = "12 of 50")) else emptyList()
+        val meters = (opencode + commandcode + openrouter).sortedWith(compareByDescending<UsageMeter> { it.limited }.thenByDescending { it.percent })
+        return UsageGlance(meters, UsageGlance.Today(tokens = 1_240_000.0, responses = 46.0))
     }
 
     private fun usage(range: String): UsageReport {

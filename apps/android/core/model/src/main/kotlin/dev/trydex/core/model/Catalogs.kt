@@ -269,3 +269,53 @@ data class UsageReport(
     val cloudflare: CloudflareUsage = CloudflareUsage(),
     val daily: List<DailySpend> = emptyList(),
 )
+
+/** One allowance window at a glance, e.g. OpenCode Go's 5 hours at 42% (apps/web/src/shared/usage.ts). */
+@Serializable
+data class UsageMeter(
+    /** The subscription it belongs to: "opencode-go", "commandcode", "openrouter", or one added since. */
+    val provider: String = "",
+    /** "OpenCode Go" */
+    val service: String = "",
+    /** "5 hours", "Week", "Free requests today" */
+    val window: String = "",
+    /** Share used, 0–100; an estimate can pass 100. */
+    val percent: Double = 0.0,
+    /** Requests are blocked until it resets. */
+    val limited: Boolean = false,
+    /** When it resets (ISO 8601), when the service says. */
+    val resetsAt: String? = null,
+    /** "$4.20 of $20", "12 of 1,000"; null when the percentage is all there is. */
+    val detail: String? = null,
+    /** Worked out from Dex's own chats rather than read from the service. */
+    val estimated: Boolean = false,
+) {
+    /** Blocked, or used up by the estimate. */
+    val full: Boolean get() = limited || percent >= 100
+
+    /** How much is used, as the web's sidebar meter writes it: "42%", "<1%", or "Limit". */
+    val label: String get() = when {
+        limited -> "Limit"
+        percent > 0 && percent < 1 -> "<1%"
+        else -> "${Format.jsRound(percent.coerceIn(0.0, 100.0))}%"
+    }
+}
+
+/** What the apps' usage buttons show: the allowances, most used first, and today's tokens. Cheap to ask for. */
+@Serializable
+data class UsageGlance(val meters: List<UsageMeter> = emptyList(), val today: Today = Today()) {
+    /** Model tokens and responses today (UTC), across every subscription. */
+    @Serializable
+    data class Today(val tokens: Double = 0.0, val responses: Double = 0.0)
+
+    /** The most used allowance; null when no plan has one. */
+    val top: UsageMeter? get() = meters.firstOrNull()
+
+    /** One line: "OpenCode Go · 5 hours · 42%", or "1.2M tokens today" when no plan has an allowance. */
+    val summary: String get() = top?.let { "${it.service} · ${it.window} · ${if (it.limited) "limit reached" else it.label}" }
+        ?: "${Format.compact(today.tokens)} tokens today"
+
+    /** For screen readers: "OpenCode Go 5 hours 42% used". */
+    val spoken: String get() = top?.let { "${it.service} ${it.window} ${if (it.limited) "limit reached" else "${it.label} used"}" }
+        ?: "${Format.compact(today.tokens)} tokens today"
+}

@@ -373,6 +373,22 @@ class FakeDexTest {
         connection.stop()
     }
 
+    @Test fun usageAtAGlance() = runBlocking {
+        val url = fake.start()
+        val connection = AgentConnection(OkHttpClient(), url, FakeData.USER_ID, { fake.token }, scope)
+        val api = DexApi(connection.asRpc())
+        connection.start()
+        withTimeout(5_000) { connection.status.first { it == ConnectionStatus.Connected } }
+        val glance = api.usageGlance()
+        // Most used first: OpenCode Go's month, in the amber.
+        assertThat(glance.top!!.window).isEqualTo("Month")
+        assertThat(glance.meters.map { it.percent }).isInOrder(Comparator.reverseOrder<Double>())
+        assertThat(glance.meters.map { it.provider }.toSet()).containsExactly("opencode-go", "commandcode", "openrouter")
+        assertThat(glance.summary).isEqualTo("OpenCode Go · Month · 84%")
+        assertThat(glance.meters.last { it.provider == "commandcode" }.detail).isEqualTo("$3.40 of $20")
+        connection.stop()
+    }
+
     @Test fun sidekicksForTheWidgets() = runBlocking<Unit> {
         val url = fake.start()
         val session = DexSession(url.toString(), fake.token, DexUser(FakeData.USER_ID, FakeData.LOGIN), Long.MAX_VALUE)

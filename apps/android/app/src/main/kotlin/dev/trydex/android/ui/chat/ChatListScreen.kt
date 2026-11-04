@@ -96,6 +96,7 @@ import dev.trydex.android.ui.components.roomForLargeTitle
 import dev.trydex.android.ui.nav.Chat
 import dev.trydex.android.ui.nav.NewChat
 import dev.trydex.android.ui.theme.DexTheme
+import dev.trydex.android.ui.usage.UsageButton
 import dev.trydex.core.client.ConnectionStatus
 import dev.trydex.core.model.AgentProfile
 import dev.trydex.core.model.DexState
@@ -173,12 +174,15 @@ fun ChatListScreen() {
                             Text("Chats")
                         }
                     },
-                    actions = { searchButton() },
+                    actions = {
+                        if (!searching) UsageButton()
+                        searchButton()
+                    },
                     scrollBehavior = scroll,
                 )
             } else {
                 // The same large title as the other tabs, folding into the bar as the list scrolls.
-                LargeFlexibleTopAppBar(title = { Text("Chats") }, actions = { searchButton() }, scrollBehavior = scroll)
+                LargeFlexibleTopAppBar(title = { Text("Chats") }, actions = { UsageButton(); searchButton() }, scrollBehavior = scroll)
             }
         },
         floatingActionButton = {
