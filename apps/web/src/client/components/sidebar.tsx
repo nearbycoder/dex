@@ -38,7 +38,7 @@ import { mcpNeedsAttention } from "./mcp-picker"
 import { ModelLogo } from "./model-logo"
 import { inboxState, SessionMenu, type SessionMenuHandle, snoozedLabel, useNaming } from "./session-menu"
 import { ChatListSkeleton } from "./skeleton"
-import { UsageGlanceLink } from "./usage-glance"
+import { UsageGlanceLink, UsageSettingsIcon } from "./usage-glance"
 import { useNow } from "./vm-status"
 
 /** Configuration pages: on these the sidebar shows the settings links instead of the chats. */
@@ -140,6 +140,7 @@ export function Sidebar() {
     },
     { to: "/secrets", label: "Secrets", icon: <LockKeyhole className="size-4" /> },
     { to: "/files", label: "Workspace", icon: <FolderOpen className="size-4" /> },
+    { to: "/usage", label: "Usage", icon: <UsageSettingsIcon /> },
     {
       to: "/access",
       label: "Access & API",
@@ -235,18 +236,20 @@ export function Sidebar() {
           </div>
         )}
         <div className="space-y-0.5 border-t border-zinc-900 p-3">
-          {/* Usage stays one tap away from anywhere, with its busiest meter. */}
-          <UsageGlanceLink onPick={onClose} />
           {!settingsMode && (
-            <button type="button" onClick={openSettings} className={`${linkClass} w-full`}>
-              <Settings className="size-4" /> Settings
-              {running > 0 ? (
-                <Hint count={running} dot="bg-emerald-500" title={`${running} VM${running === 1 ? "" : "s"} running`} />
-              ) : (
-                (clineMissing || mcpAttention) && <Hint dot="bg-amber-500" title={clineMissing ? "Connect a model subscription" : "A server needs attention"} />
-              )}
-              <ChevronRight className={`size-4 text-zinc-600 ${running > 0 || clineMissing || mcpAttention ? "" : "ml-auto"}`} />
-            </button>
+            // Usage sits beside Settings, one tap away with its busiest meter.
+            <div className="flex items-center gap-0.5">
+              <button type="button" onClick={openSettings} className={`${linkClass} min-w-0 flex-1`}>
+                <Settings className="size-4" /> Settings
+                {running > 0 ? (
+                  <Hint count={running} dot="bg-emerald-500" title={`${running} VM${running === 1 ? "" : "s"} running`} />
+                ) : (
+                  (clineMissing || mcpAttention) && <Hint dot="bg-amber-500" title={clineMissing ? "Connect a model subscription" : "A server needs attention"} />
+                )}
+                <ChevronRight className={`size-4 text-zinc-600 ${running > 0 || clineMissing || mcpAttention ? "" : "ml-auto"}`} />
+              </button>
+              <UsageGlanceLink onPick={onClose} />
+            </div>
           )}
           <UpdateButton />
           <div className="flex items-center gap-2 px-2 pt-2">

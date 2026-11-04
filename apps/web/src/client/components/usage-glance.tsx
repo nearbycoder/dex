@@ -48,43 +48,71 @@ export function useUsageGlance() {
   return data
 }
 
+const percentLabel = (meter: UsageMeter) => {
+  const percent = Math.min(100, Math.max(0, meter.percent))
+  return meter.limited ? "Limit" : percent > 0 && percent < 1 ? "<1%" : `${Math.round(percent)}%`
+}
+
+/** Every meter, one per line, for a tooltip. */
+const describe = (glance: UsageGlance | undefined) =>
+  glance
+    ? [
+        ...glance.meters.map((meter) => {
+          const resets = untilReset(meter.resetsAt)
+          return `${meter.service} · ${meter.window}: ${percentLabel(meter)}${meter.detail ? ` (${meter.detail})` : ""}${resets ? ` · resets ${resets === "now" ? "now" : `in ${resets}`}` : ""}`
+        }),
+        `${tokenCount.format(glance.today.tokens)} tokens today`
+      ].join("\n")
+    : "Usage"
+
+/** The busiest allowance as a ring filled to its share used; a chart icon when no plan has one. */
+export function UsageRing({ glance, className = "size-4" }: { glance: UsageGlance | undefined; className?: string }) {
+  const top = glance?.meters[0]
+  if (!top) return <BarChart3 className={className} />
+  const percent = Math.min(100, Math.max(0, top.percent))
+  const circumference = 2 * Math.PI * 6.5
+  return (
+    <svg viewBox="0 0 16 16" className={`${className} -rotate-90`} aria-hidden="true">
+      <circle cx="8" cy="8" r="6.5" fill="none" strokeWidth="2.5" className="stroke-zinc-800" />
+      <circle
+        cx="8"
+        cy="8"
+        r="6.5"
+        fill="none"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        stroke={tone(top)}
+        strokeDasharray={circumference}
+        strokeDashoffset={circumference * (1 - Math.max(percent, percent > 0 ? 4 : 0) / 100)}
+        className="transition-[stroke-dashoffset] duration-500"
+      />
+    </svg>
+  )
+}
+
 /**
- * The sidebar's way into Usage: the most used allowance as a meter (OpenCode Go's 5 hours at 42%, say), or today's
- * tokens when no plan has one. One tap opens the Usage page, the way other apps keep a usage meter by the account.
+ * The sidebar's way into Usage, beside Settings: a ring for the busiest allowance (OpenCode Go's 5 hours at 42%, say)
+ * and its share, or today's tokens when no plan has one. Hover for every meter; one tap opens the page.
  */
 export function UsageGlanceLink({ onPick }: { onPick: () => void }) {
   const glance = useUsageGlance()
   const top = glance?.meters[0]
-  const percent = top ? Math.min(100, Math.max(0, top.percent)) : 0
-  const resets = top && untilReset(top.resetsAt)
-  const caption = top
-    ? `${top.service} · ${top.window}${top.limited ? " · limit reached" : resets ? ` · resets ${resets === "now" ? "now" : `in ${resets}`}` : ""}`
-    : glance
-      ? `${tokenCount.format(glance.today.tokens)} tokens today`
-      : null
+  const label = top ? percentLabel(top) : glance ? tokenCount.format(glance.today.tokens) : null
   return (
     <Link
       to="/usage"
       onClick={onPick}
-      title={glance?.meters.map((meter) => `${meter.service} · ${meter.window}: ${Math.round(meter.percent)}%${meter.detail ? ` (${meter.detail})` : ""}`).join("\n") || "Usage"}
-      className="block rounded-lg px-2.5 py-2 text-sm text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 [&.active]:bg-zinc-900 [&.active]:text-zinc-100"
+      title={describe(glance)}
+      aria-label={top ? `Usage: ${top.service} ${top.window}, ${percentLabel(top)} used` : "Usage"}
+      className="flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs text-zinc-400 tabular-nums hover:bg-zinc-900 hover:text-zinc-200 [&.active]:bg-zinc-900 [&.active]:text-zinc-100"
     >
-      <span className="flex items-center gap-2.5">
-        <BarChart3 className="size-4" /> Usage
-        {top ? (
-          <span className={`ml-auto text-xs tabular-nums ${top.limited ? "font-medium text-red-400" : percent >= 80 ? "text-amber-300" : "text-zinc-300"}`}>
-            {top.limited ? "Limit" : percent > 0 && percent < 1 ? "<1%" : `${Math.round(percent)}%`}
-          </span>
-        ) : (
-          glance && <span className="ml-auto text-xs text-zinc-500 tabular-nums">{tokenCount.format(glance.today.tokens)}</span>
-        )}
-      </span>
-      {top && (
-        <span className="mt-1.5 block h-1 overflow-hidden rounded-full bg-zinc-800" aria-hidden="true">
-          <span className="block h-full rounded-full transition-[width] duration-500" style={{ width: `${Math.max(percent, percent > 0 ? 2 : 0)}%`, background: tone(top) }} />
-        </span>
-      )}
-      {caption && <span className="mt-1 block truncate text-[11px] text-zinc-500">{caption}</span>}
+      <UsageRing glance={glance} />
+      {label && <span className={top?.limited ? "font-medium text-red-400" : top && top.percent >= 80 ? "text-amber-300" : ""}>{label}</span>}
     </Link>
   )
+}
+
+/** The Usage link in the settings list, with the ring as its icon. */
+export function UsageSettingsIcon() {
+  return <UsageRing glance={useUsageGlance()} />
 }
