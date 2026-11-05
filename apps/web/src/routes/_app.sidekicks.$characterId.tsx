@@ -112,7 +112,7 @@ function CharacterEditor() {
     setError(null)
     try {
       // The apps show a picture rather than drawing looks: send one along.
-      const image = draft.look ? await lookPng(draft.look, AGENT_COLORS[draft.color][0]) : draft.image
+      const image = draft.look ? await lookPng(draft.look) : draft.image
       const result = await stub.saveCharacter({ ...draft, image })
       setDraft({ ...result })
       setSaved(true)

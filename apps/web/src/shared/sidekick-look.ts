@@ -1,10 +1,11 @@
 /**
- * A sidekick's face: a little character built from parts (a body, eyes, a mouth, an extra, a body color) on their
- * background color. Drawn as SVG from this one description, so every size stays crisp; apps that can't draw it show
- * the PNG snapshot saved with it (`CharacterProfile.image`).
+ * A sidekick's face: a little character built from parts (a body, eyes, a mouth, an extra, a body color), drawn as a
+ * sticker that fills its frame, Grok Bot style: a bold shape with big eyes that blinks and glances around, and hops
+ * while it works. Drawn as SVG from this one description, so every size stays crisp; apps that can't draw it show the
+ * PNG snapshot saved with it (`CharacterProfile.image`).
  */
 
-export const BODIES = ["blob", "bean", "cube", "ghost", "cat", "bot"] as const
+export const BODIES = ["blob", "heart", "star", "sparkle", "clover", "flower", "house", "bean", "cube", "ghost", "cat", "bot"] as const
 export const EYES = ["dot", "round", "sparkle", "happy", "sleepy", "wink", "visor"] as const
 export const MOUTHS = ["smile", "grin", "tongue", "purr", "o", "flat"] as const
 export const EXTRAS = ["none", "headphones", "glasses", "beanie", "beret", "crown", "sprout", "bow", "wizard", "headband"] as const
@@ -39,7 +40,7 @@ export interface SidekickLook {
 }
 
 export const LABELS: Record<Body | Eyes | Mouth | Extra, string> = {
-  blob: "Blob", bean: "Bean", cube: "Cube", ghost: "Ghost", cat: "Cat", bot: "Bot",
+  blob: "Blob", heart: "Heart", star: "Star", clover: "Clover", flower: "Flower", house: "House", bean: "Bean", cube: "Square", ghost: "Ghost", cat: "Cat", bot: "Bot",
   dot: "Dots", round: "Round", sparkle: "Sparkle", happy: "Happy", sleepy: "Calm", wink: "Wink", visor: "Visor",
   smile: "Smile", grin: "Grin", tongue: "Silly", purr: "Purr", o: "Ooh", flat: "Deadpan",
   none: "None", headphones: "Headphones", glasses: "Glasses", beanie: "Beanie", beret: "Beret", crown: "Crown", sprout: "Sprout", bow: "Bow", wizard: "Wizard hat", headband: "Headband"
@@ -86,7 +87,13 @@ export const LOOK_PRESETS: ReadonlyArray<{ readonly key: string; readonly name: 
   { key: "duke", name: "Duke", color: "amber", look: { body: "cube", skin: "coral", eyes: "round", mouth: "smile", extra: "crown", blush: false } },
   { key: "fern", name: "Fern", color: "emerald", look: { body: "cat", skin: "teal", eyes: "happy", mouth: "smile", extra: "sprout", blush: true } },
   { key: "ziggy", name: "Ziggy", color: "sky", look: { body: "ghost", skin: "lilac", eyes: "dot", mouth: "o", extra: "beanie", blush: false } },
-  { key: "bolt", name: "Bolt", color: "amber", look: { body: "bot", skin: "slate", eyes: "round", mouth: "grin", extra: "none", blush: false } }
+  { key: "bolt", name: "Bolt", color: "amber", look: { body: "bot", skin: "slate", eyes: "round", mouth: "grin", extra: "none", blush: false } },
+  { key: "lumi", name: "Lumi", color: "rose", look: { body: "heart", skin: "pink", eyes: "round", mouth: "smile", extra: "none", blush: true } },
+  { key: "comet", name: "Comet", color: "amber", look: { body: "star", skin: "lemon", eyes: "sparkle", mouth: "grin", extra: "none", blush: false } },
+  { key: "glint", name: "Glint", color: "sky", look: { body: "sparkle", skin: "sky", eyes: "dot", mouth: "o", extra: "none", blush: false } },
+  { key: "clove", name: "Clove", color: "emerald", look: { body: "clover", skin: "mint", eyes: "round", mouth: "tongue", extra: "none", blush: true } },
+  { key: "posy", name: "Posy", color: "violet", look: { body: "flower", skin: "lilac", eyes: "happy", mouth: "smile", extra: "none", blush: true } },
+  { key: "nook", name: "Nook", color: "orange", look: { body: "house", skin: "peach", eyes: "round", mouth: "smile", extra: "none", blush: false } }
 ]
 
 // ── Drawing ─────────────────────────────────────────────────────────────────
@@ -95,20 +102,113 @@ export const LOOK_PRESETS: ReadonlyArray<{ readonly key: string; readonly name: 
 
 const INK = "#1e1b2e"
 
-const BODY_SHAPES: Record<Body, { readonly path: string; readonly top: number; readonly extra?: string }> = {
-  blob: { top: 24, path: "M50 24C71 24 80 37 80 56C80 75 68 86 50 86C32 86 20 75 20 56C20 37 29 24 50 24Z" },
-  bean: { top: 20, path: "M50 20C67 20 76 32 76 50V64C76 79 66 88 50 88C34 88 24 79 24 64V50C24 32 33 20 50 20Z" },
-  cube: { top: 27, path: "M36 27H64C73 27 79 33 79 42V70C79 79 73 85 64 85H36C27 85 21 79 21 70V42C21 33 27 27 36 27Z" },
+/** A circle as path commands, so several make one shape (clover leaves, flower petals). */
+const circle = (cx: number, cy: number, r: number) => `M${cx - r} ${cy}a${r} ${r} 0 1 0 ${r * 2} 0a${r} ${r} 0 1 0 ${-r * 2} 0Z`
+
+/** A star's points, `points` outer and as many inner, around a center. */
+const starPath = (cx: number, cy: number, outer: number, inner: number, points: number) =>
+  Array.from({ length: points * 2 }, (_, index) => {
+    const angle = -Math.PI / 2 + (index * Math.PI) / points
+    const r = index % 2 ? inner : outer
+    return `${index ? "L" : "M"}${(cx + r * Math.cos(angle)).toFixed(1)} ${(cy + r * Math.sin(angle)).toFixed(1)}`
+  }).join("") + "Z"
+
+interface BodyShape {
+  readonly path: string
+  /** Where the head starts, for hats. */
+  readonly top: number
+  /** The whole silhouette (ears, antenna, rounded corners included), to fill the frame with it. */
+  readonly box: readonly [minX: number, minY: number, maxX: number, maxY: number]
+  /** Ears, drawn behind. */
+  readonly extra?: string
+  /** Pointed shapes are filled and outlined in their color, which rounds their corners. */
+  readonly round?: number
+  /** How much bigger than drawn the eyes are (big eyes, smaller on narrow shapes). */
+  readonly eyes?: number
+  /** Where the shine sits; none on shapes it would fall off. */
+  readonly shine?: readonly [x: number, y: number] | null
+}
+
+const BODY_SHAPES: Record<Body, BodyShape> = {
+  blob: { top: 24, box: [20, 24, 80, 86], path: "M50 24C71 24 80 37 80 56C80 75 68 86 50 86C32 86 20 75 20 56C20 37 29 24 50 24Z" },
+  bean: { top: 20, box: [24, 20, 76, 88], path: "M50 20C67 20 76 32 76 50V64C76 79 66 88 50 88C34 88 24 79 24 64V50C24 32 33 20 50 20Z" },
+  cube: { top: 27, box: [21, 27, 79, 85], path: "M36 27H64C73 27 79 33 79 42V70C79 79 73 85 64 85H36C27 85 21 79 21 70V42C21 33 27 27 36 27Z" },
   ghost: {
     top: 22,
+    box: [23, 22, 77, 88],
     path: "M23 54C23 34 35 22 50 22C65 22 77 34 77 54V84C77 87 74 88 72 86L67 81L61 86C59 88 57 88 55 86L50 81L45 86C43 88 41 88 39 86L33 81L28 86C26 88 23 87 23 84Z"
   },
   cat: {
     top: 28,
+    box: [20, 14, 80, 86],
     path: "M50 28C70 28 80 41 80 58C80 76 67 86 50 86C33 86 20 76 20 58C20 41 30 28 50 28Z",
     extra: "M24 44L27 17C27.4 14.6 30 13.8 31.7 15.5L45 30ZM76 44L73 17C72.6 14.6 70 13.8 68.3 15.5L55 30Z"
   },
-  bot: { top: 31, path: "M34 31H66C74 31 79 36 79 44V71C79 79 74 84 66 84H34C26 84 21 79 21 71V44C21 36 26 31 34 31Z" }
+  bot: { top: 31, box: [15, 11, 85, 84], path: "M34 31H66C74 31 79 36 79 44V71C79 79 74 84 66 84H34C26 84 21 79 21 71V44C21 36 26 31 34 31Z" },
+  heart: {
+    top: 27,
+    box: [16, 25, 84, 88],
+    path: "M50 88C29 76 16 64 16 46C16 33 25 25 36 25C43 25 47.5 29 50 34C52.5 29 57 25 64 25C75 25 84 33 84 46C84 64 71 76 50 88Z",
+    shine: [32, 36]
+  },
+  star: { top: 24, box: [11, 14, 89, 90], path: starPath(50, 56, 39, 23, 5), round: 7, shine: null },
+  sparkle: {
+    top: 22,
+    box: [8, 10, 92, 98],
+    path: "M50 12C55 40 66 46 90 54C66 62 57 70 50 96C43 70 34 62 10 54C34 46 45 40 50 12Z",
+    round: 8,
+    eyes: 1.2,
+    shine: null
+  },
+  clover: {
+    top: 22,
+    box: [16, 21, 84, 89],
+    path: [circle(34, 39, 18), circle(66, 39, 18), circle(34, 71, 18), circle(66, 71, 18), circle(50, 55, 20)].join(""),
+    shine: [30, 32]
+  },
+  flower: {
+    top: 20,
+    box: [13, 18, 87, 92],
+    path: [...Array.from({ length: 6 }, (_, index) => {
+      const angle = -Math.PI / 2 + (index * Math.PI) / 3
+      return circle(+(50 + 22 * Math.cos(angle)).toFixed(1), +(55 + 22 * Math.sin(angle)).toFixed(1), 15)
+    }), circle(50, 55, 25)].join(""),
+    shine: null
+  },
+  house: {
+    top: 24,
+    box: [16, 18, 84, 88],
+    path: "M50 22L80 47V85H20V47Z",
+    extra: "M62 23H72V40L62 32Z",
+    round: 7,
+    shine: [34, 50]
+  }
+}
+
+/** Still for many at once (a list of messages); idle blinks and glances; working hops and looks things over. */
+export type LookMood = "still" | "idle" | "working"
+
+/** Every sidekick blinks on their own beat: a number from the look, to offset their animations. */
+const beat = (look: SidekickLook) => [...JSON.stringify(look)].reduce((hash, char) => (hash * 31 + char.charCodeAt(0)) >>> 0, 7)
+
+/** The animations, in the picture itself so it moves wherever it's shown as an image. Off for reduced motion. */
+const motionCss = (mood: LookMood, seed: number) => {
+  if (mood === "still") return ""
+  const working = mood === "working"
+  const delay = (period: number) => `animation-delay:-${seed % period}ms`
+  return [
+    "<style>",
+    `.m{transform-box:fill-box;transform-origin:50% 100%;animation:${working ? "hop 1s" : "bob 4.2s"} ease-in-out infinite;${delay(working ? 1000 : 4200)}}`,
+    `.l{animation:${working ? "scan 1.8s" : "look 9s"} ease-in-out infinite;${delay(9000)}}`,
+    `.k{transform-box:fill-box;transform-origin:center;animation:blink ${working ? 3.4 : 5.2}s linear infinite;${delay(5200)}}`,
+    "@keyframes bob{0%,100%{transform:translateY(0) scale(1,1)}50%{transform:translateY(-2px) scale(.985,1.02)}}",
+    "@keyframes hop{0%,100%{transform:translateY(0) scale(1,1)}20%{transform:translateY(0) scale(1.05,.94)}48%{transform:translateY(-5px) scale(.96,1.05)}72%{transform:translateY(0) scale(1.03,.97)}}",
+    "@keyframes look{0%,16%,100%{transform:translate(0,0)}21%,38%{transform:translate(-2.6px,.4px)}43%,56%{transform:translate(0,0)}61%,78%{transform:translate(2.6px,-1.2px)}83%{transform:translate(0,0)}}",
+    "@keyframes scan{0%,100%{transform:translate(-2.4px,-1.8px)}50%{transform:translate(2.4px,-1.8px)}}",
+    "@keyframes blink{0%,91%,95.5%,100%{transform:scaleY(1)}93%{transform:scaleY(.08)}}",
+    "@media (prefers-reduced-motion:reduce){.m,.l,.k{animation:none}}",
+    "</style>"
+  ].join("")
 }
 
 const eyesSvg = (eyes: Eyes, skin: string) => {
@@ -178,34 +278,48 @@ const extraSvg = (extra: Extra, top: number) => {
   }
 }
 
-/** The whole picture as an SVG document: a disc of `background` with the character on it. */
-export const sidekickSvg = (look: SidekickLook, background: string) => {
+/** How high each hat reaches, drawn for a head starting at 24 (see extraSvg). */
+const HAT_TOP: Partial<Record<Extra, number>> = { beanie: 7, beret: 8, crown: 5, sprout: 3, bow: 16, wizard: 0, headband: 33 }
+
+/**
+ * The whole picture as an SVG document: the character filling a transparent frame (Grok Bot style: no disc behind,
+ * the shape is the avatar). `mood` adds its animations.
+ */
+export const sidekickSvg = (look: SidekickLook, mood: LookMood = "still") => {
   const skin = SKINS[look.skin] ?? SKINS.mint
   const shape = BODY_SHAPES[look.body] ?? BODY_SHAPES.blob
   const bot =
     look.body === "bot"
       ? `<path d="M50 31V19" stroke="${INK}" stroke-width="3" stroke-linecap="round"/><circle cx="50" cy="16" r="4.5" fill="#f43f5e"/><rect x="15" y="50" width="7" height="12" rx="3" fill="${skin}"/><rect x="78" y="50" width="7" height="12" rx="3" fill="${skin}"/>`
       : ""
+  // Fit the silhouette, hat and headphones included, to the frame, leaving room to hop.
+  const hat = HAT_TOP[look.extra]
+  const [boxLeft, boxTop, boxRight, boxBottom] = shape.box
+  const left = look.extra === "headphones" ? Math.min(boxLeft, 13) : boxLeft
+  const right = look.extra === "headphones" ? Math.max(boxRight, 87) : boxRight
+  const top = Math.min(boxTop, hat === undefined ? boxTop : shape.top - 24 + hat, look.extra === "headphones" ? shape.top - 6 : boxTop)
+  const fit = Math.min(1.5, 88 / (right - left), 88 / (boxBottom - top))
+  const frame = `translate(50 51) scale(${fit.toFixed(3)}) translate(${-(left + right) / 2} ${-(top + boxBottom) / 2})`
+  const outline = (fill: string) => (shape.round ? ` stroke="${fill}" stroke-width="${shape.round}" stroke-linejoin="round"` : "")
+  const eyesScale = shape.eyes ?? 1.38
+  const shine = shape.shine === undefined ? ([36, shape.top + 11] as const) : shape.shine
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">`,
-    `<defs><clipPath id="c"><circle cx="50" cy="50" r="50"/></clipPath></defs>`,
-    `<g clip-path="url(#c)">`,
-    `<rect width="100" height="100" fill="${background}"/>`,
-    `<ellipse cx="50" cy="91" rx="25" ry="4" fill="#000" opacity=".22"/>`,
-    // A little bigger than drawn, so faces read in the sidebar.
-    `<g transform="translate(50 58) scale(1.08) translate(-50 -58)">`,
+    motionCss(mood, beat(look)),
+    `<g class="m"><g transform="${frame}">`,
     look.extra === "headphones" ? "" : bot,
-    shape.extra ? `<path d="${shape.extra}" fill="${skin}"/>` : "",
-    `<path d="${shape.path}" fill="${skin}"/>`,
+    shape.extra ? `<path d="${shape.extra}" fill="${skin}"${outline(skin)}/>` : "",
+    `<path d="${shape.path}" fill="${skin}"${outline(skin)}/>`,
     // A soft shade along the bottom and a shine at the top left give the flat shape some roundness.
-    `<path d="${shape.path}" fill="#000" opacity=".1" transform="translate(0 6) scale(1 .94)"/>`,
-    `<path d="${shape.path}" fill="${skin}" transform="translate(0 -1.5)"/>`,
-    `<ellipse cx="36" cy="${shape.top + 11}" rx="8" ry="4.5" fill="#fff" opacity=".35" transform="rotate(-24 36 ${shape.top + 11})"/>`,
-    look.blush ? `<ellipse cx="31" cy="62" rx="5" ry="3" fill="#fb7185" opacity=".5"/><ellipse cx="69" cy="62" rx="5" ry="3" fill="#fb7185" opacity=".5"/>` : "",
-    eyesSvg(look.eyes, skin),
+    `<path d="${shape.path}" fill="#000" opacity=".1" transform="translate(0 6) scale(1 .94)"${outline("#000")}/>`,
+    `<path d="${shape.path}" fill="${skin}" transform="translate(0 -1.5)"${outline(skin)}/>`,
+    shine ? `<ellipse cx="${shine[0]}" cy="${shine[1]}" rx="7" ry="4" fill="#fff" opacity=".35" transform="rotate(-24 ${shine[0]} ${shine[1]})"/>` : "",
+    look.blush ? `<ellipse cx="29" cy="64" rx="5" ry="3" fill="#fb7185" opacity=".5"/><ellipse cx="71" cy="64" rx="5" ry="3" fill="#fb7185" opacity=".5"/>` : "",
+    // Big eyes: drawn larger around the face's center; they glance (l) and blink (k) on their own.
+    `<g transform="translate(50 52) scale(${eyesScale}) translate(-50 -52)"><g class="l"><g class="k">${eyesSvg(look.eyes, skin)}</g></g></g>`,
     mouthSvg(look.mouth),
     look.extra === "headphones" ? bot : "",
-    extraSvg(look.extra, shape.top),
+    look.extra === "glasses" ? `<g transform="translate(50 52) scale(${eyesScale}) translate(-50 -52)">${extraSvg(look.extra, shape.top)}</g>` : extraSvg(look.extra, shape.top),
     `</g></g></svg>`
   ].join("")
 }

@@ -352,8 +352,10 @@ const SCHEDULED_PREFIX = "[Scheduled task] "
 
 export interface Speaker {
   readonly name: string
-  /** Their face, 24px. */
+  /** Their face, 24px: still beside each reply, animated on the greeting and while a reply is coming. */
   readonly avatar: ReactNode
+  readonly working?: ReactNode
+  readonly greeter?: ReactNode
   readonly greeting?: string
 }
 
@@ -452,7 +454,7 @@ export const MessageList = memo(function MessageList({
         <div ref={content} onClickCapture={() => (clickedAt.current = Date.now())} className="mx-auto max-w-3xl space-y-5 px-4 py-6">
           {speaker?.greeting && (
             <div className="flex animate-rise gap-3">
-              <span className="mt-0.5 shrink-0" title={speaker.name}>{speaker.avatar}</span>
+              <span className="mt-0.5 shrink-0" title={speaker.name}>{speaker.greeter ?? speaker.avatar}</span>
               <div className="min-w-0 flex-1 pt-0.5 text-sm leading-relaxed whitespace-pre-wrap text-zinc-200 [overflow-wrap:anywhere]">{speaker.greeting}</div>
             </div>
           )}
@@ -481,7 +483,13 @@ export const MessageList = memo(function MessageList({
               case "assistant":
                 return (
                   <div key={item.id} className="flex animate-rise gap-3">
-                    {speaker ? <span className="mt-0.5 shrink-0" title={speaker.name}>{speaker.avatar}</span> : <img src="/favicon.svg" alt="Dex" className="mt-0.5 size-6 shrink-0" />}
+                    {speaker ? (
+                      <span className="mt-0.5 shrink-0" title={speaker.name}>
+                        {transcript.running && index === items.length - 1 ? (speaker.working ?? speaker.avatar) : speaker.avatar}
+                      </span>
+                    ) : (
+                      <img src="/favicon.svg" alt="Dex" className="mt-0.5 size-6 shrink-0" />
+                    )}
                     <AssistantTurn
                       messages={item.messages}
                       streaming={item.streaming}
@@ -513,11 +521,18 @@ export const MessageList = memo(function MessageList({
               </div>
             </div>
           ))}
-          {transcript.running && items.at(-1)?.kind !== "assistant" && (
-            <div className="flex animate-fade items-center gap-2 pl-9 text-xs text-zinc-500">
-              <LoaderCircle className="size-3.5 animate-spin" /> Working…
-            </div>
-          )}
+          {transcript.running &&
+            items.at(-1)?.kind !== "assistant" &&
+            // A sidekick with nothing to say yet: just their face, hopping while they work.
+            (speaker?.working ? (
+              <div className="flex animate-fade" title={`${speaker.name} is working`} aria-label={`${speaker.name} is working`}>
+                {speaker.working}
+              </div>
+            ) : (
+              <div className="flex animate-fade items-center gap-2 pl-9 text-xs text-zinc-500">
+                <LoaderCircle className="size-3.5 animate-spin" /> Working…
+              </div>
+            ))}
           {transcript.retry && <div className="pl-9 text-xs text-amber-400/80">Retrying after an error: {transcript.retry.error}</div>}
           {transcript.error && (
             <div className="flex items-start gap-2 rounded-lg border border-red-900/60 bg-red-950/40 px-3 py-2 text-xs text-red-300">

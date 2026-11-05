@@ -10,7 +10,7 @@ const sameLook = (a: SidekickLook | null | undefined, b: SidekickLook) =>
   Boolean(a) && a!.body === b.body && a!.skin === b.skin && a!.eyes === b.eyes && a!.mouth === b.mouth && a!.extra === b.extra && a!.blush === b.blush
 
 const tile = (selected: boolean) =>
-  `overflow-hidden rounded-full ring-offset-2 ring-offset-zinc-950 transition-transform hover:scale-105 ${selected ? "ring-2 ring-emerald-500" : "ring-1 ring-zinc-800 hover:ring-zinc-600"}`
+  `rounded-xl bg-zinc-900/60 p-1 ring-offset-2 ring-offset-zinc-950 transition-transform hover:scale-105 ${selected ? "ring-2 ring-emerald-500" : "ring-1 ring-zinc-800 hover:ring-zinc-600"}`
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -38,7 +38,6 @@ export function SidekickLookPicker({
   onChange: (patch: { look?: SidekickLook | null; color?: AgentColor; image?: null }) => void
   onPhoto: () => void
 }) {
-  const background = AGENT_COLORS[color]?.[0] ?? AGENT_COLORS.violet[0]
   // Customizing a photo or an emoji starts from the first ready-made look.
   const current = look ?? LOOK_PRESETS[0]!.look
   const set = (patch: Partial<SidekickLook>) => onChange({ look: { ...current, ...patch }, image: null })
@@ -48,7 +47,7 @@ export function SidekickLookPicker({
     const selected = Boolean(look) && current[part] === value
     return (
       <button key={String(value)} type="button" title={label} aria-label={label} aria-pressed={selected} onClick={() => set({ [part]: value } as Partial<SidekickLook>)} className={tile(selected)}>
-        <img src={lookUrl(preview, background)} alt="" className="size-11" draggable={false} />
+        <img src={lookUrl(preview)} alt="" className="size-10" draggable={false} />
       </button>
     )
   }
@@ -69,7 +68,7 @@ export function SidekickLookPicker({
               onClick={() => onChange({ look: preset.look, color: presetColor, image: null })}
               className={tile(selected)}
             >
-              <img src={lookUrl(preset.look, AGENT_COLORS[presetColor][0])} alt="" className="size-14" draggable={false} />
+              <img src={lookUrl(preset.look)} alt="" className="size-12" draggable={false} />
             </button>
           )
         })}
@@ -119,7 +118,7 @@ export function SidekickLookPicker({
             )
           })}
         </Row>
-        <Row label="Background">
+        <Row label="Accent">
           {(Object.keys(AGENT_COLORS) as AgentColor[]).map((key) => {
             const [fill, dot] = AGENT_COLORS[key]
             const selected = key === color
@@ -128,7 +127,7 @@ export function SidekickLookPicker({
                 key={key}
                 type="button"
                 title={key}
-                aria-label={`Background ${key}`}
+                aria-label={`Accent ${key}`}
                 aria-pressed={selected}
                 onClick={() => onChange({ color: key })}
                 className={`flex size-8 items-center justify-center rounded-full ring-offset-2 ring-offset-zinc-950 ${selected ? "ring-2 ring-zinc-200" : ""}`}

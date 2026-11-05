@@ -185,7 +185,7 @@ function NotificationsPage() {
             {state.characters.map((character) => (
               <Row
                 key={character.id}
-                icon={<CharacterAvatar character={character} size={22} />}
+                icon={<CharacterAvatar character={character} size={22} mood="still" />}
                 label={
                   <Link to="/sidekicks/$characterId" params={{ characterId: character.id }} className="hover:underline">
                     {character.name}
