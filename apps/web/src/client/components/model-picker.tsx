@@ -57,11 +57,31 @@ const PERIODS = [
   { days: Infinity, label: "Earlier" }
 ] as const
 const NEWEST_KEY = "dex-models-newest"
+const FREE_KEY = "dex-models-free"
+const isFree = (model: DexModel) => model.cost.input === 0 && model.cost.output === 0
+
+/** A toggle the picker remembers on this device. */
+function useRemembered(key: string) {
+  const [on, setOn] = useState(() => {
+    try {
+      return localStorage.getItem(key) === "1"
+    } catch {
+      return false
+    }
+  })
+  const toggle = () => {
+    setOn(!on)
+    try {
+      localStorage.setItem(key, on ? "0" : "1")
+    } catch {}
+  }
+  return [on, toggle] as const
+}
 
 function ModelRow(props: { model: DexModel; selected: boolean; usable: boolean; showProvider: boolean; onSelect: () => void }) {
   const { model } = props
   const levels = supportedThinkingLevels(model)
-  const free = model.cost.input === 0 && model.cost.output === 0
+  const free = isFree(model)
   const released = releaseLabel(model)
   const vision = hasVision(model)
   // One quiet line under the name: where it's from, when it came out, then what it can do. Color only where it
@@ -122,14 +142,9 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
   const menu = useRef<HTMLDivElement>(null)
   const [query, setQuery] = useState("")
   const [only, setOnly] = useState<ModelProvider | "all">("all")
-  // Newest first (remembered on this device), optionally only what came out within some days.
-  const [newest, setNewest] = useState(() => {
-    try {
-      return localStorage.getItem(NEWEST_KEY) === "1"
-    } catch {
-      return false
-    }
-  })
+  // Newest first, and only the free ones: each remembered on this device.
+  const [newest, toggleNewest] = useRemembered(NEWEST_KEY)
+  const [freeOnly, toggleFree] = useRemembered(FREE_KEY)
   const root = useRef<HTMLDivElement>(null)
   const current = findModel(props.model)
   const { state, stub, connected: online } = useDex()
@@ -144,6 +159,7 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
   const words = needle.split(/\s+/).filter(Boolean)
   const matches = (model: DexModel) => {
     if (only !== "all" && model.provider !== only) return false
+    if (freeOnly && !isFree(model)) return false
     if (words.length === 0) return true
     const text = `${model.name} ${MODEL_MAKERS[model.maker].name} ${MODEL_PROVIDERS[model.provider].name} ${badges(model).join(" ")}`.toLowerCase()
     return words.every((word) => text.includes(word))
@@ -209,14 +225,6 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
     setOpen((value) => !value)
   }
 
-  const toggleNewest = () => {
-    const next = !newest
-    setNewest(next)
-    try {
-      localStorage.setItem(NEWEST_KEY, next ? "1" : "0")
-    } catch {}
-  }
-
   const select = (model: DexModel) => {
     props.onSelect(model.id)
     setOpen(false)
@@ -280,18 +288,29 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
               aria-label="Search models"
               className="min-w-0 flex-1 bg-transparent text-base text-zinc-100 placeholder:text-zinc-600 focus:outline-none md:text-sm"
             />
-            <button
-              type="button"
-              onClick={toggleNewest}
-              aria-pressed={newest}
-              title={newest ? "Group by subscription" : "Newest first"}
-              className={`flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[11px] ${
-                newest ? "bg-zinc-800 text-zinc-100" : "text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300"
-              }`}
-            >
-              <CalendarClock className="size-3.5" />
-              Newest
-            </button>
+            <div className="flex shrink-0 items-center gap-0.5">
+              <button
+                type="button"
+                onClick={toggleNewest}
+                aria-pressed={newest}
+                aria-label="Newest first"
+                title={newest ? "Newest first (on): group by subscription instead" : "Newest first"}
+                className={`rounded-md p-1 ${newest ? "bg-zinc-800 text-zinc-100" : "text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300"}`}
+              >
+                <CalendarClock className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={toggleFree}
+                aria-pressed={freeOnly}
+                title={freeOnly ? "Showing free models only" : "Show only free models"}
+                className={`rounded-md px-1.5 py-0.5 text-[11px] font-medium ${
+                  freeOnly ? "bg-sky-500/15 text-sky-300" : "text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300"
+                }`}
+              >
+                Free
+              </button>
+            </div>
           </div>
           {/* One subscription at a time, or all of them. */}
           <div className="scrollbar-none flex shrink-0 gap-1 overflow-x-auto border-b border-zinc-900 px-2 py-1.5">
@@ -308,7 +327,7 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
                 {choice === "all" ? "All" : MODEL_PROVIDERS[choice].name}
                 {choice !== "all" && !connected[choice] && <span className={`size-1.5 rounded-full ${only === choice ? "bg-zinc-500" : "bg-zinc-600"}`} title="Not connected" />}
                 <span className={only === choice ? "text-zinc-500" : "text-zinc-600"}>
-                  {choice === "all" ? MODELS.length : MODELS.filter((model) => model.provider === choice).length}
+                  {MODELS.filter((model) => (choice === "all" || model.provider === choice) && (!freeOnly || isFree(model))).length}
                 </span>
               </button>
             ))}
@@ -344,7 +363,7 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
             })}
             {MODELS.every((model) => !matches(model)) && (
               <p className="px-3 py-4 text-center text-xs text-zinc-500">
-                {needle ? `No model matches “${query}”.` : "No models."}
+                {needle ? `No ${freeOnly ? "free " : ""}model matches “${query}”.` : freeOnly ? "No free models here." : "No models."}
               </p>
             )}
           </div>
