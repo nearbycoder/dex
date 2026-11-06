@@ -1,5 +1,6 @@
 import type { BoopFace as BoopFaceElement } from "boopface"
 import { type DetailedHTMLProps, type HTMLAttributes, useEffect, useRef, useState } from "react"
+import { isProjectImage } from "~/shared/projects"
 import { type LookMood, SKINS, type SidekickLook } from "~/shared/sidekick-look"
 
 declare module "react" {
@@ -134,15 +135,20 @@ export async function lookPng(look: SidekickLook, size = 256): Promise<string> {
     }
     // Room for the antenna, which sits above the head.
     svg.setAttribute("viewBox", "0 -8 240 248")
-    svg.setAttribute("width", String(size))
-    svg.setAttribute("height", String(size))
+    svg.setAttribute("width", "256")
+    svg.setAttribute("height", "256")
     const image = new Image()
     image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(new XMLSerializer().serializeToString(svg))}`
     await image.decode()
-    const canvas = document.createElement("canvas")
-    canvas.width = canvas.height = size
-    canvas.getContext("2d")!.drawImage(image, 0, 0, size, size)
-    return canvas.toDataURL("image/png")
+    // Busy finishes (carbon, galaxy, metal) make big PNGs: smaller until it fits the agent's picture limit.
+    for (const side of [size, 224, 192, 160, 128, 96].filter((side) => side <= size)) {
+      const canvas = document.createElement("canvas")
+      canvas.width = canvas.height = side
+      canvas.getContext("2d")!.drawImage(image, 0, 0, side, side)
+      const png = canvas.toDataURL("image/png")
+      if (isProjectImage(png)) return png
+    }
+    throw new Error("This face's picture is too big to save.")
   } finally {
     face.remove()
   }
