@@ -147,7 +147,7 @@ function Chat() {
             title={`About ${character.name}`}
             className="-my-1 flex min-w-0 items-center gap-2.5 rounded-lg py-1 pr-2 hover:bg-zinc-900"
           >
-            <CharacterAvatar character={character} size={30} mood={transcript.running ? "working" : "idle"} />
+            <CharacterAvatar character={character} size={30} mood={transcript.running ? "working" : "idle"} failed={Boolean(transcript.error)} />
             <span className="min-w-0 leading-tight">
               <span className="block truncate text-sm font-medium text-zinc-100">{character.name}</span>
               <span className={`block truncate text-[11px] ${transcript.running ? "text-emerald-400" : "text-zinc-500"}`}>
