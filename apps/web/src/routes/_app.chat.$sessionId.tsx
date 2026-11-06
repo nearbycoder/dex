@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
-import { Bell, BellOff, Check, CheckCheck, FolderOpen, History, KeyRound, Monitor, Pencil, RotateCcw, X } from "lucide-react"
+import { ArrowLeft, Bell, BellOff, Check, CheckCheck, FolderOpen, History, KeyRound, ListTree, Monitor, Pencil, RotateCcw, X } from "lucide-react"
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Composer } from "~/client/components/composer"
 import { ChatArtifactsContext, type ChatArtifacts } from "~/client/components/media"
@@ -9,6 +9,7 @@ import { QueuePanel } from "~/client/components/queue-panel"
 import { ModelPicker } from "~/client/components/model-picker"
 import { AgentAvatar, CharacterAvatar } from "~/client/components/agent-avatar"
 import { SessionMenu, useNaming } from "~/client/components/session-menu"
+import { SpaceGlyph, SpacePanel, SpaceSelectContext, useSpaceOf } from "~/client/components/space-panel"
 import { VmPreview } from "~/client/components/vm-preview"
 import { Bone, ChatSkeleton, VmFilesSkeleton } from "~/client/components/skeleton"
 import { type OpenUIHost, OpenUIHostContext } from "~/client/lib/openui-host"
@@ -43,18 +44,41 @@ function Chat() {
   // A character's conversation from before they started over: still theirs, no longer the one in the sidebar.
   const earlier = Boolean(character && character.sessionId !== sessionId)
   const navigate = useNavigate()
+  // A space's coordinator (this page then has its threads beside it) or one of its threads.
+  const spaceOf = useSpaceOf(session)
+  const coordinating = spaceOf?.coordinator ? spaceOf.space : undefined
+  const inSpace = spaceOf && !spaceOf.coordinator ? spaceOf.space : undefined
+  const [panel, setPanel] = useState<{ sessionId: string; thread: string | null } | null>(null)
+  const panelOpen = Boolean(coordinating) && panel?.sessionId === sessionId
+  // Wide screens open a space with its threads showing.
+  useEffect(() => {
+    if (coordinating && window.matchMedia("(min-width: 1280px)").matches) setPanel({ sessionId, thread: null })
+  }, [sessionId, Boolean(coordinating)])
+  const selectThread = useCallback(
+    (threadId: string) => {
+      if (window.matchMedia("(min-width: 1024px)").matches) setPanel({ sessionId, thread: threadId })
+      else void navigate({ to: "/chat/$sessionId", params: { sessionId: threadId } })
+    },
+    [sessionId, navigate]
+  )
   // Kept stable across state updates, so finished replies don't re-render.
   const speaker = useMemo<Speaker | undefined>(
     () =>
-      character && {
-        name: character.name,
-        avatar: <CharacterAvatar character={character} size={24} mood="still" />,
-        working: <CharacterAvatar character={character} size={24} mood="working" />,
-        greeter: <CharacterAvatar character={character} size={24} />,
-        greeting: character.greeting || undefined
-      },
+      character
+        ? {
+            name: character.name,
+            avatar: <CharacterAvatar character={character} size={24} mood="still" />,
+            working: <CharacterAvatar character={character} size={24} mood="working" />,
+            greeter: <CharacterAvatar character={character} size={24} />,
+            greeting: character.greeting || undefined
+          }
+        : coordinating && {
+            name: coordinating.name,
+            avatar: <SpaceGlyph size={24} />,
+            greeting: `Tell me what to work on${coordinating.goal ? "" : " in this space"}. I'll start a thread for each piece of work, run them in parallel, and report back here.`
+          },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [character?.name, character?.avatar, character?.image, character?.color, character?.greeting, JSON.stringify(character?.look ?? null)]
+    [character?.name, character?.avatar, character?.image, character?.color, character?.greeting, JSON.stringify(character?.look ?? null), coordinating?.name, coordinating?.goal]
   )
 
   // What you just sent shows at once while the agent records it (a round trip, longer when it's waking up). Each
@@ -137,7 +161,7 @@ function Chat() {
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1">
-      <div className={`${filesOpen ? "hidden xl:flex" : "flex"} min-h-0 min-w-0 flex-1 flex-col`}>
+      <div className={`${filesOpen ? "hidden xl:flex" : panelOpen ? "hidden lg:flex" : "flex"} min-h-0 min-w-0 flex-1 flex-col`}>
       <header className="dex-chrome dex-topbar flex h-12 shrink-0 items-center gap-3 border-b border-zinc-900 px-4">
         <MenuButton />
         {character && (
@@ -156,7 +180,33 @@ function Chat() {
             </span>
           </Link>
         )}
-        {project && (
+        {coordinating && (
+          <Link
+            to="/spaces/$spaceId"
+            params={{ spaceId: coordinating.id }}
+            title={`Edit ${coordinating.name}`}
+            className="-my-1 flex min-w-0 items-center gap-2.5 rounded-lg py-1 pr-2 hover:bg-zinc-900"
+          >
+            <SpaceGlyph size={28} />
+            <span className="min-w-0 leading-tight">
+              <span className="block truncate text-sm font-medium text-zinc-100">{coordinating.name}</span>
+              <span className="block truncate text-[11px] text-zinc-500">{coordinating.goal || "Space"}</span>
+            </span>
+          </Link>
+        )}
+        {inSpace && (
+          <Link
+            to="/chat/$sessionId"
+            params={{ sessionId: inSpace.sessionId }}
+            title={`Back to ${inSpace.name}`}
+            className="flex max-w-40 shrink-0 items-center gap-1.5 rounded-md border border-zinc-800 py-0.5 pr-2 pl-1 text-xs text-zinc-400 hover:border-zinc-700 hover:text-zinc-100"
+          >
+            <ArrowLeft className="size-3 shrink-0" />
+            <SpaceGlyph size={16} />
+            <span className="truncate">{inSpace.name}</span>
+          </Link>
+        )}
+        {project && !coordinating && (
           <Link to="/projects/$projectId" params={{ projectId: project.id }} title={`${project.name} project`} className="shrink-0">
             <AgentAvatar icon={project.icon} color={project.color} image={project.image} size={24} />
           </Link>
@@ -166,7 +216,7 @@ function Chat() {
             <AgentAvatar icon={agent.icon} color={agent.color} size={24} />
           </Link>
         )}
-        {character ? null : editing === null ? (
+        {character || coordinating ? null : editing === null ? (
           <button type="button" onClick={() => setEditing(session?.title ?? "")} className="group flex min-w-0 items-center gap-2">
             {session ? (
               <span className={`truncate text-sm font-medium ${naming ? "animate-pulse text-zinc-400" : ""}`} title={naming ? "Writing a new title…" : undefined}>
@@ -199,7 +249,28 @@ function Chat() {
           </form>
         )}
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
-          {session && state?.vmConfigured && (
+          {coordinating && spaceOf && (
+            <button
+              type="button"
+              title="This space's threads and notes"
+              aria-expanded={panelOpen}
+              onClick={() => setPanel(panelOpen ? null : { sessionId, thread: null })}
+              className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs hover:bg-zinc-900 ${panelOpen ? "text-violet-300" : "text-zinc-400 hover:text-zinc-100"}`}
+            >
+              <ListTree className="size-4" />
+              <span className="hidden sm:inline">Threads</span>
+              {spaceOf.threads.some((entry) => entry.status === "working" || entry.status === "needs_you") && (
+                <span
+                  className={`rounded-full px-1.5 text-[10px] font-medium tabular-nums ${
+                    spaceOf.threads.some((entry) => entry.status === "needs_you") ? "bg-amber-500/20 text-amber-300" : "bg-emerald-500/15 text-emerald-300"
+                  }`}
+                >
+                  {spaceOf.threads.filter((entry) => entry.status === "working" || entry.status === "needs_you").length}
+                </span>
+              )}
+            </button>
+          )}
+          {session && state?.vmConfigured && !coordinating && (
             <button type="button" title="Browse this session’s VM files" aria-label="Open VM files" aria-expanded={filesOpen} onClick={() => setFilesSession(filesOpen ? null : sessionId)} className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs hover:bg-zinc-900 ${filesOpen ? "text-emerald-400" : "text-zinc-400 hover:text-zinc-100"}`}>
               <FolderOpen className="size-4" /><span className="hidden sm:inline">Files</span>
             </button>
@@ -270,7 +341,7 @@ function Chat() {
               <RotateCcw className="size-4" />
             </button>
           )}
-          {session && !character && (
+          {session && !character && !session.spaceId && (
             <>
               {/* Settle: done with this chat for now; it moves under Settled until something new happens in it. */}
               <button
@@ -291,7 +362,9 @@ function Chat() {
       <ChatSecretsContext.Provider value={storeSecret}>
         <OpenUIHostContext.Provider value={uiHost}>
           <ChatArtifactsContext.Provider value={artifacts}>
-            {transcript.loaded ? <MessageList key={sessionId} transcript={transcript} onSend={send} pending={pendingTexts} speaker={speaker} /> : <ChatSkeleton />}
+            <SpaceSelectContext.Provider value={coordinating ? selectThread : null}>
+              {transcript.loaded ? <MessageList key={sessionId} transcript={transcript} onSend={send} pending={pendingTexts} speaker={speaker} /> : <ChatSkeleton />}
+            </SpaceSelectContext.Provider>
           </ChatArtifactsContext.Provider>
         </OpenUIHostContext.Provider>
       </ChatSecretsContext.Provider>
@@ -318,7 +391,9 @@ function Chat() {
           running={transcript.running}
           onSend={send}
           onStop={() => void stub.abort(sessionId)}
-          placeholder={transcript.running ? "Queue a follow-up…" : `Message ${character?.name ?? "Dex"}, or / for skills…`}
+          placeholder={
+            transcript.running ? "Queue a follow-up…" : coordinating ? `Tell ${coordinating.name} what to work on…` : `Message ${character?.name ?? "Dex"}, or / for skills…`
+          }
           toolbar={
             session && (
               <div className="flex min-w-0 items-center gap-1">
@@ -337,6 +412,17 @@ function Chat() {
       {/* Watch the VM while reading the chat: a floating button that opens a movable live preview. */}
       {vm && (vm.status === "running" || vm.status === "starting") && <VmPreview key={sessionId} vm={vm} />}
       </div>
+      {panelOpen && coordinating && spaceOf && !filesOpen && (
+        <SpacePanel
+          key={sessionId}
+          space={coordinating}
+          threads={spaceOf.threads}
+          selected={panel?.thread ?? null}
+          onSelect={(thread) => setPanel({ sessionId, thread })}
+          onClose={() => setPanel(null)}
+          coordinatorRunning={transcript.running}
+        />
+      )}
       {filesOpen && (
         <Suspense fallback={<aside aria-label="Loading VM files" className="absolute inset-0 z-20 flex min-h-0 flex-col border-l border-zinc-800 bg-zinc-950 xl:relative xl:inset-auto xl:w-[55%] xl:shrink-0"><div className="flex h-12 shrink-0 items-center border-b border-zinc-800 px-3 text-sm">Files<button type="button" onClick={closeFiles} aria-label="Close files" className="ml-auto rounded p-2 text-zinc-400"><X className="size-4" /></button></div><VmFilesSkeleton /></aside>}>
           <VmFilesPanel key={sessionId} sessionId={sessionId} running={transcript.running} onClose={closeFiles} />

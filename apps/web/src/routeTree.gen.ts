@@ -39,6 +39,7 @@ import { Route as AppSidekicksIndexRouteImport } from './routes/_app.sidekicks.i
 import { Route as AppSidekicksCharacterIdRouteImport } from './routes/_app.sidekicks.$characterId'
 import { Route as AppSkillsIndexRouteImport } from './routes/_app.skills.index'
 import { Route as AppSkillsSkillIdRouteImport } from './routes/_app.skills.$skillId'
+import { Route as AppSpacesSpaceIdRouteImport } from './routes/_app.spaces.$spaceId'
 import { Route as ApiMediaSplatRouteImport } from './routes/api.media.$'
 import { Route as ApiPushActionRouteImport } from './routes/api.push.action'
 import { Route as AuthGithubCallbackRouteImport } from './routes/auth.github.callback'
@@ -199,6 +200,11 @@ const AppSkillsSkillIdRoute = AppSkillsSkillIdRouteImport.update({
   path: '/skills/$skillId',
   getParentRoute: () => AppRoute,
 } as any)
+const AppSpacesSpaceIdRoute = AppSpacesSpaceIdRouteImport.update({
+  id: '/spaces/$spaceId',
+  path: '/spaces/$spaceId',
+  getParentRoute: () => AppRoute,
+} as any)
 const ApiMediaSplatRoute = ApiMediaSplatRouteImport.update({
   id: '/api/media/$',
   path: '/api/media/$',
@@ -274,6 +280,7 @@ export interface FileRoutesByFullPath {
   '/projects/$projectId': typeof AppProjectsProjectIdRoute
   '/sidekicks/$characterId': typeof AppSidekicksCharacterIdRoute
   '/skills/$skillId': typeof AppSkillsSkillIdRoute
+  '/spaces/$spaceId': typeof AppSpacesSpaceIdRoute
   '/api/media/$': typeof ApiMediaSplatRoute
   '/api/push/action': typeof ApiPushActionRoute
   '/auth/github/callback': typeof AuthGithubCallbackRoute
@@ -315,6 +322,7 @@ export interface FileRoutesByTo {
   '/projects/$projectId': typeof AppProjectsProjectIdRoute
   '/sidekicks/$characterId': typeof AppSidekicksCharacterIdRoute
   '/skills/$skillId': typeof AppSkillsSkillIdRoute
+  '/spaces/$spaceId': typeof AppSpacesSpaceIdRoute
   '/api/media/$': typeof ApiMediaSplatRoute
   '/api/push/action': typeof ApiPushActionRoute
   '/auth/github/callback': typeof AuthGithubCallbackRoute
@@ -358,6 +366,7 @@ export interface FileRoutesById {
   '/_app/projects/$projectId': typeof AppProjectsProjectIdRoute
   '/_app/sidekicks/$characterId': typeof AppSidekicksCharacterIdRoute
   '/_app/skills/$skillId': typeof AppSkillsSkillIdRoute
+  '/_app/spaces/$spaceId': typeof AppSpacesSpaceIdRoute
   '/api/media/$': typeof ApiMediaSplatRoute
   '/api/push/action': typeof ApiPushActionRoute
   '/auth/github/callback': typeof AuthGithubCallbackRoute
@@ -401,6 +410,7 @@ export interface FileRouteTypes {
     | '/projects/$projectId'
     | '/sidekicks/$characterId'
     | '/skills/$skillId'
+    | '/spaces/$spaceId'
     | '/api/media/$'
     | '/api/push/action'
     | '/auth/github/callback'
@@ -442,6 +452,7 @@ export interface FileRouteTypes {
     | '/projects/$projectId'
     | '/sidekicks/$characterId'
     | '/skills/$skillId'
+    | '/spaces/$spaceId'
     | '/api/media/$'
     | '/api/push/action'
     | '/auth/github/callback'
@@ -484,6 +495,7 @@ export interface FileRouteTypes {
     | '/_app/projects/$projectId'
     | '/_app/sidekicks/$characterId'
     | '/_app/skills/$skillId'
+    | '/_app/spaces/$spaceId'
     | '/api/media/$'
     | '/api/push/action'
     | '/auth/github/callback'
@@ -737,6 +749,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSkillsSkillIdRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/spaces/$spaceId': {
+      id: '/_app/spaces/$spaceId'
+      path: '/spaces/$spaceId'
+      fullPath: '/spaces/$spaceId'
+      preLoaderRoute: typeof AppSpacesSpaceIdRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/api/media/$': {
       id: '/api/media/$'
       path: '/api/media/$'
@@ -824,6 +843,7 @@ interface AppRouteChildren {
   AppProjectsProjectIdRoute: typeof AppProjectsProjectIdRoute
   AppSidekicksCharacterIdRoute: typeof AppSidekicksCharacterIdRoute
   AppSkillsSkillIdRoute: typeof AppSkillsSkillIdRoute
+  AppSpacesSpaceIdRoute: typeof AppSpacesSpaceIdRoute
   AppAgentsIndexRoute: typeof AppAgentsIndexRoute
   AppChatIndexRoute: typeof AppChatIndexRoute
   AppMachineIndexRoute: typeof AppMachineIndexRoute
@@ -847,6 +867,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppProjectsProjectIdRoute: AppProjectsProjectIdRoute,
   AppSidekicksCharacterIdRoute: AppSidekicksCharacterIdRoute,
   AppSkillsSkillIdRoute: AppSkillsSkillIdRoute,
+  AppSpacesSpaceIdRoute: AppSpacesSpaceIdRoute,
   AppAgentsIndexRoute: AppAgentsIndexRoute,
   AppChatIndexRoute: AppChatIndexRoute,
   AppMachineIndexRoute: AppMachineIndexRoute,

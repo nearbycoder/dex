@@ -4,6 +4,7 @@ import type { AccessRisk } from "~/shared/access"
 import { AGENT_COLORS, AGENT_ICONS, type AgentProfile } from "~/shared/agents"
 import type { CharacterProfile } from "~/shared/characters"
 import { BODIES, EXTRAS, EYES, FINISH_SERIES, LOOK_PRESETS, MOUTHS, type SidekickLook, SKINS } from "~/shared/sidekick-look"
+import { MAX_SPACE_GOAL, MAX_SPACE_NAME, type SpaceProfile, spaceThreads, THREAD_STATUS_LABELS, threadStatus } from "~/shared/spaces"
 import { MODEL_PROVIDERS, MODELS, supportedThinkingLevels, THINKING_LEVELS, type ThinkingLevel } from "~/shared/models"
 import type { McpAuth, McpTransport } from "~/shared/mcp"
 import { NOTIFY_KINDS, type NotifyKind } from "~/shared/notifications"
@@ -55,6 +56,9 @@ export type OperationHost = Pick<
   | "deleteAgent"
   | "saveCharacter"
   | "deleteCharacter"
+  | "saveSpace"
+  | "deleteSpace"
+  | "spaceNotes"
   | "restartCharacter"
   | "characterMemory"
   | "saveCharacterMemory"
@@ -319,6 +323,29 @@ const characterSummary = (character: CharacterProfile) => {
 }
 
 const characterName = (state: DexState, id: string) => state.characters.find((character) => character.id === id)?.name ?? id
+
+/** A space as operations return it, with its threads' statuses. */
+const spaceSummary = (state: DexState) => (space: SpaceProfile) => ({
+  id: space.id,
+  name: space.name,
+  goal: space.goal,
+  project: space.projectId ? (state.projects.find((project) => project.id === space.projectId)?.name ?? space.projectId) : null,
+  session_id: space.sessionId,
+  threads: spaceThreads(space, state.sessions).map((thread) => ({
+    id: thread.id,
+    title: thread.title,
+    status: THREAD_STATUS_LABELS[threadStatus(thread, state.access.pending)],
+    last_reply: thread.lastReply ?? null
+  }))
+})
+
+const spaceName = (state: DexState, id: string) => state.spaces?.find((space) => space.id === id)?.name ?? id
+
+const findSpace = (state: DexState, id: string) => {
+  const space = state.spaces?.find((candidate) => candidate.id === id)
+  if (!space) throw new Error(`No space ${id}.`)
+  return space
+}
 
 /** Projects as operations return them: a picture is a data: URL, too big to be worth a model's context. */
 const projectSummary = (project: ProjectProfile) => {
@@ -1041,6 +1068,80 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
       await host.deleteCharacter(args.sidekick_id)
       return { deleted: args.sidekick_id }
     }
+  }),
+  // Spaces
+  define({
+    name: "app_list_spaces",
+    description:
+      "List spaces: each is a coordinator chat that starts and directs other chats (its threads) in a project. Returns each with its coordinator's session_id and its threads' statuses. To ask a space for something, app_send_message to its session_id.",
+    risk: "read",
+    parameters: Type.Object({}),
+    covers: [],
+    summarize: () => "List spaces",
+    run: async (host) => {
+      const state = host.appState()
+      return (state.spaces ?? []).map(spaceSummary(state))
+    }
+  }),
+  define({
+    name: "app_create_space",
+    description:
+      "Create a space: a coordinator chat (in the sidebar under Spaces) that splits work into threads running in parallel in a project and reports back. Give `message` to tell it what to work on right away.",
+    risk: "write",
+    parameters: Type.Object({
+      name: Type.String({ minLength: 1, maxLength: MAX_SPACE_NAME }),
+      goal: Type.Optional(Type.String({ maxLength: MAX_SPACE_GOAL, description: "What the work is for; the coordinator keeps its threads pointed at it." })),
+      project_id: Type.Optional(id("The project its threads work in.")),
+      message: Type.Optional(Type.String({ maxLength: 50_000, description: "First message to the coordinator." }))
+    }),
+    covers: ["saveSpace"],
+    summarize: (args) => `Create space ${quote(args.name)}`,
+    run: async (host, args) => {
+      if (args.project_id && !host.appState().projects.some((project) => project.id === args.project_id)) throw new Error(`No project ${args.project_id}.`)
+      const space = await host.saveSpace({ name: args.name, goal: args.goal, projectId: args.project_id ?? null })
+      if (args.message?.trim()) await host.sendMessage(space.sessionId, args.message)
+      return { ...spaceSummary(host.appState())(space), url: `/chat/${space.sessionId}` }
+    }
+  }),
+  define({
+    name: "app_update_space",
+    description: "Rename a space, or change its goal or project. Only the fields you give change; threads already started keep their project.",
+    risk: "admin",
+    parameters: Type.Object({
+      space_id: id("The space's id."),
+      name: Type.Optional(Type.String({ minLength: 1, maxLength: MAX_SPACE_NAME })),
+      goal: Type.Optional(Type.String({ maxLength: MAX_SPACE_GOAL })),
+      project_id: Type.Optional(Type.Union([id("The project its threads work in."), Type.Null()]))
+    }),
+    covers: ["saveSpace"],
+    summarize: (args, state) => `Update space ${quote(spaceName(state, args.space_id))}`,
+    run: async (host, args) => {
+      const space = findSpace(host.appState(), args.space_id)
+      const saved = await host.saveSpace({ id: space.id, name: args.name ?? space.name, goal: args.goal ?? space.goal, projectId: args.project_id === undefined ? space.projectId : args.project_id })
+      return spaceSummary(host.appState())(saved)
+    }
+  }),
+  define({
+    name: "app_delete_space",
+    description: "Delete a space: its coordinator chat and all its threads, with their VMs. Its notes stay in the workspace.",
+    risk: "admin",
+    parameters: Type.Object({ space_id: id("The space's id.") }),
+    covers: ["deleteSpace"],
+    summarize: (args, state) => `Delete space ${quote(spaceName(state, args.space_id))} and its threads`,
+    run: async (host, args) => {
+      findSpace(host.appState(), args.space_id)
+      await host.deleteSpace(args.space_id)
+      return { deleted: args.space_id }
+    }
+  }),
+  define({
+    name: "app_read_space_notes",
+    description: "Read a space's notes: its coordinator's running summary, decisions, and ledger of threads (Markdown).",
+    risk: "read",
+    parameters: Type.Object({ space_id: id("The space's id.") }),
+    covers: ["spaceNotes"],
+    summarize: (args, state) => `Read the notes of space ${quote(spaceName(state, args.space_id))}`,
+    run: async (host, args) => ({ notes: host.spaceNotes(args.space_id) })
   }),
   define({
     name: "app_read_sidekick_memory",

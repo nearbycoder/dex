@@ -634,7 +634,7 @@ function ColorsField() {
   )
 }
 
-export type EditorKind = "agent" | "character" | "project" | "mcp"
+export type EditorKind = "agent" | "character" | "project" | "mcp" | "space"
 
 /** The Agent, Project, and MCP server editors: back link, avatar (or title) and status, then that editor's fields. */
 export function EditorSkeleton({ kind }: { kind: EditorKind }) {
@@ -656,7 +656,7 @@ export function EditorSkeleton({ kind }: { kind: EditorKind }) {
             </div>
           ) : (
             <div className="mb-6 flex items-center gap-4">
-              <Bone className={`shrink-0 ${kind === "character" ? "size-16 rounded-full" : "size-14 rounded-[16px]"}`} />
+              <Bone className={`shrink-0 ${kind === "character" ? "size-16 rounded-full" : kind === "space" ? "size-14 rounded-[17px]" : "size-14 rounded-[16px]"}`} />
               <div className="min-w-0 flex-1">
                 <div className="flex h-8 items-center">
                   <Bone className="h-6 w-44" />
@@ -713,6 +713,22 @@ export function EditorSkeleton({ kind }: { kind: EditorKind }) {
                 <FieldBones height={48} label="16%" />
                 <IconsField />
                 <ColorsField />
+              </>
+            )}
+            {kind === "space" && (
+              <>
+                <FieldBones height={38} label="12%" />
+                {/* Goal: its hint line, then the four-row box. */}
+                <div>
+                  <LineBone size="sm" width="10%" />
+                  <LineBone size="xs" width="60%" />
+                  <Bone className="mt-2 w-full rounded-lg" style={{ height: 102 }} />
+                </div>
+                <div>
+                  <LineBone size="sm" width="14%" />
+                  <LineBone size="xs" width="55%" />
+                  <Bone className="mt-2 w-full rounded-lg" style={{ height: 38 }} />
+                </div>
               </>
             )}
             {kind === "mcp" && (
@@ -1070,6 +1086,7 @@ export function RouteSkeleton({ pathname }: { pathname: string }) {
   if (pathname === "/files") return <FilesSkeleton />
   if (/^\/agents\/[^/]+/.test(pathname)) return <EditorSkeleton kind="agent" />
   if (/^\/sidekicks\/[^/]+/.test(pathname)) return <EditorSkeleton kind="character" />
+  if (/^\/spaces\/[^/]+/.test(pathname)) return <EditorSkeleton kind="space" />
   if (/^\/projects\/[^/]+/.test(pathname)) return <EditorSkeleton kind="project" />
   if (/^\/mcp\/[^/]+/.test(pathname)) return <EditorSkeleton kind="mcp" />
   if (/^\/skills\/[^/]+/.test(pathname)) return <SkillEditorSkeleton />

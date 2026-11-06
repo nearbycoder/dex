@@ -39,6 +39,8 @@ import { ModelLogo } from "./model-logo"
 import { inboxState, SessionMenu, type SessionMenuHandle, snoozedLabel, useNaming } from "./session-menu"
 import { SelectionBar } from "./selection-bar"
 import { ChatListSkeleton } from "./skeleton"
+import { SpaceGlyph } from "./space-panel"
+import { type SpaceProfile, spaceThreads, threadStatus } from "~/shared/spaces"
 import { UsageGlanceLink, UsageSettingsIcon } from "./usage-glance"
 import { useNow } from "./vm-status"
 
@@ -73,7 +75,9 @@ function useUnreadBadge(count: number) {
 export function Sidebar() {
   const { drawerOpen: open, closeDrawer: onClose, collapsed, toggleCollapsed, holdOpen } = useNav()
   const { state, viewer, connected } = useDex()
-  useUnreadBadge(state?.sessions.filter((session) => session.unread).length ?? 0)
+  // A space's threads report to its chat, so only the space's own chat counts toward unread.
+  const coordinators = new Set(state?.spaces?.map((space) => space.sessionId))
+  useUnreadBadge(state?.sessions.filter((session) => session.unread && (!session.spaceId || coordinators.has(session.id))).length ?? 0)
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const params = useParams({ strict: false })
@@ -223,14 +227,15 @@ export function Sidebar() {
             </div>
             <nav ref={chatList} className="scrollbar-thin mt-4 flex-1 space-y-0.5 overflow-y-auto px-3">
               {state && <Characters characters={state.characters} sessions={state.sessions} activeId={activeId} onPick={onClose} />}
+              {state && <Spaces spaces={state.spaces ?? []} sessions={state.sessions} pending={state.access.pending} activeId={activeId} onPick={onClose} />}
               <div className="px-2 pb-1 text-[11px] font-medium tracking-wide text-zinc-600 uppercase" title="Shift-click chats to select several">
                 Chats
               </div>
               {!state && <ChatListSkeleton />}
               {state && (
                 <ChatGroups
-                  // A character's conversations live under them, not in the inbox.
-                  sessions={state.sessions.filter((session) => !session.characterId)}
+                  // A character's conversations live under them, and a space's chats under the space, not in the inbox.
+                  sessions={state.sessions.filter((session) => !session.characterId && !session.spaceId)}
                   activeId={activeId}
                   onPick={onClose}
                   renderRow={(session, group) => (
@@ -400,6 +405,94 @@ function Characters({
               </span>
               <span className={`block truncate text-[11px] ${session?.busy ? "text-emerald-400" : unread ? "text-zinc-300" : "text-zinc-500"}`}>
                 {session?.busy ? "typing…" : unread && session?.lastReply ? session.lastReply : character.tagline || "Say hi"}
+              </span>
+            </span>
+            {unread && <span className="size-2 shrink-0 rounded-full bg-sky-400" aria-label="Unread" />}
+          </Link>
+        )
+      })}
+    </div>
+  )
+}
+
+/**
+ * Spaces, under the sidekicks: each opens its coordinator's chat and says how its threads are doing. With none yet, a
+ * quiet row offers to start one.
+ */
+function Spaces({
+  spaces,
+  sessions,
+  pending,
+  activeId,
+  onPick
+}: {
+  spaces: ReadonlyArray<SpaceProfile>
+  sessions: ReadonlyArray<SessionMeta>
+  pending: Parameters<typeof threadStatus>[1]
+  activeId: string | undefined
+  onPick: () => void
+}) {
+  const header = (
+    <div className="flex items-center px-2 pb-1">
+      <span className="text-[11px] font-medium tracking-wide text-zinc-600 uppercase">Spaces</span>
+      <Link
+        to="/spaces/$spaceId"
+        params={{ spaceId: "new" }}
+        onClick={onPick}
+        title="New space"
+        aria-label="New space"
+        className="-my-1 -mr-1 ml-auto rounded-md p-1 text-zinc-600 hover:bg-zinc-900 hover:text-zinc-200"
+      >
+        <Plus className="size-3.5" />
+      </Link>
+    </div>
+  )
+  if (spaces.length === 0) {
+    return (
+      <div className="mb-4">
+        {header}
+        <Link
+          to="/spaces/$spaceId"
+          params={{ spaceId: "new" }}
+          onClick={onPick}
+          className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs text-zinc-500 hover:bg-zinc-900/60 hover:text-zinc-300"
+        >
+          <span className="flex size-7 items-center justify-center rounded-[9px] border border-dashed border-zinc-700">
+            <Plus className="size-3.5" />
+          </span>
+          Run work in parallel threads
+        </Link>
+      </div>
+    )
+  }
+  const active = activeId ? sessions.find((session) => session.id === activeId)?.spaceId : undefined
+  return (
+    <div className="mb-4">
+      {header}
+      {spaces.map((space) => {
+        const coordinator = sessions.find((session) => session.id === space.sessionId)
+        const statuses = spaceThreads(space, sessions).map((thread) => threadStatus(thread, pending))
+        const working = statuses.filter((status) => status === "working").length
+        const needsYou = statuses.filter((status) => status === "needs_you").length
+        const summary = [needsYou ? `${needsYou} need${needsYou === 1 ? "s" : ""} you` : "", working ? `${working} working` : ""].filter(Boolean).join(" · ")
+        const unread = Boolean(coordinator?.unread) && activeId !== space.sessionId
+        const busy = Boolean(coordinator?.busy) || working > 0
+        return (
+          <Link
+            key={space.id}
+            to="/chat/$sessionId"
+            params={{ sessionId: space.sessionId }}
+            onClick={onPick}
+            className={`flex animate-fade items-center gap-2.5 rounded-lg px-2.5 py-1.5 ${active === space.id ? "bg-zinc-900 text-zinc-100" : "text-zinc-300 hover:bg-zinc-900/60 hover:text-zinc-100"}`}
+          >
+            <span className="relative shrink-0">
+              <SpaceGlyph size={28} />
+              {busy && <span className="absolute -right-0.5 -bottom-0.5 size-2.5 animate-pulse rounded-full bg-emerald-500 ring-2 ring-zinc-950" />}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className={`block truncate text-sm ${unread ? "font-semibold text-zinc-50" : ""}`}>{space.name}</span>
+              <span className={`block truncate text-[11px] ${needsYou ? "text-amber-300" : working ? "text-emerald-400" : unread ? "text-zinc-300" : "text-zinc-500"}`}>
+                {summary || (unread && coordinator?.lastReply ? coordinator.lastReply : statuses.length ? `${statuses.length} thread${statuses.length === 1 ? "" : "s"}` : space.goal || "No threads yet")}
               </span>
             </span>
             {unread && <span className="size-2 shrink-0 rounded-full bg-sky-400" aria-label="Unread" />}

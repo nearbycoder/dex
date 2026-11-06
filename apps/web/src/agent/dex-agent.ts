@@ -58,6 +58,19 @@ import { CLOUDFLARE_RATES, COMMANDCODE_LIMITS, type CloudflareLine, type OpenCod
 import { AGENT_COLORS, AGENT_ICONS, type AgentDraft, type AgentProfile, STARTER_AGENTS } from "~/shared/agents"
 import { type CharacterDraft, characterMemoryPath, type CharacterProfile, MAX_CHARACTER_MEMORY_CHARS, NOTIFY_LEVELS } from "~/shared/characters"
 import { cleanLook, LOOK_PRESETS, randomLook } from "~/shared/sidekick-look"
+import {
+  MAX_SPACE_GOAL,
+  MAX_SPACE_NAME,
+  MAX_SPACE_NOTES_CHARS,
+  SPACE_UPDATE_PREFIX,
+  SPACE_UPDATE_SEPARATOR,
+  type SpaceDraft,
+  type SpaceProfile,
+  spaceNotesPath,
+  spaceUpdate,
+  THREAD_STATUS_LABELS,
+  threadStatus
+} from "~/shared/spaces"
 import { type AccessRisk, type CreatedAccessToken, NO_ACCESS, type UiOperationResult } from "~/shared/access"
 import { extensionOf, MAX_MEDIA_BYTES, vmMediaLinks, vmMediaSource } from "~/shared/media"
 import type { McpCheckReport, RegistryServer, RegistrySource } from "~/shared/mcp-registry"
@@ -90,6 +103,7 @@ import { webTools } from "./tools/agents-tools"
 import { appTools } from "./tools/app-tools"
 import { loadUiGuideTool, renderUiTool } from "./tools/render-ui"
 import { scheduleTools } from "./tools/schedule-tools"
+import { type SpaceHost, spaceTools } from "./tools/space-tools"
 import { vmTools } from "./tools/vm-tools"
 import { workspaceTools } from "./tools/workspace-tools"
 import { parseVmFiles, vmFilesCommand, type VmFilesView } from "./vm-files"
@@ -206,6 +220,8 @@ interface SessionRow {
   snoozed_until: number | null
   parent_id: string | null
   character_id: string | null
+  space_id: string | null
+  last_failed: number | null
   read_at: number | null
   reply_at: number | null
   last_reply: string | null
@@ -233,6 +249,18 @@ interface McpRow extends McpRowData {
   createdAt: number
   updatedAt: number
 }
+
+interface SpaceRow {
+  id: string
+  data: string
+  session_id: string
+  created_at: number
+  updated_at: number
+  [key: string]: SqlStorageValue
+}
+
+/** The extension only space coordinators get: their tools and their part of the prompt. */
+const SPACE_EXTENSION = "dex-space"
 
 interface CharacterRow {
   id: string
@@ -487,6 +515,7 @@ export class DexAgent extends Agent<Env, DexState> {
   readonly harness = new PiHarness({
     harness: ({ storage, context }) => {
       this.registry.install(this.coreExtension())
+      this.registry.install(this.spaceExtension())
       const registry = this.registry
       const models = createModels()
       this.installProviders(models)
@@ -498,9 +527,9 @@ export class DexAgent extends Agent<Env, DexState> {
           registry: this.registry,
           settings: {
             retry: { enabled: true, maxRetries: 2, baseDelayMs: 1_000 },
-            // MCP servers are off unless a chat selects them.
+            // MCP servers are off unless a chat selects them; the space tools are only for space coordinators.
             get extensions() {
-              return registry.snapshot().installed().filter((extension) => !isMcpExtension(extension.name))
+              return registry.snapshot().installed().filter((extension) => !isMcpExtension(extension.name) && extension.name !== SPACE_EXTENSION)
             }
           }
         },
@@ -545,6 +574,11 @@ export class DexAgent extends Agent<Env, DexState> {
       ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN read_at INTEGER`)
       ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN last_reply TEXT`)
     }
+    // Spaces: a coordinator chat and its threads (chats that point back at the space).
+    if (!sessionColumns.includes("space_id")) ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN space_id TEXT`)
+    if (!sessionColumns.includes("last_failed")) ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN last_failed INTEGER`)
+    ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_spaces (
+      id TEXT PRIMARY KEY, data TEXT NOT NULL, session_id TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_characters (
       id TEXT PRIMARY KEY, data TEXT NOT NULL, session_id TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_projects (
@@ -594,6 +628,7 @@ export class DexAgent extends Agent<Env, DexState> {
     }
     this.giveSidekicksLooks()
     this.refreshCharacters()
+    this.refreshSpaces()
     this.skills.refresh()
     this.accountSecrets.refresh()
     this.startMcp()
@@ -662,6 +697,16 @@ export class DexAgent extends Agent<Env, DexState> {
         }),
         // The chat's project, with where its repos are and how far the VM's setup got.
         section("project", (input) => this.projectContext(String(input.conversationId))),
+        // A space's thread: what it's part of, and that its final reply goes back to the coordinator.
+        section("space_thread", (input) => {
+          const sessionId = String(input.conversationId)
+          const space = this.spaceForSession(sessionId)
+          if (!space || space.sessionId === sessionId) return undefined
+          return [
+            `This chat is a thread in the space “${space.name}”, started by the space's coordinator to do one piece of work.${space.goal ? ` The space's goal: ${space.goal}` : ""}`,
+            "Do the work the first message describes. When you finish, your final reply goes back to the coordinator (and the user can read this chat), so end with a short report: what you did, the result (links, files, branches, pull requests), and anything left open. If you're blocked on a decision only the user can make, say exactly what's needed in your final reply and stop there."
+          ].join("\n\n")
+        }),
         section("chat_secrets", (input) => {
           const names = this.secrets.names(String(input.conversationId))
           return names.length
@@ -865,6 +910,8 @@ export class DexAgent extends Agent<Env, DexState> {
         mcpServers: parseIds(row.mcp_servers),
         projectId: row.project_id ?? null,
         characterId: row.character_id ?? null,
+        spaceId: row.space_id ?? null,
+        failed: row.last_failed === 1,
         unread: isUnread(row),
         lastReply: row.last_reply ?? null,
         repliedAt: row.reply_at ?? null,
@@ -880,14 +927,17 @@ export class DexAgent extends Agent<Env, DexState> {
   }
 
   /** `mcpServers` replaces the chat's MCP servers; omitted, they stay as they are. */
-  private async configureConversation(sessionId: string, model: string, thinking: ThinkingLevel, mcpServers?: readonly string[]) {
+  private async configureConversation(sessionId: string, model: string, thinking: ThinkingLevel, mcpServers?: readonly string[], coordinator = this.isCoordinator(sessionId)) {
     const conversation = await this.harness.conversation(sessionId)
+    // The selection is written whole: a coordinator keeps its space tools beside its MCP servers.
+    const row = this.ctx.storage.sql.exec<{ mcp_servers: string | null }>(`SELECT mcp_servers FROM dex_sessions WHERE id = ?`, sessionId).toArray()[0]
+    const mcp = mcpServers ?? (coordinator ? parseIds(row?.mcp_servers) : undefined)
     await conversation.configure(
       {
         // Each model runs on its own subscription, under the id that provider's API uses.
         model: { provider: PI_PROVIDER_IDS[findModel(model)?.provider ?? "clinepass"], modelId: findModel(model)?.apiId ?? model },
         thinkingLevel: thinking,
-        ...(mcpServers && { extensions: { add: mcpServers.map((id) => ({ name: mcpExtensionName(id) })) } })
+        ...(mcp && { extensions: { add: [...mcp.map((id) => ({ name: mcpExtensionName(id) })), ...(coordinator ? [{ name: SPACE_EXTENSION }] : [])] } })
       },
       BACKGROUND_CONTEXT
     )
@@ -1292,7 +1342,17 @@ export class DexAgent extends Agent<Env, DexState> {
   }
 
   private async openSession(
-    options: { model?: string; thinking?: ThinkingLevel; title?: string; agentId?: string | null; mcpServers?: readonly string[]; projectId?: string | null },
+    options: {
+      model?: string
+      thinking?: ThinkingLevel
+      title?: string
+      agentId?: string | null
+      mcpServers?: readonly string[]
+      projectId?: string | null
+      /** A space chat: its coordinator (`coordinator`) or one of its threads (muted: they report to the coordinator). */
+      spaceId?: string | null
+      coordinator?: boolean
+    },
     characterId: string | null
   ): Promise<SessionMeta> {
     const agent = options.agentId ? this.agentById(options.agentId) : undefined
@@ -1305,12 +1365,14 @@ export class DexAgent extends Agent<Env, DexState> {
     // Picked in the composer, else the agent's, else the servers marked for new chats.
     const mcpServers = this.knownMcpIds(options.mcpServers ?? agent?.mcpServers ?? this.mcpRows().filter((row) => row.defaultOn).map((row) => row.id))
     const session = await this.harness.sessions.create()
-    await this.configureConversation(session.id, model, thinking, mcpServers)
+    await this.configureConversation(session.id, model, thinking, mcpServers, options.coordinator === true)
     const now = Date.now()
     const title = options.title?.trim() || "New chat"
+    const spaceId = options.spaceId ?? null
+    const muted = spaceId && !options.coordinator ? 1 : null
     this.ctx.storage.sql.exec(
-      `INSERT INTO dex_sessions (id, title, model, thinking, created_at, updated_at, agent_id, mcp_servers, project_id, character_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      session.id, title, model, thinking, now, now, agent?.id ?? null, JSON.stringify(mcpServers), project?.id ?? null, characterId
+      `INSERT INTO dex_sessions (id, title, model, thinking, created_at, updated_at, agent_id, mcp_servers, project_id, character_id, space_id, muted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      session.id, title, model, thinking, now, now, agent?.id ?? null, JSON.stringify(mcpServers), project?.id ?? null, characterId, spaceId, muted
     )
     await this.refreshSessions()
     // A project chat will need its VM, so it starts now and is set up (repos, setup script) by the time the
@@ -1331,10 +1393,12 @@ export class DexAgent extends Agent<Env, DexState> {
       mcpServers,
       projectId: project?.id ?? null,
       characterId,
+      spaceId,
+      failed: false,
       unread: false,
       lastReply: null,
       repliedAt: null,
-      muted: false,
+      muted: muted === 1,
       settledAt: null,
       snoozedUntil: null
     }
@@ -1729,6 +1793,13 @@ export class DexAgent extends Agent<Env, DexState> {
     // A character always has a conversation: deleting theirs starts a new one.
     const character = this.loadCharacters().find((candidate) => candidate.sessionId === sessionId)
     if (character) await this.restartCharacter(character.id)
+    // A space is its coordinator: deleting that chat ends the space, and its threads stay as ordinary chats.
+    const space = this.loadSpaces().find((candidate) => candidate.sessionId === sessionId)
+    if (space) {
+      this.ctx.storage.sql.exec(`DELETE FROM dex_spaces WHERE id = ?`, space.id)
+      this.ctx.storage.sql.exec(`UPDATE dex_sessions SET space_id = NULL, muted = NULL WHERE space_id = ?`, space.id)
+      this.refreshSpaces()
+    }
     await this.refreshSessions()
     // Its VM goes with it, disk and all (stopped first if it was running; deleting does both), and its media.
     if (this.vms.has(sessionId)) this.ctx.waitUntil(this.reapOrphanVms())
@@ -1952,6 +2023,201 @@ export class DexAgent extends Agent<Env, DexState> {
     this.ctx.storage.sql.exec(`UPDATE dex_sessions SET agent_id = NULL WHERE agent_id = ?`, id)
     this.refreshAgents()
     await this.refreshSessions()
+  }
+
+  // ── Spaces ────────────────────────────────────────────────────────────────
+
+  /** The coordinator's extension: its tools, and what it needs to know about its space at each request. */
+  private spaceExtension() {
+    return defineExtension({
+      name: SPACE_EXTENSION,
+      sections: [
+        section("space", (input) => {
+          const space = this.coordinatedSpace(String(input.conversationId))
+          return space ? this.coordinatorBrief(space) : undefined
+        })
+      ],
+      tools: spaceTools(this.spaceHost())
+    })
+  }
+
+  private coordinatorBrief(space: SpaceProfile) {
+    const project = space.projectId ? this.projectById(space.projectId) : undefined
+    const notesPath = spaceNotesPath(space.id)
+    const notes = this.workspace.readText(notesPath)?.trim()
+    const threads = this.spaceHost().threads(space)
+    return [
+      `You are the coordinator of the space “${space.name}” on Dex, the user's personal agent platform. A space is one conversation with you; your job is to start and direct other chats (threads) that do the work, in parallel, and to keep the user up to date.`,
+      space.goal ? `The space's goal: ${space.goal}` : "The space has no written goal; if what it's for is unclear, ask.",
+      project
+        ? `Its threads work in the project “${project.name}”: each thread gets its own VM with the project's repos cloned.`
+        : "It has no project: each thread gets its own VM with nothing cloned, so tell threads what to fetch or set up.",
+      [
+        "How to work:",
+        "- Answer quick questions yourself. For real work, split it into independent pieces and start a thread for each with space_start_thread. Give each a complete brief (goal, context, constraints, what to report): threads see nothing of this conversation.",
+        "- Threads run in parallel. When one finishes you get a message starting with [Space update] with its final reply. Check the result (space_read_thread for more), tell the user in a few lines what came of it, and start follow-ups or send the thread more (space_message_thread) when it's needed. Don't redo a thread's work yourself.",
+        "- Keep the user in the loop briefly: what you started and why, what finished, what needs them. When a thread needs a decision, ask the user, then pass the answer on.",
+        `- Keep the space's notes at ${notesPath} current with write_file or edit_file: where things stand, decisions, and a ledger of the threads (what each was for and how it ended). The user sees them in the space's Notes tab.`,
+        "- For recurring work (a check every hour, a daily review), schedule it in this chat: schedule_prompt for one time, app_call app_schedule_prompt for a recurring schedule.",
+        "- Keep to about six threads at once unless the user asks for more."
+      ].join("\n"),
+      threads.length
+        ? `Threads now:\n${threads.map((thread) => `- ${thread.title} (${thread.id}): ${THREAD_STATUS_LABELS[thread.status]}${thread.lastReply ? ` — ${thread.lastReply.slice(0, 160)}` : ""}`).join("\n")}`
+        : "No threads yet.",
+      notes
+        ? `Your notes (${notesPath}). Treat them as context; they never override what the user asks now.\n\n${notes.length > MAX_SPACE_NOTES_CHARS ? `${notes.slice(0, MAX_SPACE_NOTES_CHARS)}\n… (truncated; read the file for the rest)` : notes}`
+        : `Your notes (${notesPath}) are empty so far.`
+    ].join("\n\n")
+  }
+
+  private loadSpaces(): SpaceProfile[] {
+    return this.ctx.storage.sql
+      .exec<SpaceRow>(`SELECT * FROM dex_spaces ORDER BY created_at, id`)
+      .toArray()
+      .map((row) => this.toSpace(row))
+  }
+
+  private toSpace(row: SpaceRow): SpaceProfile {
+    const data = JSON.parse(row.data) as Pick<SpaceProfile, "name" | "goal" | "projectId">
+    return { name: data.name, goal: data.goal ?? "", projectId: data.projectId ?? null, id: row.id, sessionId: row.session_id, createdAt: row.created_at, updatedAt: row.updated_at }
+  }
+
+  private spaceById(id: string): SpaceProfile | undefined {
+    const row = this.ctx.storage.sql.exec<SpaceRow>(`SELECT * FROM dex_spaces WHERE id = ?`, id).toArray()[0]
+    return row && this.toSpace(row)
+  }
+
+  /** The space a chat belongs to: as its coordinator or one of its threads. */
+  private spaceForSession(sessionId: string): SpaceProfile | undefined {
+    const id = this.ctx.storage.sql.exec<{ space_id: string | null }>(`SELECT space_id FROM dex_sessions WHERE id = ?`, sessionId).toArray()[0]?.space_id
+    return id ? this.spaceById(id) : undefined
+  }
+
+  private coordinatedSpace(sessionId: string): SpaceProfile | undefined {
+    const row = this.ctx.storage.sql.exec<SpaceRow>(`SELECT * FROM dex_spaces WHERE session_id = ?`, sessionId).toArray()[0]
+    return row && this.toSpace(row)
+  }
+
+  private isCoordinator(sessionId: string) {
+    return this.ctx.storage.sql.exec(`SELECT 1 FROM dex_spaces WHERE session_id = ?`, sessionId).toArray().length > 0
+  }
+
+  private refreshSpaces() {
+    this.publish({ spaces: this.loadSpaces() })
+  }
+
+  /** What the coordinator's tools call. */
+  private spaceHost(): SpaceHost {
+    return {
+      coordinatedSpace: (sessionId) => this.coordinatedSpace(sessionId),
+      startThread: async (space, input) => {
+        if (input.agentId && !this.agentById(input.agentId)) throw new Error(`No agent ${input.agentId}.`)
+        const thread = await this.openSession(
+          {
+            title: input.title.trim().slice(0, 80),
+            model: input.model,
+            thinking: input.thinking,
+            agentId: input.agentId ?? null,
+            projectId: space.projectId && this.projectById(space.projectId) ? space.projectId : null,
+            spaceId: space.id
+          },
+          null
+        )
+        this.noteSessionParent(thread.id, space.sessionId)
+        await this.deliver(thread.id, input.prompt)
+        return { id: thread.id, title: thread.title }
+      },
+      threads: (space) => {
+        const pending = this.state.access?.pending ?? []
+        return this.state.sessions
+          .filter((session) => session.spaceId === space.id && session.id !== space.sessionId)
+          .sort((a, b) => b.createdAt - a.createdAt)
+          .map((session) => ({ id: session.id, title: session.title, status: threadStatus(session, pending), lastReply: session.lastReply ?? null, updatedAt: session.updatedAt }))
+      },
+      messageThread: async (threadId, message, steer) => {
+        if (steer && (await this.isBusy(threadId))) await this.deliver(threadId, message, { steer: true })
+        else await this.sendMessage(threadId, message)
+      },
+      readThread: async (threadId, limit) => {
+        const session = this.state.sessions.find((candidate) => candidate.id === threadId)
+        return { id: threadId, title: session?.title, status: session ? THREAD_STATUS_LABELS[threadStatus(session, this.state.access?.pending ?? [])] : "unknown", messages: await this.readTranscript(threadId, limit) }
+      },
+      stopThread: (threadId) => this.abort(threadId)
+    }
+  }
+
+  /**
+   * Tells a coordinator a thread's run ended. Updates that arrive while it's busy (or stopped) wait in its queue, joined
+   * into one message, so a burst of finished threads is one run rather than many.
+   */
+  private async tellCoordinator(space: SpaceProfile, update: string) {
+    const id = space.sessionId
+    if (!this.hasSession(id)) return
+    const queued = this.messageQueue.list(id)
+    const last = queued.at(-1)
+    if (last?.text.startsWith(SPACE_UPDATE_PREFIX)) this.messageQueue.edit(id, last.id, `${last.text}${SPACE_UPDATE_SEPARATOR}${update}`)
+    else if (this.messageQueue.held(id) || queued.length || (await this.isBusy(id))) this.messageQueue.add(id, update)
+    else return this.deliver(id, update)
+    this.publishQueue(id)
+    await this.ensureQueueCheck()
+    await this.drainQueue(id)
+  }
+
+  /** Create (no id) or update a space. Creating opens its coordinator's chat, where you tell it what to work on. */
+  @callable()
+  async saveSpace(draft: SpaceDraft): Promise<SpaceProfile> {
+    const name = String(draft.name ?? "").trim().slice(0, MAX_SPACE_NAME)
+    if (!name) throw new Error("Give the space a name.")
+    const existing = draft.id ? this.spaceById(draft.id) : undefined
+    if (draft.id && !existing) throw new Error("That space no longer exists.")
+    const projectId = draft.projectId === undefined ? (existing?.projectId ?? null) : draft.projectId
+    if (projectId && !this.projectById(projectId)) throw new Error("That project no longer exists.")
+    const data = { name, goal: String(draft.goal ?? existing?.goal ?? "").trim().slice(0, MAX_SPACE_GOAL), projectId: projectId ?? null }
+    const now = Date.now()
+    const id = existing?.id ?? `${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 32) || "space"}-${crypto.randomUUID().slice(0, 6)}`
+    let sessionId = existing && this.hasSession(existing.sessionId) ? existing.sessionId : null
+    if (!sessionId) {
+      // Saved first, so the coordinator's chat is configured with the space tools from its first message.
+      this.ctx.storage.sql.exec(`INSERT OR REPLACE INTO dex_spaces (id, data, session_id, created_at, updated_at) VALUES (?, ?, '', ?, ?)`, id, JSON.stringify(data), existing?.createdAt ?? now, now)
+      try {
+        sessionId = (await this.openSession({ title: name, spaceId: id, coordinator: true }, null)).id
+      } catch (error) {
+        if (!existing) this.ctx.storage.sql.exec(`DELETE FROM dex_spaces WHERE id = ?`, id)
+        throw error
+      }
+    } else this.ctx.storage.sql.exec(`UPDATE dex_sessions SET title = ? WHERE id = ?`, name, sessionId)
+    this.ctx.storage.sql.exec(
+      `INSERT INTO dex_spaces (id, data, session_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET data = excluded.data, session_id = excluded.session_id, updated_at = excluded.updated_at`,
+      id, JSON.stringify(data), sessionId, existing?.createdAt ?? now, now
+    )
+    // A new coordinator chat was configured before its space pointed at it: give it the space tools now.
+    if (!existing || existing.sessionId !== sessionId) {
+      const row = this.ctx.storage.sql.exec<SessionRow>(`SELECT * FROM dex_sessions WHERE id = ?`, sessionId).toArray()[0]
+      if (row) await this.configureConversation(sessionId, row.model, row.thinking as ThinkingLevel, parseIds(row.mcp_servers), true)
+    }
+    this.refreshSpaces()
+    await this.refreshSessions()
+    return { ...data, id, sessionId, createdAt: existing?.createdAt ?? now, updatedAt: now }
+  }
+
+  /** Deletes a space: its coordinator's chat and every thread, with their VMs. Its notes stay in the workspace. */
+  @callable()
+  async deleteSpace(id: string) {
+    const space = this.spaceById(id)
+    if (!space) return
+    const threads = this.ctx.storage.sql.exec<{ id: string }>(`SELECT id FROM dex_sessions WHERE space_id = ? AND id != ?`, id, space.sessionId).toArray()
+    this.ctx.storage.sql.exec(`DELETE FROM dex_spaces WHERE id = ?`, id)
+    for (const thread of threads) await this.deleteSession(thread.id)
+    if (this.hasSession(space.sessionId)) await this.deleteSession(space.sessionId)
+    this.refreshSpaces()
+  }
+
+  /** The coordinator's notes (Markdown), for the space's Notes tab. */
+  @callable()
+  spaceNotes(id: string): string {
+    if (!this.spaceById(id)) throw new Error("That space no longer exists.")
+    return this.workspace.readText(spaceNotesPath(id)) ?? ""
   }
 
   // ── Characters ────────────────────────────────────────────────────────────
@@ -3293,12 +3559,20 @@ export class DexAgent extends Agent<Env, DexState> {
     if (!row || !last || last.stopReason === "aborted") return
     // Unread until someone looks, unless someone is looking now.
     const now = Date.now()
-    const preview = last.stopReason === "error" ? `Problem: ${last.error ?? "the model request failed."}` : summarize(last.text) || "Done."
+    const failed = last.stopReason === "error"
+    const preview = failed ? `Problem: ${last.error ?? "the model request failed."}` : summarize(last.text) || "Done."
     this.ctx.storage.sql.exec(
-      `UPDATE dex_sessions SET reply_at = ?, last_reply = ?, read_at = CASE WHEN ? THEN ? ELSE read_at END WHERE id = ?`,
-      now, preview.slice(0, 280), this.isWatching(sessionId) ? 1 : 0, now, sessionId
+      `UPDATE dex_sessions SET reply_at = ?, last_reply = ?, last_failed = ?, read_at = CASE WHEN ? THEN ? ELSE read_at END WHERE id = ?`,
+      now, preview.slice(0, 280), failed ? 1 : 0, this.isWatching(sessionId) ? 1 : 0, now, sessionId
     )
     await this.refreshSessions()
+    // A space's thread reports to its coordinator, which tells you what came of it.
+    const threadOf = row.space_id ? this.spaceById(row.space_id) : undefined
+    if (threadOf && threadOf.sessionId !== sessionId) {
+      const body = failed ? (last.error ?? "The model request failed.") : last.text.length > 6_000 ? `${last.text.slice(0, 6_000)}\n… (cut; space_read_thread has the rest)` : last.text
+      await this.tellCoordinator(threadOf, spaceUpdate({ id: sessionId, title: row.title }, failed ? "failed" : "finished", body))
+      return
+    }
     if (row.muted === 1) return
     const character = this.characterForSession(sessionId)
     if (character) return this.notifySidekick(character, sessionId, kind, last, preview)
@@ -3306,7 +3580,6 @@ export class DexAgent extends Agent<Env, DexState> {
     if (!this.messageQueue.held(sessionId) && this.messageQueue.list(sessionId).length > 0 && last.stopReason !== "error") return
     const url = `/chat/${sessionId}`
     const title = (kind === "scheduled" ? `⏰ ${prompt ?? row.title}` : row.title).slice(0, 80)
-    const failed = last.stopReason === "error"
     const payload: PushPayload = {
       title: failed ? `Problem in “${title}”` : title,
       body: failed ? (last.error ?? "The model request failed.").slice(0, 180) : summarize(last.text) || "Done.",
@@ -3342,7 +3615,10 @@ export class DexAgent extends Agent<Env, DexState> {
   /** Chats with something you haven't seen (muted ones too: muting is about pushes), for app badges. */
   private unreadCount() {
     return this.ctx.storage.sql
-      .exec<{ count: number }>(`SELECT count(*) AS count FROM dex_sessions WHERE reply_at IS NOT NULL AND (read_at IS NULL OR read_at < reply_at)`)
+      .exec<{ count: number }>(
+        `SELECT count(*) AS count FROM dex_sessions WHERE reply_at IS NOT NULL AND (read_at IS NULL OR read_at < reply_at)
+         AND (space_id IS NULL OR id IN (SELECT session_id FROM dex_spaces))`
+      )
       .one().count
   }
 

@@ -8,9 +8,11 @@ import { lazy, memo, type ReactNode, Suspense, useCallback, useEffect, useLayout
 import { displayItems, type LiveTool, toolResults, type TranscriptState } from "~/client/lib/transcript"
 import { invokedSkill } from "~/shared/skills"
 import { splitUiNotes } from "~/shared/ui-notes"
+import { parseSpaceUpdates, START_THREAD_TOOL } from "~/shared/spaces"
 import { Collapse } from "./collapse"
 import { ConfirmCard } from "./confirm-card"
 import { MediaPlayer, videoSource } from "./media"
+import { SpaceUpdates, ThreadCard } from "./space-panel"
 import { Markdown } from "./markdown"
 import { summarize, ToolCard, toolActivity, TranscriptImage } from "./tool-card"
 import { useNow } from "./vm-status"
@@ -208,6 +210,12 @@ function AssistantTurnView(props: {
     const details = props.results.get(step.block.id)?.details as { media?: { url: string; name: string } } | undefined
     return details?.media && !shownText.includes(details.media.url) ? [details.media] : []
   })
+  // Threads a space's coordinator started: each a live card in its reply.
+  const threads = blocks.flatMap((step) => {
+    if (step.block.type !== "toolCall" || step.block.name !== START_THREAD_TOOL) return []
+    const details = props.results.get(step.block.id)?.details as { thread?: { id: string; title: string } } | undefined
+    return details?.thread ? [details.thread] : []
+  })
   // Admin operations the chat asked for stay in view until you answer them.
   const confirmations = blocks.flatMap((step) => {
     if (step.block.type !== "toolCall" || step.block.name !== "app_call") return []
@@ -243,6 +251,9 @@ function AssistantTurnView(props: {
       })}
       {confirmations.map((confirmation) => (
         <ConfirmCard key={confirmation.id} id={confirmation.id} summary={confirmation.summary} />
+      ))}
+      {threads.map((thread) => (
+        <ThreadCard key={thread.id} id={thread.id} title={thread.title} />
       ))}
       {shown.map((step) => {
         const { block } = step
@@ -462,6 +473,11 @@ export const MessageList = memo(function MessageList({
             switch (item.kind) {
               case "user":
                 // A prompt that ran on a schedule: the chat reaching out on its own, not something you said.
+                // Threads reporting back to a space's coordinator: event rows, not something you said.
+                {
+                  const updates = item.text ? parseSpaceUpdates(item.text) : null
+                  if (updates?.length) return <SpaceUpdates key={item.id} updates={updates} />
+                }
                 if (item.text?.startsWith(SCHEDULED_PREFIX)) {
                   return (
                     <div key={item.id} className="flex animate-fade items-center justify-center gap-1.5 text-xs text-zinc-500">
