@@ -19,6 +19,9 @@ import dev.trydex.core.model.ModelRegistry
 import dev.trydex.core.model.ProjectProfile
 import dev.trydex.core.model.ProjectRepo
 import dev.trydex.core.model.ServerMessage
+import dev.trydex.core.model.SpaceUpdate
+import dev.trydex.core.model.Spaces
+import dev.trydex.core.model.ThreadStatus
 import dev.trydex.core.model.ThinkingLevel
 import dev.trydex.core.model.ToolCallBlock
 import dev.trydex.core.model.TranscriptReducer
@@ -256,6 +259,50 @@ class FakeDexTest {
         assertThat(after.chats.map { it.id }).containsAtLeast("chat-muse", "chat-muse-earlier")
         assertThat(after.session(muse.sessionId)).isNull()
         assertThat(runCatching { api.characterMemory("muse") }.exceptionOrNull()!!.message).isEqualTo("That sidekick no longer exists.")
+        connection.stop()
+    }
+
+    @Test fun spacesStartThreadsThatReportBack() = runBlocking {
+        val url = fake.start()
+        val connection = AgentConnection(OkHttpClient(), url, FakeData.USER_ID, { fake.token }, scope)
+        val api = DexApi(connection.asRpc())
+        connection.start()
+        withTimeout(5_000) { connection.status.first { it == ConnectionStatus.Connected } }
+        val seeded = connection.state.value!!
+        val launch = seeded.space(FakeData.SPACE)!!
+        // Its chats live under it, one thread in each state.
+        assertThat(seeded.chats.none { it.spaceId != null }).isTrue()
+        assertThat(Spaces.grouped(Spaces.threads(launch, seeded.sessions), seeded.access.pending).map { it.first })
+            .containsExactly(ThreadStatus.NeedsYou, ThreadStatus.Working, ThreadStatus.Failed, ThreadStatus.Done).inOrder()
+        assertThat(api.spaceNotes(launch.id)).contains("Ledger")
+
+        // Creating one opens its coordinator's chat; telling it what to do starts a thread that reports back there.
+        assertThat(runCatching { api.saveSpace(DexApi.spaceDraft(null, " ", "", null)) }.exceptionOrNull()!!.message).isEqualTo("Give the space a name.")
+        val space = api.saveSpace(DexApi.spaceDraft(null, "Docs", "Better docs", "dex-web"))
+        withTimeout(5_000) { while (connection.state.value!!.session(space.sessionId) == null) kotlinx.coroutines.delay(10) }
+        assertThat(connection.state.value!!.coordinatedSpace(connection.state.value!!.session(space.sessionId))?.id).isEqualTo(space.id)
+        var transcript = TranscriptState.Empty
+        scope.launch { connection.messages.collect { message -> if (message.sessionId == space.sessionId) transcript = reduce(transcript, message) } }
+        connection.send(ClientMessages.subscribe(space.sessionId))
+        api.sendMessage(space.sessionId, "Write a getting started guide")
+        withTimeout(10_000) { while (connection.state.value!!.sessions.none { it.spaceId == space.id && it.id != space.sessionId }) kotlinx.coroutines.delay(10) }
+        val thread = Spaces.threads(space, connection.state.value!!.sessions).single()
+        assertThat(thread.title).isEqualTo("Write a getting started guide")
+        assertThat(thread.muted).isTrue()
+        assertThat(thread.projectId).isEqualTo("dex-web")
+        withTimeout(10_000) {
+            while (transcript.entries.none { entry -> entry.model.orEmpty().any { (it as? dev.trydex.core.model.UserMessage)?.text?.let(Spaces::parseUpdates) != null } }) kotlinx.coroutines.delay(10)
+        }
+        val update = transcript.entries.flatMap { it.model.orEmpty() }.firstNotNullOf { (it as? dev.trydex.core.model.UserMessage)?.text?.let(Spaces::parseUpdates) }.single()
+        assertThat(update.threadId).isEqualTo(thread.id)
+        assertThat(update.outcome).isEqualTo(SpaceUpdate.Outcome.Finished)
+
+        // Editing keeps its chat; deleting takes the chat and the threads with it.
+        assertThat(api.saveSpace(DexApi.spaceDraft(space.id, "Docs site", "", null)).sessionId).isEqualTo(space.sessionId)
+        withTimeout(5_000) { while (connection.state.value!!.session(space.sessionId)?.title != "Docs site") kotlinx.coroutines.delay(10) }
+        api.deleteSpace(space.id)
+        withTimeout(5_000) { while (connection.state.value!!.space(space.id) != null) kotlinx.coroutines.delay(10) }
+        assertThat(connection.state.value!!.sessions.none { it.spaceId == space.id || it.id == space.sessionId }).isTrue()
         connection.stop()
     }
 

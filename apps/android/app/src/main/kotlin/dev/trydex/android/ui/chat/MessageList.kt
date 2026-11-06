@@ -91,6 +91,10 @@ import dev.trydex.core.model.LiveTool
 import dev.trydex.core.model.Media
 import dev.trydex.core.model.PendingMessage
 import dev.trydex.core.model.Skills
+import dev.trydex.core.model.Spaces
+import dev.trydex.core.model.StartedThread
+import dev.trydex.android.ui.components.EmptyState
+import androidx.compose.material.icons.outlined.Workspaces
 import dev.trydex.core.model.TextBlock
 import dev.trydex.core.model.ThinkingBlock
 import dev.trydex.core.model.ToolCallBlock
@@ -116,6 +120,8 @@ fun MessageList(
     contentPadding: PaddingValues = PaddingValues(0.dp),
     /** Who answers, when it isn't Dex (a character): their face beside replies, and their greeting first. */
     character: CharacterProfile? = null,
+    /** What an empty chat says (a new space's: what to do first). */
+    emptyHint: String? = null,
 ) {
     val items = remember(transcript.entries, transcript.streaming) { displayItems(transcript) }
     val results = remember(transcript.entries) { toolResults(transcript.entries) }
@@ -162,7 +168,9 @@ fun MessageList(
                 Centered {
                     when (item) {
                         // A prompt that ran on a schedule: the chat reaching out on its own, not something you said.
+                        // A thread reporting back to its space: event rows, not your words.
                         is DisplayItem.User -> ScheduledNote.of(item.text)?.let { ScheduledNoteRow(it) }
+                            ?: Spaces.parseUpdates(item.text)?.takeIf { it.isNotEmpty() }?.let { SpaceUpdateRows(it) }
                             ?: UserBubble(item.text, item.images, files = item.files, imageParts = item.imageParts, sessionId = sessionId)
                         is DisplayItem.Assistant -> AssistantTurn(
                             sessionId, item.messages, item.streaming, active = transcript.running && item === last,
@@ -177,6 +185,9 @@ fun MessageList(
                 }
             }
             character?.greeting?.takeIf { it.isNotBlank() }?.let { item(key = "greeting") { Centered { CharacterGreeting(character) } } }
+            if (emptyHint != null && items.isEmpty() && pending.isEmpty() && !transcript.running) {
+                item(key = "empty-hint") { Centered { EmptyState(emptyHint, Icons.Outlined.Workspaces, Modifier.testTag("empty-hint")) } }
+            }
         }
         AnimatedVisibility(!atBottom, enter = scaleIn() + fadeIn(), exit = scaleOut() + fadeOut(), modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp)) {
             BadgedBox(badge = { if (transcript.running) Badge(containerColor = DexTheme.colors.success) }) {
@@ -332,6 +343,7 @@ fun AssistantTurn(
     val (steps, shown, touchedMemory) = turn
     val sharedMedia = turn.sharedMedia
     val confirmations = turn.confirmations
+    val threads = turn.threads
     val errors = turn.errors
     Row(Modifier.fillMaxWidth().testTag("assistant-turn"), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         if (character != null) CharacterAvatar(character, size = 28.dp, modifier = Modifier.semantics { contentDescription = character.name })
@@ -358,6 +370,7 @@ fun AssistantTurn(
             }
             sharedMedia.forEach { (url, name) -> Media.source(url)?.let { MediaPlayer(it, name, onOpen = openUrl) } }
             confirmations.forEach { (id, summary) -> ConfirmCard(id, summary) }
+            threads.forEach { ThreadCard(it.id, it.title) }
             shown.forEach { step ->
                 when (val block = step.block) {
                     is TextBlock -> if (block.text.isNotEmpty()) Markdown(
@@ -448,6 +461,8 @@ private data class TurnParts(
     val sharedMedia: List<Pair<String, String?>>,
     val confirmations: List<Pair<String, String>>,
     val errors: List<AssistantMessage>,
+    /** Threads a space's coordinator started, as live cards. */
+    val threads: List<StartedThread> = emptyList(),
 ) {
     companion object {
         fun of(messages: List<AssistantMessage>, streaming: Boolean, results: Map<String, ToolResultMessage>): TurnParts {
@@ -472,7 +487,11 @@ private data class TurnParts(
                 val confirmation = results[call.id]?.details?.obj?.get("confirmation")?.obj ?: return@mapNotNull null
                 (confirmation["id"].str ?: return@mapNotNull null) to (confirmation["summary"].str ?: "")
             }
-            return TurnParts(steps, shown, blocks.any { Tools.touchesMemory(it.block) }, sharedMedia, confirmations, messages.filter { it.stopReason == "error" })
+            val threads = blocks.mapNotNull { step ->
+                val call = step.block as? ToolCallBlock ?: return@mapNotNull null
+                if (call.name != Spaces.START_THREAD_TOOL) null else Spaces.startedThread(results[call.id]?.details)
+            }.distinctBy { it.id }
+            return TurnParts(steps, shown, blocks.any { Tools.touchesMemory(it.block) }, sharedMedia, confirmations, messages.filter { it.stopReason == "error" }, threads)
         }
     }
 }

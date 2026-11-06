@@ -68,7 +68,8 @@ object Alerts {
         val badge = after.unreadCount
         for (session in after.sessions) {
             val old = previous[session.id] ?: continue
-            if (session.muted) continue
+            // A space's threads report to its coordinator instead (the agent mutes them; older apps' states may not).
+            if (session.muted || after.isThread(session)) continue
             // Agents that track unread say when a reply finished (and whether someone already saw it); older ones only
             // that the chat stopped working.
             val replied = if (session.repliedAt != null) session.repliedAt!! > (old.repliedAt ?: 0) && session.unread else old.busy && !session.busy
@@ -81,7 +82,9 @@ object Alerts {
                         alerts += Alert("sidekick", "chat-${session.id}", character.name, words.take(180), "dex://app/chat/${session.id}", session.id, badge)
                     }
                 } else {
-                    alerts += Alert("reply", "chat-${session.id}", session.title.take(80), words.take(180), "dex://app/chat/${session.id}", session.id, badge)
+                    // A space's coordinator speaks as the space.
+                    val title = after.coordinatedSpace(session)?.name ?: session.title
+                    alerts += Alert("reply", "chat-${session.id}", title.take(80), words.take(180), "dex://app/chat/${session.id}", session.id, badge)
                 }
             }
             if (inboxState(old, now) == InboxState.Snoozed && inboxState(session, now) == InboxState.Inbox) {

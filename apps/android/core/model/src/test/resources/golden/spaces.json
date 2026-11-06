@@ -1,0 +1,319 @@
+{
+ "labels": {
+  "working": "Working",
+  "needs_you": "Needs you",
+  "failed": "Failed",
+  "done": "Done",
+  "new": "Not started"
+ },
+ "order": [
+  "needs_you",
+  "working",
+  "failed",
+  "done",
+  "new"
+ ],
+ "parse": [
+  {
+   "input": "[Space update] Thread “Write the \"release\" notes” (chat-a1) finished.\n\nDone: notes are in docs/RELEASE.md.\n\n- 12 items",
+   "updates": [
+    {
+     "title": "Write the \"release\" notes",
+     "threadId": "chat-a1",
+     "outcome": "finished",
+     "body": "Done: notes are in docs/RELEASE.md.\n\n- 12 items"
+    }
+   ]
+  },
+  {
+   "input": "[Space update] Thread “Fix CI” (chat-b2) failed.",
+   "updates": [
+    {
+     "title": "Fix CI",
+     "threadId": "chat-b2",
+     "outcome": "failed",
+     "body": ""
+    }
+   ]
+  },
+  {
+   "input": "[Space update] Thread “Icons” (chat-c3) stopped.\n\nStopped by you.",
+   "updates": [
+    {
+     "title": "Icons",
+     "threadId": "chat-c3",
+     "outcome": "stopped",
+     "body": "Stopped by you."
+    }
+   ]
+  },
+  {
+   "input": "[Space update] Thread “Write the \"release\" notes” (chat-a1) finished.\n\nDone: notes are in docs/RELEASE.md.\n\n- 12 items\n\n---\n\n[Space update] Thread “Fix CI” (chat-b2) failed.\n\n---\n\n[Space update] Thread “Icons” (chat-c3) stopped.\n\nStopped by you.",
+   "updates": [
+    {
+     "title": "Write the \"release\" notes",
+     "threadId": "chat-a1",
+     "outcome": "finished",
+     "body": "Done: notes are in docs/RELEASE.md.\n\n- 12 items"
+    },
+    {
+     "title": "Fix CI",
+     "threadId": "chat-b2",
+     "outcome": "failed",
+     "body": ""
+    },
+    {
+     "title": "Icons",
+     "threadId": "chat-c3",
+     "outcome": "stopped",
+     "body": "Stopped by you."
+    }
+   ]
+  },
+  {
+   "input": "Thread “x” (a) finished.",
+   "updates": null
+  },
+  {
+   "input": "[Space update] something else",
+   "updates": []
+  },
+  {
+   "input": "[Space update] Thread “Odd” (has space) finished.",
+   "updates": []
+  },
+  {
+   "input": "[Space update] Thread “Fix CI” (chat-b2) failed.\n\n---\n\nnot an update",
+   "updates": [
+    {
+     "title": "Fix CI",
+     "threadId": "chat-b2",
+     "outcome": "failed",
+     "body": ""
+    }
+   ]
+  },
+  {
+   "input": "[Space update] Thread “Multi\nline” (chat-m) finished.\n\nbody\n\n---\n\nmore",
+   "updates": []
+  },
+  {
+   "input": "plain message",
+   "updates": null
+  }
+ ],
+ "status": {
+  "pending": [
+   {
+    "id": "p1",
+    "sessionId": "t-confirm",
+    "status": "pending"
+   },
+   {
+    "id": "p2",
+    "sessionId": "t-old",
+    "status": "approved"
+   },
+   {
+    "id": "p3",
+    "sessionId": "t-busy-confirm",
+    "status": "pending"
+   }
+  ],
+  "cases": [
+   {
+    "session": {
+     "id": "t-new",
+     "title": "t-new",
+     "createdAt": 1792447710000,
+     "updatedAt": 1792447710000,
+     "busy": false,
+     "muted": false,
+     "settledAt": null,
+     "snoozedUntil": null
+    },
+    "status": "new"
+   },
+   {
+    "session": {
+     "id": "t-busy",
+     "title": "t-busy",
+     "createdAt": 1792447710000,
+     "updatedAt": 1792447710000,
+     "busy": true,
+     "muted": false,
+     "settledAt": null,
+     "snoozedUntil": null
+    },
+    "status": "working"
+   },
+   {
+    "session": {
+     "id": "t-failed",
+     "title": "t-failed",
+     "createdAt": 1792447710000,
+     "updatedAt": 1792447710000,
+     "busy": false,
+     "muted": false,
+     "settledAt": null,
+     "snoozedUntil": null,
+     "failed": true,
+     "repliedAt": 1792447710000
+    },
+    "status": "failed"
+   },
+   {
+    "session": {
+     "id": "t-done",
+     "title": "t-done",
+     "createdAt": 1792447710000,
+     "updatedAt": 1792447710000,
+     "busy": false,
+     "muted": false,
+     "settledAt": null,
+     "snoozedUntil": null,
+     "repliedAt": 1792447710000
+    },
+    "status": "done"
+   },
+   {
+    "session": {
+     "id": "t-confirm",
+     "title": "t-confirm",
+     "createdAt": 1792447710000,
+     "updatedAt": 1792447710000,
+     "busy": false,
+     "muted": false,
+     "settledAt": null,
+     "snoozedUntil": null,
+     "repliedAt": 1792447710000
+    },
+    "status": "needs_you"
+   },
+   {
+    "session": {
+     "id": "t-old",
+     "title": "t-old",
+     "createdAt": 1792447710000,
+     "updatedAt": 1792447710000,
+     "busy": false,
+     "muted": false,
+     "settledAt": null,
+     "snoozedUntil": null,
+     "repliedAt": 1792447710000
+    },
+    "status": "done"
+   },
+   {
+    "session": {
+     "id": "t-busy-confirm",
+     "title": "t-busy-confirm",
+     "createdAt": 1792447710000,
+     "updatedAt": 1792447710000,
+     "busy": true,
+     "muted": false,
+     "settledAt": null,
+     "snoozedUntil": null
+    },
+    "status": "needs_you"
+   },
+   {
+    "session": {
+     "id": "t-busy-failed",
+     "title": "t-busy-failed",
+     "createdAt": 1792447710000,
+     "updatedAt": 1792447710000,
+     "busy": true,
+     "muted": false,
+     "settledAt": null,
+     "snoozedUntil": null,
+     "failed": true
+    },
+    "status": "working"
+   }
+  ]
+ },
+ "threads": {
+  "space": {
+   "id": "sp1",
+   "name": "Launch",
+   "goal": "",
+   "projectId": null,
+   "sessionId": "c-sp1",
+   "createdAt": 1792447710000,
+   "updatedAt": 1792447710000
+  },
+  "sessions": [
+   {
+    "id": "c-sp1",
+    "title": "c-sp1",
+    "createdAt": 1792447709991,
+    "updatedAt": 1792447710000,
+    "busy": false,
+    "muted": false,
+    "settledAt": null,
+    "snoozedUntil": null,
+    "spaceId": "sp1"
+   },
+   {
+    "id": "t1",
+    "title": "t1",
+    "createdAt": 1792447709995,
+    "updatedAt": 1792447710000,
+    "busy": false,
+    "muted": false,
+    "settledAt": null,
+    "snoozedUntil": null,
+    "spaceId": "sp1"
+   },
+   {
+    "id": "t2",
+    "title": "t2",
+    "createdAt": 1792447709999,
+    "updatedAt": 1792447710000,
+    "busy": false,
+    "muted": false,
+    "settledAt": null,
+    "snoozedUntil": null,
+    "spaceId": "sp1"
+   },
+   {
+    "id": "t3",
+    "title": "t3",
+    "createdAt": 1792447710000,
+    "updatedAt": 1792447710000,
+    "busy": false,
+    "muted": false,
+    "settledAt": null,
+    "snoozedUntil": null,
+    "spaceId": "sp2"
+   },
+   {
+    "id": "plain",
+    "title": "plain",
+    "createdAt": 1792447709998,
+    "updatedAt": 1792447710000,
+    "busy": false,
+    "muted": false,
+    "settledAt": null,
+    "snoozedUntil": null
+   },
+   {
+    "id": "t4",
+    "title": "t4",
+    "createdAt": 1792447709997,
+    "updatedAt": 1792447710000,
+    "busy": false,
+    "muted": false,
+    "settledAt": null,
+    "snoozedUntil": null,
+    "spaceId": "sp1"
+   }
+  ],
+  "ids": [
+   "t2",
+   "t4",
+   "t1"
+  ]
+ }
+}

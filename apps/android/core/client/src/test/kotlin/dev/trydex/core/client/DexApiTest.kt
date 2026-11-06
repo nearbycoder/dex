@@ -131,6 +131,21 @@ class DexApiTest {
         assertThat(calls[2].args).isEqualTo("""["muse",""]""")
     }
 
+    @Test fun spaces() = runBlocking<Unit> {
+        result = """{"id":"sp1","name":"Launch","goal":"","projectId":null,"sessionId":"chat-sp1","createdAt":1,"updatedAt":1}"""
+        val space = api.saveSpace(DexApi.spaceDraft(null, "  Launch ", "", null))
+        assertThat(space.sessionId).isEqualTo("chat-sp1")
+        api.saveSpace(DexApi.spaceDraft("sp1", "Launch", "Ship it", "dex-web"))
+        result = "\"# Notes\""
+        assertThat(api.spaceNotes("sp1")).isEqualTo("# Notes")
+        result = "null"
+        assertThat(api.spaceNotes("sp1")).isEmpty()
+        api.deleteSpace("sp1")
+        assertThat(calls.map { it.method }).containsExactly("saveSpace", "saveSpace", "spaceNotes", "spaceNotes", "deleteSpace").inOrder()
+        assertThat(calls[0].args).isEqualTo("""[{"name":"Launch","goal":"","projectId":null}]""")
+        assertThat(calls[1].args).isEqualTo("""[{"id":"sp1","name":"Launch","goal":"Ship it","projectId":"dex-web"}]""")
+    }
+
     @Test fun unreadAndPush() = runBlocking<Unit> {
         api.markSessionRead("s1")
         api.markSessionUnread("s1")

@@ -5,7 +5,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AccountTree
 import androidx.compose.material.icons.outlined.AutoAwesome
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Workspaces
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.outlined.Face
 import androidx.compose.material.icons.outlined.FolderOpen
@@ -44,12 +48,16 @@ import dev.trydex.android.ui.components.haptics
 import dev.trydex.android.ui.nav.CharacterPage
 import dev.trydex.android.ui.nav.ChatFiles
 import dev.trydex.android.ui.nav.Chat
+import dev.trydex.android.ui.nav.SpaceSettings
+import dev.trydex.android.ui.nav.SpaceThreads
 import dev.trydex.core.client.DexApi
 import dev.trydex.core.model.CharacterProfile
 import dev.trydex.core.model.SidekickNotify
 import dev.trydex.core.model.InboxState
 import dev.trydex.core.model.SessionMeta
 import dev.trydex.core.model.Snooze
+import dev.trydex.core.model.SpaceProfile
+import dev.trydex.core.model.Spaces
 import dev.trydex.core.model.inboxState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -124,6 +132,18 @@ class ChatActions(private val scope: CoroutineScope, private val snackbar: Snack
         }
     }
 
+    /** Deletes a space with its chat and threads (their VMs too), once you confirm. */
+    fun deleteSpace(space: SpaceProfile) {
+        val threads = app.graph.repository.state.value?.let { Spaces.threads(space, it.sessions) }.orEmpty()
+        confirm.ask("Delete “${space.name}”?", spaceDeleteText(threads.size)) {
+            scope.launch {
+                runCatching { api.deleteSpace(space.id) }
+                    .onSuccess { app.closeSpace(space, threads.map { it.id }) }
+                    .onFailure { snackbar.showSnackbar(spaceError(it, "Couldn't delete the space.")) }
+            }
+        }
+    }
+
     fun delete(session: SessionMeta) {
         confirm.ask("Delete “${session.title}”?", "Its VM and its files go with it.") {
             run {
@@ -143,7 +163,16 @@ fun rememberChatActions(snackbar: SnackbarHostState, confirm: ConfirmState): Cha
 
 /** The chat's menu as a bottom sheet (long press on a row, or ⋯ in its header). */
 @Composable
-fun ChatMenuSheet(session: SessionMeta, actions: ChatActions, onDismiss: () -> Unit, showMute: Boolean = false, character: CharacterProfile? = null, showFiles: Boolean = false) {
+fun ChatMenuSheet(
+    session: SessionMeta,
+    actions: ChatActions,
+    onDismiss: () -> Unit,
+    showMute: Boolean = false,
+    character: CharacterProfile? = null,
+    showFiles: Boolean = false,
+    /** The space this chat coordinates, or (for one of its threads) works in. */
+    space: SpaceProfile? = null,
+) {
     val app = LocalApp.current
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val haptics = haptics()
@@ -184,6 +213,22 @@ fun ChatMenuSheet(session: SessionMeta, actions: ChatActions, onDismiss: () -> U
                     if (notify == SidekickNotify.Off) "Every message from ${character.name}" else "Their messages still show as unread",
                     null,
                 ) { actions.setNotify(character, if (notify == SidekickNotify.Off) SidekickNotify.All else SidekickNotify.Off) }
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                item(Icons.Outlined.DeleteOutline, "Delete", null, MaterialTheme.colorScheme.error) { actions.delete(session) }
+            } else if (space != null && space.sessionId == session.id) {
+                // A space's chat isn't in the inbox either: its threads, notes, and settings instead.
+                item(Icons.Outlined.AccountTree, "Threads", "What each piece of work is doing", null) { app.navigator.open(SpaceThreads(space.id, space.sessionId)) }
+                item(Icons.Outlined.Description, "Notes", "Dex's plan, decisions, and progress", null) { app.navigator.open(SpaceThreads(space.id, space.sessionId, notes = true)) }
+                item(Icons.Outlined.Edit, "Edit space", "Its name, goal, and project", null) { app.navigator.open(SpaceSettings(space.id, space.sessionId)) }
+                if (canMarkUnread) item(Icons.Outlined.MarkChatUnread, "Mark as unread", "Comes back bold, to get back to later", null) { actions.markUnread(session) }
+                if (showMute) item(if (session.muted) Icons.Outlined.Notifications else Icons.Outlined.NotificationsOff, if (session.muted) "Unmute notifications" else "Mute notifications", null, null) { actions.mute(session) }
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                item(Icons.Outlined.DeleteOutline, "Delete space", "With its chat and threads", MaterialTheme.colorScheme.error) { actions.deleteSpace(space) }
+            } else if (space != null && !picking) {
+                // A thread lives under its space, not in the inbox: no settling or snoozing.
+                item(Icons.Outlined.Workspaces, "Back to ${space.name}", "The space's chat", null) { app.navigator.open(Chat(space.sessionId)) }
+                item(Icons.Outlined.AutoAwesome, "Regenerate title", "A fast model names it from its messages", null) { actions.regenerateTitle(session) }
+                if (canMarkUnread) item(Icons.Outlined.MarkChatUnread, "Mark as unread", "Comes back bold, to get back to later", null) { actions.markUnread(session) }
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 item(Icons.Outlined.DeleteOutline, "Delete", null, MaterialTheme.colorScheme.error) { actions.delete(session) }
             } else if (!picking) {

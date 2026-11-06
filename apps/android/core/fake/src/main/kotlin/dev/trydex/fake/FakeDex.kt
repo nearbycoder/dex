@@ -36,6 +36,9 @@ import dev.trydex.core.model.SkillDetail
 import dev.trydex.core.model.SkillFileInfo
 import dev.trydex.core.model.SkillInfo
 import dev.trydex.core.model.SkillPreview
+import dev.trydex.core.model.SpaceProfile
+import dev.trydex.core.model.SpaceUpdate
+import dev.trydex.core.model.Spaces
 import dev.trydex.core.model.ThinkingLevel
 import dev.trydex.core.model.UsageGlance
 import dev.trydex.core.model.UsageMeter
@@ -126,6 +129,7 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
         "/workspace/notes/plan.md" to "# Plan\n\n1. Ship the Android app\n2. Write the release notes\n\n| Task | Owner |\n|---|---|\n| QA | Dex |\n",
         "/workspace/reports/q3.html" to "<!doctype html><h1 style='font-family:sans-serif'>Q3 report</h1><p>Revenue up <b>12%</b>.</p>",
         "/workspace/data/sales.csv" to "month,revenue\nJul,120\nAug,135\nSep,142\n",
+        Spaces.notesPath(FakeData.SPACE) to FakeData.SPACE_NOTES,
         Characters.memoryPath("muse") to "# Muse's notes\n\n- Mona is making a tiny game for her niece's 8th birthday (space cats).\n- Likes bold colors and silly names.\n",
     )
     private val vmFiles = FakeVmFiles(clock())
@@ -586,6 +590,28 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
             if (text.isBlank()) files.remove(Characters.memoryPath(args.s(0))) else files[Characters.memoryPath(args.s(0))] = text
             null
         }
+        "saveSpace" -> saveSpace(args.o(0))
+        "deleteSpace" -> {
+            val space = state.space(args.s(0)) ?: error("That space no longer exists.")
+            // Its chat and threads go with it, and their VMs.
+            val gone = state.sessions.filter { it.spaceId == space.id || it.id == space.sessionId }.map { it.id }.toSet()
+            files.remove(Spaces.notesPath(space.id))
+            update { s ->
+                s.copy(
+                    spaces = s.spaces.filter { it.id != space.id },
+                    sessions = s.sessions.filter { it.id !in gone },
+                    vms = s.vms.filter { it.key !in gone },
+                    access = s.access.copy(pending = s.access.pending.filter { it.sessionId !in gone }),
+                )
+            }
+            // Gone from the state first, so a thread stopped here has no space left to report to.
+            gone.forEach { chats.remove(it)?.abort() }
+            null
+        }
+        "spaceNotes" -> {
+            state.space(args.s(0)) ?: error("That space no longer exists.")
+            JsonPrimitive(files[Spaces.notesPath(args.s(0))] ?: "")
+        }
         "saveProject" -> {
             val draft = args.o(0)
             val name = draft["name"].str?.trim()?.take(60).orEmpty()
@@ -841,6 +867,52 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
         return encode(CharacterProfile.serializer(), character)
     }
 
+    /** saveSpace: creates (no id; its coordinator's chat opens) or updates a space. */
+    private fun saveSpace(draft: JsonObject): JsonElement {
+        val name = draft["name"].str?.trim()?.take(Spaces.MAX_NAME).orEmpty()
+        if (name.isEmpty()) error("Give the space a name.")
+        val existing = draft["id"].str?.let { id -> state.space(id) ?: error("That space no longer exists.") }
+        val projectId = if ("projectId" in draft) draft["projectId"].str else existing?.projectId
+        if (projectId != null && state.project(projectId) == null) error("That project no longer exists.")
+        val now = clock()
+        val space = SpaceProfile(
+            id = existing?.id ?: (name.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').take(32).ifEmpty { "space" } + "-" + UUID.randomUUID().toString().take(6)),
+            name = name,
+            goal = (draft["goal"].str ?: existing?.goal ?: "").trim().take(Spaces.MAX_GOAL),
+            projectId = projectId,
+            sessionId = existing?.sessionId ?: ("chat-" + UUID.randomUUID().toString().take(8)),
+            createdAt = existing?.createdAt ?: now,
+            updatedAt = now,
+        )
+        if (existing == null) {
+            chats[space.sessionId] = FakeChat(space.sessionId)
+            val session = SessionMeta(space.sessionId, name, state.settings.defaultModel, state.settings.defaultThinking, now, now, spaceId = space.id)
+            update { s -> s.copy(spaces = s.spaces + space, sessions = listOf(session) + s.sessions) }
+        } else {
+            updateSession(space.sessionId) { it.copy(title = name) }
+            update { s -> s.copy(spaces = s.spaces.map { if (it.id == space.id) space else it }) }
+        }
+        return encode(SpaceProfile.serializer(), space)
+    }
+
+    /** The coordinator started a thread: an ordinary chat in the space (muted: it reports back instead), working on [prompt]. */
+    private fun startThread(coordinator: String, id: String, title: String, prompt: String) {
+        val space = state.coordinatedSpace(state.session(coordinator)) ?: return
+        val now = clock()
+        chats[id] = FakeChat(id)
+        val session = SessionMeta(id, title, state.settings.defaultModel, state.settings.defaultThinking, now, now, projectId = space.projectId, muted = true, spaceId = space.id)
+        update { s -> s.copy(sessions = listOf(session) + s.sessions) }
+        chats[id]?.send(prompt)
+    }
+
+    /** A thread's run ended: its coordinator hears how, with its final reply. */
+    private fun reportToSpace(threadId: String, outcome: SpaceUpdate.Outcome, body: String) {
+        val session = state.session(threadId) ?: return
+        if (!state.isThread(session)) return
+        val space = state.space(session.spaceId) ?: return
+        chats[space.sessionId]?.tell(Spaces.update(session.id, session.title, outcome, body))
+    }
+
     /** Start over: a new conversation; the old one stays unless it never got a message. */
     private fun restartCharacter(id: String): CharacterProfile {
         val character = state.character(id) ?: error("That sidekick no longer exists.")
@@ -995,6 +1067,41 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
                     entries += Pi.entry(nextId++, "pi.user", Pi.userMessage("Which vector database should I use for 2M documents?", at - 50_000))
                     replay(Scripts.pick("compare", { "1" }), at - 45_000)
                 }
+                FakeData.SPACE_CHAT -> {
+                    val started = session.createdAt + 60_000
+                    entries += Pi.entry(nextId++, "pi.user", Pi.userMessage("Get Android 2.4 out this week: release notes, green CI, the store listing, and new icons.", started))
+                    replay(Scripts.launchSpace(), started + 5_000)
+                    val updates = listOf(
+                        Spaces.update(FakeData.ICONS_THREAD, "Export the adaptive icons", SpaceUpdate.Outcome.Failed, "429 Too Many Requests: the provider is rate limiting this key."),
+                        Spaces.update(FakeData.NOTES_THREAD, "Write the 2.4 release notes", SpaceUpdate.Outcome.Finished, FakeData.NOTES_REPLY),
+                    )
+                    entries += Pi.entry(nextId++, "pi.user", Pi.userMessage(updates.joinToString(Spaces.UPDATE_SEPARATOR), at - 50_000))
+                    entries += Pi.entry(nextId++, "pi.assistant", Pi.assistantMessage(listOf(Pi.text(
+                        "Two threads reported back:\n\n- **Release notes**: done, in `docs/RELEASE-2.4.md`.\n- **Icons**: the model was rate limited. I'll retry it once CI is green.\n\n" +
+                            "CI is still running, and the store listing needs your OK to save the Play Console key.",
+                    )), at - 40_000, 4_000))
+                }
+                FakeData.NOTES_THREAD -> {
+                    entries += Pi.entry(nextId++, "pi.user", Pi.userMessage("Write the 2.4 release notes", at - 50_000))
+                    entries += Pi.entry(nextId++, "pi.assistant", Pi.assistantMessage(listOf(Pi.text(FakeData.NOTES_REPLY)), at - 40_000, 4_000))
+                }
+                FakeData.ICONS_THREAD -> {
+                    entries += Pi.entry(nextId++, "pi.user", Pi.userMessage("Export the adaptive icons", at - 50_000))
+                    entries += Pi.entry(nextId++, "pi.assistant", Pi.assistantMessage(emptyList(), at - 40_000, 1_000, stopReason = "error", error = "429 Too Many Requests: the provider is rate limiting this key."))
+                }
+                FakeData.STORE_THREAD -> {
+                    entries += Pi.entry(nextId++, "pi.user", Pi.userMessage("Update the Play Store listing", at - 50_000))
+                    replay(
+                        listOf(
+                            Step.Tool("app_call", buildJsonObject { put("operation", "app_save_secret") }, "Waiting for the user's confirmation.", details = buildJsonObject {
+                                put("confirmation", buildJsonObject { put("id", "p-store"); put("summary", "Save the secret PLAY_CONSOLE_KEY") })
+                            }),
+                            Step.Turn,
+                            Step.Say("I need your OK to save the Play Console key as a secret."),
+                        ),
+                        at - 45_000,
+                    )
+                }
                 "chat-muse" -> {
                     entries += Pi.entry(nextId++, "pi.user", Pi.userMessage("I want to make a tiny game for my niece's birthday. She loves cats and space.", at - 50_000))
                     entries += Pi.entry(nextId++, "pi.assistant", Pi.assistantMessage(listOf(Pi.text(
@@ -1125,7 +1232,14 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
             val title = text.ifEmpty { attachmentSummary(attachments.map { it["name"].str ?: "file" }) }
             updateSession(id) { it.copy(title = if (it.title == "New chat") title.replace(Regex("\\s+"), " ").take(60) else it.title, updatedAt = clock(), settledAt = null, snoozedUntil = null) }
             val character = state.character(state.session(id)?.characterId)
-            run(if (character != null) Scripts.companion(character.name) else Scripts.pick(text) { (nextId + 1).toString() })
+            val space = state.coordinatedSpace(state.session(id))
+            run(
+                when {
+                    character != null -> Scripts.companion(character.name)
+                    space != null -> Scripts.coordinator(text) { "chat-" + UUID.randomUUID().toString().take(8) }
+                    else -> Scripts.pick(text) { (nextId + 1).toString() }
+                },
+            )
         }
 
         private fun at(delay: Long, block: () -> Unit) {
@@ -1210,6 +1324,9 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
                             artifacts += ChatArtifact("user-octocat/0b4f2c3e-1111-2222-3333-444455556666.png", "/api/media/user-octocat/0b4f2c3e-1111-2222-3333-444455556666.png", "chart.png", "image", 2910, null, clock())
                             toChat(id, artifactsMessage())
                         }
+                        if (tool.name == Spaces.START_THREAD_TOOL) Spaces.startedThread(tool.details)?.let { thread ->
+                            startThread(id, thread.id, thread.title, tool.args["prompt"].str ?: thread.title)
+                        }
                         if (tool.name == "app_call" && tool.details != null) {
                             update { s -> s.copy(access = s.access.copy(pending = listOf(PendingAction("p-chat", id, "app_update_settings", "Change the default model to Kimi K3", clock(), "pending")) + s.access.pending.filter { it.id != "p-chat" })) }
                         }
@@ -1234,7 +1351,9 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
             events(buildJsonObject { put("type", "run_end"); put("inputs", JsonArray(emptyList())) })
             // Unread until someone looks, unless someone is looking now (notifyRunEnd).
             val watching = connections.any { it.visible && it.showing == id }
-            updateSession(id) { it.copy(busy = false, updatedAt = clock(), repliedAt = clock(), lastReply = lastReply() ?: "Done.", unread = !watching) }
+            val failed = entries.lastOrNull { it["kind"].str == "pi.assistant" }?.let { it["model"].arr?.firstOrNull()?.get("stopReason").str } == "error"
+            updateSession(id) { it.copy(busy = false, updatedAt = clock(), repliedAt = clock(), lastReply = lastReply() ?: "Done.", unread = !watching, failed = failed) }
+            reportToSpace(id, if (failed) SpaceUpdate.Outcome.Failed else SpaceUpdate.Outcome.Finished, lastReply().orEmpty())
             if (!held && queue.isNotEmpty()) {
                 val next = queue.removeAt(0)
                 toChat(id, queueMessage())
@@ -1277,6 +1396,7 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
             events(buildJsonObject { put("type", "run_end"); put("inputs", JsonArray(emptyList())) })
             updateSession(id) { it.copy(busy = false) }
             toChat(id, queueMessage())
+            reportToSpace(id, SpaceUpdate.Outcome.Stopped, "")
         }
 
         fun edit(itemId: String, text: String) {

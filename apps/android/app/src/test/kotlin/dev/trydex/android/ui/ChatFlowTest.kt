@@ -5,6 +5,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.common.truth.Truth.assertThat
@@ -30,6 +31,8 @@ class ChatFlowTest {
         harness.setContent(rule)
         rule.awaitText("Weekly metrics dashboard")
         rule.onNodeWithText("Fix the flaky login test").assertIsDisplayed()
+        // Below the sidekicks and spaces, further down on a phone.
+        rule.onNodeWithTag("chat-list").performScrollToNode(androidx.compose.ui.test.hasText("Settled"))
         rule.onNodeWithText("Snoozed").assertIsDisplayed()
         rule.onNodeWithText("Settled").assertIsDisplayed()
         // Snoozed and settled chats stay folded away.

@@ -1,5 +1,6 @@
 package dev.trydex.fake
 
+import dev.trydex.core.model.Spaces
 import dev.trydex.core.model.bool
 import dev.trydex.core.model.get
 import dev.trydex.core.model.str
@@ -139,6 +140,43 @@ buttons = Buttons([Button("Deploy", @ToAssistant("Deploy it"), "primary"), Butto
         Step.Think("Stay in character as $name; check the memory file for what we were working on."),
         Step.Say("Love that. Tell me a little more and I'll run with it — I'm keeping notes so we can pick this up any time."),
     )
+
+    /**
+     * A space's coordinator: it hands what you ask to a new thread (the thread's id from [threadId]), and answers a
+     * thread's update in a line.
+     */
+    fun coordinator(text: String, threadId: () -> String): List<Step> {
+        if (text.startsWith(Spaces.UPDATE_PREFIX)) {
+            val updates = Spaces.parseUpdates(text).orEmpty()
+            return listOf(Step.Say(updates.joinToString(" ") { "“${it.title}” ${it.outcome.id}." } + " I've noted it; nothing else is waiting on it."))
+        }
+        val title = text.lineSequence().first().trim().removeSuffix(".").take(50).ifEmpty { "New thread" }
+        val id = threadId()
+        return listOf(
+            Step.Think("One piece of work: start a thread for it in the space's project and keep the notes current."),
+            Step.Tool(
+                Spaces.START_THREAD_TOOL, buildJsonObject { put("title", title); put("prompt", text) }, "Started the thread “$title” ($id).",
+                details = buildJsonObject { putJsonObject("thread") { put("id", id); put("title", title) } },
+            ),
+            Step.Turn,
+            Step.Say("I started a thread for that. I'll report back here when it finishes."),
+        )
+    }
+
+    /** The sample space's conversation so far: four threads started, two of them reported back. */
+    fun launchSpace(): List<Step> = listOf(
+        Step.Think("Four separate pieces of work: one thread each, in the Dex project."),
+    ) + listOf(
+        FakeData.NOTES_THREAD to "Write the 2.4 release notes",
+        FakeData.CI_THREAD to "Get CI green on release/2.4",
+        FakeData.STORE_THREAD to "Update the Play Store listing",
+        FakeData.ICONS_THREAD to "Export the adaptive icons",
+    ).map { (id, title) ->
+        Step.Tool(
+            Spaces.START_THREAD_TOOL, buildJsonObject { put("title", title); put("prompt", title) }, "Started the thread “$title” ($id).",
+            details = buildJsonObject { putJsonObject("thread") { put("id", id); put("title", title) } },
+        )
+    } + listOf(Step.Turn, Step.Say("I started four threads, one for each piece. I'll keep the notes current and report back as they finish."))
 
     fun pick(text: String, ids: () -> String): List<Step> {
         val t = text.lowercase()

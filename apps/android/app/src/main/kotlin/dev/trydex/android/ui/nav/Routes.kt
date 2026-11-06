@@ -28,6 +28,15 @@ enum class Tab { Chats, Machines, Library, Settings }
 /** A character's page opened from their conversation: beside it on wide screens, and back returns to it. */
 @Serializable data class CharacterPage(val id: String, val sessionId: String) : Route { override val tab get() = Tab.Chats }
 
+/** A new space, from the Spaces section above the chats. */
+@Serializable data class NewSpace(val nonce: Long = 0) : Route { override val tab get() = Tab.Chats }
+
+/** A space's name, goal, and project, from its chat's menu: beside the chat on wide screens, and back returns to it. */
+@Serializable data class SpaceSettings(val id: String, val sessionId: String) : Route { override val tab get() = Tab.Chats }
+
+/** A space's threads by status, and its coordinator's notes, beside its chat on wide screens. */
+@Serializable data class SpaceThreads(val id: String, val sessionId: String, val notes: Boolean = false) : Route { override val tab get() = Tab.Chats }
+
 /** A chat's VM desktop beside the chat, on screens wide enough for both. */
 @Serializable data class ChatMachine(val key: String) : Route { override val tab get() = Tab.Chats }
 
