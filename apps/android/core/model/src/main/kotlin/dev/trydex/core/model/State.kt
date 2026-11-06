@@ -28,6 +28,8 @@ data class DexState(
     val agents: List<AgentProfile> = emptyList(),
     /** Characters, pinned above the chats, each with a conversation of their own. Missing in state an older agent saved. */
     val characters: List<CharacterProfile> = emptyList(),
+    /** Spaces, listed above the chats, each a coordinator chat with threads of its own. Missing in state an older agent saved. */
+    val spaces: List<SpaceProfile> = emptyList(),
     val mcp: List<McpServerInfo> = emptyList(),
     val access: AccessState = AccessState(),
     val secrets: List<SavedSecret> = emptyList(),
@@ -51,12 +53,22 @@ data class DexState(
     fun agent(id: String?): AgentProfile? = id?.let { key -> agents.firstOrNull { it.id == key } }
     fun project(id: String?): ProjectProfile? = id?.let { key -> projects.firstOrNull { it.id == key } }
     fun character(id: String?): CharacterProfile? = id?.let { key -> characters.firstOrNull { it.id == key } }
+    fun space(id: String?): SpaceProfile? = id?.let { key -> spaces.firstOrNull { it.id == key } }
 
-    /** The chat list: a character's conversations live under them, not in the inbox. */
-    val chats: List<SessionMeta> get() = sessions.filter { it.characterId == null }
+    /** The space whose coordinator this chat is, if it is one. */
+    fun coordinatedSpace(session: SessionMeta?): SpaceProfile? = space(session?.spaceId)?.takeIf { it.sessionId == session?.id }
 
-    /** Chats with something you haven't seen (muted ones too: muting is about notifications), for the app's badge. */
-    val unreadCount: Int get() = sessions.count { it.unread }
+    /** One of a space's threads (a chat in a space that isn't its coordinator). */
+    fun isThread(session: SessionMeta): Boolean = session.spaceId != null && coordinatedSpace(session) == null
+
+    /** The chat list: a character's conversations live under them, and a space's chats under it, not in the inbox. */
+    val chats: List<SessionMeta> get() = sessions.filter { it.characterId == null && it.spaceId == null }
+
+    /**
+     * Chats with something you haven't seen (muted ones too: muting is about notifications), for the app's badge. A
+     * space counts once, by its coordinator; its threads report back there.
+     */
+    val unreadCount: Int get() = sessions.count { it.unread && !isThread(it) }
     fun vm(key: String): VmInfo? = vms.firstOrNull { it.key == key }
     fun mcpServer(id: String): McpServerInfo? = mcp.firstOrNull { it.id == id }
 }
@@ -125,6 +137,10 @@ data class SessionMeta(
     /** When the latest reply finished. */
     val repliedAt: Long? = null,
     val muted: Boolean = false,
+    /** The space this chat belongs to, if any: its coordinator (the space's `sessionId`) or one of its threads. Missing from older agents. */
+    val spaceId: String? = null,
+    /** Its latest reply ended with a problem (a failed model request). Missing from older agents. */
+    val failed: Boolean = false,
     val settledAt: Long? = null,
     val snoozedUntil: Long? = null,
 )

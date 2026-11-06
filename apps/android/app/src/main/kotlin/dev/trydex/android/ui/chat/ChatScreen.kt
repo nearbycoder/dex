@@ -91,6 +91,8 @@ import dev.trydex.android.ui.settings.AskForNotificationsOnce
 import dev.trydex.core.model.CharacterProfile
 import dev.trydex.core.model.SidekickNotify
 import dev.trydex.core.model.SessionMeta
+import dev.trydex.core.model.SpaceProfile
+import dev.trydex.core.model.Spaces
 import dev.trydex.core.model.VmInfo
 import dev.trydex.core.model.VmStatus
 import kotlinx.coroutines.flow.debounce
@@ -113,6 +115,9 @@ fun ChatScreen(id: String) {
     val session = state?.sessions?.firstOrNull { it.id == id }
     // A character's conversation: their face and name in the header, their greeting first, no inbox triage.
     val character = state?.character(session?.characterId)
+    // A space's chat: its name and threads in the header. One of its threads: the way back to it.
+    val space = state?.coordinatedSpace(session)
+    val inSpace = if (space == null) state?.space(session?.spaceId) else null
     val vm = if (state?.vmConfigured == true) state?.vms?.firstOrNull { it.key == id } else null
     if (state != null && session == null) {
         Scaffold(topBar = { CompactTopBar(title = {}) }) { padding ->
@@ -171,6 +176,7 @@ fun ChatScreen(id: String) {
             ChatTopBar(
                 session = session,
                 character = character,
+                space = space,
                 running = transcript.running,
                 vm = vm,
                 onRename = { renaming = true },
@@ -200,6 +206,7 @@ fun ChatScreen(id: String) {
                             pending = pending,
                             onSend = model::send,
                             character = character,
+                            emptyHint = if (space != null) dev.trydex.core.model.Spaces.EMPTY_HINT else null,
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                         )
@@ -214,6 +221,7 @@ fun ChatScreen(id: String) {
                     Column(Modifier.widthIn(max = 800.dp).fillMaxWidth()) {
                         if (session != null && state != null) ProviderWarning(session, state!!)
                         if (character != null && character.sessionId != id) EarlierConversationNote(character)
+                        if (inSpace != null) InSpaceNote(inSpace)
                         QueuePanel(transcript.queue, transcript.queueHeld, transcript.running, remember(id) { queueActions(id, app) })
                         Composer(
                             onSend = model::send,
@@ -242,7 +250,7 @@ fun ChatScreen(id: String) {
         }
     }
 
-    if (menu && session != null) ChatMenuSheet(session, actions, onDismiss = { menu = false }, showMute = true, character = character, showFiles = vm != null && narrowBar())
+    if (menu && session != null) ChatMenuSheet(session, actions, onDismiss = { menu = false }, showMute = true, character = character, showFiles = vm != null && narrowBar(), space = space ?: inSpace)
     if (renaming && session != null) RenameDialog(session, onDismiss = { renaming = false }) { title -> model.rename(title) }
 }
 
@@ -291,6 +299,7 @@ private fun ProviderWarning(session: SessionMeta, state: dev.trydex.core.model.D
 private fun ChatTopBar(
     session: SessionMeta?,
     character: CharacterProfile?,
+    space: SpaceProfile?,
     running: Boolean,
     vm: VmInfo?,
     onRename: () -> Unit,
@@ -325,6 +334,8 @@ private fun ChatTopBar(
                     dev.trydex.android.ui.components.Bone(width = 176.dp, height = 18.dp)
                 } else if (character != null) {
                     CharacterChatTitle(character, session, running)
+                } else if (space != null) {
+                    SpaceChatTitle(space, running)
                 } else {
                     val pulse by rememberInfiniteTransition(label = "naming").animateFloat(1f, 0.4f, infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "pulse")
                     TextButton(onClick = onRename, modifier = Modifier.testTag("chat-title"), contentPadding = PaddingValues(horizontal = 4.dp)) {
@@ -341,6 +352,8 @@ private fun ChatTopBar(
             }
         },
         actions = {
+            val current = state
+            if (space != null && current != null) SpaceThreadsButton(space, Spaces.threads(space, current.sessions), current, narrow)
             if (vm != null) {
                 val starting = vm.settingUp || vm.status == VmStatus.Starting
                 val dot = @Composable {
@@ -427,7 +440,8 @@ private fun ChatTopBar(
                 }
                 ChatSwitcherButton(session.id)
             }
-            if (session != null && character == null && !phone) {
+            // Space chats live under their space, not in the inbox: nothing to settle.
+            if (session != null && character == null && session.spaceId == null && !phone) {
                 val settled = session.settledAt != null
                 IconToggleButton(checked = settled, onCheckedChange = { haptics.toggle(it); actions.settle(session, it) }, modifier = Modifier.testTag("settle")) {
                     Icon(

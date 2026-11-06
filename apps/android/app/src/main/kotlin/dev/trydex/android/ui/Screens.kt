@@ -31,6 +31,11 @@ import dev.trydex.android.ui.nav.CharacterEditor
 import dev.trydex.android.ui.nav.CharacterList
 import dev.trydex.android.ui.nav.CharacterPage
 import dev.trydex.android.ui.nav.NewCharacter
+import dev.trydex.android.ui.nav.NewSpace
+import dev.trydex.android.ui.nav.SpaceSettings
+import dev.trydex.android.ui.nav.SpaceThreads
+import dev.trydex.android.ui.chat.SpaceEditorScreen
+import dev.trydex.android.ui.chat.SpaceThreadsScreen
 import dev.trydex.android.ui.nav.Chat
 import dev.trydex.android.ui.nav.ChatList
 import dev.trydex.android.ui.nav.ChatFiles
@@ -75,6 +80,9 @@ fun EntryProviderScope<NavKey>.screens(@Suppress("UNUSED_PARAMETER") wide: Boole
     entry<ChatFiles>(metadata = extra) { VmFilesScreen(it.key) }
     entry<NewCharacter>(metadata = detail) { CharacterEditorScreen(NEW_CHARACTER, it) }
     entry<CharacterPage>(metadata = extra) { CharacterEditorScreen(it.id, it) }
+    entry<NewSpace>(metadata = detail) { SpaceEditorScreen(null, it.nonce) }
+    entry<SpaceSettings>(metadata = extra) { SpaceEditorScreen(it.id) }
+    entry<SpaceThreads>(metadata = extra) { SpaceThreadsScreen(it) }
 
     entry<MachineList>(metadata = list("Pick a machine to watch or control it.")) { MachineListScreen() }
     entry<Machine>(metadata = detail) { MachineScreen(it.key) }

@@ -28,6 +28,7 @@ import dev.trydex.core.model.PushStatus
 import dev.trydex.core.model.SavedSecret
 import dev.trydex.core.model.SessionMeta
 import dev.trydex.core.model.SkillInfo
+import dev.trydex.core.model.SpaceProfile
 import dev.trydex.core.model.ThinkingLevel
 import dev.trydex.core.model.VmInfo
 import dev.trydex.core.model.VmSetup
@@ -124,6 +125,24 @@ object FakeData {
     /** The list's version, which changes when Command Code's models join or leave it (apps fetch the list again then). */
     fun modelsVersion(state: DexState): String = if (state.commandcode.connected) "builtin+commandcode" else "builtin"
 
+    /** The sample space: its coordinator's chat and four threads, one in each state worth showing. */
+    const val SPACE = "launch"
+    const val SPACE_CHAT = "chat-space-launch"
+    const val NOTES_THREAD = "chat-thread-notes"
+    const val CI_THREAD = "chat-thread-ci"
+    const val STORE_THREAD = "chat-thread-store"
+    const val ICONS_THREAD = "chat-thread-icons"
+    const val NOTES_REPLY = "The release notes are in docs/RELEASE-2.4.md: 14 changes, with the sign-in fix and widgets up top."
+    const val SPACE_NOTES = "# Android 2.4 launch\n\nShip 2.4 to the Play Store this week.\n\n## Decisions\n\n- Widgets lead the release notes.\n\n## Ledger\n\n| Thread | Status |\n|---|---|\n| Release notes | Done |\n| CI | Working |\n| Store listing | Needs you |\n| Icons | Failed |\n"
+
+    private fun spaceSessions(now: Long, minute: Long, hour: Long): List<SessionMeta> = listOf(
+        SessionMeta(SPACE_CHAT, "Android 2.4 launch", "cline-pass/glm-5.3", ThinkingLevel.Low, now - 3 * hour, now - 30 * minute, spaceId = SPACE, repliedAt = now - 30 * minute, lastReply = "Notes are done; CI is still running. The store listing needs your OK."),
+        SessionMeta(NOTES_THREAD, "Write the 2.4 release notes", "cline-pass/glm-5.3", ThinkingLevel.Low, now - 170 * minute, now - 40 * minute, projectId = "dex-web", spaceId = SPACE, muted = true, repliedAt = now - 40 * minute, lastReply = NOTES_REPLY),
+        SessionMeta(CI_THREAD, "Get CI green on release/2.4", "cline-pass/glm-5.3", ThinkingLevel.Low, now - 169 * minute, now - 2 * minute, projectId = "dex-web", spaceId = SPACE, muted = true, busy = true),
+        SessionMeta(STORE_THREAD, "Update the Play Store listing", "cline-pass/glm-5.3", ThinkingLevel.Low, now - 168 * minute, now - 10 * minute, projectId = "dex-web", spaceId = SPACE, muted = true, repliedAt = now - 10 * minute, lastReply = "I need your OK to save the Play Console key as a secret."),
+        SessionMeta(ICONS_THREAD, "Export the adaptive icons", "cline-pass/glm-5.3", ThinkingLevel.Low, now - 167 * minute, now - hour, projectId = "dex-web", spaceId = SPACE, muted = true, failed = true, repliedAt = now - hour, lastReply = "429 Too Many Requests: the provider is rate limiting this key."),
+    )
+
     fun state(now: Long): DexState {
         val minute = 60_000L
         val hour = 60 * minute
@@ -156,7 +175,8 @@ object FakeData {
                     "chat-atlas", "Atlas", "cline-pass/glm-5.3", ThinkingLevel.Low, now - 10 * day, now - 25 * minute, characterId = "atlas",
                     unread = true, lastReply = ATLAS_CHECK_IN, repliedAt = now - 25 * minute,
                 ),
-            ),
+            ) + spaceSessions(now, minute, hour),
+            spaces = listOf(SpaceProfile(SPACE, "Android 2.4 launch", "Ship Android 2.4 to the Play Store this week, with release notes.", "dex-web", SPACE_CHAT, now - 3 * hour, now - 3 * hour)),
             characters = listOf("muse" to "chat-muse", "atlas" to "chat-atlas").map { (key, session) ->
                 val template = Characters.TEMPLATES.first { it.key == key }
                 // Atlas only notifies when he reaches out; Muse on every message.
@@ -208,7 +228,10 @@ object FakeData {
                     AuditEntry(2, now - 2 * hour, "mcp", "Claude Code on my laptop", "app_create_session", "Start a chat “Triage issues”", true),
                     AuditEntry(1, now - 3 * hour, "user", "Fix the flaky login test", "app_delete_sessions", "Declined: Delete 2 chats", false, "Declined"),
                 ),
-                pending = listOf(PendingAction("p1", "chat-tests", "app_update_settings", "Change the default model to Kimi K3", now - 5 * minute, "pending")),
+                pending = listOf(
+                    PendingAction("p1", "chat-tests", "app_update_settings", "Change the default model to Kimi K3", now - 5 * minute, "pending"),
+                    PendingAction("p-store", STORE_THREAD, "app_save_secret", "Save the secret PLAY_CONSOLE_KEY", now - 10 * minute, "pending"),
+                ),
             ),
             secrets = listOf(SavedSecret("OPENAI_API_KEY", "For the eval scripts", now - 9 * day), SavedSecret("STRIPE_TEST_KEY", "", now - 2 * day)),
             skills = listOf(

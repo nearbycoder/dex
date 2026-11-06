@@ -28,6 +28,7 @@ import dev.trydex.core.model.ScheduledPrompt
 import dev.trydex.core.model.SessionMeta
 import dev.trydex.core.model.SidekickLook
 import dev.trydex.core.model.SkillDetail
+import dev.trydex.core.model.SpaceProfile
 import dev.trydex.core.model.SkillPreview
 import dev.trydex.core.model.ThinkingLevel
 import dev.trydex.core.model.TranscriptImage
@@ -217,6 +218,15 @@ class DexApi(private val rpc: AgentRpc) {
     /** Replaces their memory; empty clears it. */
     suspend fun saveCharacterMemory(id: String, text: String) { raw("saveCharacterMemory", id, text) }
 
+    // ── Spaces ───────────────────────────────────────────────────────────────
+
+    /** Creates (no id) or updates a space; creating opens its coordinator's chat (`sessionId`). */
+    suspend fun saveSpace(draft: JsonObject): SpaceProfile = typed(SpaceProfile.serializer(), "saveSpace", draft, timeout = 60_000)
+    /** Deletes the space, its coordinator's chat, and all its threads with their VMs. */
+    suspend fun deleteSpace(id: String) { raw("deleteSpace", id, timeout = 60_000) }
+    /** The coordinator's notes (Markdown; may be empty). */
+    suspend fun spaceNotes(id: String): String = raw("spaceNotes", id)?.str ?: ""
+
     // ── MCP ──────────────────────────────────────────────────────────────────
 
     suspend fun saveMcpServer(draft: JsonObject): McpConnectResult = typed(McpConnectResult.serializer(), "saveMcpServer", draft, timeout = LONG_TIMEOUT_MS)
@@ -353,6 +363,14 @@ class DexApi(private val rpc: AgentRpc) {
         /** A sidekick with a new notification setting, keeping their picture and look as they are. */
         fun characterNotifyDraft(character: CharacterProfile, notify: dev.trydex.core.model.SidekickNotify): JsonObject =
             characterDraft(character.copy(notify = notify.id), picture = false)
+
+        /** A space as `saveSpace` takes it (a SpaceDraft): no id when new, and an explicit null for no project. */
+        fun spaceDraft(id: String?, name: String, goal: String, projectId: String?): JsonObject = buildJsonObject {
+            if (!id.isNullOrEmpty()) put("id", id)
+            put("name", name.trim())
+            put("goal", goal.trim())
+            put("projectId", projectId?.let(::JsonPrimitive) ?: JsonNull)
+        }
 
         /** An agent as `saveAgent` takes it: no id when new (blank), no timestamps. */
         fun agentDraft(agent: AgentProfile): JsonObject {

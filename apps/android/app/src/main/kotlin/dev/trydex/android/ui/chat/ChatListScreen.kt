@@ -165,7 +165,7 @@ fun ChatListScreen() {
                             LaunchedEffect(Unit) { focus.requestFocus() }
                             TextField(
                                 state = query,
-                                placeholder = { Text("Search chats and sidekicks") },
+                                placeholder = { Text("Search chats, sidekicks, and spaces") },
                                 lineLimits = androidx.compose.foundation.text.input.TextFieldLineLimits.SingleLine,
                                 colors = TextFieldDefaults.colors(focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent, focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent),
                                 modifier = Modifier.fillMaxWidth().focusRequester(focus).testTag("search-chats"),
@@ -227,6 +227,8 @@ fun ChatListScreen() {
                 val chats = current.chats
                 val sessions = if (needle.isEmpty()) chats else chats.filter { needle in it.title.lowercase() }
                 val characters = if (needle.isEmpty()) current.characters else current.characters.filter { needle in it.name.lowercase() }
+                // And a space's chats under it.
+                val spaces = if (needle.isEmpty()) current.spaces else current.spaces.filter { needle in it.name.lowercase() }
                 val groups = inboxGroups(sessions, now)
                 val working = chats.count { it.busy }
                 val unread = chats.count { it.unread && !it.busy && it.id != selected }
@@ -245,6 +247,8 @@ fun ChatListScreen() {
                         return@LazyColumn
                     }
                     characterSection(current, characters, selected, now, searching = needle.isNotEmpty())
+                    spaceSection(current, spaces, selected, now, searching = needle.isNotEmpty())
+                    item(key = "chats-header") { SectionLabel("Chats", Modifier.animateItem()) }
                     when {
                         chats.isEmpty() -> item(key = "empty") { EmptyState("No chats yet. Start one, and Dex will do the work.") }
                         groups.inbox.isEmpty() && needle.isEmpty() -> item(key = "empty") { EmptyState("All caught up", Icons.Rounded.DoneAll) }

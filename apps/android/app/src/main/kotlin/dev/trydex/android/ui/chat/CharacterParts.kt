@@ -54,7 +54,7 @@ import dev.trydex.core.model.Format
 import dev.trydex.core.model.SessionMeta
 
 /**
- * Characters, pinned above the chats: each opens their conversation (long-press for their page), and + makes one. With
+ * Characters, pinned above the spaces and chats: each opens their conversation (long-press for their page), and + makes one. With
  * none yet, a single quiet row offers to. While searching, only the ones whose name matches.
  */
 fun LazyListScope.characterSection(state: DexState, characters: List<CharacterProfile>, selectedChat: String?, now: Long, searching: Boolean) {
@@ -65,11 +65,11 @@ fun LazyListScope.characterSection(state: DexState, characters: List<CharacterPr
     items(characters, key = { "character-${it.id}" }) { character ->
         CharacterRow(character, state.session(character.sessionId), character.id == selectedCharacter, now, Modifier.animateItem())
     }
-    item(key = "chats-header") { SectionLabel("Chats", Modifier.animateItem()) }
 }
 
+/** A section's name in the chat list, with its action (+) at the end. */
 @Composable
-private fun SectionLabel(text: String, modifier: Modifier = Modifier, action: @Composable () -> Unit = {}) {
+fun SectionLabel(text: String, modifier: Modifier = Modifier, action: @Composable () -> Unit = {}) {
     Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 12.dp, top = 8.dp).then(modifier), verticalAlignment = Alignment.CenterVertically) {
         Text(text, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f).padding(vertical = 12.dp))
         action()

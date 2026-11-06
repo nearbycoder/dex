@@ -62,10 +62,11 @@ data class ActiveChats(val working: List<SessionMeta>, val unread: List<SessionM
 
     companion object {
         fun of(state: DexState, excluding: String?, recent: Int = 6): ActiveChats {
-            val others = state.sessions.filter { it.id != excluding }
+            // A space's threads report to its coordinator, which stands for them.
+            val others = state.sessions.filter { it.id != excluding && !state.isThread(it) }
             val working = others.filter { it.busy }.sortedByDescending { it.updatedAt }
             val unread = others.filter { it.unread && !it.busy }.sortedByDescending { it.updatedAt }
-            val rest = others.filter { !it.busy && !it.unread && it.settledAt == null && it.characterId == null }.sortedByDescending { it.updatedAt }.take(recent)
+            val rest = others.filter { !it.busy && !it.unread && it.settledAt == null && it.characterId == null && it.spaceId == null }.sortedByDescending { it.updatedAt }.take(recent)
             return ActiveChats(working, unread, rest)
         }
     }
@@ -170,11 +171,12 @@ private fun androidx.compose.foundation.lazy.LazyListScope.section(
 private fun SwitcherRow(session: SessionMeta, state: DexState, now: Long, draft: String?, onClick: () -> Unit) {
     val app = LocalApp.current
     val character = state.character(session.characterId)
+    val space = state.coordinatedSpace(session)
     val agent = state.agent(session.agentId)
     val project = state.project(session.projectId)
     ListItem(
         headlineContent = {
-            Text(character?.name ?: session.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = if (session.unread) FontWeight.SemiBold else null)
+            Text(character?.name ?: space?.name ?: session.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = if (session.unread) FontWeight.SemiBold else null)
         },
         supportingContent = {
             when {
@@ -187,6 +189,7 @@ private fun SwitcherRow(session: SessionMeta, state: DexState, now: Long, draft:
         leadingContent = {
             when {
                 character != null -> CharacterAvatar(character, size = 36.dp)
+                space != null -> SpaceIcon(36.dp)
                 project != null -> AgentAvatar(project.icon, project.color, 36.dp, project.image)
                 agent != null -> AgentAvatar(agent.icon, agent.color, 36.dp)
                 else -> Box(Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh), contentAlignment = Alignment.Center) {
