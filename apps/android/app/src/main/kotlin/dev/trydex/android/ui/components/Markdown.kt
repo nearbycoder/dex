@@ -44,6 +44,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
@@ -53,10 +56,15 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.BaselineShift
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import dev.trydex.android.ui.theme.DexTheme
@@ -64,6 +72,9 @@ import dev.trydex.core.model.Media
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.commonmark.ext.autolink.AutolinkExtension
+import org.commonmark.ext.footnotes.FootnoteDefinition
+import org.commonmark.ext.footnotes.FootnoteReference
+import org.commonmark.ext.footnotes.FootnotesExtension
 import org.commonmark.ext.gfm.strikethrough.Strikethrough
 import org.commonmark.ext.gfm.strikethrough.StrikethroughExtension
 import org.commonmark.ext.gfm.tables.TableBlock
@@ -86,6 +97,7 @@ import org.commonmark.node.HtmlInline
 import org.commonmark.node.Image
 import org.commonmark.node.IndentedCodeBlock
 import org.commonmark.node.Link
+import org.commonmark.node.LinkReferenceDefinition
 import org.commonmark.node.ListItem
 import org.commonmark.node.Node
 import org.commonmark.node.OrderedList
@@ -102,15 +114,18 @@ import org.commonmark.node.Text as TextNode
 data class MarkdownOptions(
     /** A single newline breaks the line (OpenUI's TextContent); in chat replies it's a space, as on the web. */
     val breaks: Boolean = false,
-    /** GFM: tables, strikethrough, task lists, autolinks. */
+    /** GFM: tables, strikethrough, task lists, autolinks, footnotes. */
     val gfm: Boolean = true,
     val textStyle: TextStyle? = null,
 )
 
 private val gfmParser: Parser = Parser.builder()
-    .extensions(listOf(TablesExtension.create(), StrikethroughExtension.create(), AutolinkExtension.create(), TaskListItemsExtension.create()))
+    .extensions(listOf(TablesExtension.create(), StrikethroughExtension.create(), AutolinkExtension.create(), TaskListItemsExtension.create(), FootnotesExtension.create()))
     .build()
 private val plainParser: Parser = Parser.builder().build()
+
+/** Markdown's syntax tree: GFM's (remark-gfm's) by default, or CommonMark's alone. */
+internal fun parseMarkdown(text: String, gfm: Boolean = true): Document = (if (gfm) gfmParser else plainParser).parse(text) as Document
 
 /**
  * Markdown as native views (the web's react-markdown + remark-gfm). Links open in the browser; links and images that
@@ -124,15 +139,17 @@ fun Markdown(
     onLink: (String) -> Unit = {},
     media: @Composable (Media.Source, String?) -> Unit = { _, _ -> },
 ) {
-    val document = remember(text, options.gfm) { (if (options.gfm) gfmParser else plainParser).parse(text) as Document }
+    val document = remember(text, options.gfm) { parseMarkdown(text, options.gfm) }
+    val footnotes = remember(document) { Footnotes.of(document) }
     val style = options.textStyle ?: MaterialTheme.typography.bodyLarge
-    val context = MarkdownContext(options, style, onLink, media)
+    val context = MarkdownContext(options, style, onLink, media, footnotes.numbers)
     Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         var child = document.firstChild
         while (child != null) {
             Block(child, context)
             child = child.next
         }
+        if (footnotes.definitions.isNotEmpty()) FootnoteList(footnotes.definitions, context)
     }
 }
 
@@ -141,38 +158,92 @@ private class MarkdownContext(
     val style: TextStyle,
     val onLink: (String) -> Unit,
     val media: @Composable (Media.Source, String?) -> Unit,
-)
+    /** Each footnote's number, by its normalized label, in the order the text first refers to it (as remark-gfm). */
+    val footnotes: Map<String, Int> = emptyMap(),
+) {
+    fun with(style: TextStyle) = MarkdownContext(options, style, onLink, media, footnotes)
+}
+
+/** The footnotes a document refers to, numbered as the web numbers them; definitions nothing refers to are dropped. */
+internal class Footnotes(val numbers: Map<String, Int>, val definitions: List<FootnoteDefinition>) {
+    companion object {
+        fun label(label: String) = label.trim().replace(Regex("\\s+"), " ").lowercase()
+
+        fun of(document: Node): Footnotes {
+            val defined = LinkedHashMap<String, FootnoteDefinition>()
+            val numbers = LinkedHashMap<String, Int>()
+            // References in the text, not in the definitions where they're written.
+            fun walk(node: Node) {
+                var child = node.firstChild
+                while (child != null) {
+                    when (child) {
+                        is FootnoteDefinition -> Unit
+                        is FootnoteReference -> numbers.putIfAbsent(label(child.label), numbers.size + 1)
+                        else -> walk(child)
+                    }
+                    child = child.next
+                }
+            }
+            fun collect(node: Node) {
+                var child = node.firstChild
+                while (child != null) {
+                    if (child is FootnoteDefinition) defined.putIfAbsent(label(child.label), child) else collect(child)
+                    child = child.next
+                }
+            }
+            collect(document)
+            walk(document)
+            // A footnote can refer to another: those are numbered after, as they come up.
+            var i = 0
+            while (i < numbers.size) {
+                defined[numbers.keys.elementAt(i)]?.let { walk(it) }
+                i++
+            }
+            val shown = numbers.keys.filter { it in defined }
+            return Footnotes(shown.withIndex().associate { (index, key) -> key to index + 1 }, shown.map { defined.getValue(it) })
+        }
+    }
+}
 
 @Composable
 private fun Block(node: Node, context: MarkdownContext) {
     when (node) {
         is Paragraph -> Paragraph(node, context)
         is Heading -> {
-            val style = when (node.level) {
-                1 -> MaterialTheme.typography.headlineSmall
-                2 -> MaterialTheme.typography.titleLarge
-                3 -> MaterialTheme.typography.titleMedium
-                else -> MaterialTheme.typography.titleSmall
+            // Sized from the text around it (as the web's prose), so a heading in a small note stays in proportion;
+            // from h4 down, body-sized and bold.
+            val scale = when (node.level) {
+                1 -> 1.5f
+                2 -> 1.3f
+                3 -> 1.15f
+                else -> 1f
             }
-            InlineText(node, context, style.copy(fontWeight = FontWeight.SemiBold))
+            InlineText(
+                node, context, context.style.copy(fontSize = context.style.fontSize.scaled(scale), lineHeight = context.style.lineHeight.scaled(scale), fontWeight = FontWeight.SemiBold),
+                Modifier.padding(top = if (node.previous != null && node.level <= 3) 6.dp else 0.dp).semantics { heading() },
+            )
         }
-        is BulletList, is OrderedList -> ListBlock(node, context, depth = 0)
+        is BulletList, is OrderedList -> ListBlock(node, context)
         is BlockQuote -> Row(Modifier.height(IntrinsicSize.Min)) {
             Box(Modifier.width(3.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(2.dp)))
             Column(Modifier.padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val quoted = context.with(context.style.copy(fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.onSurfaceVariant))
                 var child = node.firstChild
                 while (child != null) {
-                    Block(child, MarkdownContext(context.options, context.style.copy(fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.onSurfaceVariant), context.onLink, context.media))
+                    Block(child, quoted)
                     child = child.next
                 }
             }
         }
-        is FencedCodeBlock -> CodeBlock(node.literal.trimEnd('\n'), node.info)
+        // The info string's first word is the language, as remark's `language-…` class.
+        is FencedCodeBlock -> CodeBlock(node.literal.trimEnd('\n'), node.info?.trim()?.substringBefore(' ')?.takeIf { it.isNotEmpty() })
         is IndentedCodeBlock -> CodeBlock(node.literal.trimEnd('\n'), null)
         is ThematicBreak -> HorizontalDivider(Modifier.padding(vertical = 8.dp))
         is TableBlock -> TableView(node, context)
-        // Model output is never rendered as HTML.
-        is HtmlBlock -> Text(node.literal, style = context.style, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // Model output is never rendered as HTML: it shows as the text it is, as on the web.
+        is HtmlBlock -> Text(node.literal.trimEnd('\n'), style = context.style)
+        // Definitions say where links and footnotes go; they aren't shown where they're written.
+        is LinkReferenceDefinition, is FootnoteDefinition -> Unit
         else -> InlineText(node, context, context.style)
     }
 }
@@ -206,14 +277,14 @@ private fun Paragraph(node: Paragraph, context: MarkdownContext) {
 }
 
 @Composable
-private fun InlineText(node: Node, context: MarkdownContext, style: TextStyle, skipMedia: Boolean = false) {
+private fun InlineText(node: Node, context: MarkdownContext, style: TextStyle, modifier: Modifier = Modifier, skipMedia: Boolean = false) {
     val colors = MaterialTheme.colorScheme
     val linkColor = colors.primary
     val codeBackground = colors.surfaceContainerHighest
     val text = remember(node, style, skipMedia, linkColor) {
         buildAnnotatedString { appendInlines(node, context, linkColor, codeBackground, skipMedia) }
     }
-    SelectionContainer {
+    SelectionContainer(modifier) {
         Text(text, style = style)
     }
 }
@@ -236,6 +307,11 @@ private fun AnnotatedString.Builder.appendInline(node: Node, context: MarkdownCo
         is Strikethrough -> withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) { appendInlines(node, context, linkColor, codeBackground, skipMedia) }
         is Code -> withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = codeBackground, fontSize = 0.9.em())) { append(" ${node.literal} ") }
         is HtmlInline -> append(node.literal)
+        is FootnoteReference -> {
+            val number = context.footnotes[Footnotes.label(node.label)]
+            if (number == null) append("[^${node.label}]")
+            else withStyle(SpanStyle(color = linkColor, fontSize = 0.75.em(), baselineShift = BaselineShift.Superscript)) { append("$number") }
+        }
         is Link -> {
             if (skipMedia && Media.source(node.destination) != null) {
                 // The player below stands for it; keep its words.
@@ -285,6 +361,8 @@ fun rememberInlineMarkdown(text: String, onLink: (String) -> Unit): AnnotatedStr
     }
 }
 
+private fun TextUnit.scaled(by: Float) = if (isSpecified) this * by else this
+
 private fun Double.em() = androidx.compose.ui.unit.TextUnit(this.toFloat(), androidx.compose.ui.unit.TextUnitType.Em)
 
 private fun plainText(node: Node): String {
@@ -308,15 +386,20 @@ private fun plainText(node: Node): String {
 }
 
 @Composable
-private fun ListBlock(node: Node, context: MarkdownContext, depth: Int) {
+private fun ListBlock(node: Node, context: MarkdownContext) {
     val ordered = node is OrderedList
-    var number = (node as? OrderedList)?.markerStartNumber ?: 1
-    Column(Modifier.padding(start = if (depth > 0) 16.dp else 0.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        var item = node.firstChild
-        while (item != null) {
-            if (item is ListItem) {
-                val task = item.firstChild?.firstChild as? TaskListItemMarker ?: item.firstChild as? TaskListItemMarker
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    val first = (node as? OrderedList)?.markerStartNumber ?: 1
+    val items = generateSequence(node.firstChild) { it.next }.filterIsInstance<ListItem>().toList()
+    // Every marker as wide as the widest, so items line up past 9.
+    val widest = if (ordered) "${first + items.size - 1}." else "•"
+    // A loose list (items apart by blank lines) is spaced as paragraphs are.
+    val tight = (node as? org.commonmark.node.ListBlock)?.isTight != false
+    // A nested list sits in its item's text, so it's indented by the marker's width, as on the web.
+    Column(verticalArrangement = Arrangement.spacedBy(if (tight) 6.dp else 10.dp)) {
+        items.forEachIndexed { index, item ->
+            val task = item.firstChild?.firstChild as? TaskListItemMarker ?: item.firstChild as? TaskListItemMarker
+            ListItemRow(
+                marker = {
                     if (task != null) {
                         Icon(
                             if (task.isChecked) Icons.Rounded.CheckBox else Icons.Rounded.CheckBoxOutlineBlank,
@@ -325,25 +408,55 @@ private fun ListBlock(node: Node, context: MarkdownContext, depth: Int) {
                             tint = if (task.isChecked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
                         )
                     } else {
-                        Text(if (ordered) "${number}." else "•", style = context.style, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.widthIn(min = 16.dp))
+                        Marker(if (ordered) "${first + index}." else "•", widest, context.style)
                     }
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        var child = item.firstChild
-                        while (child != null) {
-                            when (child) {
-                                // The checkbox is drawn beside the item already.
-                                is TaskListItemMarker -> Unit
-                                is BulletList, is OrderedList -> ListBlock(child, context, depth + 1)
-                                is Paragraph -> InlineText(child, context, context.style)
-                                else -> Block(child, context)
-                            }
-                            child = child.next
-                        }
-                    }
+                },
+                item = item,
+                context = context,
+                spacing = if (tight) 6.dp else 10.dp,
+            )
+        }
+    }
+}
+
+/** A list marker, right-aligned in the width of the list's widest one. */
+@Composable
+private fun Marker(label: String, widest: String, style: TextStyle) {
+    Box(Modifier.widthIn(min = 16.dp), contentAlignment = Alignment.TopEnd) {
+        Text(widest, style = style, color = Color.Transparent)
+        Text(label, style = style, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun ListItemRow(marker: @Composable () -> Unit, item: Node, context: MarkdownContext, spacing: Dp) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        marker()
+        Column(verticalArrangement = Arrangement.spacedBy(spacing)) {
+            var child = item.firstChild
+            while (child != null) {
+                when (child) {
+                    // The checkbox is drawn beside the item already.
+                    is TaskListItemMarker -> Unit
+                    is BulletList, is OrderedList -> ListBlock(child, context)
+                    is Paragraph -> Paragraph(child, context)
+                    else -> Block(child, context)
                 }
-                number++
+                child = child.next
             }
-            item = item.next
+        }
+    }
+}
+
+/** The footnotes, after the text, as the web's numbered list at the end of a reply. */
+@Composable
+private fun FootnoteList(definitions: List<FootnoteDefinition>, context: MarkdownContext) {
+    val small = context.with(context.style.copy(fontSize = context.style.fontSize.scaled(0.875f), lineHeight = context.style.lineHeight.scaled(0.875f), color = MaterialTheme.colorScheme.onSurfaceVariant))
+    val widest = "${definitions.size}."
+    Column(Modifier.padding(top = 4.dp).semantics { contentDescription = "Footnotes" }, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        HorizontalDivider(Modifier.padding(bottom = 4.dp))
+        definitions.forEachIndexed { index, definition ->
+            ListItemRow({ Marker("${index + 1}.", widest, small.style) }, definition, small, spacing = 6.dp)
         }
     }
 }
@@ -395,9 +508,9 @@ private fun TableView(node: TableBlock, context: MarkdownContext) {
                     if (cell != null) {
                         val style = if (isHead) MaterialTheme.typography.labelLarge.copy(color = MaterialTheme.colorScheme.onSurfaceVariant) else MaterialTheme.typography.bodyMedium
                         InlineText(cell, context, style.copy(textAlign = when (cell.alignment) {
-                            TableCell.Alignment.CENTER -> androidx.compose.ui.text.style.TextAlign.Center
-                            TableCell.Alignment.RIGHT -> androidx.compose.ui.text.style.TextAlign.End
-                            else -> androidx.compose.ui.text.style.TextAlign.Start
+                            TableCell.Alignment.CENTER -> TextAlign.Center
+                            TableCell.Alignment.RIGHT -> TextAlign.End
+                            else -> TextAlign.Start
                         }))
                     }
                 }
@@ -421,7 +534,8 @@ fun CodeBlock(code: String, language: String? = null, modifier: Modifier = Modif
                 }
                 SelectionContainer {
                     Text(
-                        remember(code, language) { Highlighter.highlight(code, language) },
+                        // Colored only when it says its language: a block without one is often prose or output.
+                        remember(code, language) { if (language.isNullOrBlank()) AnnotatedString(code) else Highlighter.highlight(code, language) },
                         style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp, lineHeight = 19.sp),
                         softWrap = false,
                         modifier = Modifier.horizontalScroll(rememberScrollState()).padding(start = 14.dp, end = 48.dp, top = if (!showLanguage || language.isNullOrBlank()) 12.dp else 4.dp, bottom = 12.dp),
