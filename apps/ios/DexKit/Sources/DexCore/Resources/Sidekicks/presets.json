@@ -1,5 +1,20 @@
 [
   {
+    "key": "boop",
+    "name": "Boop",
+    "color": "zinc",
+    "look": {
+      "body": "bot",
+      "skin": "slate",
+      "eyes": "round",
+      "mouth": "smile",
+      "extra": "none",
+      "blush": false,
+      "finish": null
+    },
+    "image": "boop.png"
+  },
+  {
     "key": "muse",
     "name": "Muse",
     "color": "violet",
@@ -9,7 +24,8 @@
       "eyes": "sparkle",
       "mouth": "grin",
       "extra": "beret",
-      "blush": true
+      "blush": true,
+      "finish": 605
     },
     "image": "muse.png"
   },
@@ -23,7 +39,8 @@
       "eyes": "round",
       "mouth": "smile",
       "extra": "glasses",
-      "blush": false
+      "blush": false,
+      "finish": 102
     },
     "image": "atlas.png"
   },
@@ -37,7 +54,8 @@
       "eyes": "sleepy",
       "mouth": "smile",
       "extra": "sprout",
-      "blush": true
+      "blush": true,
+      "finish": 202
     },
     "image": "sage.png"
   },
@@ -51,7 +69,8 @@
       "eyes": "happy",
       "mouth": "grin",
       "extra": "headband",
-      "blush": false
+      "blush": false,
+      "finish": 306
     },
     "image": "rex.png"
   },
@@ -65,7 +84,8 @@
       "eyes": "visor",
       "mouth": "flat",
       "extra": "headphones",
-      "blush": false
+      "blush": false,
+      "finish": 1702
     },
     "image": "byte.png"
   },
@@ -79,7 +99,8 @@
       "eyes": "dot",
       "mouth": "purr",
       "extra": "bow",
-      "blush": true
+      "blush": true,
+      "finish": 1504
     },
     "image": "mochi.png"
   },
@@ -93,7 +114,8 @@
       "eyes": "sparkle",
       "mouth": "o",
       "extra": "wizard",
-      "blush": true
+      "blush": true,
+      "finish": 1606
     },
     "image": "nova.png"
   },
@@ -107,7 +129,8 @@
       "eyes": "wink",
       "mouth": "tongue",
       "extra": "none",
-      "blush": true
+      "blush": true,
+      "finish": 303
     },
     "image": "pip.png"
   },
@@ -121,7 +144,8 @@
       "eyes": "round",
       "mouth": "smile",
       "extra": "crown",
-      "blush": false
+      "blush": false,
+      "finish": 901
     },
     "image": "duke.png"
   },
@@ -135,7 +159,8 @@
       "eyes": "happy",
       "mouth": "smile",
       "extra": "sprout",
-      "blush": true
+      "blush": true,
+      "finish": 1603
     },
     "image": "fern.png"
   },
@@ -149,7 +174,8 @@
       "eyes": "dot",
       "mouth": "o",
       "extra": "beanie",
-      "blush": false
+      "blush": false,
+      "finish": 1303
     },
     "image": "ziggy.png"
   },
@@ -163,7 +189,8 @@
       "eyes": "round",
       "mouth": "grin",
       "extra": "none",
-      "blush": false
+      "blush": false,
+      "finish": 926
     },
     "image": "bolt.png"
   }
