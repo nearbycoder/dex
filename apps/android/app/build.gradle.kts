@@ -177,6 +177,7 @@ dependencies {
     implementation(libs.commonmark.gfm.strikethrough)
     implementation(libs.commonmark.autolink)
     implementation(libs.commonmark.task.list)
+    implementation(libs.commonmark.footnotes)
 
     // The demo (Settings → sign-in screen) runs against an in-process fake Dex; never in a release build.
     debugImplementation(project(":core:fake"))

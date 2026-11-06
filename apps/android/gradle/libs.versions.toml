@@ -95,6 +95,7 @@ commonmark-gfm-tables = { module = "org.commonmark:commonmark-ext-gfm-tables", v
 commonmark-gfm-strikethrough = { module = "org.commonmark:commonmark-ext-gfm-strikethrough", version.ref = "commonmark" }
 commonmark-autolink = { module = "org.commonmark:commonmark-ext-autolink", version.ref = "commonmark" }
 commonmark-task-list = { module = "org.commonmark:commonmark-ext-task-list-items", version.ref = "commonmark" }
+commonmark-footnotes = { module = "org.commonmark:commonmark-ext-footnotes", version.ref = "commonmark" }
 
 junit = { module = "junit:junit", version.ref = "junit" }
 truth = { module = "com.google.truth:truth", version.ref = "truth" }
