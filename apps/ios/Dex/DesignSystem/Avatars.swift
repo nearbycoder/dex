@@ -78,33 +78,46 @@ struct AgentAvatar: View {
     }
 }
 
-/// A sidekick's face: their picture (the PNG of their look, or a photo), else their emoji (or initial) on their color.
-/// Round, unlike agents and projects, so a sidekick reads as someone rather than something.
+/// A sidekick's face: their look (its PNG, a BoopFace shown whole), else a photo or their emoji (or initial) on their
+/// color, round, so a sidekick reads as someone rather than something.
 struct CharacterAvatar: View {
     let glyph: String
     let color: String
     var image: String? = nil
+    /// `image` is their look's PNG (a face on a clear background), not a photo.
+    var look = false
     var size: CGFloat = 32
     /// A dot at the bottom right while they're answering.
     var typing = false
 
-    init(glyph: String, color: String, image: String? = nil, size: CGFloat = 32, typing: Bool = false) {
-        self.glyph = glyph; self.color = color; self.image = image; self.size = size; self.typing = typing
+    init(glyph: String, color: String, image: String? = nil, look: Bool = false, size: CGFloat = 32, typing: Bool = false) {
+        self.glyph = glyph; self.color = color; self.image = image; self.look = look; self.size = size; self.typing = typing
     }
 
     init(_ character: CharacterProfile, size: CGFloat = 32, typing: Bool = false) {
-        self.init(glyph: character.glyph, color: character.color, image: character.image, size: size, typing: typing)
+        self.init(glyph: character.glyph, color: character.color, image: character.image, look: character.look != nil, size: size, typing: typing)
     }
 
     var body: some View {
         let tint = AgentColors.color(color)
         Group {
             if let picture = image.flatMap(AgentAvatar.decode) {
-                // Their look (its PNG) or a photo, on their color.
-                Image(uiImage: picture)
-                    .resizable()
-                    .scaledToFill()
-                    .background(tint.opacity(0.2))
+                if look {
+                    // Their face, whole: its corners and antenna aren't cropped.
+                    Image(uiImage: picture)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: size, height: size)
+                } else {
+                    // A photo, round, on their color.
+                    Image(uiImage: picture)
+                        .resizable()
+                        .scaledToFill()
+                        .background(tint.opacity(0.2))
+                        .frame(width: size, height: size)
+                        .clipShape(.circle)
+                        .overlay(Circle().strokeBorder(.primary.opacity(0.08)))
+                }
             } else {
                 // An emoji (from before looks) is drawn larger than a letter of the same point size reads.
                 let emoji = glyph.unicodeScalars.contains { $0.properties.isEmojiPresentation || $0.properties.generalCategory == .otherSymbol }
@@ -115,11 +128,11 @@ struct CharacterAvatar: View {
                     .lineLimit(1)
                     .frame(width: size, height: size)
                     .background(tint.opacity(0.2).gradient)
+                    .clipShape(.circle)
+                    .overlay(Circle().strokeBorder(.primary.opacity(0.08)))
             }
         }
         .frame(width: size, height: size)
-        .clipShape(.circle)
-        .overlay(Circle().strokeBorder(.primary.opacity(0.08)))
         .overlay(alignment: .bottomTrailing) {
             if typing {
                 Circle()

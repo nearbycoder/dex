@@ -59,17 +59,32 @@ import Testing
         // Read back as the agent reads it.
         let read = try sent.decode(CharacterDraft.self)
         #expect(read.pictureChanged && read.look == nil && read.image == "data:image/jpeg;base64,AA")
+        // A color of your own: the plain color, its finish cleared (null, not left out, which would keep it).
+        var parts = try #require(SidekickParts(muse.look))
+        #expect(parts.finish == 605)
+        parts.skin = "teal"
+        parts.finish = nil
+        edit.use(parts: parts, color: "emerald", image: "data:image/png;base64,AA")
+        sent = try JSONValue(encoding: edit)
+        #expect(sent["look"]?["skin"] == "teal" && sent["look"]?["finish"] == .null && sent["look"]?["body"] == "blob" && sent["color"] == "emerald")
+        #expect(sent["look"]?.object?.keys.contains("finish") == true && edit.preset == nil)
         #expect(try !JSONValue(encoding: CharacterDraft(CharacterProfile(id: "x", name: "X", sessionId: "s"))).decode(CharacterDraft.self).pictureChanged)
     }
 
     @Test func readyMadeLooks() throws {
-        // assets/sidekicks: twelve, each a small PNG the server keeps.
-        #expect(SidekickLook.all.count == 12)
-        #expect(Set(SidekickLook.all.map(\.id)).count == 12)
+        // assets/sidekicks: thirteen, each a small PNG the server keeps: a BoopFace on a clear background.
+        #expect(SidekickLook.all.count == 13)
+        #expect(Set(SidekickLook.all.map(\.id)).count == 13)
+        #expect(SidekickLook.all.first?.id == "boop")
         for look in SidekickLook.all {
             #expect(look.image.hasPrefix("data:image/png;base64,") && look.image.count < Characters.maxImageURLLength, "\(look.id)")
             #expect(AgentColorNames.contains(look.color) && look.look["body"]?.string != nil, "\(look.id)")
+            // Each says its finish, even none (Boop's plain slate).
+            #expect(look.look.object?.keys.contains("finish") == true, "\(look.id)")
+            let png = try #require(Data(base64Encoded: String(look.image.dropFirst("data:image/png;base64,".count))))
+            #expect(SidekickPicture.isFace(png), "\(look.id)")
         }
+        #expect(SidekickParts(SidekickLook.named("boop")?.look)?.finish == nil && SidekickParts(SidekickLook.named("muse")?.look)?.finish == 605)
     }
 
     @Test func templates() throws {
@@ -165,10 +180,14 @@ import Testing
 
 @Suite struct SidekickPartsTests {
     @Test func readsAndWritesLooks() {
-        let look: JSONValue = ["body": "cat", "skin": "pink", "eyes": "wink", "mouth": "purr", "extra": "bow", "blush": true]
+        let look: JSONValue = ["body": "cat", "skin": "pink", "eyes": "wink", "mouth": "purr", "extra": "bow", "blush": true, "finish": 1504]
         let parts = SidekickParts(look)
-        #expect(parts == SidekickParts(body: "cat", skin: "pink", eyes: "wink", mouth: "purr", extra: "bow", blush: true))
+        #expect(parts == SidekickParts(body: "cat", skin: "pink", eyes: "wink", mouth: "purr", extra: "bow", blush: true, finish: 1504))
         #expect(parts?.json == look)
+        // No finish, or one BoopFace doesn't have: the plain color, written as null.
+        #expect(SidekickParts(["body": "cat"])?.finish == nil && SidekickParts(["body": "cat"])?.json["finish"] == .null)
+        for bad: JSONValue in [99, 1531, 1800, 605.5, "605"] { #expect(SidekickParts(["finish": bad])?.finish == nil, "\(bad)") }
+        #expect(SidekickParts.skinHex("lilac") == "#8b5cf6" && SidekickParts.skins.count == 10)
         // Unknown parts fall back; not an object, no look.
         #expect(SidekickParts(["body": "dragon", "skin": 3]) == SidekickParts())
         #expect(SidekickParts(.string("x")) == nil)
@@ -195,6 +214,15 @@ import Testing
         #expect(steps[5] == .close)
         #expect(steps[6] == .move(1, 2))
         #expect(steps[7] == .quad(3, 4, 5, 6))
-        for body in SidekickParts.bodies { #expect(SVGPathData.parse(SidekickParts.shape(body).path).last == .close) }
+        // BoopFace's head: one closed outline on its 240-unit box, from 20 to 220 both ways.
+        let head = SVGPathData.parse(BoopFace.headPath)
+        #expect(head.first == .move(120, 20) && head.last == .close && head.count > 100)
+        let points = head.compactMap { step -> (Double, Double)? in
+            switch step {
+            case .move(let x, let y), .line(let x, let y): (x, y)
+            default: nil
+            }
+        }
+        #expect(points.map(\.0).min() == 20 && points.map(\.0).max() == 220 && points.map(\.1).min() == 20 && points.map(\.1).max() == 220)
     }
 }

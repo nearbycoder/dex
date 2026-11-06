@@ -1,4 +1,6 @@
 import Foundation
+import ImageIO
+import UniformTypeIdentifiers
 
 // Requests, starting points, and ready-made looks for sidekicks (`character` in code and on the wire). Mirrors
 // apps/web/src/shared/characters.ts and the looks exported from apps/web/src/shared/sidekick-look.ts.
@@ -155,14 +157,14 @@ public enum SidekickNotify: String, CaseIterable, Sendable, Hashable, Identifiab
     public var toggled: SidekickNotify { self == .off ? .all : .off }
 }
 
-/// One of the twelve ready-made sidekick looks (assets/sidekicks, bundled): its parts, its background color, and its
-/// picture, which is what a sidekick wearing it saves as `image`.
+/// One of the ready-made sidekick looks (assets/sidekicks, bundled): its look (a BoopFace's color and finish), its
+/// accent color, and its picture, which is what a sidekick wearing it saves as `image`.
 public struct SidekickLook: Sendable, Hashable, Identifiable {
     public let id: String
     public let name: String
     public let color: String
     public let look: JSONValue
-    /// The PNG, as a data: URL.
+    /// The PNG, as a data: URL, small enough for the server to keep.
     public let image: String
 
     public static let all: [SidekickLook] = {
@@ -173,9 +175,28 @@ public struct SidekickLook: Sendable, Hashable, Identifiable {
                   let png = Bundle.module.url(forResource: (file as NSString).deletingPathExtension, withExtension: "png", subdirectory: "Sidekicks")
                     .flatMap({ try? Data(contentsOf: $0) }) else { return nil }
             return SidekickLook(id: key, name: preset["name"]?.string ?? key.capitalized, color: preset["color"]?.string ?? "violet", look: look,
-                                image: "data:image/png;base64," + png.base64EncodedString())
+                                image: fitting(png))
         }
     }()
+
+    /// A PNG as a data: URL the server keeps (`Characters.maxImageURLLength`): a finish's detail can make one too big
+    /// at full size, so it's made smaller until it fits.
+    static func fitting(_ png: Data) -> String {
+        func url(_ data: Data) -> String { "data:image/png;base64," + data.base64EncodedString() }
+        var smallest = url(png)
+        guard smallest.count > Characters.maxImageURLLength, let source = CGImageSourceCreateWithData(png as CFData, nil) else { return smallest }
+        for side in [224, 192, 160, 128] {
+            let options = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: side] as CFDictionary
+            let data = NSMutableData()
+            guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options),
+                  let destination = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil) else { break }
+            CGImageDestinationAddImage(destination, image, nil)
+            guard CGImageDestinationFinalize(destination) else { break }
+            smallest = url(data as Data)
+            if smallest.count <= Characters.maxImageURLLength { break }
+        }
+        return smallest
+    }
 
     public static func named(_ key: String) -> SidekickLook? { all.first { $0.id == key } }
 }
