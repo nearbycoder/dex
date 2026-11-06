@@ -288,11 +288,9 @@ struct ThinkingStep: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("chat.thought")
                 if open {
-                    Text(text)
-                        .font(.caption)
+                    // Models think in Markdown too (bold step titles, lists, code).
+                    MarkdownView(text: text, font: .caption, live: live)
                         .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
                         .padding(.leading, 12)
                         .overlay(alignment: .leading) { Rectangle().fill(.quaternary).frame(width: 2) }
                         .padding(.leading, 8)
