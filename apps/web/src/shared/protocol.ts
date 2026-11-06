@@ -9,6 +9,7 @@ import type { ChatArtifact } from "./media"
 import type { SkillInfo } from "./skills"
 import type { PushStatus } from "./notifications"
 import type { ProjectProfile } from "./projects"
+import type { SpaceProfile } from "./spaces"
 import type { ThinkingLevel } from "./models"
 
 /** Durable Object binding / class name; the client addresses it as `DexAgent`. */
@@ -38,6 +39,13 @@ export interface SessionMeta {
   readonly repliedAt?: number | null
   /** No push notifications for this chat. */
   readonly muted: boolean
+  /**
+   * The space this chat belongs to, if any: its coordinator (the space's `sessionId`) or one of its threads. Space
+   * chats live under their space, not in the chat list. Missing from older agents.
+   */
+  readonly spaceId?: string | null
+  /** Its latest reply ended with a problem (a failed model request). Missing from older agents. */
+  readonly failed?: boolean
   /** When you settled it (done for now): it sits under Settled until something new happens in it. */
   readonly settledAt: number | null
   /** Hidden under Snoozed until then; it comes back (with a notification) at that time. */
@@ -175,6 +183,7 @@ export const withStateDefaults = (state: DexState): DexState => ({
   push: state.push ?? { configured: false, publicKey: null, devices: [] },
   agents: (state.agents ?? []).map((agent) => ({ ...agent, mcpServers: agent.mcpServers ?? [] })),
   characters: state.characters ?? [],
+  spaces: state.spaces ?? [],
   mcp: state.mcp ?? [],
   access: state.access ?? NO_ACCESS,
   skills: state.skills ?? [],
@@ -185,6 +194,8 @@ export const withStateDefaults = (state: DexState): DexState => ({
     mcpServers: session.mcpServers ?? [],
     projectId: session.projectId ?? null,
     characterId: session.characterId ?? null,
+    spaceId: session.spaceId ?? null,
+    failed: session.failed ?? false,
     muted: session.muted ?? false,
     settledAt: session.settledAt ?? null,
     snoozedUntil: session.snoozedUntil ?? null
@@ -220,6 +231,8 @@ export interface DexState {
   readonly agents: ReadonlyArray<AgentProfile>
   /** Characters, pinned in the sidebar, each with a conversation of their own. Missing in state an older agent saved. */
   readonly characters: ReadonlyArray<CharacterProfile>
+  /** Spaces, in the sidebar, each a coordinator chat with threads of its own. Missing in state an older agent saved. */
+  readonly spaces?: ReadonlyArray<SpaceProfile>
   readonly mcp: ReadonlyArray<McpServerInfo>
   /** MCP access tokens, the audit log of app operations, and admin operations waiting for confirmation. */
   readonly access: AccessState
