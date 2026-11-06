@@ -123,8 +123,6 @@ struct CharacterEditor: View {
     @State private var confirmRestart = false
     @State private var photo: PhotosPickerItem?
     @State private var readingPhoto = false
-    /// The look mixer is open (it opens by itself on a look of your own).
-    @State private var mixing = false
 
     private var existing: CharacterProfile? { client.state?.character(characterId) }
     private var isNew: Bool { characterId == nil }
@@ -177,7 +175,7 @@ struct CharacterEditor: View {
         Form {
             Section {
                 HStack(spacing: 16) {
-                    CharacterAvatar(glyph: value.glyph, color: value.color, image: value.image, size: 64)
+                    CharacterAvatar(glyph: value.glyph, color: value.color, image: value.image, look: value.look != nil, size: 64)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(value.name.isEmpty ? (isNew ? "New Sidekick" : "Untitled") : value.name).font(.title2.bold()).lineLimit(2)
                         Text(value.tagline.isEmpty ? "Who are they to you?" : value.tagline).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
@@ -227,15 +225,13 @@ struct CharacterEditor: View {
 
             Section {
                 LookGrid(selection: value.preset?.id) { draft.wrappedValue.use($0) }
-                DisclosureGroup(isExpanded: $mixing) {
-                    LookMixer(parts: value.parts, color: value.color) { parts, color in
-                        guard let parts else { draft.wrappedValue.color = color; return }
-                        if let png = SidekickArt.png(parts, background: color) { draft.wrappedValue.use(parts: parts, color: color, image: png) }
-                    }
-                } label: {
-                    Label("Mix Your Own", systemImage: "paintpalette")
+                LookMixer(parts: value.parts, isPreset: value.preset != nil, color: value.color) {
+                    draft.wrappedValue.use($0)
+                } change: { parts, color in
+                    if let png = SidekickArt.png(parts) { draft.wrappedValue.use(parts: parts, color: color, image: png) }
+                } accent: {
+                    draft.wrappedValue.color = $0
                 }
-                .accessibilityIdentifier("character.mix")
                 // A photo: one that isn't a ready-made look.
                 let photoShown = value.image != nil && value.look == nil
                 PhotosPicker(selection: $photo, matching: .images) {
@@ -253,7 +249,7 @@ struct CharacterEditor: View {
             } header: {
                 Text("Look")
             } footer: {
-                Text("Pick a ready-made sidekick, mix your own, or use a photo.")
+                Text("Pick a ready-made sidekick, a color of your own, or a photo.")
             }
 
             Section {
@@ -529,7 +525,7 @@ private struct TemplateGrid: View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: tileWidth), spacing: 10)], spacing: 10) {
             ForEach(CharacterTemplate.all) { template in
                 tile(id: template.id, title: template.name, subtitle: template.tagline) {
-                    CharacterAvatar(glyph: String(template.name.prefix(1)), color: template.color, image: template.look?.image, size: 32)
+                    CharacterAvatar(glyph: String(template.name.prefix(1)), color: template.color, image: template.look?.image, look: true, size: 32)
                 } action: { pick(template) }
             }
             tile(id: "blank", title: "Blank", subtitle: "Start from scratch") {
@@ -565,7 +561,7 @@ private struct TemplateGrid: View {
     }
 }
 
-/// The ready-made looks (assets/sidekicks), each a little character on its color.
+/// The ready-made looks (assets/sidekicks), each its BoopFace (with its finish, which only these pictures and the web have).
 private struct LookGrid: View {
     let selection: String?
     let pick: (SidekickLook) -> Void
@@ -575,10 +571,10 @@ private struct LookGrid: View {
             ForEach(SidekickLook.all) { look in
                 let selected = selection == look.id
                 Button { pick(look) } label: {
-                    CharacterAvatar(glyph: String(look.name.prefix(1)), color: look.color, image: look.image, size: 52)
-                        .padding(3)
-                        .overlay { Circle().strokeBorder(selected ? Color.dexAccent : .clear, lineWidth: 2.5) }
-                        .contentShape(.circle)
+                    CharacterAvatar(glyph: String(look.name.prefix(1)), color: look.color, image: look.image, look: true, size: 46)
+                        .padding(5)
+                        .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(selected ? Color.dexAccent : .clear, lineWidth: 2.5) }
+                        .contentShape(.rect(cornerRadius: 14))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(look.name)

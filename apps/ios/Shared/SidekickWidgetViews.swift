@@ -35,8 +35,8 @@ enum SidekickWidgetContent: Hashable {
     case unavailable
 }
 
-/// A sidekick's round face: their picture on their color, else their emoji or initial; a dot while they have
-/// something you haven't read.
+/// A sidekick's face: their look (a BoopFace on a clear background) whole, else a photo or their emoji or initial
+/// round on their color; a dot while they have something you haven't read.
 struct WidgetFace: View {
     let sidekick: WidgetSidekick
     let picture: UIImage?
@@ -46,24 +46,34 @@ struct WidgetFace: View {
 
     var body: some View {
         let tint = AgentColors.color(sidekick.color)
-        ZStack {
-            Circle().fill(tint.opacity(0.22).gradient)
-            if let picture {
+        Group {
+            if let picture, picture.cgImage.map(SidekickPicture.isFace) == true {
                 Image(uiImage: picture)
                     .resizable()
                     .widgetAccentedRenderingMode(.accentedDesaturated)
-                    .scaledToFill()
+                    .scaledToFit()
             } else {
-                Text(sidekick.glyph)
-                    .font(.system(size: size * 0.44, weight: .semibold, design: .rounded))
-                    .foregroundStyle(tint)
-                    .minimumScaleFactor(0.5)
-                    .lineLimit(1)
+                ZStack {
+                    Circle().fill(tint.opacity(0.22).gradient)
+                    if let picture {
+                        Image(uiImage: picture)
+                            .resizable()
+                            .widgetAccentedRenderingMode(.accentedDesaturated)
+                            .scaledToFill()
+                    } else {
+                        Text(sidekick.glyph)
+                            .font(.system(size: size * 0.44, weight: .semibold, design: .rounded))
+                            .foregroundStyle(tint)
+                            .minimumScaleFactor(0.5)
+                            .lineLimit(1)
+                    }
+                }
+                .frame(width: size, height: size)
+                .clipShape(.circle)
+                .overlay(Circle().strokeBorder(.primary.opacity(0.08)))
             }
         }
         .frame(width: size, height: size)
-        .clipShape(.circle)
-        .overlay(Circle().strokeBorder(.primary.opacity(0.08)))
         .overlay(alignment: .topTrailing) {
             if showsUnread, sidekick.unread {
                 UnreadBadgeDot(accent: accent, size: max(9, size * 0.24))
