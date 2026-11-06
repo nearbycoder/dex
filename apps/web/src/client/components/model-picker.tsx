@@ -258,13 +258,14 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
         disabled={props.disabled}
         onClick={toggle}
         title={`${current?.name ?? props.model} (${current ? MODEL_PROVIDERS[current.provider].name : "unknown"}): ${hasVision(current) ? "can see images" : "reads text only"}`}
-        className="flex max-w-full min-w-0 items-center gap-1 rounded-md border border-zinc-800 bg-zinc-900 py-1 pr-1.5 pl-1.5 text-xs text-zinc-300 hover:border-zinc-700 disabled:opacity-50 sm:max-w-48 sm:gap-1.5 sm:pl-2"
+        className="flex max-w-full min-w-0 items-center gap-1 overflow-hidden rounded-md border border-zinc-800 bg-zinc-900 py-1 pr-1.5 pl-1.5 text-xs text-zinc-300 hover:border-zinc-700 disabled:opacity-50 sm:max-w-48 sm:gap-1.5 sm:pl-2"
       >
         <ModelLogo modelId={props.model} className="size-3.5" />
         <span className="min-w-0 truncate">{current?.name ?? props.model}</span>
-        {/* With more than one subscription connected, the same model can come from several: say which. */}
+        {/* With more than one subscription connected, the same model can come from several: say which (on a phone the
+            name gets the room; the title and the picker still say). */}
         {current && Object.values(connected).filter(Boolean).length > 1 && (
-          <span className="shrink-0 rounded bg-zinc-800 px-1 text-[10px] text-zinc-400">{MODEL_PROVIDERS[current.provider].short}</span>
+          <span className="hidden shrink-0 rounded bg-zinc-800 px-1 text-[10px] text-zinc-400 sm:inline">{MODEL_PROVIDERS[current.provider].short}</span>
         )}
         {hasVision(current) && <Eye className="size-3.5 shrink-0 text-emerald-400" />}
         <ChevronDown className="hidden size-3.5 shrink-0 text-zinc-500 sm:block" />

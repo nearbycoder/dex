@@ -9,7 +9,7 @@ import { QueuePanel } from "~/client/components/queue-panel"
 import { ModelPicker } from "~/client/components/model-picker"
 import { AgentAvatar, CharacterAvatar } from "~/client/components/agent-avatar"
 import { SessionMenu, useNaming } from "~/client/components/session-menu"
-import { SpaceGlyph, SpacePanel, SpaceSelectContext, useSpaceOf } from "~/client/components/space-panel"
+import { SpaceGlyph, SpaceIntro, SpacePanel, SpaceSelectContext, useSpaceOf } from "~/client/components/space-panel"
 import { VmPreview } from "~/client/components/vm-preview"
 import { Bone, ChatSkeleton, VmFilesSkeleton } from "~/client/components/skeleton"
 import { type OpenUIHost, OpenUIHostContext } from "~/client/lib/openui-host"
@@ -72,11 +72,7 @@ function Chat() {
             greeter: <CharacterAvatar character={character} size={24} />,
             greeting: character.greeting || undefined
           }
-        : coordinating && {
-            name: coordinating.name,
-            avatar: <SpaceGlyph size={24} />,
-            greeting: `Tell me what to work on${coordinating.goal ? "" : " in this space"}. I'll start a thread for each piece of work, run them in parallel, and report back here.`
-          },
+        : coordinating && { name: coordinating.name, avatar: <SpaceGlyph size={24} /> },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [character?.name, character?.avatar, character?.image, character?.color, character?.greeting, JSON.stringify(character?.look ?? null), coordinating?.name, coordinating?.goal]
   )
@@ -119,6 +115,8 @@ function Chat() {
     [stub, sessionId]
   )
   const pendingTexts = useMemo(() => pending.map((item) => item.text), [pending])
+  // A suggestion picked from a new space's intro, put in the message box to edit before sending.
+  const [draft, setDraft] = useState<{ text: string; key: number } | undefined>()
   const storeSecret = useCallback((field: string, value: string) => stub.storeChatSecret(sessionId, field, value), [stub, sessionId])
   // Generated UIs in this chat: their operations, and their saved filters and choices.
   const [uiStates, setUiStates] = useState<{ readonly sessionId: string; readonly states: Record<string, unknown> } | null>(null)
@@ -363,7 +361,17 @@ function Chat() {
         <OpenUIHostContext.Provider value={uiHost}>
           <ChatArtifactsContext.Provider value={artifacts}>
             <SpaceSelectContext.Provider value={coordinating ? selectThread : null}>
-              {transcript.loaded ? <MessageList key={sessionId} transcript={transcript} onSend={send} pending={pendingTexts} speaker={speaker} /> : <ChatSkeleton />}
+              {!transcript.loaded ? (
+                <ChatSkeleton />
+              ) : coordinating && transcript.entries.length === 0 && pendingTexts.length === 0 && !transcript.running ? (
+                <SpaceIntro
+                  space={coordinating}
+                  projectName={coordinating.projectId ? (state?.projects.find((candidate) => candidate.id === coordinating.projectId)?.name ?? null) : null}
+                  onPick={(text) => setDraft({ text, key: Date.now() })}
+                />
+              ) : (
+                <MessageList key={sessionId} transcript={transcript} onSend={send} pending={pendingTexts} speaker={speaker} />
+              )}
             </SpaceSelectContext.Provider>
           </ChatArtifactsContext.Provider>
         </OpenUIHostContext.Provider>
@@ -391,6 +399,7 @@ function Chat() {
           running={transcript.running}
           onSend={send}
           onStop={() => void stub.abort(sessionId)}
+          draft={draft}
           placeholder={
             transcript.running ? "Queue a follow-up…" : coordinating ? `Tell ${coordinating.name} what to work on…` : `Message ${character?.name ?? "Dex"}, or / for skills…`
           }

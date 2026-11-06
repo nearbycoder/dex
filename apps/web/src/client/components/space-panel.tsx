@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "@tanstack/react-router"
-import { AlertTriangle, ArrowLeft, ArrowUpRight, Check, ChevronDown, CircleDashed, Hand, LoaderCircle, Orbit, Send, Square, X } from "lucide-react"
+import { AlertTriangle, ArrowLeft, ArrowUpRight, Check, ChevronDown, CircleDashed, GitBranch, Hand, LoaderCircle, MessageSquareText, Orbit, Send, Sparkles, Square, X } from "lucide-react"
 import { createContext, type ReactNode, useContext, useEffect, useState } from "react"
 import { useDex } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
@@ -136,6 +136,68 @@ export function SpaceUpdates({ updates }: { updates: ReadonlyArray<ParsedSpaceUp
           </div>
         )
       })}
+    </div>
+  )
+}
+
+/**
+ * A space before its first message: what it's for, how it works, and a few ways to start that fill the message box
+ * (to edit before sending).
+ */
+export function SpaceIntro({ space, projectName, onPick }: { space: SpaceProfile; projectName: string | null; onPick: (text: string) => void }) {
+  const suggestions = [
+    space.goal ? `Make a plan for this and start on it: ${space.goal}` : "Help me plan the work for this space, then split it into threads.",
+    projectName
+      ? `Review ${projectName} for bugs and security issues, one area per thread, and keep a summary in your notes.`
+      : "Research the options side by side, one thread each, and compare what they find.",
+    "Check on this every morning and tell me what changed."
+  ]
+  const steps = [
+    { icon: <MessageSquareText className="size-4" />, title: "Ask", text: "Tell it what you want, as you would a colleague." },
+    { icon: <GitBranch className="size-4" />, title: "It splits the work", text: "Each piece runs as its own thread, in parallel." },
+    { icon: <Sparkles className="size-4" />, title: "Results come back", text: "Threads report here; it follows up and keeps notes." }
+  ]
+  return (
+    <div className="scrollbar-thin flex min-h-0 flex-1 flex-col overflow-y-auto">
+      <div className="mx-auto my-auto w-full max-w-xl animate-rise px-4 py-6 sm:px-5 sm:py-8">
+        <div className="flex flex-col items-center text-center">
+          <SpaceGlyph size={52} />
+          <h2 className="mt-4 text-xl font-semibold tracking-tight text-zinc-100">{space.name}</h2>
+          {space.goal && <p className="mt-1.5 max-w-md text-sm leading-relaxed text-zinc-400">{space.goal}</p>}
+          {projectName && (
+            <span className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-zinc-800 px-2.5 py-0.5 text-[11px] text-zinc-400">
+              <GitBranch className="size-3" /> Threads work in {projectName}
+            </span>
+          )}
+        </div>
+        {/* Three small tiles on a phone; with room, each says a little more. */}
+        <ol className="mt-6 grid grid-cols-3 gap-2 sm:mt-7">
+          {steps.map((step, index) => (
+            <li key={step.title} className="rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-2.5 sm:p-3">
+              <div className="flex items-center gap-2 text-violet-300">
+                {step.icon}
+                <span className="hidden text-[11px] font-medium tracking-wide text-zinc-500 uppercase sm:inline">{index + 1}</span>
+              </div>
+              <div className="mt-1.5 text-xs leading-snug font-medium text-zinc-100 sm:mt-2 sm:text-sm">{step.title}</div>
+              <div className="mt-0.5 hidden text-xs leading-relaxed text-zinc-500 sm:block">{step.text}</div>
+            </li>
+          ))}
+        </ol>
+        <div className="mt-6 space-y-1.5">
+          <div className="px-1 text-[11px] font-medium tracking-wide text-zinc-600 uppercase">Try</div>
+          {suggestions.map((suggestion) => (
+            <button
+              key={suggestion}
+              type="button"
+              onClick={() => onPick(suggestion)}
+              className="flex w-full items-center gap-2 rounded-lg border border-zinc-800 px-3 py-2 text-left text-sm text-zinc-300 transition-colors hover:border-zinc-700 hover:bg-zinc-900 hover:text-zinc-100"
+            >
+              <span className="min-w-0 flex-1">{suggestion}</span>
+              <ArrowUpRight className="size-3.5 shrink-0 text-zinc-600" />
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }
