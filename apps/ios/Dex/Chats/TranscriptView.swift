@@ -10,6 +10,8 @@ struct TranscriptView: View {
     let composer: ComposerModel
     /// Who answers, when it isn't Dex.
     var speaker: CharacterProfile? = nil
+    /// The space this is the coordinator's chat of: its threads' updates show as event rows.
+    var space: SpaceProfile? = nil
     /// Sends a message (a retry, or a UI card's).
     let send: (String) -> Void
     @State private var position = ScrollPosition(edge: .bottom)
@@ -45,6 +47,10 @@ struct TranscriptView: View {
                     if let speaker {
                         EmptyStateView(title: "Say hi to \(speaker.name)", symbol: "hand.wave", message: speaker.tagline.isEmpty ? nil : speaker.tagline)
                             .padding(.top, 60)
+                    } else if let space {
+                        EmptyStateView(title: space.name, symbol: AppTab.spaces.symbol, message: "Tell Dex what to work on. It starts threads for each piece of work and reports back here.")
+                            .padding(.top, 60)
+                            .accessibilityIdentifier("space.empty")
                     } else {
                         EmptyStateView(title: "New Chat", symbol: "sparkles", message: "Ask Dex anything. It can browse, run code on its own VM, and answer with live UI.")
                             .padding(.top, 60)
@@ -56,6 +62,9 @@ struct TranscriptView: View {
                         // A prompt Dex ran on a schedule (a sidekick's check-in, a reminder) isn't something you said.
                         if let prompt = UserText.scheduledPrompt(text) {
                             ScheduledNote(prompt: prompt)
+                        } else if space != nil, let updates = Spaces.parseUpdates(text) {
+                            // What the space's threads reported, not something you said.
+                            SpaceUpdateRows(updates: updates)
                         } else {
                             // The composer, not a closure: a new closure each time would draw every bubble again on every streamed chunk.
                             UserBubble(text: text, images: images, feed: feed, files: files, imageParts: imageParts, editInto: composer)

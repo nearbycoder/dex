@@ -253,7 +253,8 @@ struct NotificationsPage: View {
 
     @ViewBuilder
     private func mutedSection(_ state: DexState) -> some View {
-        let muted = state.sessions.filter(\.muted)
+        // Spaces' threads are always muted: their space's chat reports on them.
+        let muted = state.sessions.filter { $0.muted && !state.isThread($0) }
         if !muted.isEmpty {
             Section {
                 ForEach(muted) { session in
@@ -261,7 +262,7 @@ struct NotificationsPage: View {
                         Button {
                             router.openChat(session.id)
                         } label: {
-                            Label(state.character(session.characterId)?.name ?? session.title, systemImage: "bell.slash").lineLimit(1)
+                            Label(chatName(session, state: state), systemImage: "bell.slash").lineLimit(1)
                         }
                         .buttonStyle(.plain)
                         Spacer()

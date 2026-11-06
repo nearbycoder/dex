@@ -2,7 +2,7 @@ import DexCore
 import SwiftUI
 
 /// One reply: its work folded into an activity row, then what it shows you (media it shared, confirmations it asked
-/// for, the answer, and UI cards), its errors, and (once done) copy and share.
+/// for, threads it started, the answer, and UI cards), its errors, and (once done) copy and share.
 struct ReplyView: View {
     @Environment(Router.self) private var router
     @Environment(LinkOpener.self) private var links
@@ -43,6 +43,10 @@ struct ReplyView: View {
             }
             ForEach(layout.confirmations(results: results), id: \.id) { confirmation in
                 ConfirmCard(id: confirmation.id, summary: confirmation.summary)
+            }
+            // Threads a space's chat started: live cards, kept in view like confirmations.
+            ForEach(layout.startedThreads(results: results), id: \.id) { thread in
+                ThreadCard(id: thread.id, title: thread.title)
             }
             ForEach(layout.shown) { step in
                 switch step.block {

@@ -77,9 +77,9 @@ struct MainView: View {
         }
     }
 
-    /// Chats with something new: working on it, or a reply you haven't seen.
+    /// Chats with something new: working on it, or a reply you haven't seen. A space counts once, by its coordinator.
     private var inboxBadge: Int {
-        client.state?.sessions.filter { $0.busy || $0.unread }.count ?? 0
+        client.state?.conversationsOutsideThreads.filter { $0.busy || $0.unread }.count ?? 0
     }
 }
 

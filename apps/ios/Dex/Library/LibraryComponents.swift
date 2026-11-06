@@ -5,7 +5,7 @@ import SwiftUI
 
 extension Router {
     /// Every Library stack (the compact tab's and each sidebar page's).
-    private var libraryPaths: [ReferenceWritableKeyPath<Router, [LibraryRoute]>] { [\.libraryPath, \.agentsPath, \.charactersPath, \.projectsPath, \.skillsPath, \.mcpPath] }
+    private var libraryPaths: [ReferenceWritableKeyPath<Router, [LibraryRoute]>] { [\.libraryPath, \.agentsPath, \.charactersPath, \.spacesPath, \.projectsPath, \.skillsPath, \.mcpPath] }
 
     /// Swaps a route for another wherever it's open (a new item that was just created becomes that item).
     func replaceLibrary(_ old: LibraryRoute, with new: LibraryRoute) {
@@ -20,6 +20,7 @@ extension Router {
         return switch page {
         case .agents: ("New Agent", .newAgent)
         case .characters: ("New Sidekick", .newCharacter)
+        case .spaces: ("New Space", .newSpace)
         case .projects: ("New Project", .newProject)
         case .skills: ("New Skill", .newSkill)
         case .mcp: ("Add MCP Server", .newMcpServer)

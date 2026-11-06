@@ -201,6 +201,8 @@ final class ChatNotifier {
     }
 
     private func notify(_ session: SessionMeta) async {
+        // A space's threads report to its chat, which notifies instead.
+        if client.state?.isThread(session) == true { return }
         let character = client.state?.character(session.characterId)
         var reply: (text: String, error: String?)?
         var asked: String?
@@ -229,7 +231,8 @@ final class ChatNotifier {
             return
         }
         guard preferences.allowsLocal(kind: failed ? "error" : asked.flatMap(UserText.scheduledPrompt) != nil ? "scheduled" : "reply") else { return }
-        let content = ChatAlerts.content(title: session.title, reply: reply?.text, error: reply?.error)
+        // A space's chat is titled with the space's name.
+        let content = ChatAlerts.content(title: client.state?.coordinated(by: session.id)?.name ?? session.title, reply: reply?.text, error: reply?.error)
         Notifications.shared.post(title: content.title, body: content.body, sessionId: session.id)
     }
 

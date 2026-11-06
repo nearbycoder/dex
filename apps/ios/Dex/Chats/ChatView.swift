@@ -3,7 +3,8 @@ import SwiftUI
 
 /// One chat: its header (agent and project, title, machine, mute, settle, menu), its transcript (pinned to the latest
 /// message), the queue, and the composer. A character's conversation has their face and name in the header instead,
-/// their greeting first, and no inbox triage (it isn't in the inbox).
+/// their greeting first, and no inbox triage (it isn't in the inbox). A space's chat has the space's name and goal, its
+/// threads (a button, and cards in the replies), and the updates they send; a thread's chat shows its space.
 struct ChatView: View {
     @Environment(DexClient.self) private var client
     @Environment(Router.self) private var router
@@ -59,30 +60,37 @@ struct ChatView: View {
     private func content(_ feed: ChatFeed) -> some View {
         let session = client.state?.session(sessionId)
         let character = client.state?.character(session?.characterId)
+        let space = client.state?.coordinated(by: sessionId)
+        let threadSpace = space == nil ? client.state?.space(session?.spaceId) : nil
         if client.state != nil, session == nil {
             EmptyStateView(title: "Chat Not Found", symbol: "bubble.left.and.exclamationmark.bubble.right", message: "This chat no longer exists.")
         } else {
-            TranscriptView(feed: feed, composer: composer, speaker: character, send: { text in sendNow(text, feed: feed) })
+            TranscriptView(feed: feed, composer: composer, speaker: character, space: space, send: { text in sendNow(text, feed: feed) })
                 .environment(\.chatFeed, feed)
                 .environment(\.markdownMedia, ChatMediaView.resolver(server: client.server))
                 // iPhone (no list beside the chat): the other chats that are working or have a reply, a tap away. A bar,
                 // so the transcript fades under it as under the navigation bar.
                 .safeAreaBar(edge: .top, spacing: 0) {
-                    if sizeClass == .compact {
-                        ActiveChatsStrip(current: sessionId)
-                            .animation(.smooth, value: Inbox.active(client.state?.sessions ?? [], waiting: client.state?.waitingChats ?? [], excluding: sessionId).map(\.id))
+                    VStack(spacing: 0) {
+                        if sizeClass == .compact {
+                            ActiveChatsStrip(current: sessionId)
+                                .animation(.smooth, value: Inbox.active(client.state?.conversationsOutsideThreads ?? [], waiting: client.state?.waitingChats ?? [], excluding: sessionId).map(\.id))
+                        }
+                        // A thread: which space it's in, and back to it.
+                        if let threadSpace { ThreadBanner(space: threadSpace) }
                     }
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    ChatComposerArea(feed: feed, session: session, character: character, composer: composer) { text, attachments in
+                    ChatComposerArea(feed: feed, session: session, character: character, space: space, composer: composer) { text, attachments in
                         try await send(text, attachments: attachments, feed: feed)
                     }
                 }
-                .navigationTitle(character?.name ?? session?.title ?? "")
-                .navigationSubtitle(character == nil ? subtitle(session) : "")
+                .navigationTitle(character?.name ?? space?.name ?? session?.title ?? "")
+                .navigationSubtitle(character != nil ? "" : space.map(Self.goalLine) ?? subtitle(session))
                 .navigationBarTitleDisplayMode(.inline)
-                // A character's conversation is titled with their name: nothing to rename (and no menu's chevron).
-                .toolbarTitleMenu(if: character == nil) {
+                // A character's conversation is titled with their name, a space's chat with the space's (Edit Space
+                // renames it): nothing to rename here (and no menu's chevron).
+                .toolbarTitleMenu(if: character == nil && space == nil) {
                     if let session {
                         ChatTitleMenu(session: session) {
                             draft = session.title
@@ -90,7 +98,7 @@ struct ChatView: View {
                         }
                     }
                 }
-                .toolbar { ChatToolbar(feed: feed, session: session, character: character) }
+                .toolbar { ChatToolbar(feed: feed, session: session, character: character, space: space) }
                 .alert("Rename Chat", isPresented: $renaming) {
                     TextField("Title", text: $draft).accessibilityIdentifier("chat.rename.field")
                     Button("Save") { client.perform { try await feed.rename(draft) } }
@@ -110,6 +118,11 @@ struct ChatView: View {
                         .tint(.dexAccent)
                 }
         }
+    }
+
+    /// Under a space's name: the first line of its goal.
+    static func goalLine(_ space: SpaceProfile) -> String {
+        space.goal.split(separator: "\n").first.map { String($0).trimmingCharacters(in: .whitespaces) } ?? ""
     }
 
     /// Under the title: "Writing a new title…" while one is being written, else the chat's project and agent.
@@ -139,6 +152,7 @@ struct ChatToolbar: ToolbarContent {
     let feed: ChatFeed
     let session: SessionMeta?
     var character: CharacterProfile? = nil
+    var space: SpaceProfile? = nil
 
     var body: some ToolbarContent {
         if let character, let session {
@@ -149,6 +163,11 @@ struct ChatToolbar: ToolbarContent {
             // Whether their messages notify you: every one ↔ none (their page has "when they reach out" too).
             ToolbarItem(placement: .topBarTrailing) {
                 SidekickBell(character: character)
+            }
+        }
+        if let space {
+            ToolbarItem(placement: .topBarTrailing) {
+                SpaceThreadsButton(space: space)
             }
         }
         if sizeClass != .compact, let session, session.projectId != nil || session.agentId != nil {
@@ -200,12 +219,12 @@ struct ChatToolbar: ToolbarContent {
                         .accessibilityIdentifier("chat.mute")
                     }
                 }
-                // A character's conversation isn't in the inbox: Start over instead of Settle.
+                // A character's conversation isn't in the inbox: Start over instead of Settle. Nor is a space's chat.
                 if let character {
                     ToolbarItem(placement: .topBarTrailing) {
                         StartOverButton(character: character)
                     }
-                } else {
+                } else if space == nil {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
                             client.perform { try await feed.settle(session.settledAt == nil) }
@@ -234,6 +253,8 @@ struct ChatToolbar: ToolbarContent {
             ToolbarItem(placement: .topBarTrailing) {
                 if let character {
                     CharacterChatMenu(feed: feed, session: session, character: character, compact: sizeClass == .compact)
+                } else if let space {
+                    SpaceChatMenu(feed: feed, session: session, space: space, compact: sizeClass == .compact)
                 } else {
                     ChatMenu(feed: feed, session: session, includeMute: sizeClass == .compact || !showsMute, compact: sizeClass == .compact)
                 }
@@ -433,6 +454,7 @@ struct ChatComposerArea: View {
     let feed: ChatFeed
     let session: SessionMeta?
     var character: CharacterProfile? = nil
+    var space: SpaceProfile? = nil
     let composer: ComposerModel
     let send: (String, [ChatAttachment]) async throws -> Void
 
@@ -465,7 +487,7 @@ struct ChatComposerArea: View {
             QueuePanel(feed: feed)
             Composer(
                 model: composer,
-                placeholder: feed.transcript.running ? "Queue a follow-up…" : character.map { "Message \($0.name)…" } ?? "Message Dex, or / for skills…",
+                placeholder: feed.transcript.running ? "Queue a follow-up…" : character.map { "Message \($0.name)…" } ?? (space != nil ? "Tell Dex what to work on…" : "Message Dex, or / for skills…"),
                 running: feed.transcript.running,
                 disabled: !client.isConnected,
                 onSend: send,

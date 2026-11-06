@@ -43,6 +43,7 @@ public final class MockAgent {
         installChatHandlers()
         installLibraryHandlers()
         installCharacterHandlers()
+        installSpaceHandlers()
         installMachineHandlers()
         installSettingsHandlers()
         installOpenUIHandlers()

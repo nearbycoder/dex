@@ -49,6 +49,10 @@ public enum ToolDisplay: Sendable, Equatable {
         case "vm_computer": return "cursorarrow.click.2"
         case "share_media": return "photo.on.rectangle"
         case "app_operations", "app_call": return "slider.horizontal.3"
+        case "space_start_thread": return "plus.bubble"
+        case "space_message_thread": return "arrowshape.turn.up.right"
+        case "space_list_threads", "space_read_thread": return "list.bullet.rectangle"
+        case "space_stop_thread": return "stop.circle"
         case "render_ui", "load_ui_guide": return "rectangle.3.group"
         default: return name.contains("__") ? "powerplug" : "wrench.and.screwdriver"
         }
@@ -124,6 +128,14 @@ public extension ReplyLayout {
             guard call.name == "app_call", let confirmation = results[call.id]?.details?["confirmation"],
                   let id = confirmation["id"]?.string else { return nil }
             return (id, confirmation["summary"]?.string ?? "")
+        }
+    }
+
+    /// Threads a space's coordinator started in this reply (space_start_thread), each shown as a card.
+    func startedThreads(results: [String: ToolResultMessage]) -> [(id: String, title: String)] {
+        toolCalls.compactMap { call in
+            guard call.name == Spaces.startThreadTool, let thread = results[call.id]?.details?["thread"], let id = thread["id"]?.string else { return nil }
+            return (id, thread["title"]?.string ?? "")
         }
     }
 
