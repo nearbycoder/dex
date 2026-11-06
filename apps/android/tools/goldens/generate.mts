@@ -11,8 +11,7 @@ import { githubFullName, normalizeRepoUrl, repoDirName, repoLabel } from "../../
 import { formatInstalls, invokedSkill, skillSlug } from "../../../web/src/shared/skills.ts"
 import { splitUiNotes } from "../../../web/src/shared/ui-notes.ts"
 import { attachmentSummary, attachmentTag, splitAttachments } from "../../../web/src/shared/attachments.ts"
-import { BODIES, cleanLook, EXTRAS, EYES, LOOK_PRESETS, MOUTHS, sidekickSvg, SKINS } from "../../../web/src/shared/sidekick-look.ts"
-import { AGENT_COLORS } from "../../../web/src/shared/agents.ts"
+import { cleanLook, LOOK_PRESETS, SKINS } from "../../../web/src/shared/sidekick-look.ts"
 // The jsdiff that @pierre/diffs (the web's Files panel) diffs with.
 import { structuredPatch } from "../../../../node_modules/@pierre/diffs/node_modules/diff/libesm/index.js"
 
@@ -327,22 +326,16 @@ write("vmfiles.json", {
 
 // ── Sidekick looks ───────────────────────────────────────────────────────────
 
-const background = (color: string) => AGENT_COLORS[color as keyof typeof AGENT_COLORS][0]
-const lookVariants = [
-  ...BODIES.map((body) => ({ ...LOOK_PRESETS[0]!.look, body })),
-  ...EYES.map((eyes) => ({ ...LOOK_PRESETS[1]!.look, eyes })),
-  ...MOUTHS.map((mouth) => ({ ...LOOK_PRESETS[2]!.look, mouth })),
-  ...EXTRAS.flatMap((extra) => BODIES.map((body) => ({ ...LOOK_PRESETS[4]!.look, body, extra }))),
-  ...Object.keys(SKINS).map((skin) => ({ ...LOOK_PRESETS[5]!.look, skin, blush: !LOOK_PRESETS[5]!.look.blush }))
-]
 write("sidekicks.json", {
-  presets: LOOK_PRESETS.map((preset) => ({ key: preset.key, background: background(preset.color), svg: sidekickSvg(preset.look, background(preset.color)) })),
-  looks: lookVariants.map((look, i) => {
-    const color = Object.keys(AGENT_COLORS)[i % 8]!
-    return { look, background: background(color), svg: sidekickSvg(look, background(color)) }
-  }),
-  clean: [{}, { body: "cube", skin: "teal", eyes: "visor", mouth: "o", extra: "crown", blush: true }, { body: "dragon", skin: "plaid", eyes: "laser", mouth: "", extra: "cape", blush: false }]
-    .map((input) => ({ input, look: cleanLook(input) }))
+  skins: SKINS,
+  presets: LOOK_PRESETS,
+  clean: [
+    {},
+    { body: "cube", skin: "teal", eyes: "visor", mouth: "o", extra: "crown", blush: true, finish: 605 },
+    { body: "bot", skin: "slate", eyes: "round", mouth: "smile", extra: "none", blush: false, finish: null },
+    { body: "dragon", skin: "plaid", eyes: "laser", mouth: "", extra: "cape", blush: false, finish: 1800 },
+    ...[101, 1717, 1730, 1731, 100, 131, 0, 99, 2001].map((finish) => ({ skin: "mint", finish }))
+  ].map((input) => ({ input, look: cleanLook(input) }))
 })
 
 console.log("Goldens written to", OUT.pathname)

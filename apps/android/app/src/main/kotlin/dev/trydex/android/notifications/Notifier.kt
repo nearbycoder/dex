@@ -280,10 +280,16 @@ class Notifier(private val context: Context, private val graph: AppGraph, privat
             NotificationManagerCompat.from(context).notify(alert.tag, 0, build(context, alert, character, face))
         }
 
-        /** A sidekick's face for a notification: their look (drawn here), their picture, or their initial. */
+        /**
+         * A sidekick's face for a notification: their look whole (a plain color drawn here, a finish from its PNG), their
+         * photo round, or their initial.
+         */
         fun faceOf(character: CharacterProfile): Bitmap {
-            val look = character.look?.let { runCatching { SidekickArt.bitmap(SidekickLooks.clean(it), character.color, FACE_PX) }.getOrNull() }
-            return Faces.round(look ?: Faces.decode(Faces.dataUrlBytes(character.image)), character.color, character.face, FACE_PX)
+            character.look?.let(SidekickLooks::clean)?.let { look ->
+                val picture = character.image?.takeIf { look.finish != null }?.let { SidekickArt.picture(it) }
+                runCatching { Faces.whole(picture ?: SidekickArt.bitmap(look, FACE_PX), FACE_PX) }.getOrNull()?.let { return it }
+            }
+            return Faces.round(Faces.decode(Faces.dataUrlBytes(character.image)), character.color, character.face, FACE_PX)
         }
 
         const val FACE_PX = 192

@@ -122,26 +122,36 @@ class CharactersTest {
         assertThat(renamed).doesNotContain("\"look\"")
         rule.awaitText("Saved")
 
+        // A ready-made look goes with its bundled PNG, made small enough for the agent, and its finish.
         rule.onNodeWithTag("character-look-byte").performScrollTo().performClick()
         rule.onNodeWithTag("character-save").performClick()
         rule.waitUntil(10_000) { harness.fake.calls.count { it.first == "saveCharacter" } == 2 }
-        val picked = harness.fake.calls.last { it.first == "saveCharacter" }.second.toString()
-        assertThat(picked).contains("\"image\":\"data:image/png;base64,")
-        assertThat(picked).contains("\"color\":\"zinc\"")
-        assertThat(picked).contains("\"look\":{")
+        val picked = harness.fake.calls.last { it.first == "saveCharacter" }.second[0].jsonObject
+        assertThat(picked["image"]!!.jsonPrimitive.content).startsWith("data:image/png;base64,")
+        assertThat(picked["image"]!!.jsonPrimitive.content.length).isLessThan(63_000)
+        assertThat(picked["color"]!!.jsonPrimitive.content).isEqualTo("zinc")
+        assertThat(picked["look"]!!.jsonObject["finish"].toString()).isEqualTo("1702")
         rule.awaitText("Saved")
 
-        // A part of their own: the look goes with a PNG drawn here, small enough for the agent.
-        rule.onNodeWithTag("look-extra-crown").performScrollTo().performClick()
-        rule.onNodeWithTag("look-cheeks-rosy").performScrollTo().performClick()
+        // A plain color: the finish goes, explicitly, and the PNG is drawn here. The accent alone sends no picture.
+        rule.onNodeWithTag("look-color-coral").performScrollTo().performClick()
         rule.onNodeWithTag("character-save").performClick()
         rule.waitUntil(10_000) { harness.fake.calls.count { it.first == "saveCharacter" } == 3 }
-        val mixed = harness.fake.calls.last { it.first == "saveCharacter" }.second[0].jsonObject
-        assertThat(mixed["look"].toString()).isEqualTo("""{"body":"bot","skin":"sky","eyes":"visor","mouth":"flat","extra":"crown","blush":true}""")
-        val image = mixed["image"]!!.jsonPrimitive.content
+        val colored = harness.fake.calls.last { it.first == "saveCharacter" }.second[0].jsonObject
+        assertThat(colored["look"].toString()).isEqualTo("""{"body":"bot","skin":"coral","eyes":"visor","mouth":"flat","extra":"headphones","blush":false,"finish":null}""")
+        val image = colored["image"]!!.jsonPrimitive.content
         assertThat(image).startsWith("data:image/png;base64,")
         assertThat(image.length).isLessThan(63_000)
         assertThat(image).isNotEqualTo(Characters.preset("byte")!!.dataUrl)
+        rule.awaitText("Saved")
+
+        rule.onNodeWithTag("look-accent-rose").performScrollTo().performClick()
+        rule.onNodeWithTag("character-save").performClick()
+        rule.waitUntil(10_000) { harness.fake.calls.count { it.first == "saveCharacter" } == 4 }
+        val accent = harness.fake.calls.last { it.first == "saveCharacter" }.second.toString()
+        assertThat(accent).contains("\"color\":\"rose\"")
+        assertThat(accent).doesNotContain("\"image\"")
+        assertThat(accent).doesNotContain("\"look\"")
     }
 
     private fun ComposeContentTestRule.count(matcher: androidx.compose.ui.test.SemanticsMatcher) =

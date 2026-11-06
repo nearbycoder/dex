@@ -1,42 +1,35 @@
 package dev.trydex.core.model
 
-import kotlin.random.Random
-
 /**
- * A sidekick's face, from its parts (apps/web/src/shared/sidekick-look.ts): the parts, their labels, and the picture as
- * the same SVG document the web draws, character for character, so the app can draw a look itself.
+ * A sidekick's face (apps/web/src/shared/sidekick-look.ts): a BoopFace (github.com/CX-ArtLab/BoopFace, MIT), the robot
+ * head with two big eyes and an antenna dot, in a color or one of BoopFace's finishes. The app draws the plain-color
+ * face itself, from BoopFace's own geometry, framed as the web frames the PNG it saves; only the web draws finishes.
  */
 object SidekickLooks {
+    // The parts from before BoopFace: kept so looks stay valid for older apps, which still draw them.
     val BODIES = listOf("blob", "bean", "cube", "ghost", "cat", "bot")
     val EYES = listOf("dot", "round", "sparkle", "happy", "sleepy", "wink", "visor")
     val MOUTHS = listOf("smile", "grin", "tongue", "purr", "o", "flat")
     val EXTRAS = listOf("none", "headphones", "glasses", "beanie", "beret", "crown", "sprout", "bow", "wizard", "headband")
 
-    /** Body colors, chosen to sit well on every background color. */
+    /** Face colors, deep enough for BoopFace's white eyes. */
     val SKINS = linkedMapOf(
-        "mint" to "#6ee7b7",
-        "sky" to "#7dd3fc",
-        "lilac" to "#c4b5fd",
-        "pink" to "#f9a8d4",
-        "peach" to "#fdba74",
-        "lemon" to "#fde68a",
-        "coral" to "#fca5a5",
-        "teal" to "#5eead4",
-        "cloud" to "#e4e4e7",
-        "slate" to "#94a3b8",
+        "mint" to "#10b981",
+        "sky" to "#0ea5e9",
+        "lilac" to "#8b5cf6",
+        "pink" to "#ec4899",
+        "peach" to "#f97316",
+        "lemon" to "#eab308",
+        "coral" to "#ef4444",
+        "teal" to "#14b8a6",
+        "cloud" to "#71717a",
+        "slate" to "#3f3f46",
     )
 
-    val LABELS = mapOf(
-        "blob" to "Blob", "bean" to "Bean", "cube" to "Cube", "ghost" to "Ghost", "cat" to "Cat", "bot" to "Bot",
-        "dot" to "Dots", "round" to "Round", "sparkle" to "Sparkle", "happy" to "Happy", "sleepy" to "Calm", "wink" to "Wink", "visor" to "Visor",
-        "smile" to "Smile", "grin" to "Grin", "tongue" to "Silly", "purr" to "Purr", "o" to "Ooh", "flat" to "Deadpan",
-        "none" to "None", "headphones" to "Headphones", "glasses" to "Glasses", "beanie" to "Beanie", "beret" to "Beret", "crown" to "Crown",
-        "sprout" to "Sprout", "bow" to "Bow", "wizard" to "Wizard hat", "headband" to "Headband",
-    )
-
-    fun label(part: String): String = LABELS[part] ?: part.replaceFirstChar { it.uppercase() }
-
-    /** A look with every part one it knows: unknown ones (from a newer agent) fall back to the first, as `cleanLook`. */
+    /**
+     * A look with every part one it knows, as `cleanLook`: unknown parts (from a newer agent) fall back to the first,
+     * and a finish not shaped like BoopFace's (series 1–17, then 01–30) is the plain color.
+     */
     fun clean(look: SidekickLook): SidekickLook = SidekickLook(
         body = look.body.takeIf { it in BODIES } ?: BODIES[0],
         skin = look.skin.takeIf { it in SKINS } ?: SKINS.keys.first(),
@@ -44,133 +37,62 @@ object SidekickLooks {
         mouth = look.mouth.takeIf { it in MOUTHS } ?: MOUTHS[0],
         extra = look.extra.takeIf { it in EXTRAS } ?: EXTRAS[0],
         blush = look.blush,
+        finish = look.finish?.takeIf { it in 101..1799 && it % 100 in 1..30 },
     )
 
-    /** Any look, weighted as the web's `randomLook` (bots often get a visor, most get an extra, many are rosy). */
-    fun random(random: Random = Random.Default): SidekickLook {
-        fun <T> any(options: List<T>) = options[random.nextInt(options.size)]
-        val body = any(BODIES)
-        return SidekickLook(
-            body = body,
-            skin = any(SKINS.keys.toList()),
-            eyes = if (body == "bot" && random.nextDouble() < 0.5) "visor" else any(EYES.filter { it != "visor" }),
-            mouth = any(MOUTHS),
-            extra = if (random.nextDouble() < 0.25) "none" else any(EXTRAS.filter { it != "none" }),
-            blush = random.nextDouble() < 0.6,
-        )
-    }
+    /** The face's color as `#rrggbb` (slate for one it doesn't know). */
+    fun color(look: SidekickLook): String = SKINS[look.skin] ?: SKINS.getValue("slate")
 
-    // ── Drawing ─────────────────────────────────────────────────────────────────
-    // On a 100×100 canvas. Every body puts its face at the same place (eyes on y≈52, mouth on y≈66), and says where
-    // its head starts so hats sit on it.
+    // ── BoopFace ────────────────────────────────────────────────────────────────
+    // In BoopFace's 240-unit box (_renderShell in boopface-core.js, at rest).
 
-    private const val INK = "#1e1b2e"
+    /** The frame of a look's picture as x, y, width, height: the web's `viewBox="0 -8 240 248"`, with room for the antenna. */
+    val VIEW_BOX = floatArrayOf(0f, -8f, 240f, 248f)
 
-    private class Shape(val top: Int, val path: String, val extra: String? = null)
+    /** BoopFace's `headShape` (straight lines only), drawn moved by [HEAD_OFFSET] and scaled by [HEAD_SCALE]. */
+    const val HEAD_PATH =
+        "M 120.00 20.00 L 132.80 20.05 L 139.87 20.20 L 145.68 20.44 L 150.79 20.78 L 155.43 21.22 L 159.71 21.76 " +
+        "L 163.69 22.40 L 167.44 23.14 L 170.99 23.97 L 174.34 24.90 L 177.53 25.93 L 180.57 27.07 L 183.46 28.30 " +
+        "L 186.22 29.63 L 188.85 31.06 L 191.36 32.59 L 193.75 34.22 L 196.03 35.96 L 198.19 37.80 L 200.25 39.75 " +
+        "L 202.20 41.81 L 204.04 43.97 L 205.78 46.25 L 207.41 48.64 L 208.94 51.15 L 210.37 53.78 L 211.70 56.54 " +
+        "L 212.93 59.43 L 214.07 62.47 L 215.10 65.66 L 216.03 69.01 L 216.86 72.56 L 217.60 76.31 L 218.24 80.29 " +
+        "L 218.78 84.57 L 219.22 89.21 L 219.56 94.32 L 219.80 100.13 L 219.95 107.20 L 220.00 120.00 " +
+        "L 219.95 132.80 L 219.80 139.87 L 219.56 145.68 L 219.22 150.79 L 218.78 155.43 L 218.24 159.71 " +
+        "L 217.60 163.69 L 216.86 167.44 L 216.03 170.99 L 215.10 174.34 L 214.07 177.53 L 212.93 180.57 " +
+        "L 211.70 183.46 L 210.37 186.22 L 208.94 188.85 L 207.41 191.36 L 205.78 193.75 L 204.04 196.03 " +
+        "L 202.20 198.19 L 200.25 200.25 L 198.19 202.20 L 196.03 204.04 L 193.75 205.78 L 191.36 207.41 " +
+        "L 188.85 208.94 L 186.22 210.37 L 183.46 211.70 L 180.57 212.93 L 177.53 214.07 L 174.34 215.10 " +
+        "L 170.99 216.03 L 167.44 216.86 L 163.69 217.60 L 159.71 218.24 L 155.43 218.78 L 150.79 219.22 " +
+        "L 145.68 219.56 L 139.87 219.80 L 132.80 219.95 L 120.00 220.00 L 107.20 219.95 L 100.13 219.80 " +
+        "L 94.32 219.56 L 89.21 219.22 L 84.57 218.78 L 80.29 218.24 L 76.31 217.60 L 72.56 216.86 L 69.01 216.03 " +
+        "L 65.66 215.10 L 62.47 214.07 L 59.43 212.93 L 56.54 211.70 L 53.78 210.37 L 51.15 208.94 L 48.64 207.41 " +
+        "L 46.25 205.78 L 43.97 204.04 L 41.81 202.20 L 39.75 200.25 L 37.80 198.19 L 35.96 196.03 L 34.22 193.75 " +
+        "L 32.59 191.36 L 31.06 188.85 L 29.63 186.22 L 28.30 183.46 L 27.07 180.57 L 25.93 177.53 L 24.90 174.34 " +
+        "L 23.97 170.99 L 23.14 167.44 L 22.40 163.69 L 21.76 159.71 L 21.22 155.43 L 20.78 150.79 L 20.44 145.68 " +
+        "L 20.20 139.87 L 20.05 132.80 L 20.00 120.00 L 20.05 107.20 L 20.20 100.13 L 20.44 94.32 L 20.78 89.21 " +
+        "L 21.22 84.57 L 21.76 80.29 L 22.40 76.31 L 23.14 72.56 L 23.97 69.01 L 24.90 65.66 L 25.93 62.47 " +
+        "L 27.07 59.43 L 28.30 56.54 L 29.63 53.78 L 31.06 51.15 L 32.59 48.64 L 34.22 46.25 L 35.96 43.97 " +
+        "L 37.80 41.81 L 39.75 39.75 L 41.81 37.80 L 43.97 35.96 L 46.25 34.22 L 48.64 32.59 L 51.15 31.06 " +
+        "L 53.78 29.63 L 56.54 28.30 L 59.43 27.07 L 62.47 25.93 L 65.66 24.90 L 69.01 23.97 L 72.56 23.14 " +
+        "L 76.31 22.40 L 80.29 21.76 L 84.57 21.22 L 89.21 20.78 L 94.32 20.44 L 100.13 20.20 L 107.20 20.05 Z"
 
-    private val SHAPES = mapOf(
-        "blob" to Shape(24, "M50 24C71 24 80 37 80 56C80 75 68 86 50 86C32 86 20 75 20 56C20 37 29 24 50 24Z"),
-        "bean" to Shape(20, "M50 20C67 20 76 32 76 50V64C76 79 66 88 50 88C34 88 24 79 24 64V50C24 32 33 20 50 20Z"),
-        "cube" to Shape(27, "M36 27H64C73 27 79 33 79 42V70C79 79 73 85 64 85H36C27 85 21 79 21 70V42C21 33 27 27 36 27Z"),
-        "ghost" to Shape(
-            22,
-            "M23 54C23 34 35 22 50 22C65 22 77 34 77 54V84C77 87 74 88 72 86L67 81L61 86C59 88 57 88 55 86L50 81L45 86C43 88 41 88 39 86L33 81L28 86C26 88 23 87 23 84Z",
-        ),
-        "cat" to Shape(
-            28,
-            "M50 28C70 28 80 41 80 58C80 76 67 86 50 86C33 86 20 76 20 58C20 41 30 28 50 28Z",
-            "M24 44L27 17C27.4 14.6 30 13.8 31.7 15.5L45 30ZM76 44L73 17C72.6 14.6 70 13.8 68.3 15.5L55 30Z",
-        ),
-        "bot" to Shape(31, "M34 31H66C74 31 79 36 79 44V71C79 79 74 84 66 84H34C26 84 21 79 21 71V44C21 36 26 31 34 31Z"),
-    )
+    const val HEAD_OFFSET = 7.2f
+    const val HEAD_SCALE = 0.94f
 
-    /** A number as JavaScript writes it in a template (`40`, not `40.0`; `41.47`). */
-    private fun js(value: Double): String =
-        if (value == Math.rint(value) && kotlin.math.abs(value) < 1e15) value.toLong().toString() else value.toString()
+    /** The eyes: white ellipses at these centers, clipped to the head. */
+    val EYE_CENTERS = listOf(86f to 126f, 154f to 126f)
+    const val EYE_RX = 27f
+    const val EYE_RY = 29f
 
-    private fun eyes(eyes: String, skin: String): String {
-        fun dot(x: Double, r: Double = 4.2) =
-            """<circle cx="${js(x)}" cy="52" r="${js(r)}" fill="$INK"/><circle cx="${js(x + r * 0.35)}" cy="${js(52 - r * 0.35)}" r="${js(r * 0.33)}" fill="#fff"/>"""
-        fun arc(x: Int, up: Boolean) =
-            """<path d="M${x - 5} ${if (up) 54 else 51}Q$x ${if (up) 47 else 56} ${x + 5} ${if (up) 54 else 51}" fill="none" stroke="$INK" stroke-width="3" stroke-linecap="round"/>"""
-        return when (eyes) {
-            "round" -> listOf(40, 60).joinToString("") { x ->
-                """<ellipse cx="$x" cy="52" rx="6.3" ry="6.8" fill="#fff"/><circle cx="${js(x + 0.8)}" cy="53" r="3.6" fill="$INK"/><circle cx="${x + 2}" cy="51.6" r="1.2" fill="#fff"/>"""
-            }
-            "sparkle" -> listOf(40, 60).joinToString("") { x ->
-                """<ellipse cx="$x" cy="52" rx="5" ry="6" fill="$INK"/><circle cx="${js(x + 1.6)}" cy="49.6" r="1.9" fill="#fff"/><circle cx="${js(x - 1.6)}" cy="55" r="0.9" fill="#fff"/>"""
-            }
-            "happy" -> arc(40, true) + arc(60, true)
-            "sleepy" -> arc(40, false) + arc(60, false)
-            "wink" -> dot(40.0) + arc(60, true)
-            "visor" -> """<rect x="29" y="44.5" width="42" height="15" rx="7.5" fill="$INK"/><rect x="35" y="49.5" width="8" height="5" rx="2.5" fill="$skin"/><rect x="57" y="49.5" width="8" height="5" rx="2.5" fill="$skin"/>"""
-            else -> dot(40.0) + dot(60.0)
+    /** The antenna dot above the head, in the head's color. */
+    const val ANTENNA_X = 120f
+    const val ANTENNA_Y = 12f
+    const val ANTENNA_R = 15f
+
+    /** [HEAD_PATH]'s corners, as drawn (offset and scaled). */
+    val HEAD: List<Pair<Float, Float>> by lazy {
+        HEAD_PATH.replace(Regex("[MLZ]"), " ").trim().split(Regex("\\s+")).map(String::toFloat).chunked(2) { (x, y) ->
+            HEAD_OFFSET + x * HEAD_SCALE to HEAD_OFFSET + y * HEAD_SCALE
         }
-    }
-
-    private fun mouth(mouth: String): String {
-        fun line(d: String) = """<path d="$d" fill="none" stroke="$INK" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>"""
-        return when (mouth) {
-            "grin" -> """<path d="M42.5 63.5H57.5Q57 72 50 72Q43 72 42.5 63.5Z" fill="$INK"/><path d="M45.5 69.6Q50 66.5 54.5 69.6Q52.6 71.8 50 71.8Q47.4 71.8 45.5 69.6Z" fill="#fb7185"/>"""
-            "tongue" -> """<path d="M47 66.5Q50 74 53 66.5Z" fill="#fb7185"/>""" + line("M43.5 65Q50 70 56.5 65")
-            "purr" -> line("M43 65Q46.5 69 50 65Q53.5 69 57 65")
-            "o" -> """<ellipse cx="50" cy="67" rx="3.2" ry="3.8" fill="$INK"/>"""
-            "flat" -> line("M45 67H55")
-            else -> line("M44 65Q50 70.5 56 65")
-        }
-    }
-
-    /** Headwear and face things. [top] is where the head starts; hats are drawn for a head starting at 24. */
-    private fun extra(extra: String, top: Int): String {
-        fun hat(svg: String) = """<g transform="translate(0 ${top - 24})">$svg</g>"""
-        return when (extra) {
-            "headphones" -> """<path d="M20 54C20 30 33 ${top - 4} 50 ${top - 4}C67 ${top - 4} 80 30 80 54" fill="none" stroke="$INK" stroke-width="4.5" stroke-linecap="round"/><rect x="13" y="46" width="11" height="19" rx="5" fill="#f43f5e"/><rect x="76" y="46" width="11" height="19" rx="5" fill="#f43f5e"/>"""
-            "glasses" -> """<g fill="rgba(255,255,255,.18)" stroke="$INK" stroke-width="2.6"><circle cx="40" cy="52" r="8.6"/><circle cx="60" cy="52" r="8.6"/></g><path d="M48.6 51Q50 49.6 51.4 51" fill="none" stroke="$INK" stroke-width="2.6"/>"""
-            "beanie" -> hat("""<path d="M25 34C25 16 75 16 75 34Z" fill="#ef4444"/><rect x="23" y="30" width="54" height="9" rx="4.5" fill="#b91c1c"/><circle cx="50" cy="13" r="5.5" fill="#fef2f2"/>""")
-            "beret" -> hat("""<path d="M24 31C25 18 58 11 76 23C72 30 44 34 24 31Z" fill="#1e1b2e"/><path d="M56 15L58 9" stroke="#1e1b2e" stroke-width="3" stroke-linecap="round"/>""")
-            "crown" -> hat("""<path d="M32 27L34 9L43 19L50 6L57 19L66 9L68 27Z" fill="#fbbf24" stroke="#b45309" stroke-width="2" stroke-linejoin="round"/><circle cx="50" cy="20" r="2.4" fill="#ef4444"/>""")
-            "sprout" -> hat("""<path d="M50 25V12" stroke="#16a34a" stroke-width="3" stroke-linecap="round"/><path d="M50 15C44 15 39 11 39 6C45 6 50 9 50 15Z" fill="#22c55e"/><path d="M50 13C55 13 61 9 61 4C55 4 50 7 50 13Z" fill="#4ade80"/>""")
-            "bow" -> hat("""<path d="M64 24L56 17V31Z" fill="#ec4899"/><path d="M64 24L72 17V31Z" fill="#ec4899"/><circle cx="64" cy="24" r="3" fill="#be185d"/>""")
-            "wizard" -> hat("""<path d="M27 30L55 0L72 30Z" fill="#6d28d9"/><rect x="22" y="27" width="56" height="7" rx="3.5" fill="#4c1d95"/><path d="M54 12L55.4 15.4L59 15.6L56.2 17.8L57.2 21.2L54 19.2L50.8 21.2L51.8 17.8L49 15.6L52.6 15.4Z" fill="#fde68a"/>""")
-            "headband" -> hat("""<rect x="21" y="35" width="58" height="8" rx="2" fill="#ef4444"/><path d="M79 38L88 33L86 41Z M79 40L87 45L80 46Z" fill="#dc2626"/>""")
-            else -> ""
-        }
-    }
-
-    /** The whole picture as an SVG document: a disc of [background] (a CSS color) with the character on it. */
-    fun svg(look: SidekickLook, background: String): String {
-        val skin = SKINS[look.skin] ?: SKINS.getValue("mint")
-        val shape = SHAPES[look.body] ?: SHAPES.getValue("blob")
-        val bot = if (look.body == "bot") {
-            """<path d="M50 31V19" stroke="$INK" stroke-width="3" stroke-linecap="round"/><circle cx="50" cy="16" r="4.5" fill="#f43f5e"/><rect x="15" y="50" width="7" height="12" rx="3" fill="$skin"/><rect x="78" y="50" width="7" height="12" rx="3" fill="$skin"/>"""
-        } else ""
-        return listOf(
-            """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">""",
-            """<defs><clipPath id="c"><circle cx="50" cy="50" r="50"/></clipPath></defs>""",
-            """<g clip-path="url(#c)">""",
-            """<rect width="100" height="100" fill="$background"/>""",
-            """<ellipse cx="50" cy="91" rx="25" ry="4" fill="#000" opacity=".22"/>""",
-            // A little bigger than drawn, so faces read in the sidebar.
-            """<g transform="translate(50 58) scale(1.08) translate(-50 -58)">""",
-            if (look.extra == "headphones") "" else bot,
-            shape.extra?.let { """<path d="$it" fill="$skin"/>""" } ?: "",
-            """<path d="${shape.path}" fill="$skin"/>""",
-            // A soft shade along the bottom and a shine at the top left give the flat shape some roundness.
-            """<path d="${shape.path}" fill="#000" opacity=".1" transform="translate(0 6) scale(1 .94)"/>""",
-            """<path d="${shape.path}" fill="$skin" transform="translate(0 -1.5)"/>""",
-            """<ellipse cx="36" cy="${shape.top + 11}" rx="8" ry="4.5" fill="#fff" opacity=".35" transform="rotate(-24 36 ${shape.top + 11})"/>""",
-            if (look.blush) """<ellipse cx="31" cy="62" rx="5" ry="3" fill="#fb7185" opacity=".5"/><ellipse cx="69" cy="62" rx="5" ry="3" fill="#fb7185" opacity=".5"/>""" else "",
-            eyes(look.eyes, skin),
-            mouth(look.mouth),
-            if (look.extra == "headphones") bot else "",
-            extra(look.extra, shape.top),
-            "</g></g></svg>",
-        ).joinToString("")
-    }
-
-    /** The background a sidekick of [color] has: the first of its agent color pair, as the web's `#rrggbb`. */
-    fun background(color: String): String {
-        val (fill, _) = Catalogs.AGENT_COLORS[color] ?: Catalogs.AGENT_COLORS.getValue("violet")
-        return "#%06x".format(fill and 0xFFFFFF)
     }
 }

@@ -1,5 +1,6 @@
 package dev.trydex.android.ui.components
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -35,11 +36,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
@@ -109,16 +112,18 @@ fun AgentAvatar(icon: String, color: String, size: Dp = 32.dp, image: String? = 
 }
 
 /**
- * A character's face: their look (drawn here, as the web draws it), their picture, or their emoji (else their initial)
- * on their color. Round, unlike agents and projects, so a character reads as someone rather than something.
+ * A character's face: their look, their photo, or their emoji (else their initial) on their color. A look is a BoopFace,
+ * shown whole on a clear background (it has its own shape and an antenna): a plain color drawn here ([live] ones blink),
+ * a finish as the PNG the web saved. Photos and emoji are round, so a character reads as someone rather than something.
  */
 @Composable
-fun CharacterAvatar(character: CharacterProfile, size: Dp = 32.dp, modifier: Modifier = Modifier) {
+fun CharacterAvatar(character: CharacterProfile, size: Dp = 32.dp, modifier: Modifier = Modifier, live: Boolean = false) {
     val (background, foreground) = Catalogs.AGENT_COLORS[character.color] ?: Catalogs.agentColor("violet")
-    character.look?.let { look ->
-        Box(modifier.size(size).clip(CircleShape).border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)) {
-            SidekickFace(SidekickLooks.clean(look), character.color, size)
-        }
+    character.look?.let { raw ->
+        val look = SidekickLooks.clean(raw)
+        val picture = remember(look.finish, character.image) { character.image?.takeIf { look.finish != null }?.let(SidekickArt::picture)?.asImageBitmap() }
+        if (picture != null) Image(picture, contentDescription = null, contentScale = ContentScale.Fit, modifier = modifier.size(size))
+        else SidekickFace(look, size, modifier, live)
         return
     }
     val image = character.image

@@ -8,8 +8,10 @@ import dev.trydex.core.model.ThinkingLevel
 import dev.trydex.core.model.UiOperationResult
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
 import org.junit.Test
 
 /** The wrappers send the argument shapes DexAgent's callables expect and read their results. */
@@ -109,6 +111,11 @@ class DexApiTest {
         assertThat(draft.keys).containsNoneOf("id", "sessionId", "createdAt", "updatedAt")
         assertThat(draft["image"].toString()).isEqualTo("\"data:image/png;base64,AA\"")
         assertThat(draft["look"].toString()).isEqualTo("null")
+        // A look always says its finish: a plain color clears the one it had, explicitly.
+        val plain = DexApi.characterDraft(CharacterProfile("muse", name = "Muse", look = SidekickLook("bot", "mint"), image = "data:image/png;base64,AA"), picture = true)
+        assertThat(plain["look"]!!.jsonObject["finish"]).isEqualTo(JsonNull)
+        val finished = DexApi.characterDraft(CharacterProfile("muse", name = "Muse", look = SidekickLook("bot", "pink", finish = 605), image = "data:image/png;base64,AA"), picture = true)
+        assertThat(finished["look"]!!.jsonObject["finish"].toString()).isEqualTo("605")
         // Unchanged, they're left out so the agent keeps them.
         val kept = DexApi.characterDraft(CharacterProfile("muse", name = "Muse", look = SidekickLook("blob"), image = "data:image/png;base64,AA"), picture = false)
         assertThat(kept["id"].toString()).isEqualTo("\"muse\"")

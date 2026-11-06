@@ -325,18 +325,19 @@ class GoldenTest {
 
     @Test fun sidekickLooks() {
         val golden = golden("sidekicks.json")
+        // The face colors, in the picker's order.
+        assertThat(SidekickLooks.SKINS.toList()).isEqualTo(golden["skins"]!!.jsonObject.map { (key, hex) -> key to hex.str })
+        // The bundled ready-made looks are the web's, in its order (their PNGs are BoopFace's own).
+        assertThat(Characters.PRESETS.map { it.key }).isEqualTo(golden.items("presets").map { it["key"].str })
         for (case in golden.items("presets")) {
             val preset = Characters.preset(case["key"].str!!)!!
-            assertThat(SidekickLooks.background(preset.color)).isEqualTo(case["background"].str)
-            assertWithMessage(preset.key).that(SidekickLooks.svg(preset.look, case["background"].str!!)).isEqualTo(case["svg"].str)
-        }
-        for (case in golden.items("looks")) {
-            val look = DexJson.decodeFromJsonElement(SidekickLook.serializer(), case["look"]!!)
-            assertWithMessage(look.toString()).that(SidekickLooks.svg(look, case["background"].str!!)).isEqualTo(case["svg"].str)
+            assertThat(preset.name).isEqualTo(case["name"].str)
+            assertThat(preset.color).isEqualTo(case["color"].str)
+            assertWithMessage(preset.key).that(preset.look).isEqualTo(DexJson.decodeFromJsonElement(SidekickLook.serializer(), case["look"]!!))
         }
         for (case in golden.items("clean")) {
             val input = DexJson.decodeFromJsonElement(SidekickLook.serializer(), case["input"]!!)
-            assertThat(SidekickLooks.clean(input)).isEqualTo(DexJson.decodeFromJsonElement(SidekickLook.serializer(), case["look"]!!))
+            assertWithMessage(case["input"].toString()).that(SidekickLooks.clean(input)).isEqualTo(DexJson.decodeFromJsonElement(SidekickLook.serializer(), case["look"]!!))
         }
     }
 }

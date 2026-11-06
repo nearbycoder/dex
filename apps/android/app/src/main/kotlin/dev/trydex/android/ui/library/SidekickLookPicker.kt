@@ -1,5 +1,6 @@
 package dev.trydex.android.ui.library
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -12,60 +13,62 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Casino
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.trydex.android.ui.components.Hint
-import dev.trydex.android.ui.components.SidekickFace
+import dev.trydex.android.ui.components.SidekickArt
 import dev.trydex.core.model.Catalogs
 import dev.trydex.core.model.CharacterProfile
 import dev.trydex.core.model.Characters
-import dev.trydex.core.model.SidekickLook
 import dev.trydex.core.model.SidekickLooks
+import dev.trydex.core.model.SidekickPreset
 import kotlin.random.Random
 
 /**
- * Picks a sidekick's look (the web's SidekickLookPicker): a ready-made one, Shuffle, a photo instead, or their own mix
- * of body, eyes, mouth, extra, and colors, each option drawn on the current look so you see what you'd get.
+ * Picks a sidekick's look (the web's SidekickLookPicker): a ready-made BoopFace, a plain color, Shuffle, or a photo
+ * instead, and their accent. Finishes beyond the ready-made ones are picked on the web, which can draw them.
  */
 @Composable
 fun SidekickLookPicker(draft: CharacterProfile, onChange: ((CharacterProfile) -> CharacterProfile) -> Unit) {
     val look = draft.look?.let(SidekickLooks::clean)
-    // Customizing a photo or an emoji starts from the first ready-made look.
+    // A color on a photo or an emoji starts from the first ready-made look.
     val current = look ?: Characters.PRESETS.first().look
-    // A part changed: their picture is drawn again from the look when they're saved.
-    fun set(change: (SidekickLook) -> SidekickLook) = onChange { it.copy(look = change(current), image = null, avatar = "") }
+    // A plain color: the finish goes (explicitly, so the agent drops it too), and the picture is drawn here on saving.
+    fun color(skin: String) = { it: CharacterProfile -> it.copy(look = current.copy(skin = skin, finish = null), image = null, avatar = "") }
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Characters.PRESETS.forEach { preset ->
-                val on = look == preset.look && draft.color == preset.color
-                LookTile(preset.look, preset.color, 52.dp, on, "Look: ${preset.name}", Modifier.testTag("character-look-${preset.key}")) {
-                    onChange { preset.applyTo(it) }
-                }
+                PresetTile(preset, on = look == preset.look, Modifier.testTag("character-look-${preset.key}")) { onChange { preset.applyTo(it) } }
             }
         }
 
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
             OutlinedButton(
                 onClick = {
-                    val color = Catalogs.AGENT_COLORS.keys.toList()[Random.nextInt(Catalogs.AGENT_COLORS.size)]
-                    onChange { it.copy(look = SidekickLooks.random(), color = color, image = null, avatar = "") }
+                    // A ready-made face or a plain color, as often as each.
+                    if (Random.nextBoolean()) onChange { Characters.PRESETS.random().applyTo(it) }
+                    else {
+                        val accent = Catalogs.AGENT_COLORS.keys.random()
+                        onChange { color(SidekickLooks.SKINS.keys.random())(it).copy(color = accent) }
+                    }
                 },
                 modifier = Modifier.testTag("character-look-shuffle"),
             ) {
@@ -84,34 +87,17 @@ fun SidekickLookPicker(draft: CharacterProfile, onChange: ((CharacterProfile) ->
             modifier = Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp)).testTag("character-look-parts"),
         ) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                val option = @Composable { part: String, value: String, preview: SidekickLook ->
-                    LookTile(
-                        preview, draft.color, 44.dp, look != null && preview == current, "$part: ${SidekickLooks.label(value)}",
-                        Modifier.testTag("look-${part.lowercase()}-$value"),
-                    ) { set { preview } }
-                }
-                PartRow("Body") { SidekickLooks.BODIES.forEach { option("Body", it, current.copy(body = it)) } }
-                PartRow("Eyes") { SidekickLooks.EYES.forEach { option("Eyes", it, current.copy(eyes = it)) } }
-                PartRow("Mouth") { SidekickLooks.MOUTHS.forEach { option("Mouth", it, current.copy(mouth = it)) } }
-                PartRow("Extra") { SidekickLooks.EXTRAS.forEach { option("Extra", it, current.copy(extra = it)) } }
-                PartRow("Body color") {
+                PartRow("Color") {
                     SidekickLooks.SKINS.forEach { (skin, hex) ->
-                        Swatch(Color(android.graphics.Color.parseColor(hex)), null, look != null && current.skin == skin, "Body color $skin") { set { it.copy(skin = skin) } }
+                        Swatch(
+                            Color(android.graphics.Color.parseColor(hex)), null, look != null && look.finish == null && look.skin == skin, "Color $skin",
+                            Modifier.testTag("look-color-$skin"),
+                        ) { onChange(color(skin)) }
                     }
                 }
-                PartRow("Background") {
+                PartRow("Accent") {
                     Catalogs.AGENT_COLORS.forEach { (key, pair) ->
-                        Swatch(Color(pair.first), Color(pair.second), key == draft.color, "Background $key") { onChange { it.copy(color = key) } }
-                    }
-                }
-                PartRow("Cheeks") {
-                    listOf(true, false).forEach { blush ->
-                        FilterChip(
-                            selected = look != null && current.blush == blush,
-                            onClick = { set { it.copy(blush = blush) } },
-                            label = { Text(if (blush) "Rosy" else "Plain") },
-                            modifier = Modifier.testTag("look-cheeks-${if (blush) "rosy" else "plain"}"),
-                        )
+                        Swatch(Color(pair.first), Color(pair.second), key == draft.color, "Accent $key", Modifier.testTag("look-accent-$key")) { onChange { it.copy(color = key) } }
                     }
                 }
             }
@@ -129,30 +115,34 @@ private fun PartRow(label: String, content: @Composable () -> Unit) {
     }
 }
 
-/** A look to pick, drawn; the picked one has a ring. */
+/** A ready-made look to pick, its BoopFace whole; the picked one has a ring. */
 @Composable
-private fun LookTile(look: SidekickLook, color: String, size: Dp, on: Boolean, label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Hint(label.substringAfter(": ")) {
+private fun PresetTile(preset: SidekickPreset, on: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(16.dp)
+    val picture = remember(preset.key) { SidekickArt.picture(preset.dataUrl)?.asImageBitmap() }
+    Hint(preset.name) {
         Box(
-            Modifier.size(size + 8.dp).then(if (on) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape) else Modifier).padding(4.dp),
+            Modifier.size(60.dp).then(if (on) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, shape) else Modifier).padding(4.dp),
             contentAlignment = Alignment.Center,
         ) {
             Surface(
                 onClick = onClick,
-                shape = CircleShape,
+                shape = shape,
                 color = Color.Transparent,
-                modifier = modifier.size(size).semantics {
-                    contentDescription = label
+                modifier = modifier.size(52.dp).semantics {
+                    contentDescription = "Look: ${preset.name}"
                     selected = on
                 },
-            ) { SidekickFace(look, color, size) }
+            ) {
+                if (picture != null) Image(picture, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.padding(2.dp))
+            }
         }
     }
 }
 
-/** A color to pick: a disc, with the dot of its foreground for backgrounds. */
+/** A color to pick: a disc, with the dot of its foreground for accents. */
 @Composable
-private fun Swatch(fill: Color, dot: Color?, on: Boolean, label: String, onClick: () -> Unit) {
+private fun Swatch(fill: Color, dot: Color?, on: Boolean, label: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Box(
         Modifier.size(44.dp).then(if (on) Modifier.border(2.dp, MaterialTheme.colorScheme.onSurface, CircleShape) else Modifier).padding(5.dp),
         contentAlignment = Alignment.Center,
@@ -161,7 +151,7 @@ private fun Swatch(fill: Color, dot: Color?, on: Boolean, label: String, onClick
             onClick = onClick,
             shape = CircleShape,
             color = fill,
-            modifier = Modifier.size(34.dp).semantics {
+            modifier = modifier.size(34.dp).semantics {
                 contentDescription = label
                 selected = on
                 role = Role.RadioButton
