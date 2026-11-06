@@ -10,7 +10,7 @@ struct TranscriptView: View {
     let composer: ComposerModel
     /// Who answers, when it isn't Dex.
     var speaker: CharacterProfile? = nil
-    /// The space this is the coordinator's chat of: its threads' updates show as event rows.
+    /// The space this is the coordinator's chat of (its empty state).
     var space: SpaceProfile? = nil
     /// Sends a message (a retry, or a UI card's).
     let send: (String) -> Void
@@ -62,8 +62,8 @@ struct TranscriptView: View {
                         // A prompt Dex ran on a schedule (a sidekick's check-in, a reminder) isn't something you said.
                         if let prompt = UserText.scheduledPrompt(text) {
                             ScheduledNote(prompt: prompt)
-                        } else if space != nil, let updates = Spaces.parseUpdates(text) {
-                            // What the space's threads reported, not something you said.
+                        } else if let updates = Spaces.parseUpdates(text), !updates.isEmpty {
+                            // What a space's threads reported, not something you said (in its chat however it's opened, as on the web).
                             SpaceUpdateRows(updates: updates)
                         } else {
                             // The composer, not a closure: a new closure each time would draw every bubble again on every streamed chunk.

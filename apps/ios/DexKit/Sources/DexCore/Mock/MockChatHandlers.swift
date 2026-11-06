@@ -348,12 +348,14 @@ extension MockAgent {
         guard live() else { return }
         events(id, [["type": "message_start", "message": ["role": "assistant", "content": [], "model": "cline-pass/glm-5.3", "provider": "clinepass", "stopReason": "pending", "timestamp": .number(start), "usage": [:], "api": "openai-completions"]]])
         events(id, [["type": "message_update", "usage": [:], "changes": [["type": "thinking_start", "contentIndex": 0, "block": ["type": "thinking", "thinking": ""]]]]])
-        for word in ["Reading ", "the ", "request ", "and ", "planning ", "the ", "answer."] {
+        // Thinking, in Markdown when the message asks for it.
+        let thinking = lower.contains("markdown") ? "**Planning** the answer: show *every* `GFM` feature." : "Reading the request and planning the answer."
+        for word in thinking.split(separator: " ").map({ String($0) + " " }) {
             await pause()
             guard live() else { return }
             events(id, [["type": "message_update", "usage": [:], "changes": [["type": "thinking_delta", "contentIndex": 0, "delta": .string(word)]]]])
         }
-        blocks.append(.thinking("Reading the request and planning the answer.", redacted: false))
+        blocks.append(.thinking(thinking, redacted: false))
 
         if lower.contains("slow") {
             // A long run, for queue and stop tests.
@@ -430,7 +432,7 @@ extension MockAgent {
             stopRun(id, stopReason: "error")
             return
         }
-        let answer = step?.answer ?? (lower.contains("essay") ? MockLongChat.essay : "Sure. Here's a **short** answer to “\(prompt)”.")
+        let answer = step?.answer ?? (lower.contains("essay") ? MockLongChat.essay : lower.contains("markdown") ? MockMarkdown.fixture : "Sure. Here's a **short** answer to “\(prompt)”.")
         let textIndex = blocks.count
         events(id, [["type": "message_update", "usage": [:], "changes": [["type": "text_start", "contentIndex": .number(Double(textIndex)), "block": ["type": "text", "text": ""]]]]])
         for word in answer.split(separator: " ", omittingEmptySubsequences: false) {
