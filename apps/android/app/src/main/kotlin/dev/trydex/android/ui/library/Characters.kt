@@ -54,6 +54,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -246,8 +247,11 @@ fun CharacterEditorScreen(id: String, route: Route) {
     val draft = edited ?: base
     val dirty = edited != null && (base == null || edited!!.comparable() != base.comparable())
 
+    // Read when a change comes in: pickers that skipped recomposing hold an older `update`, and so an older draft.
+    val latest by rememberUpdatedState(draft)
+
     fun update(change: (CharacterProfile) -> CharacterProfile) {
-        val from = draft ?: return
+        val from = latest ?: return
         edited = change(from)
         saved = false
     }
@@ -258,14 +262,14 @@ fun CharacterEditorScreen(id: String, route: Route) {
         saving = true
         error = null
         scope.launch {
-            // The picture and look go only when they changed: left out, the agent keeps them as they are. A look goes
-            // with its PNG (the bundled one for a ready-made look) for widgets, notifications, and other apps.
+            // The picture and look go only when they changed here: left out, the agent keeps them as they are (a look
+            // with a finish can't be drawn here, so its PNG must stay the web's). A changed look goes with its PNG, for
+            // widgets, notifications, and other apps: a ready-made look's bundled one, or a plain color's drawn here.
             val look = value.look?.let(SidekickLooks::clean)
-            val picture = isNew || value.image != base?.image || look != base?.look || (look != null && value.color != base?.color)
+            val picture = isNew || value.image != base?.image || look != base?.look?.let(SidekickLooks::clean)
             attempt {
                 val sent = if (look == null || !picture) value else withContext(Dispatchers.Default) {
-                    val preset = Characters.PRESETS.firstOrNull { it.look == look && it.color == value.color }
-                    value.copy(look = look, image = preset?.dataUrl ?: SidekickArt.png(look, value.color))
+                    value.copy(look = look, image = value.image?.let(SidekickArt::fit) ?: SidekickArt.png(look))
                 }
                 repository.api.saveCharacter(DexApi.characterDraft(sent, picture))
             }
@@ -391,7 +395,7 @@ private fun TemplatePicker(selected: String?, onPick: (String) -> Unit) {
 private fun CharacterForm(draft: CharacterProfile, state: DexState, onChange: ((CharacterProfile) -> CharacterProfile) -> Unit) {
     SectionCard {
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            CharacterAvatar(draft, size = 56.dp)
+            CharacterAvatar(draft, size = 56.dp, live = true)
             OutlinedTextField(
                 value = draft.name,
                 onValueChange = { v -> onChange { it.copy(name = v.take(40)) } },
@@ -417,7 +421,7 @@ private fun CharacterForm(draft: CharacterProfile, state: DexState, onChange: ((
     }
 
     SectionCard {
-        ProfileField("Look", "Pick a ready-made sidekick, shuffle, mix your own, or use a photo.") {
+        ProfileField("Look", "Pick a ready-made face or a color, shuffle, or use a photo.") {
             SidekickLookPicker(draft, onChange)
         }
     }

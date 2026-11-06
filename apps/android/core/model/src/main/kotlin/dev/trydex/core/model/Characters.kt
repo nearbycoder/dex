@@ -23,9 +23,9 @@ data class CharacterProfile(
     val greeting: String = "",
     /** An emoji, from before sidekicks had looks; empty shows the name's first letter. */
     val avatar: String = "",
-    /** Their little character, drawn from parts (the web draws it; the app shows [image]). Missing on older ones. */
+    /** Their BoopFace: a color or a finish (the web draws it live; the app draws plain colors and shows [image] for finishes). Missing on older ones. */
     val look: SidekickLook? = null,
-    /** A picture as a data: URL: a photo, or the PNG of their look. Shown instead of the emoji. */
+    /** A picture as a data: URL: a photo, or the PNG of their look (on a clear background). Shown instead of the emoji. */
     val image: String? = null,
     /** One of the agent colors (Catalogs.AGENT_COLORS). */
     val color: String = "violet",
@@ -57,20 +57,26 @@ enum class SidekickNotify(val id: String, val label: String, val description: St
     }
 }
 
-/** A sidekick's look: one of each part (SidekickLook in apps/web/src/shared/sidekick-look.ts). */
+/**
+ * A sidekick's look (SidekickLook in apps/web/src/shared/sidekick-look.ts): a BoopFace in the color [skin], or in the
+ * finish [finish]. The other parts are from before BoopFace; they're kept so older apps still read looks.
+ */
 @Serializable
 data class SidekickLook(
     val body: String = "blob",
+    /** The face's color (a key of SidekickLooks.SKINS), shown when there's no finish. */
     val skin: String = "",
     val eyes: String = "",
     val mouth: String = "",
     val extra: String = "",
     val blush: Boolean = false,
+    /** A BoopFace skin number (605: jelly pink), or null for the plain color. Only the web can draw one; apps show the PNG. */
+    val finish: Int? = null,
 )
 
 /**
- * One of the ready-made looks (assets/sidekicks, bundled here): its name, background color, parts, and the PNG of it,
- * which is what a sidekick saves as its `image`.
+ * One of the ready-made looks (bundled here from the web's LOOK_PRESETS): its name, accent color, look, and the PNG of
+ * its BoopFace, which is what a sidekick saves as its `image`.
  */
 @Serializable
 data class SidekickPreset(val key: String, val name: String = "", val color: String = "violet", val look: SidekickLook = SidekickLook(), val image: String = "") {
@@ -80,7 +86,7 @@ data class SidekickPreset(val key: String, val name: String = "", val color: Str
         "data:image/png;base64," + Base64.getEncoder().encodeToString(bytes)
     }
 
-    /** This look on a draft: its color, parts, and picture. */
+    /** This look on a draft: its accent, look, and picture. */
     fun applyTo(draft: CharacterProfile) = draft.copy(color = color, look = look, image = dataUrl, avatar = "")
 }
 
@@ -115,7 +121,7 @@ object Characters {
         return String(Character.toChars(trimmed.codePointAt(0))).uppercase()
     }
 
-    /** The twelve ready-made looks, in the web's order (assets/sidekicks/presets.json). */
+    /** The ready-made looks, in the web's order (sidekicks/presets.json). */
     val PRESETS: List<SidekickPreset> by lazy {
         val text = SidekickPreset::class.java.getResourceAsStream("/dev/trydex/core/model/sidekicks/presets.json")!!.bufferedReader().use { it.readText() }
         DexJson.decodeFromString(ListSerializer(SidekickPreset.serializer()), text)
@@ -124,7 +130,7 @@ object Characters {
     fun preset(key: String): SidekickPreset? = PRESETS.firstOrNull { it.key == key }
 
     /** The ready-made look a sidekick has, if it's one of them (custom looks and photos aren't). */
-    fun presetOf(character: CharacterProfile): SidekickPreset? = character.look?.let { look -> PRESETS.firstOrNull { it.look == look } }
+    fun presetOf(character: CharacterProfile): SidekickPreset? = character.look?.let(SidekickLooks::clean)?.let { look -> PRESETS.firstOrNull { it.look == look } }
 
     /** CHARACTER_TEMPLATES in apps/web/src/shared/characters.ts, word for word; each wears the preset of its name. */
     val TEMPLATES = listOf(

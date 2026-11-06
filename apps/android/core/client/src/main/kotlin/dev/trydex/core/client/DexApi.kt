@@ -53,6 +53,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 
@@ -338,7 +339,10 @@ class DexApi(private val rpc: AgentRpc) {
             if (character.id.isEmpty()) json.remove("id")
             if (picture) {
                 json["image"] = character.image?.let(::JsonPrimitive) ?: JsonNull
-                json["look"] = character.look?.let { DexJson.encodeToJsonElement(SidekickLook.serializer(), it) } ?: JsonNull
+                // With its finish always: a look without one keeps the finish it had, and null (a plain color) clears it.
+                json["look"] = character.look?.let { look ->
+                    JsonObject(DexJson.encodeToJsonElement(SidekickLook.serializer(), look).jsonObject + ("finish" to (look.finish?.let(::JsonPrimitive) ?: JsonNull)))
+                } ?: JsonNull
             } else {
                 json.remove("image")
                 json.remove("look")

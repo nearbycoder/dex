@@ -809,13 +809,15 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
         return id
     }
 
-    /** saveCharacter: creates (no id) or updates; a left-out `image` or `look` is kept, null removes it. */
+    /** saveCharacter: creates (no id) or updates; a left-out `image` or `look` (or a look's `finish`) is kept, null removes it. */
     private fun saveCharacter(draft: JsonObject): JsonElement {
         val name = draft["name"].str?.trim()?.take(40).orEmpty()
         if (name.isEmpty()) error("Give your sidekick a name.")
         val existing = draft["id"].str?.let { id -> state.character(id) ?: error("That sidekick no longer exists.") }
         val image = if ("image" in draft) draft["image"].str else existing?.image
-        if (image != null && (!image.startsWith("data:image/") || image.length > 66_000)) error("Pick a smaller picture (PNG, JPEG, WebP, GIF, or SVG under 48 KB).")
+        // Only a picture sent now is checked, as the agent does.
+        val sent = draft["image"].str
+        if (sent != null && (!sent.startsWith("data:image/") || sent.length > 66_000)) error("Pick a smaller picture (PNG, JPEG, WebP, GIF, or SVG under 48 KB).")
         val id = existing?.id ?: (name.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').take(32).ifEmpty { "character" } + "-" + UUID.randomUUID().toString().take(6))
         val now = clock()
         val parsed = DexJson.decodeFromJsonElement(CharacterProfile.serializer(), JsonObject(draft + mapOf("id" to JsonPrimitive(id))))
@@ -825,7 +827,8 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
             greeting = parsed.greeting.trim().take(2_000),
             avatar = parsed.avatar.trim().let { if (it.isEmpty()) "" else it.substring(0, it.offsetByCodePoints(0, 1)) },
             image = image,
-            look = if ("look" in draft) parsed.look else existing?.look,
+            // A look without a finish (from an app that predates them) keeps the one it had, as the agent's cleanLook.
+            look = if ("look" in draft) parsed.look?.let { look -> if ("finish" in draft["look"]!!.jsonObject) look else look.copy(finish = existing?.look?.finish) } else existing?.look,
             color = parsed.color.takeIf { it in dev.trydex.core.model.Catalogs.AGENT_COLORS } ?: "violet",
             mcpServers = if ("mcpServers" in draft) parsed.mcpServers.filter { server -> state.mcp.any { it.id == server } } else existing?.mcpServers.orEmpty(),
             sessionId = existing?.sessionId.orEmpty(),

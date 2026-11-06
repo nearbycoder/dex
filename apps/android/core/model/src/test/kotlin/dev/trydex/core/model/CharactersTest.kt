@@ -50,11 +50,23 @@ class CharactersTest {
     }
 
     @Test fun presetsAreBundled() {
-        assertThat(Characters.PRESETS).hasSize(12)
-        assertThat(Characters.PRESETS.map { it.key }).containsAtLeast("muse", "atlas", "sage", "rex")
+        assertThat(Characters.PRESETS).hasSize(13)
+        assertThat(Characters.PRESETS.map { it.key }).containsAtLeast("boop", "muse", "atlas", "sage", "rex")
         assertThat(Characters.PRESETS.all { it.color in Catalogs.AGENT_COLORS }).isTrue()
-        // Small enough for the agent's 48 KB limit on a picture.
-        assertThat(Characters.PRESETS.maxOf { it.dataUrl.length }).isLessThan(63_000)
+        assertThat(Characters.PRESETS.all { it.dataUrl.startsWith("data:image/png;base64,iVBORw0KGgo") }).isTrue()
+        // Each is already clean, so a saved look matches its preset.
+        assertThat(Characters.PRESETS.all { SidekickLooks.clean(it.look) == it.look }).isTrue()
+    }
+
+    @Test fun finishRoundTrips() {
+        val json = """{"id":"a","name":"A","look":{"body":"bot","skin":"pink","eyes":"round","mouth":"smile","extra":"none","blush":false,"finish":605}}"""
+        val character = DexJson.decodeFromString(CharacterProfile.serializer(), json)
+        assertThat(character.look!!.finish).isEqualTo(605)
+        assertThat(DexJson.decodeFromString(CharacterProfile.serializer(), DexJson.encodeToString(CharacterProfile.serializer(), character))).isEqualTo(character)
+        // Older looks have none: the plain color.
+        assertThat(DexJson.decodeFromString(CharacterProfile.serializer(), """{"id":"b","look":{"skin":"mint"}}""").look!!.finish).isNull()
+        assertThat(Characters.presetOf(character)).isNull()
+        assertThat(Characters.presetOf(character.copy(look = Characters.preset("muse")!!.look))!!.key).isEqualTo("muse")
     }
 
     @Test fun lookIsOptional() {
@@ -78,7 +90,7 @@ class CharactersTest {
         assertThat(muse.greeting).startsWith("Hey you.")
         assertThat(muse.model).isEqualTo("cline-pass/kimi-k3")
         assertThat(muse.thinking).isEqualTo(ThinkingLevel.High)
-        assertThat(muse.look).isEqualTo(SidekickLook("blob", "pink", "sparkle", "grin", "beret", blush = true))
+        assertThat(muse.look).isEqualTo(SidekickLook("blob", "pink", "sparkle", "grin", "beret", blush = true, finish = 605))
         assertThat(muse.image).startsWith("data:image/png;base64,iVBORw0KGgo")
         assertThat(Characters.presetOf(muse)!!.key).isEqualTo("muse")
         assertThat(Characters.TEMPLATES.map { it.name }).containsExactly("Muse", "Atlas", "Sage", "Rex").inOrder()

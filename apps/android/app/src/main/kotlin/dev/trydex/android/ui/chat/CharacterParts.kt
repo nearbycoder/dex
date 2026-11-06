@@ -173,7 +173,7 @@ fun CharacterChatTitle(character: CharacterProfile, session: SessionMeta, runnin
         modifier = Modifier.semantics { contentDescription = "About ${character.name}" }.testTag("character-title"),
     ) {
         Row(Modifier.padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            CharacterAvatar(character, size = 32.dp)
+            CharacterAvatar(character, size = 32.dp, live = true)
             Column {
                 Text(character.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 val line = when {
