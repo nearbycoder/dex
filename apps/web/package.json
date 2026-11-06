@@ -29,6 +29,7 @@
     "@tanstack/react-router": "^1.170.45",
     "@tanstack/react-start": "^1.169.3",
     "agents": "^0.28.1",
+    "boopface": "^0.8.0",
     "clsx": "^2.1.1",
     "effect": "^4.0.5",
     "just-bash": "^3.6.0",

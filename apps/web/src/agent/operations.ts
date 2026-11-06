@@ -3,7 +3,7 @@ import type { Static, TSchema } from "typebox"
 import type { AccessRisk } from "~/shared/access"
 import { AGENT_COLORS, AGENT_ICONS, type AgentProfile } from "~/shared/agents"
 import type { CharacterProfile } from "~/shared/characters"
-import { BODIES, EXTRAS, EYES, LOOK_PRESETS, MOUTHS, type SidekickLook, SKINS } from "~/shared/sidekick-look"
+import { BODIES, EXTRAS, EYES, FINISH_SERIES, LOOK_PRESETS, MOUTHS, type SidekickLook, SKINS } from "~/shared/sidekick-look"
 import { MODEL_PROVIDERS, MODELS, supportedThinkingLevels, THINKING_LEVELS, type ThinkingLevel } from "~/shared/models"
 import type { McpAuth, McpTransport } from "~/shared/mcp"
 import { NOTIFY_KINDS, type NotifyKind } from "~/shared/notifications"
@@ -201,16 +201,23 @@ const characterFields = {
     Type.Union(
       [
         Type.Object({
-          body: Type.Union(BODIES.map((value) => Type.Literal(value))),
-          skin: Type.Union(Object.keys(SKINS).map((value) => Type.Literal(value)), { description: "Body color." }),
-          eyes: Type.Union(EYES.map((value) => Type.Literal(value))),
-          mouth: Type.Union(MOUTHS.map((value) => Type.Literal(value))),
-          extra: Type.Union(EXTRAS.map((value) => Type.Literal(value)), { description: "Headwear or glasses." }),
-          blush: Type.Boolean()
+          skin: Type.Union(Object.keys(SKINS).map((value) => Type.Literal(value)), { description: "The face's color, shown when there's no finish." }),
+          finish: Type.Optional(
+            Type.Union([Type.Integer({ minimum: 101, maximum: 1799 }), Type.Null()], {
+              description: `A BoopFace skin number for the face's finish, or null for the plain color; left out keeps the current one. Series: ${FINISH_SERIES}.`
+            })
+          ),
+          body: Type.Optional(Type.Union(BODIES.map((value) => Type.Literal(value)), { description: "Older apps' drawing; not shown on the web." })),
+          eyes: Type.Optional(Type.Union(EYES.map((value) => Type.Literal(value)))),
+          mouth: Type.Optional(Type.Union(MOUTHS.map((value) => Type.Literal(value)))),
+          extra: Type.Optional(Type.Union(EXTRAS.map((value) => Type.Literal(value)))),
+          blush: Type.Optional(Type.Boolean())
         }),
         Type.Null()
       ],
-      { description: `Their little character, drawn from parts. Ready-made ones: ${LOOK_PRESETS.map((preset) => `${preset.key} ${JSON.stringify(preset.look)}`).join("; ")}.` }
+      {
+        description: `Their face: a BoopFace (a little robot head with big eyes) in a color or a finish. Ready-made ones: ${LOOK_PRESETS.map((preset) => `${preset.key} ${JSON.stringify({ skin: preset.look.skin, finish: preset.look.finish ?? null })}`).join("; ")}.`
+      }
     )
   ),
   model: Type.Optional(modelId),

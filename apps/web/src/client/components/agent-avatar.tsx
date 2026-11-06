@@ -28,7 +28,7 @@ import {
 import { AGENT_COLORS, type AgentColor, type AgentIcon } from "~/shared/agents"
 import type { CharacterProfile } from "~/shared/characters"
 import type { LookMood } from "~/shared/sidekick-look"
-import { lookUrl } from "~/client/lib/sidekick-art"
+import { BoopAvatar } from "./boop-face"
 
 export const AGENT_ICON_COMPONENTS: Record<AgentIcon, LucideIcon> = {
   bot: Bot,
@@ -97,24 +97,31 @@ export function AgentAvatar({
 }
 
 /**
- * A sidekick's face: their little character (a shape with big eyes that blinks and glances around, and hops while
- * `mood` is working), else their photo, else their emoji (or initial) on their color. Photos and emoji are round,
- * unlike agents and projects, so a sidekick reads as someone rather than something.
+ * A sidekick's face: their BoopFace (live: it blinks, follows the pointer, waits while `mood` is working and smiles
+ * when it's done, or droops if `failed`), else their photo, else their emoji (or initial) on their color. A still face
+ * is the PNG saved with the look when there is one, so a long chat isn't dozens of live faces.
  */
 export function CharacterAvatar({
   character,
   size = 32,
   mood = "idle",
+  failed = false,
+  interactive = false,
   className = ""
 }: {
   character: Pick<CharacterProfile, "name" | "avatar" | "image" | "color" | "look">
   size?: number
   mood?: LookMood
+  failed?: boolean
+  interactive?: boolean
   className?: string
 }) {
   const [background, foreground] = AGENT_COLORS[character.color] ?? AGENT_COLORS.violet
   if (character.look) {
-    return <img src={lookUrl(character.look, mood)} alt="" className={`shrink-0 ${className}`} style={{ width: size, height: size }} draggable={false} />
+    if (mood === "still" && character.image) {
+      return <img src={character.image} alt="" className={`shrink-0 ${className}`} style={{ width: size, height: size }} draggable={false} />
+    }
+    return <BoopAvatar look={character.look} size={size} mood={mood} failed={failed} interactive={interactive} className={className} />
   }
   if (character.image) {
     return (

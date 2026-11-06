@@ -2027,7 +2027,7 @@ export class DexAgent extends Agent<Env, DexState> {
       greeting: String(draft.greeting ?? "").trim().slice(0, 2_000),
       avatar: firstGrapheme(String(draft.avatar ?? "")),
       image: draft.image === undefined ? (existing?.image ?? null) : draft.image,
-      look: draft.look === undefined ? (existing?.look ?? null) : cleanLook(draft.look),
+      look: draft.look === undefined ? (existing?.look ?? null) : cleanLook(draft.look, existing?.look),
       notify: draft.notify === undefined ? (existing?.notify ?? "all") : NOTIFY_LEVELS.includes(draft.notify) ? draft.notify : "all",
       color: draft.color in AGENT_COLORS ? draft.color : "violet",
       model,

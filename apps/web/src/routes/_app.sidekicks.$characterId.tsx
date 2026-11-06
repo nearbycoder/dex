@@ -3,7 +3,7 @@ import { ArrowLeft, Check, LoaderCircle, MessageCircle, Plug, RotateCcw, Trash2 
 import { type ReactNode, useEffect, useRef, useState } from "react"
 import { CharacterAvatar } from "~/client/components/agent-avatar"
 import { SidekickLookPicker } from "~/client/components/sidekick-look-picker"
-import { lookPng } from "~/client/lib/sidekick-art"
+import { lookPng } from "~/client/components/boop-face"
 import { randomLook } from "~/shared/sidekick-look"
 import { InfoTip } from "~/client/components/info-tip"
 import { McpStatusDot } from "~/client/components/mcp-picker"
@@ -145,7 +145,7 @@ function CharacterEditor() {
         </Link>
 
         <div className="mb-6 flex items-center gap-4">
-          <CharacterAvatar character={{ ...draft, name: draft.name || "?", image: draft.image ?? null }} size={72} />
+          <CharacterAvatar character={{ ...draft, name: draft.name || "?", image: draft.image ?? null }} size={72} interactive />
           <div className="min-w-0">
             <h1 className="truncate text-2xl font-semibold tracking-tight">{draft.name || (isNew ? "New sidekick" : "Untitled")}</h1>
             <p className="truncate text-sm text-zinc-400">{draft.tagline || "Who are they to you?"}</p>
