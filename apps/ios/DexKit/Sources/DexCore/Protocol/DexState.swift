@@ -34,6 +34,11 @@ public struct SessionMeta: Codable, Sendable, Hashable, Identifiable {
     public var projectId: String?
     /// The character this is a conversation with, if any: it lives under them, not in the chat list.
     public var characterId: String?
+    /// The space this chat belongs to, if any: its coordinator (the space's `sessionId`) or one of its threads. Space
+    /// chats live under their space, not in the chat list. Missing from older agents.
+    public var spaceId: String?
+    /// Its latest reply ended with a problem (a failed model request). Missing from older agents.
+    public var failed: Bool
     /// A reply came in since you last looked at it (false from agents before unread).
     public var unread: Bool
     /// The latest reply, shortened (for lists, widgets, and notifications).
@@ -46,16 +51,16 @@ public struct SessionMeta: Codable, Sendable, Hashable, Identifiable {
 
     public init(id: String, title: String, model: String, thinking: ThinkingLevel, createdAt: Double, updatedAt: Double,
                 busy: Bool = false, agentId: String? = nil, mcpServers: [String] = [], projectId: String? = nil, characterId: String? = nil,
-                unread: Bool = false, lastReply: String? = nil, repliedAt: Double? = nil,
+                spaceId: String? = nil, failed: Bool = false, unread: Bool = false, lastReply: String? = nil, repliedAt: Double? = nil,
                 muted: Bool = false, settledAt: Double? = nil, snoozedUntil: Double? = nil) {
         self.id = id; self.title = title; self.model = model; self.thinking = thinking; self.createdAt = createdAt
         self.updatedAt = updatedAt; self.busy = busy; self.agentId = agentId; self.mcpServers = mcpServers
-        self.projectId = projectId; self.characterId = characterId; self.unread = unread; self.lastReply = lastReply; self.repliedAt = repliedAt
+        self.projectId = projectId; self.characterId = characterId; self.spaceId = spaceId; self.failed = failed; self.unread = unread; self.lastReply = lastReply; self.repliedAt = repliedAt
         self.muted = muted; self.settledAt = settledAt; self.snoozedUntil = snoozedUntil
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, title, model, thinking, createdAt, updatedAt, busy, agentId, mcpServers, projectId, characterId, unread, lastReply, repliedAt, muted, settledAt, snoozedUntil
+        case id, title, model, thinking, createdAt, updatedAt, busy, agentId, mcpServers, projectId, characterId, spaceId, failed, unread, lastReply, repliedAt, muted, settledAt, snoozedUntil
     }
 
     public init(from decoder: Decoder) throws {
@@ -71,6 +76,8 @@ public struct SessionMeta: Codable, Sendable, Hashable, Identifiable {
         mcpServers = c.value(.mcpServers, default: [])
         projectId = c.value(.projectId, default: nil)
         characterId = c.value(.characterId, default: nil)
+        spaceId = c.value(.spaceId, default: nil)
+        failed = c.value(.failed, default: false)
         unread = c.value(.unread, default: false)
         lastReply = c.value(.lastReply, default: nil)
         repliedAt = c.value(.repliedAt, default: nil)
@@ -642,6 +649,9 @@ public struct DexState: Codable, Sendable, Hashable {
     public var agents: [AgentProfile]
     /// Characters, pinned above the chats. Missing in state an older agent saved.
     public var characters: [CharacterProfile]
+    /// Spaces, listed with the sidekicks: each a coordinator chat with threads of its own. Missing in state an older
+    /// agent saved.
+    public var spaces: [SpaceProfile]
     public var mcp: [McpServerInfo]
     public var access: AccessState
     public var secrets: [SavedSecret]
@@ -651,14 +661,14 @@ public struct DexState: Codable, Sendable, Hashable {
 
     public init(cline: ClineStatus = .init(), opencode: ClineStatus = .init(), chatgpt: ClineStatus = .init(), commandcode: ClineStatus = .init(), openrouter: ClineStatus = .init(), boat: BoatStatus = .init(), settings: DexSettings = .init(),
                 sessions: [SessionMeta] = [], vms: [VmInfo] = [], vmConfigured: Bool = false, projects: [ProjectProfile] = [],
-                github: GitHubStatus = .init(), push: PushStatus = .init(), agents: [AgentProfile] = [], characters: [CharacterProfile] = [], mcp: [McpServerInfo] = [],
+                github: GitHubStatus = .init(), push: PushStatus = .init(), agents: [AgentProfile] = [], characters: [CharacterProfile] = [], spaces: [SpaceProfile] = [], mcp: [McpServerInfo] = [],
                 access: AccessState = .init(), secrets: [SavedSecret] = [], skills: [SkillInfo] = [], build: String? = nil, models: ModelListVersion? = nil) {
         self.cline = cline; self.opencode = opencode; self.chatgpt = chatgpt; self.commandcode = commandcode; self.openrouter = openrouter; self.boat = boat; self.settings = settings; self.sessions = sessions; self.vms = vms
-        self.vmConfigured = vmConfigured; self.projects = projects; self.github = github; self.push = push; self.agents = agents; self.characters = characters; self.mcp = mcp
+        self.vmConfigured = vmConfigured; self.projects = projects; self.github = github; self.push = push; self.agents = agents; self.characters = characters; self.spaces = spaces; self.mcp = mcp
         self.access = access; self.secrets = secrets; self.skills = skills; self.build = build; self.models = models
     }
 
-    enum CodingKeys: String, CodingKey { case cline, opencode, chatgpt, commandcode, openrouter, boat, settings, sessions, vms, vmConfigured, projects, github, push, agents, characters, mcp, access, secrets, skills, build, models }
+    enum CodingKeys: String, CodingKey { case cline, opencode, chatgpt, commandcode, openrouter, boat, settings, sessions, vms, vmConfigured, projects, github, push, agents, characters, spaces, mcp, access, secrets, skills, build, models }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         cline = c.value(.cline, default: .init())
@@ -676,6 +686,7 @@ public struct DexState: Codable, Sendable, Hashable {
         push = c.value(.push, default: .init())
         agents = c.value(.agents, default: [])
         characters = c.value(.characters, default: [])
+        spaces = c.value(.spaces, default: [])
         mcp = c.value(.mcp, default: [])
         access = c.value(.access, default: .init())
         secrets = c.value(.secrets, default: [])
@@ -699,14 +710,31 @@ public struct DexState: Codable, Sendable, Hashable {
     public func project(_ id: String?) -> ProjectProfile? { id.flatMap { id in projects.first { $0.id == id } } }
     public func character(_ id: String?) -> CharacterProfile? { id.flatMap { id in characters.first { $0.id == id } } }
 
-    /// Ordinary chats: everything but characters' conversations, which live under them.
-    public var chats: [SessionMeta] { sessions.filter { $0.characterId == nil } }
+    public func space(_ id: String?) -> SpaceProfile? { id.flatMap { id in spaces.first { $0.id == id } } }
+    /// The space whose coordinator this chat is, if it is one.
+    public func coordinated(by sessionId: String) -> SpaceProfile? { spaces.first { $0.sessionId == sessionId } }
+
+    /// Ordinary chats: everything but characters' conversations and spaces' chats, which live under them.
+    public var chats: [SessionMeta] { sessions.filter { $0.characterId == nil && $0.spaceId == nil } }
+
+    /// One of a space's threads (not its coordinator): muted, and kept out of the badge and the lists of active chats.
+    public func isThread(_ session: SessionMeta) -> Bool {
+        guard let spaceId = session.spaceId else { return false }
+        return space(spaceId)?.sessionId != session.id
+    }
+
+    /// Every chat but spaces' threads: what the switcher, the strip of active chats, and the badges look at.
+    public var conversationsOutsideThreads: [SessionMeta] { sessions.filter { !isThread($0) } }
+
+    /// A space's threads: its chats other than the coordinator's, newest first.
+    public func threads(of space: SpaceProfile) -> [SessionMeta] { Spaces.threads(of: space, in: sessions) }
 
     /// Chats waiting on you: they asked to do something that needs your yes (Access & API → Waiting for you).
     public var waitingChats: Set<String> { Set(access.pending.filter { $0.status == "pending" }.map(\.sessionId)) }
 
-    /// Chats (sidekicks' conversations too) with a reply you haven't seen: the app icon's badge, as the agent counts it.
-    public var unreadCount: Int { sessions.filter(\.unread).count }
+    /// Chats (sidekicks' conversations and spaces' coordinators too) with a reply you haven't seen: the app icon's
+    /// badge. Spaces' threads are left out: they're muted, and their space's coordinator reports on them.
+    public var unreadCount: Int { sessions.filter { $0.unread && !isThread($0) }.count }
 
     /// A character's conversations, the newest first (the current one, and any from before Start over).
     public func conversations(of characterId: String) -> [SessionMeta] {

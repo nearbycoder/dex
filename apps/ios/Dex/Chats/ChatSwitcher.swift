@@ -47,10 +47,10 @@ struct ChatActivityMark: View {
     }
 }
 
-/// The chat's name in lists: a sidekick's conversation goes by the sidekick.
+/// The chat's name in lists: a sidekick's conversation goes by the sidekick, a space's chat by the space.
 @MainActor
 func chatName(_ session: SessionMeta, state: DexState?) -> String {
-    state?.character(session.characterId)?.name ?? session.title
+    state?.character(session.characterId)?.name ?? state?.coordinated(by: session.id)?.name ?? session.title
 }
 
 /// Over a chat on iPhone: the other chats that are working or have a reply waiting, one tap away, and the switcher.
@@ -61,7 +61,8 @@ struct ActiveChatsStrip: View {
 
     var body: some View {
         let waiting = client.state?.waitingChats ?? []
-        let active = Inbox.active(client.state?.sessions ?? [], waiting: waiting, excluding: current)
+        // A space's threads report to its chat: they'd crowd the strip.
+        let active = Inbox.active(client.state?.conversationsOutsideThreads ?? [], waiting: waiting, excluding: current)
         if !active.isEmpty {
             ScrollView(.horizontal, showsIndicators: false) {
                 GlassEffectContainer(spacing: 6) {
@@ -205,7 +206,7 @@ struct ChatSwitcher: View {
     }
 
     private func groups() -> [Group] {
-        let sessions = client.state?.sessions ?? []
+        let sessions = client.state?.conversationsOutsideThreads ?? []
         let words = query.lowercased().split(separator: " ").map(String.init)
         let matching = words.isEmpty ? sessions : sessions.filter { session in
             let name = chatName(session, state: client.state).lowercased()
@@ -217,7 +218,7 @@ struct ChatSwitcher: View {
         let drafts = matching.filter { !activeIds.contains($0.id) && Drafts.shared.drafted.contains($0.id) }.sorted { $0.updatedAt > $1.updatedAt }
         let shown = activeIds.union(drafts.map(\.id))
         // The rest: the inbox (newest first), then, when searching, everything else that matches.
-        let rest = matching.filter { !shown.contains($0.id) && $0.characterId == nil && (!words.isEmpty || Inbox.place(of: $0) == .inbox) }
+        let rest = matching.filter { !shown.contains($0.id) && $0.characterId == nil && $0.spaceId == nil && (!words.isEmpty || Inbox.place(of: $0) == .inbox) }
             .sorted { $0.updatedAt > $1.updatedAt }
         return [
             Group(title: "Needs You", chats: active.filter { !$0.busy && waiting.contains($0.id) }),

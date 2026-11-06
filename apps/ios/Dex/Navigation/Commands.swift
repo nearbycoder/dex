@@ -32,6 +32,7 @@ struct DexCommands: Commands {
             Button("Files") { router?.tab = .files }.keyboardShortcut("3", modifiers: .command)
             Button("Agents") { router?.open(.page(.agents), compact: false) }.keyboardShortcut("4", modifiers: .command)
             Button("Sidekicks") { router?.open(.page(.characters), compact: false) }
+            Button("Spaces") { router?.open(.page(.spaces), compact: false) }
             Button("Projects") { router?.open(.page(.projects), compact: false) }.keyboardShortcut("5", modifiers: .command)
             Button("Skills") { router?.open(.page(.skills), compact: false) }.keyboardShortcut("6", modifiers: .command)
             Button("MCP Servers") { router?.open(.page(.mcp), compact: false) }.keyboardShortcut("7", modifiers: .command)
@@ -52,7 +53,7 @@ struct DexCommands: Commands {
             // The next chat that needs you, is working, or has a reply waiting.
             Button("Next Active Chat") {
                 guard let router, let client else { return }
-                if let next = Inbox.active(client.state?.sessions ?? [], waiting: client.state?.waitingChats ?? [], excluding: router.chat).first { router.openChat(next.id) }
+                if let next = Inbox.active(client.state?.conversationsOutsideThreads ?? [], waiting: client.state?.waitingChats ?? [], excluding: router.chat).first { router.openChat(next.id) }
             }
             .keyboardShortcut("j", modifiers: .command)
             .disabled(router == nil)
@@ -63,8 +64,8 @@ struct DexCommands: Commands {
                 client.perform { try await ChatActions.settle(id, !settled, client: client) }
             }
             .keyboardShortcut("e", modifiers: .command)
-            // A character's conversation isn't in the inbox: nothing to settle.
-            .disabled(router?.chat == nil || router.flatMap { client?.state?.session($0.chat ?? "")?.characterId } != nil)
+            // A character's conversation and a space's chats aren't in the inbox: nothing to settle.
+            .disabled(router?.chat == nil || router.flatMap { router in client?.state?.session(router.chat ?? "").map { $0.characterId != nil || $0.spaceId != nil } } == true)
             Button("Stop") {
                 guard let router, let client, let id = router.chat else { return }
                 client.perform { try await client.run("abort", .string(id)) }

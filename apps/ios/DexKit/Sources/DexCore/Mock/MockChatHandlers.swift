@@ -370,7 +370,9 @@ extension MockAgent {
             }
         }
 
-        let step = Self.scriptedStep(for: lower, prompt: prompt, sessionId: id)
+        // A space's coordinator starts a thread when asked for one.
+        let step = state.coordinated(by: id).flatMap { _ in lower.contains("thread") ? Self.threadStep(prompt) : nil }
+            ?? Self.scriptedStep(for: lower, prompt: prompt, sessionId: id)
         let toolName = step?.name
         if let step, let toolName {
             let callId = "call-\(UUID().uuidString.prefix(6))"
@@ -392,7 +394,11 @@ extension MockAgent {
             let resultId = entryId()
             var content: [ContentBlock] = [.text(output)]
             if step.screenshot { content.append(.image(data: "", mimeType: "image/png", ref: "\(resultId):0:1")) }
-            let details = step.details
+            var details = step.details
+            if toolName == Spaces.startThreadTool, let space = state.coordinated(by: id) {
+                let thread = startThread(in: space.id, title: arguments["title"]?.string ?? "New thread")
+                details = ["thread": ["id": .string(thread.id), "title": .string(thread.title)]]
+            }
             if toolName == "app_call", let pendingId = details?["confirmation"]?["id"]?.string {
                 state.access.pending.append(PendingAction(id: pendingId, sessionId: id, operation: "app_delete_sessions", summary: details?["confirmation"]?["summary"]?.string ?? "", createdAt: .nowMs, status: "pending"))
                 publish()
@@ -455,6 +461,13 @@ extension MockAgent {
         var screenshot = false
         var details: JSONValue? = nil
         var answer: String
+    }
+
+    /// A coordinator starting a thread for the message.
+    static func threadStep(_ prompt: String) -> ScriptedStep {
+        let title = String(prompt.replacing(/(?i)^(start|open)?\s*(a|another)?\s*thread\s*(to|for)?\s*/, with: "").prefix(40))
+        return ScriptedStep(name: Spaces.startThreadTool, arguments: ["title": .string(title.isEmpty ? "New thread" : title.prefix(1).uppercased() + title.dropFirst()), "prompt": .string(prompt)],
+                            lines: ["Started the thread."], answer: "I've started a thread for it. I'll report back when it's done.")
     }
 
     static func scriptedStep(for lower: String, prompt: String, sessionId: String) -> ScriptedStep? {

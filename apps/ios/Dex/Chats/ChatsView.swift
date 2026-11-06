@@ -2,7 +2,7 @@ import DexCore
 import SwiftUI
 
 /// The Chats tab: the inbox beside the open chat (iPad, unfolded foldable), or the inbox pushing the chat (iPhone).
-/// A character's page opens over it as a sheet.
+/// A character's or a space's page, and a space's threads, open over it as sheets.
 struct ChatsView: View {
     @Environment(DexClient.self) private var client
     @Environment(Router.self) private var router
@@ -41,6 +41,18 @@ struct ChatsView: View {
                 }
             }
             .tint(.dexAccent)
+        }
+        .sheet(item: $router.spaceSheet) { sheet in
+            NavigationStack {
+                switch sheet {
+                case .new: SpaceEditor(spaceId: nil, inSheet: true)
+                case .space(let id): SpaceEditor(spaceId: id, inSheet: true)
+                }
+            }
+            .tint(.dexAccent)
+        }
+        .sheet(item: $router.spacePanel) { request in
+            SpacePanel(spaceId: request.spaceId, tab: request.tab).tint(.dexAccent)
         }
     }
 }
