@@ -173,7 +173,7 @@ private fun MachineCard(vm: VmInfo, now: Long, confirm: ConfirmState) {
     val current = state ?: return
     val label = Vms.label(current, vm.key)
     val badge = label.project?.let { Triple(it.icon, it.color, it.image) } ?: label.agent?.let { Triple(it.icon, it.color, null) }
-    val session = current.sessions.firstOrNull { it.id == vm.key }
+    val session = current.sessions.firstOrNull { it.id == Vms.chatOf(vm.key) }
     val canStart = vm.status == VmStatus.Stopped || vm.status == VmStatus.Error || vm.status == VmStatus.None
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf<String?>(null) }

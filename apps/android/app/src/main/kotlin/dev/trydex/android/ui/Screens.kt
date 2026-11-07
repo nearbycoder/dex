@@ -21,6 +21,7 @@ import dev.trydex.android.ui.library.ProjectEditorScreen
 import dev.trydex.android.ui.library.ProjectListScreen
 import dev.trydex.android.ui.library.SkillEditorScreen
 import dev.trydex.android.ui.library.SkillListScreen
+import dev.trydex.android.ui.machine.ControlPanelScreen
 import dev.trydex.android.ui.machine.MachineListScreen
 import dev.trydex.android.ui.machine.MachineScreen
 import dev.trydex.android.ui.machine.VmFilesScreen
@@ -39,6 +40,7 @@ import dev.trydex.android.ui.chat.SpaceThreadsScreen
 import dev.trydex.android.ui.nav.Chat
 import dev.trydex.android.ui.nav.ChatList
 import dev.trydex.android.ui.nav.ChatFiles
+import dev.trydex.android.ui.nav.ChatControl
 import dev.trydex.android.ui.nav.ChatMachine
 import dev.trydex.android.ui.nav.GeneralSettings
 import dev.trydex.android.ui.nav.LibraryHome
@@ -78,6 +80,7 @@ fun EntryProviderScope<NavKey>.screens(@Suppress("UNUSED_PARAMETER") wide: Boole
     entry<Chat>(metadata = detail) { ChatScreen(it.id) }
     entry<ChatMachine>(metadata = extra) { MachineScreen(it.key, beside = true) }
     entry<ChatFiles>(metadata = extra) { VmFilesScreen(it.key) }
+    entry<ChatControl>(metadata = extra) { ControlPanelScreen(it.id) }
     entry<NewCharacter>(metadata = detail) { CharacterEditorScreen(NEW_CHARACTER, it) }
     entry<CharacterPage>(metadata = extra) { CharacterEditorScreen(it.id, it) }
     entry<NewSpace>(metadata = detail) { SpaceEditorScreen(null, it.nonce) }

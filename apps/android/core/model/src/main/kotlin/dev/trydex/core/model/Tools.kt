@@ -20,6 +20,7 @@ object Tools {
         "vm_write_file" to "Writing a file on the VM",
         "vm_expose_port" to "Opening a port",
         "vm_screenshot" to "Looking at the VM's screen",
+        "vm_browser" to "Browsing on the VM",
         "vm_stop" to "Stopping the VM",
         "share_media" to "Sharing a file from the VM",
         "app_operations" to "Looking up app operations",
@@ -63,6 +64,7 @@ object Tools {
         "vm_write_file" to Icon.FilePen,
         "vm_expose_port" to Icon.Globe,
         "vm_screenshot" to Icon.Camera,
+        "vm_browser" to Icon.Globe,
         "vm_stop" to Icon.Monitor,
     )
 

@@ -29,6 +29,7 @@ import { Route as AppAgentsIndexRouteImport } from './routes/_app.agents.index'
 import { Route as AppAgentsAgentIdRouteImport } from './routes/_app.agents.$agentId'
 import { Route as AppChatIndexRouteImport } from './routes/_app.chat.index'
 import { Route as AppChatSessionIdRouteImport } from './routes/_app.chat.$sessionId'
+import { Route as AppControlSessionIdRouteImport } from './routes/_app.control.$sessionId'
 import { Route as AppMachineIndexRouteImport } from './routes/_app.machine.index'
 import { Route as AppMachineVmKeyRouteImport } from './routes/_app.machine.$vmKey'
 import { Route as AppMcpIndexRouteImport } from './routes/_app.mcp.index'
@@ -148,6 +149,11 @@ const AppChatIndexRoute = AppChatIndexRouteImport.update({
 const AppChatSessionIdRoute = AppChatSessionIdRouteImport.update({
   id: '/chat/$sessionId',
   path: '/chat/$sessionId',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppControlSessionIdRoute = AppControlSessionIdRouteImport.update({
+  id: '/control/$sessionId',
+  path: '/control/$sessionId',
   getParentRoute: () => AppRoute,
 } as any)
 const AppMachineIndexRoute = AppMachineIndexRouteImport.update({
@@ -275,6 +281,7 @@ export interface FileRoutesByFullPath {
   '/auth/password': typeof AuthPasswordRoute
   '/agents/$agentId': typeof AppAgentsAgentIdRoute
   '/chat/$sessionId': typeof AppChatSessionIdRoute
+  '/control/$sessionId': typeof AppControlSessionIdRoute
   '/machine/$vmKey': typeof AppMachineVmKeyRoute
   '/mcp/$serverId': typeof AppMcpServerIdRoute
   '/projects/$projectId': typeof AppProjectsProjectIdRoute
@@ -317,6 +324,7 @@ export interface FileRoutesByTo {
   '/auth/password': typeof AuthPasswordRoute
   '/agents/$agentId': typeof AppAgentsAgentIdRoute
   '/chat/$sessionId': typeof AppChatSessionIdRoute
+  '/control/$sessionId': typeof AppControlSessionIdRoute
   '/machine/$vmKey': typeof AppMachineVmKeyRoute
   '/mcp/$serverId': typeof AppMcpServerIdRoute
   '/projects/$projectId': typeof AppProjectsProjectIdRoute
@@ -361,6 +369,7 @@ export interface FileRoutesById {
   '/auth/password': typeof AuthPasswordRoute
   '/_app/agents/$agentId': typeof AppAgentsAgentIdRoute
   '/_app/chat/$sessionId': typeof AppChatSessionIdRoute
+  '/_app/control/$sessionId': typeof AppControlSessionIdRoute
   '/_app/machine/$vmKey': typeof AppMachineVmKeyRoute
   '/_app/mcp/$serverId': typeof AppMcpServerIdRoute
   '/_app/projects/$projectId': typeof AppProjectsProjectIdRoute
@@ -405,6 +414,7 @@ export interface FileRouteTypes {
     | '/auth/password'
     | '/agents/$agentId'
     | '/chat/$sessionId'
+    | '/control/$sessionId'
     | '/machine/$vmKey'
     | '/mcp/$serverId'
     | '/projects/$projectId'
@@ -447,6 +457,7 @@ export interface FileRouteTypes {
     | '/auth/password'
     | '/agents/$agentId'
     | '/chat/$sessionId'
+    | '/control/$sessionId'
     | '/machine/$vmKey'
     | '/mcp/$serverId'
     | '/projects/$projectId'
@@ -490,6 +501,7 @@ export interface FileRouteTypes {
     | '/auth/password'
     | '/_app/agents/$agentId'
     | '/_app/chat/$sessionId'
+    | '/_app/control/$sessionId'
     | '/_app/machine/$vmKey'
     | '/_app/mcp/$serverId'
     | '/_app/projects/$projectId'
@@ -679,6 +691,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppChatSessionIdRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/control/$sessionId': {
+      id: '/_app/control/$sessionId'
+      path: '/control/$sessionId'
+      fullPath: '/control/$sessionId'
+      preLoaderRoute: typeof AppControlSessionIdRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/machine/': {
       id: '/_app/machine/'
       path: '/machine'
@@ -838,6 +857,7 @@ interface AppRouteChildren {
   AppUsageRoute: typeof AppUsageRoute
   AppAgentsAgentIdRoute: typeof AppAgentsAgentIdRoute
   AppChatSessionIdRoute: typeof AppChatSessionIdRoute
+  AppControlSessionIdRoute: typeof AppControlSessionIdRoute
   AppMachineVmKeyRoute: typeof AppMachineVmKeyRoute
   AppMcpServerIdRoute: typeof AppMcpServerIdRoute
   AppProjectsProjectIdRoute: typeof AppProjectsProjectIdRoute
@@ -862,6 +882,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppUsageRoute: AppUsageRoute,
   AppAgentsAgentIdRoute: AppAgentsAgentIdRoute,
   AppChatSessionIdRoute: AppChatSessionIdRoute,
+  AppControlSessionIdRoute: AppControlSessionIdRoute,
   AppMachineVmKeyRoute: AppMachineVmKeyRoute,
   AppMcpServerIdRoute: AppMcpServerIdRoute,
   AppProjectsProjectIdRoute: AppProjectsProjectIdRoute,

@@ -9,11 +9,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.rememberNavBackStack
+import dev.trydex.core.model.Vms
 
 /** How deep a route sits in its tab's list-detail layout: 0 list, 1 detail, 2 extra. */
 fun Route.level(): Int = when (this) {
     ChatList, MachineList, LibraryHome, SettingsHome -> 0
-    is ChatMachine, is ChatFiles, is CharacterPage, is SpaceSettings, is SpaceThreads, is MachineFiles -> 2
+    is ChatMachine, is ChatFiles, is ChatControl, is CharacterPage, is SpaceSettings, is SpaceThreads, is MachineFiles -> 2
     is ProjectEditor, is AgentEditor, is CharacterEditor, is SkillEditor, is McpEditor, is WorkspaceFile -> 2
     else -> 1
 }
@@ -21,8 +22,10 @@ fun Route.level(): Int = when (this) {
 /** The routes above this one, from its tab's root. */
 fun Route.parents(): List<Route> = when (this) {
     ChatList, MachineList, LibraryHome, SettingsHome -> emptyList()
-    is ChatMachine -> listOf(ChatList, Chat(key))
-    is ChatFiles -> listOf(ChatList, Chat(key))
+    // A chat's further VMs (`<chat id>~N`) belong to the same chat.
+    is ChatMachine -> listOf(ChatList, Chat(Vms.chatOf(key)))
+    is ChatFiles -> listOf(ChatList, Chat(Vms.chatOf(key)))
+    is ChatControl -> listOf(ChatList, Chat(id))
     is MachineFiles -> listOf(MachineList, Machine(key))
     is CharacterPage -> listOf(ChatList, Chat(sessionId))
     is SpaceSettings -> listOf(ChatList, Chat(sessionId))

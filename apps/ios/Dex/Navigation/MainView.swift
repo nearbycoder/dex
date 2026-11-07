@@ -75,6 +75,9 @@ struct MainView: View {
         .sheet(isPresented: $router.switcherOpen) {
             ChatSwitcher().tint(.dexAccent)
         }
+        .fullScreenCover(isPresented: Binding(get: { router.controlPanel != nil }, set: { if !$0 { router.controlPanel = nil } })) {
+            if let chatId = router.controlPanel { ControlPanelView(chatId: chatId).tint(.dexAccent) }
+        }
     }
 
     /// Chats with something new: working on it, or a reply you haven't seen. A space counts once, by its coordinator.

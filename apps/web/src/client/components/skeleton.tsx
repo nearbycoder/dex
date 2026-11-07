@@ -589,6 +589,33 @@ export function MachineSkeleton() {
   )
 }
 
+/** A chat's control panel: its header, then square VM tiles (a title strip over a black picture). */
+export function ControlPanelSkeleton() {
+  return (
+    <Status>
+      <div className="flex min-h-0 flex-1 flex-col">
+        <HeaderBones>
+          <Bone className="h-4 w-32" />
+          <Bone className="ml-auto h-6 w-20 rounded-md" />
+          <Bone className="h-6 w-24 rounded-md" />
+        </HeaderBones>
+        <div className="min-h-0 flex-1 overflow-hidden p-2">
+          <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 240px), 1fr))" }}>
+            {[0, 1, 2, 3].map((index) => (
+              <div key={index} className="flex aspect-square flex-col overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900">
+                <div className="flex h-8 items-center border-b border-zinc-800 px-2.5">
+                  <Bone className="h-3 w-12" />
+                </div>
+                <div className="flex-1 bg-black" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </Status>
+  )
+}
+
 /** One labeled form field: the label's line, then a control of the given height. */
 function FieldBones({ height, label = "30%" }: { height: number; label?: string }) {
   return (
@@ -1074,13 +1101,14 @@ function UsagePageSkeleton() {
 
 /** Pages that draw their own header instead of the app's (the app shell shows its header for the rest). */
 export const ownsHeader = (pathname: string) =>
-  /^\/chat\/[^/]+/.test(pathname) || pathname === "/machine" || pathname.startsWith("/machine/") || pathname === "/usage"
+  /^\/chat\/[^/]+/.test(pathname) || pathname === "/machine" || pathname.startsWith("/machine/") || pathname.startsWith("/control/") || pathname === "/usage"
 
 /** The skeleton for whichever page `pathname` is, so a slow load shows that page's shape. */
 export function RouteSkeleton({ pathname }: { pathname: string }) {
   if (/^\/chat\/[^/]+/.test(pathname)) return <ChatPageSkeleton />
   if (pathname === "/chat" || pathname === "/") return <NewChatSkeleton />
   if (pathname.startsWith("/machine/")) return <MachineSkeleton />
+  if (pathname.startsWith("/control/")) return <ControlPanelSkeleton />
   if (pathname === "/machine") return <MachinesPageSkeleton />
   if (pathname === "/usage") return <UsagePageSkeleton />
   if (pathname === "/files") return <FilesSkeleton />

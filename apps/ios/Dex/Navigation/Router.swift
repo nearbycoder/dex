@@ -139,6 +139,8 @@ final class Router {
     var switcherOpen = false
     /// The chat whose VM files are open beside it (a sheet on iPhone).
     var vmFiles: String?
+    /// The chat whose VMs are all on screen at once (its control panel, over everything).
+    var controlPanel: String?
 
     enum CharacterSheet: Hashable, Identifiable {
         case new

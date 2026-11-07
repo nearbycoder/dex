@@ -27,7 +27,7 @@ import { type DesktopMode, saveDesktopMode, savedDesktopMode, streamSupported, u
 import { useDex } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
 import { MenuButton } from "~/client/lib/mobile-nav"
-import { noVm, type VmActivity } from "~/shared/protocol"
+import { chatOfVm, noVm, type VmActivity, vmKeyFor, vmNumber } from "~/shared/protocol"
 import { ask } from "~/client/components/confirm-dialog"
 
 /** One VM: its live desktop, activity, terminal, and ports. `vmKey` is the chat id, or `shared`. */
@@ -252,7 +252,9 @@ function MachinePage() {
 
   const vms = state?.vms ?? []
   // A chat that hasn't needed a VM yet shows as "No VM yet", with Start.
-  const known = vms.some((candidate) => candidate.key === vmKey) || state?.sessions.some((session) => session.id === vmKey)
+  const known =
+    vms.some((candidate) => candidate.key === vmKey) ||
+    (vmKeyFor(chatOfVm(vmKey), vmNumber(vmKey)) === vmKey && state?.sessions.some((session) => session.id === chatOfVm(vmKey)))
   const selectedKey = known ? vmKey : null
   const vm = selectedKey ? (vms.find((candidate) => candidate.key === selectedKey) ?? noVm(selectedKey)) : null
   const activity = useVmActivity(selectedKey)
@@ -310,7 +312,7 @@ function MachinePage() {
   }
 
   const info = label(vm.key)
-  const session = state.sessions.find((candidate) => candidate.id === vm.key)
+  const session = state.sessions.find((candidate) => candidate.id === chatOfVm(vm.key))
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">

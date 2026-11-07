@@ -121,9 +121,9 @@ function AppLayout() {
   usePreloadPages()
   useUpdateChecker()
   const { pathname } = useLocation()
-  // Chat and Machine pages put the menu button in their own header.
+  // Chat, Machine, and control panel pages put the menu button in their own header.
   const inChat = useMatch({ from: "/_app/chat/$sessionId", shouldThrow: false }) !== undefined
-  const ownHeader = inChat || pathname === "/machine" || pathname.startsWith("/machine/") || pathname === "/usage"
+  const ownHeader = inChat || pathname === "/machine" || pathname.startsWith("/machine/") || pathname.startsWith("/control/") || pathname === "/usage"
 
   // Picking a page closes the drawer; switching between the chats and settings sidebars keeps it open.
   const { closeDrawer, takeHold } = nav

@@ -90,10 +90,26 @@ object Vms {
         SHARED_VM -> Label("Shared VM", "Not linked to a chat (from before VMs were per chat)", null, null)
         MCP_VM -> Label("MCP servers", "Runs your local MCP servers; starts when a chat uses one", null, null)
         else -> {
-            val session = state.session(key)
-            Label(session?.title ?: "Deleted chat", null, state.agent(session?.agentId), state.project(session?.projectId))
+            val session = state.session(chatOf(key))
+            val n = number(key)
+            Label(session?.title ?: "Deleted chat", if (n > 1) "VM $n" else null, state.agent(session?.agentId), state.project(session?.projectId))
         }
     }
+
+    /** How many VMs one chat can run (MAX_VMS_PER_CHAT on the web). */
+    const val MAX_PER_CHAT = 10
+
+    /** The key of a chat's VM number [n]: the chat's id for its first. */
+    fun keyFor(chatId: String, n: Int = 1): String = if (n <= 1) chatId else "$chatId~$n"
+
+    /** A chat's further VMs are keyed `<chat id>~2` to `~10` (vmKeyFor in apps/web/src/shared/protocol.ts). */
+    private val numbered = Regex("^(.+)~([2-9]|10)$")
+
+    /** The chat a VM key belongs to. */
+    fun chatOf(key: String): String = numbered.find(key)?.groupValues?.get(1) ?: key
+
+    /** Which of its chat's VMs a key is: 1 for the chat's first. */
+    fun number(key: String): Int = numbered.find(key)?.groupValues?.get(2)?.toInt() ?: 1
 
     val SIZES = listOf("small" to "Small · 2 vCPU · 4 GB", "default" to "Default · 4 vCPU · 8 GB", "large" to "Large · 8 vCPU · 16 GB")
     val IDLE_MINUTES = listOf(5, 10, 15, 30, 60)

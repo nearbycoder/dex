@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
-import { ArrowLeft, Bell, BellOff, Check, CheckCheck, FolderOpen, History, KeyRound, ListTree, Monitor, Pencil, RotateCcw, X } from "lucide-react"
+import { ArrowLeft, Bell, BellOff, Check, CheckCheck, FolderOpen, History, KeyRound, LayoutGrid, ListTree, Monitor, Pencil, RotateCcw, X } from "lucide-react"
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Composer } from "~/client/components/composer"
 import { ChatArtifactsContext, type ChatArtifacts } from "~/client/components/media"
@@ -17,7 +17,7 @@ import { ChatSecretsContext } from "~/client/lib/chat-secrets"
 import { useDex, useTranscript } from "~/client/lib/dex"
 import { MenuButton } from "~/client/lib/mobile-nav"
 import { MODEL_PROVIDERS, providerOf } from "~/shared/models"
-import { connectedProviders } from "~/shared/protocol"
+import { chatOfVm, connectedProviders } from "~/shared/protocol"
 import { attachmentSummary, type ChatAttachment } from "~/shared/attachments"
 import { ask } from "~/client/components/confirm-dialog"
 
@@ -152,6 +152,8 @@ function Chat() {
   )
 
   const vm = state?.vmConfigured ? state.vms.find((candidate) => candidate.key === sessionId) : undefined
+  // A chat can run several VMs at once; with more than one, its machine button opens the control panel of all of them.
+  const chatVms = state?.vmConfigured ? state.vms.filter((candidate) => chatOfVm(candidate.key) === sessionId) : []
 
   if (state && !session) {
     return <div className="flex flex-1 items-center justify-center text-sm text-zinc-500">This chat no longer exists.</div>
@@ -273,8 +275,28 @@ function Chat() {
               <FolderOpen className="size-4" /><span className="hidden sm:inline">Files</span>
             </button>
           )}
+          {chatVms.length > 1 && (
+            <Link
+              to="/control/$sessionId"
+              params={{ sessionId }}
+              title="Watch all of this chat's VMs at once"
+              className="flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
+            >
+              <span
+                className={`size-1.5 rounded-full ${
+                  chatVms.some((candidate) => candidate.status === "starting" || candidate.setup.status === "running")
+                    ? "animate-pulse bg-amber-500"
+                    : chatVms.some((candidate) => candidate.status === "running")
+                      ? "bg-emerald-500"
+                      : "bg-zinc-600"
+                }`}
+              />
+              <LayoutGrid className="size-3.5" />
+              <span className="hidden sm:inline">{chatVms.length} VMs</span>
+            </Link>
+          )}
           {(() => {
-            if (!vm) return null
+            if (!vm || chatVms.length > 1) return null
             return (
               <Link
                 to="/machine/$vmKey"

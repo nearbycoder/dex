@@ -81,9 +81,10 @@ public extension DexState {
         case VmKeys.shared: return VmLabel(title: "Shared VM", subtitle: "Not linked to a chat (from before VMs were per chat)")
         case VmKeys.mcp: return VmLabel(title: "MCP servers", subtitle: "Runs your local MCP servers; starts when a chat uses one")
         default:
-            let session = session(key)
+            let session = session(VmKeys.chat(of: key))
+            let number = VmKeys.number(of: key)
             return VmLabel(
-                title: session?.title ?? "Deleted chat", subtitle: nil,
+                title: session?.title ?? "Deleted chat", subtitle: number > 1 ? "VM \(number)" : nil,
                 agent: session?.agentId.flatMap { id in agents.first { $0.id == id } },
                 project: session?.projectId.flatMap { id in projects.first { $0.id == id } },
                 session: session
@@ -94,7 +95,8 @@ public extension DexState {
     /// A chat's VM, or a "No VM yet" placeholder for a chat that hasn't needed one; nil for an unknown key.
     func machine(_ key: String) -> VmInfo? {
         if let vm = vm(key) { return vm }
-        return session(key) != nil ? VmInfo(key: key) : nil
+        let chat = VmKeys.chat(of: key)
+        return session(chat) != nil && VmKeys.key(for: chat, number: VmKeys.number(of: key)) == key ? VmInfo(key: key) : nil
     }
 }
 

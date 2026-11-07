@@ -42,7 +42,7 @@ public enum ToolDisplay: Sendable, Equatable {
         case "read_file", "vm_read_file": return "doc.text"
         case "write_file", "edit_file", "vm_write_file": return "square.and.pencil"
         case "web_search": return "magnifyingglass"
-        case "web_fetch", "vm_expose_port": return "globe"
+        case "web_fetch", "vm_expose_port", "vm_browser": return "globe"
         case "schedule_prompt", "list_scheduled_prompts", "cancel_scheduled_prompt": return "clock"
         case "vm_exec", "vm_stop": return "desktopcomputer"
         case "vm_screenshot": return "camera"

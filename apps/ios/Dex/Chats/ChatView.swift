@@ -179,6 +179,19 @@ struct ChatToolbar: ToolbarContent {
             // iPad and an unfolded foldable: the machine, mute, and settle as buttons. On iPhone they're in the menu
             // (iOS folds several buttons beside a title menu into an overflow menu anyway).
             if sizeClass != .compact {
+                // A chat can run several VMs at once: then a button shows all of them, live, in its control panel.
+                let chatVms = client.state?.vmConfigured == true ? (client.state?.vms ?? []).filter { VmKeys.chat(of: $0.key) == session.id } : []
+                if chatVms.count > 1 {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            router.controlPanel = session.id
+                        } label: {
+                            Label("\(chatVms.count) VMs", systemImage: "square.grid.2x2")
+                        }
+                        .accessibilityHint("Watch all of this chat's VMs at once")
+                        .accessibilityIdentifier("chat.vms")
+                    }
+                }
                 if let vm = client.state?.vm(session.id), client.state?.vmConfigured == true {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
@@ -374,6 +387,13 @@ struct ChatMenu: View {
                     Text(vm.setup.status == "running" ? "Setting up" : vm.status.capitalized)
                 }
                 .accessibilityIdentifier("chat.menu.machine")
+                let count = (client.state?.vms ?? []).filter { VmKeys.chat(of: $0.key) == session.id }.count
+                if count > 1 {
+                    Button { router.controlPanel = session.id } label: {
+                        Label("All \(count) VMs", systemImage: "square.grid.2x2")
+                    }
+                    .accessibilityIdentifier("chat.menu.vms")
+                }
                 Button { router.vmFiles = session.id } label: { Label("Files", systemImage: "folder") }
                     .accessibilityIdentifier("chat.menu.files")
                 Divider()

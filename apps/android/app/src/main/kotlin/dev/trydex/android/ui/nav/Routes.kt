@@ -40,6 +40,9 @@ enum class Tab { Chats, Machines, Library, Settings }
 /** A chat's VM desktop beside the chat, on screens wide enough for both. */
 @Serializable data class ChatMachine(val key: String) : Route { override val tab get() = Tab.Chats }
 
+/** All of a chat's VMs live at once (the web's control panel), beside the chat. */
+@Serializable data class ChatControl(val id: String) : Route { override val tab get() = Tab.Chats }
+
 /** A chat VM's files beside the chat (the web's Files panel). */
 @Serializable data class ChatFiles(val key: String) : Route { override val tab get() = Tab.Chats }
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { useDex } from "~/client/lib/dex"
-import { MCP_VM, SHARED_VM, type VmInfo, type VmStatus } from "~/shared/protocol"
+import { chatOfVm, MCP_VM, SHARED_VM, type VmInfo, type VmStatus, vmNumber } from "~/shared/protocol"
 
 export const VM_STATUS: Record<VmStatus, { label: string; dot: string }> = {
   none: { label: "No VM yet", dot: "bg-zinc-600" },
@@ -15,16 +15,17 @@ export function VmStatusDot({ status, className = "" }: { status: VmStatus; clas
   return <span className={`inline-block size-2 shrink-0 rounded-full ${VM_STATUS[status].dot} ${className}`} title={VM_STATUS[status].label} />
 }
 
-/** A VM's chat (or the shared VM's label), with the chat's agent and project. */
+/** A VM's chat (or the shared VM's label), with the chat's agent and project; a chat's further VMs say which they are. */
 export function useVmLabel() {
   const { state } = useDex()
   return (key: string) => {
     if (key === SHARED_VM) return { title: "Shared VM", subtitle: "Not linked to a chat (from before VMs were per chat)", agent: undefined, project: undefined }
     if (key === MCP_VM) return { title: "MCP servers", subtitle: "Runs your local MCP servers; starts when a chat uses one", agent: undefined, project: undefined }
-    const session = state?.sessions.find((candidate) => candidate.id === key)
+    const session = state?.sessions.find((candidate) => candidate.id === chatOfVm(key))
+    const n = vmNumber(key)
     return {
       title: session?.title ?? "Deleted chat",
-      subtitle: null,
+      subtitle: n > 1 ? `VM ${n}` : null,
       agent: session?.agentId ? state?.agents.find((agent) => agent.id === session.agentId) : undefined,
       project: session?.projectId ? state?.projects.find((project) => project.id === session.projectId) : undefined
     }

@@ -9,7 +9,7 @@ import { MODEL_PROVIDERS, MODELS, supportedThinkingLevels, THINKING_LEVELS, type
 import type { McpAuth, McpTransport } from "~/shared/mcp"
 import { NOTIFY_KINDS, type NotifyKind } from "~/shared/notifications"
 import { githubFullName, normalizeRepoUrl, type ProjectProfile, type ProjectRepo } from "~/shared/projects"
-import { connectedProviders, type DexState, type VmSize, VM_SIZES } from "~/shared/protocol"
+import { chatOfVm, connectedProviders, type DexState, type VmSize, VM_SIZES, vmNumber } from "~/shared/protocol"
 import { USAGE_RANGES, type UsageRange } from "~/shared/usage"
 import { VM_PEEK_VIEWS } from "./vm-peek"
 import type { DexAgent } from "./dex-agent"
@@ -181,7 +181,7 @@ const thinking = Type.Union(THINKING_LEVELS.map((level) => Type.Literal(level)),
 const modelId = Type.String({ maxLength: 120, description: "A model id from app_list_models, e.g. cline-pass/glm-5.3 or opencode-go/kimi-k3." })
 const icon = Type.Optional(Type.Union(AGENT_ICONS.map((value) => Type.Literal(value)), { description: "Icon name." }))
 const color = Type.Optional(Type.Union(Object.keys(AGENT_COLORS).map((value) => Type.Literal(value)), { description: "Accent color." }))
-const vmKey = Type.String({ minLength: 1, maxLength: 64, description: "The VM's key: its chat's id (from app_list_vms)." })
+const vmKey = Type.String({ minLength: 1, maxLength: 64, description: "The VM's key (from app_list_vms): its chat's id, or `<chat id>~N` for the chat's VM number N." })
 
 const agentFields = {
   name: Type.String({ minLength: 1, maxLength: 60 }),
@@ -266,6 +266,11 @@ const inboxState = (session: DexState["sessions"][number]) =>
   session.snoozedUntil && session.snoozedUntil > Date.now() ? "snoozed" : session.settledAt ? "settled" : "inbox"
 
 const chatTitle = (state: DexState, sessionId: string) => state.sessions.find((session) => session.id === sessionId)?.title ?? `chat ${sessionId}`
+/** A VM's chat title, with its number when it isn't the chat's first VM: “Fix the build” (VM 3). */
+const vmTitle = (state: DexState, key: string) => {
+  const n = vmNumber(key)
+  return n === 1 ? chatTitle(state, key) : `${chatTitle(state, chatOfVm(key))} (VM ${n})`
+}
 const quote = (text: string, max = 60) => `“${text.length > max ? `${text.slice(0, max)}…` : text}”`
 
 const sessionSummary = (state: DexState) => (session: DexState["sessions"][number]) => ({
@@ -280,6 +285,7 @@ const sessionSummary = (state: DexState) => (session: DexState["sessions"][numbe
   sidekick: session.characterId ? (state.characters.find((character) => character.id === session.characterId)?.name ?? session.characterId) : null,
   mcpServers: session.mcpServers,
   vm: state.vms.find((vm) => vm.key === session.id)?.status ?? "none",
+  vms: state.vms.filter((vm) => chatOfVm(vm.key) === session.id).length,
   inbox: inboxState(session),
   snoozedUntil: session.snoozedUntil ? new Date(session.snoozedUntil).toISOString() : null,
   createdAt: new Date(session.createdAt).toISOString(),
@@ -733,7 +739,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
   }),
   define({
     name: "app_list_vms",
-    description: "List every chat's VM with its status, size, last use, and setup state. `refresh` re-checks each with boat.dev first.",
+    description: "List every chat's VMs (a chat can have several; `number` says which) with status, size, last use, and setup state. `refresh` re-checks each with boat.dev first.",
     risk: "read",
     parameters: Type.Object({ refresh: Type.Optional(Type.Boolean()) }),
     covers: ["vmRefresh"],
@@ -741,7 +747,11 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     run: async (host, args) => {
       if (args.refresh) await Promise.all(host.appState().vms.map((vm) => host.vmRefresh(vm.key).catch(() => undefined)))
       const state = host.appState()
-      return state.vms.map((vm) => ({ ...vm, chat: state.sessions.find((session) => session.id === vm.key)?.title ?? null }))
+      return state.vms.map((vm) => ({
+        ...vm,
+        chat: state.sessions.find((session) => session.id === chatOfVm(vm.key))?.title ?? null,
+        number: vmNumber(vm.key)
+      }))
     }
   }),
   define({
@@ -750,7 +760,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     risk: "read",
     parameters: Type.Object({ vm_key: vmKey, limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })) }),
     covers: ["vmActivity"],
-    summarize: (args, state) => `Read VM activity of ${quote(chatTitle(state, args.vm_key))}`,
+    summarize: (args, state) => `Read VM activity of ${quote(vmTitle(state, args.vm_key))}`,
     run: async (host, args) =>
       (await host.vmActivity(args.vm_key, args.limit ?? 30)).map((item) => ({ ...item, output: item.output.slice(-2_000) }))
   }),
@@ -766,7 +776,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
       lines: Type.Optional(Type.Integer({ minimum: 1, maximum: 2_000, description: "How many lines from the end of the file (default 200)." }))
     }),
     covers: ["vmPeek"],
-    summarize: (args, state) => `Look at ${args.view}${args.path ? ` ${args.path}` : ""} on the VM of ${quote(chatTitle(state, args.vm_key))}`,
+    summarize: (args, state) => `Look at ${args.view}${args.path ? ` ${args.path}` : ""} on the VM of ${quote(vmTitle(state, args.vm_key))}`,
     run: async (host, args) => host.vmPeek(args.vm_key, args.view, args.path, args.lines)
   }),
   define({
@@ -780,7 +790,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
       offset: Type.Optional(Type.Integer({ minimum: 0, maximum: 1_000_000 }))
     }),
     covers: ["vmFiles"],
-    summarize: (args, state) => `Inspect ${args.path ?? "~/work"} on the VM of ${quote(chatTitle(state, args.vm_key))}`,
+    summarize: (args, state) => `Inspect ${args.path ?? "~/work"} on the VM of ${quote(vmTitle(state, args.vm_key))}`,
     run: async (host, args) => host.vmFiles(args.vm_key, args.view, args.path, args.offset)
   }),
   define({
@@ -1326,7 +1336,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     risk: "write",
     parameters: Type.Object({ vm_key: vmKey }),
     covers: ["vmStart"],
-    summarize: (args, state) => `Start the VM of ${quote(chatTitle(state, args.vm_key))}`,
+    summarize: (args, state) => `Start the VM of ${quote(vmTitle(state, args.vm_key))}`,
     run: async (host, args) => host.vmStart(args.vm_key)
   }),
   define({
@@ -1335,7 +1345,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     risk: "write",
     parameters: Type.Object({ vm_key: vmKey }),
     covers: ["vmStop"],
-    summarize: (args, state) => `Stop the VM of ${quote(chatTitle(state, args.vm_key))}`,
+    summarize: (args, state) => `Stop the VM of ${quote(vmTitle(state, args.vm_key))}`,
     run: async (host, args) => host.vmStop(args.vm_key)
   }),
   define({
@@ -1344,7 +1354,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     risk: "write",
     parameters: Type.Object({ vm_key: vmKey, command: Type.String({ minLength: 1, maxLength: 20_000 }) }),
     covers: ["vmRun"],
-    summarize: (args, state) => `Run on the VM of ${quote(chatTitle(state, args.vm_key))}: ${quote(args.command, 80)}`,
+    summarize: (args, state) => `Run on the VM of ${quote(vmTitle(state, args.vm_key))}: ${quote(args.command, 80)}`,
     run: async (host, args) => host.vmRun(args.vm_key, args.command)
   }),
   define({
@@ -1353,7 +1363,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     risk: "write",
     parameters: Type.Object({ vm_key: vmKey }),
     covers: ["vmRerunSetup"],
-    summarize: (args, state) => `Re-run setup on the VM of ${quote(chatTitle(state, args.vm_key))}`,
+    summarize: (args, state) => `Re-run setup on the VM of ${quote(vmTitle(state, args.vm_key))}`,
     run: async (host, args) => {
       await host.vmRerunSetup(args.vm_key)
       return { started: true }
@@ -1365,7 +1375,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     risk: "write",
     parameters: Type.Object({ vm_key: vmKey, port: Type.Integer({ minimum: 1, maximum: 65_535 }) }),
     covers: ["vmExposePort"],
-    summarize: (args, state) => `Open port ${args.port} on the VM of ${quote(chatTitle(state, args.vm_key))}`,
+    summarize: (args, state) => `Open port ${args.port} on the VM of ${quote(vmTitle(state, args.vm_key))}`,
     run: async (host, args) => ({ url: await host.vmExposePort(args.vm_key, args.port, false) })
   }),
   define({
@@ -1381,8 +1391,8 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
       title: Type.Optional(Type.String({ maxLength: 120 }))
     }),
     covers: [],
-    summarize: (args, state) => `Share ${args.path} from the VM of ${quote(chatTitle(state, args.vm_key))}`,
-    run: async (host, args) => host.shareMediaFromVm(args.vm_key, args.path, args.title)
+    summarize: (args, state) => `Share ${args.path} from the VM of ${quote(vmTitle(state, args.vm_key))}`,
+    run: async (host, args) => host.shareMediaFromVm(chatOfVm(args.vm_key), args.path, args.title, { vmKey: args.vm_key })
   }),
   define({
     name: "app_vm_destroy",
@@ -1390,7 +1400,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     risk: "admin",
     parameters: Type.Object({ vm_key: vmKey }),
     covers: ["vmDestroy"],
-    summarize: (args, state) => `Delete the VM of ${quote(chatTitle(state, args.vm_key))} and its disk`,
+    summarize: (args, state) => `Delete the VM of ${quote(vmTitle(state, args.vm_key))} and its disk`,
     run: async (host, args) => host.vmDestroy(args.vm_key)
   }),
 

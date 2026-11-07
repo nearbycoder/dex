@@ -49,7 +49,7 @@ import type {
   GitHubStatus,
   WorkspaceFile
 } from "~/shared/protocol"
-import { connectedProviders, MCP_VM, SHARED_VM } from "~/shared/protocol"
+import { chatOfVm, connectedProviders, MAX_VMS_PER_CHAT, MCP_VM, SHARED_VM, vmKeyFor, vmNumber } from "~/shared/protocol"
 import { withUiNotes } from "~/shared/ui-notes"
 import { AUDIO_UNLOCK_SCRIPT } from "~/shared/web-audio"
 import { attachmentSummary, type ChatAttachment, splitAttachments } from "~/shared/attachments"
@@ -470,15 +470,18 @@ export class DexAgent extends Agent<Env, DexState> {
     keepAliveWhile: (work) => this.keepAliveWhile(work)
   })
 
-  /** One VM per chat (plus `shared`, from before VMs were per chat), created when a chat first needs one. */
+  /**
+   * Each chat's VMs (up to MAX_VMS_PER_CHAT, keyed by vmKeyFor; plus `shared`, from before VMs were per chat), created
+   * when a chat first needs one. Secrets, projects, and settings belong to the chat: look them up by chatOfVm(key).
+   */
   private readonly vms = new Map<string, VmManager>()
   private readonly vmHost: VmHost = {
     sql: this.ctx.storage.sql,
     configured: () => this.boatSource() !== null,
-    mask: (key, text) => this.accountSecrets.mask(this.secrets.mask(key, text)),
+    mask: (key, text) => this.accountSecrets.mask(this.secrets.mask(chatOfVm(key), text)),
     run: (effect, signal) => this.runtime.runPromise(effect, { signal }),
     settings: (key) => ({
-      size: this.projectForSession(key)?.vmSize ?? this.state.settings.vmSize,
+      size: this.projectForSession(chatOfVm(key))?.vmSize ?? this.state.settings.vmSize,
       minutes: this.state.settings.vmMinutes
     }),
     publish: () => this.publishVms(),
@@ -494,7 +497,7 @@ export class DexAgent extends Agent<Env, DexState> {
       const version = isolated ? 0 : this.accountSecrets.version()
       const env = version ? await this.accountSecrets.envFile() : null
       const githubVersion = this.githubVersion()
-      await provisionVm(setup, { github, project: this.projectForSession(key) ?? null, env })
+      await provisionVm(setup, { github, project: this.projectForSession(chatOfVm(key)) ?? null, env })
       if (env !== null) this.vmSecretsVersion.set(key, version)
       if (!isolated) this.setVmGitHubVersion(key, githubVersion)
     },
@@ -507,7 +510,7 @@ export class DexAgent extends Agent<Env, DexState> {
         .filter((vm) => vm.key !== exceptKey && vm.idle)
         .sort((a, b) => (a.current.lastActiveAt ?? 0) - (b.current.lastActiveAt ?? 0))[0]
       if (!candidate) return false
-      await candidate.stop("system", "Stop VM to make room for another chat's VM (disk is kept)")
+      await candidate.stop("system", "Stop VM to make room for another VM (disk is kept)")
       return true
     }
   }
@@ -761,16 +764,19 @@ export class DexAgent extends Agent<Env, DexState> {
         ...skillTools((name, file) => this.skills.use(name, file)),
         // Always offered: a user can connect a boat.dev key at any time. Without one they fail with how to fix it,
         // and the vm_access section tells the model up front.
-        ...vmTools((chatId) => this.vmFor(chatId), {
-          prepare: async (chatId) => {
+        ...vmTools({
+          vmFor: (chatId, n) => this.vmFor(vmKeyFor(chatId, n)),
+          list: (chatId) => this.chatVms(chatId).map((vm) => vm.current)
+        }, {
+          prepare: async (chatId, key = chatId) => {
             await Promise.all([this.secrets.prepare(chatId), this.accountSecrets.load()])
             // A failed GitHub sign-in shouldn't fail the command; the next one tries again.
-            await Promise.all([this.syncVmSecrets(chatId), this.syncVmGitHub(chatId).catch(() => undefined)])
+            await Promise.all([this.syncVmSecrets(key), this.syncVmGitHub(key).catch(() => undefined)])
           },
           command: (chatId, command) => this.secrets.command(chatId, command),
           fill: (chatId, content) => this.secrets.fill(chatId, content)
         }),
-        ...(this.media.configured ? mediaTools((chatId, path, title) => this.shareMediaFromVm(chatId, path, title)) : [])
+        ...(this.media.configured ? mediaTools((chatId, path, title, n) => this.shareMediaFromVm(chatId, path, title, { vmKey: vmKeyFor(chatId, n) })) : [])
       ]
     })
   }
@@ -944,13 +950,13 @@ export class DexAgent extends Agent<Env, DexState> {
   }
 
   /** Writes the saved secrets to a chat VM's env file if they changed since it last got them. */
-  private async syncVmSecrets(chatId: string) {
+  private async syncVmSecrets(key: string) {
     const version = this.accountSecrets.version()
-    if (!version || this.vmSecretsVersion.get(chatId) === version) return
-    const vm = this.vmFor(chatId)
+    if (!version || this.vmSecretsVersion.get(key) === version) return
+    const vm = this.vmFor(key)
     await vm.writeFile(VM_ENV_FILE, await this.accountSecrets.envFile(), "system")
     await vm.exec(VM_ENV_HOOK, { actor: "system", title: "Load saved secrets in VM shells" })
-    this.vmSecretsVersion.set(chatId, version)
+    this.vmSecretsVersion.set(key, version)
   }
 
   /** Saves a secret every chat's VM gets as an environment variable. Omit `value` to change only the note. */
@@ -1802,7 +1808,7 @@ export class DexAgent extends Agent<Env, DexState> {
     }
     await this.refreshSessions()
     // Its VM goes with it, disk and all (stopped first if it was running; deleting does both), and its media.
-    if (this.vms.has(sessionId)) this.ctx.waitUntil(this.reapOrphanVms())
+    if (this.chatVms(sessionId).length) this.ctx.waitUntil(this.reapOrphanVms())
     this.ctx.waitUntil(this.media.reap((id) => this.hasSession(id)).catch(() => undefined))
   }
 
@@ -1813,14 +1819,14 @@ export class DexAgent extends Agent<Env, DexState> {
   async reapOrphanVms() {
     let failed = false
     for (const key of storedVmKeys(this.ctx.storage.sql)) {
-      if (key === SHARED_VM || key === MCP_VM || this.hasSession(key)) continue
+      if (key === SHARED_VM || key === MCP_VM || this.hasSession(chatOfVm(key))) continue
       const vm = this.vmFor(key)
       try {
         await vm.destroy("system", { forget: true })
         this.vms.delete(key)
       } catch (error) {
         failed = true
-        console.warn(`Could not delete the VM of deleted chat ${key}: ${errorText(error)}`)
+        console.warn(`Could not delete the VM of deleted chat ${chatOfVm(key)} (${key}): ${errorText(error)}`)
       }
     }
     this.publishVms()
@@ -3018,11 +3024,21 @@ export class DexAgent extends Agent<Env, DexState> {
     return vm
   }
 
-  /** A VM the Machine page asks about: an existing one, or a chat's (possibly not created yet). */
+  /** A VM the Machine page asks about: an existing one, or one of a chat's (possibly not created yet). */
   private vmForUser(key: string): VmManager {
     if (this.vms.has(key)) return this.vmFor(key)
-    if (key !== SHARED_VM && this.hasSession(key)) return this.vmFor(key)
+    if (key !== SHARED_VM && this.hasSession(chatOfVm(key)) && vmKeyFor(chatOfVm(key), vmNumber(key)) === key) return this.vmFor(key)
     throw new Error("No such VM")
+  }
+
+  /** A chat's VMs that exist here (created, or loaded from storage), first VM first. */
+  private chatVms(chatId: string): VmManager[] {
+    const vms: VmManager[] = []
+    for (let n = 1; n <= MAX_VMS_PER_CHAT; n++) {
+      const vm = this.vms.get(vmKeyFor(chatId, n))
+      if (vm) vms.push(vm)
+    }
+    return vms
   }
 
   /** VMs that exist or are being created. */
@@ -3128,7 +3144,7 @@ export class DexAgent extends Agent<Env, DexState> {
   async vmFiles(key: string, view: VmFilesView, path = "~/work", offset = 0) {
     const command = vmFilesCommand(view, path, offset)
     const vm = this.vmForUser(key)
-    await Promise.all([this.secrets.prepare(key), this.accountSecrets.load()])
+    await Promise.all([this.secrets.prepare(chatOfVm(key)), this.accountSecrets.load()])
     const result = await vm.peek(command, undefined, { maxOutput: 1_000_000, rawJson: true })
     if (!result) return { running: false as const, status: vm.current.status }
     if (result.exitCode !== 0) throw new Error("Could not inspect this VM's files. Try refreshing the VM.")
@@ -3675,16 +3691,17 @@ export class DexAgent extends Agent<Env, DexState> {
 
   /** A project chat's VM is ready (repos cloned, setup run), or its setup failed. */
   private async notifyMachine(key: string, error: string | null) {
-    const project = this.projectForSession(key)
-    const row = this.ctx.storage.sql.exec<SessionRow>(`SELECT * FROM dex_sessions WHERE id = ?`, key).toArray()[0]
+    const chatId = chatOfVm(key)
+    const project = this.projectForSession(chatId)
+    const row = this.ctx.storage.sql.exec<SessionRow>(`SELECT * FROM dex_sessions WHERE id = ?`, chatId).toArray()[0]
     if (!project || !row || row.muted === 1) return
     await this.push.notify("machine", {
       title: error ? `${project.name}: VM setup failed` : `${project.name} is ready`,
       body: error ? error.slice(0, 180) : `The VM for “${row.title.slice(0, 60)}” has the repos cloned and setup done.`,
-      url: `/chat/${key}`,
+      url: `/chat/${chatId}`,
       tag: `machine-${key}`,
       kind: "machine",
-      sessionId: key,
+      sessionId: chatId,
       actions: [{ action: "open", title: "Open chat" }, { action: "machine", title: "Watch machine" }],
       actionUrls: { machine: `/machine/${key}` }
     })
@@ -3978,7 +3995,7 @@ export class DexAgent extends Agent<Env, DexState> {
     sessionId: string,
     path: string,
     title?: string,
-    { actor = "agent", removeAfter = false }: { actor?: "agent" | "system"; removeAfter?: boolean } = {}
+    { actor = "agent", removeAfter = false, vmKey = sessionId }: { actor?: "agent" | "system"; removeAfter?: boolean; vmKey?: string } = {}
   ): Promise<SharedMedia> {
     if (!this.media.configured) throw new Error("Media sharing isn't set up on this deployment (no MEDIA bucket).")
     const origin = this.appOrigin()
@@ -3994,7 +4011,7 @@ export class DexAgent extends Agent<Env, DexState> {
       `curl -sS --fail-with-body --max-time 560 -X PUT -H 'Content-Type: application/octet-stream' --data-binary @"$f" '${origin}/api/media/upload/${upload.token}'`,
       ...(removeAfter ? [`status=$?; rm -f "$f"; exit $status`] : [])
     ].join("\n")
-    const result = await this.vmFor(sessionId).exec(command, { actor, timeoutSeconds: 600 })
+    const result = await this.vmFor(vmKey).exec(command, { actor, timeoutSeconds: 600 })
     if (result.exitCode !== 0) throw new Error(result.output.trim().slice(-600) || "The upload failed.")
     const shared = this.media.get(upload.key)
     if (!shared) throw new Error("The upload didn't arrive.")
@@ -4014,7 +4031,7 @@ export class DexAgent extends Agent<Env, DexState> {
     const existing = this.media.bySource(sessionId, parsed.source)
     if (existing) return existing
     // Only from a VM the chat already has: a stray link must not create one.
-    if (!this.liveVms().some((vm) => vm.key === sessionId && vm.id)) throw new Error("This chat has no VM to save it from.")
+    if (!this.liveVms().some((vm) => chatOfVm(vm.key) === sessionId && vm.id)) throw new Error("This chat has no VM to save it from.")
     const id = `${sessionId}\n${parsed.source}`
     const running = this.savingArtifacts.get(id)
     if (running) return running
@@ -4047,9 +4064,17 @@ export class DexAgent extends Agent<Env, DexState> {
       `[ -n "$f" ] || { echo ${quote(`Couldn't find ${name} on the VM any more.`)} >&2; exit 4; }`,
       `cp "$f" ${quote(temp)}`
     ].join("\n")
-    const fetched = await this.vmFor(sessionId).exec(command, { actor: "system", timeoutSeconds: 360 })
+    // The link doesn't say which of the chat's VMs served it: try each that has a machine, the first VM first.
+    const candidates = this.chatVms(sessionId).filter((vm) => vm.current.id)
+    let fetched: { exitCode: number | null; output: string } = { exitCode: -1, output: "" }
+    let from = sessionId
+    for (const vm of candidates) {
+      fetched = await vm.exec(command, { actor: "system", timeoutSeconds: 360 })
+      from = vm.key
+      if (fetched.exitCode === 0) break
+    }
     if (fetched.exitCode !== 0) throw new Error(fetched.output.trim().slice(-400) || `Couldn't copy ${name} from the VM.`)
-    const shared = await this.shareMediaFromVm(sessionId, temp, name, { actor: "system", removeAfter: true })
+    const shared = await this.shareMediaFromVm(sessionId, temp, name, { actor: "system", removeAfter: true, vmKey: from })
     this.media.setSource(shared.key, source)
     return shared
   }

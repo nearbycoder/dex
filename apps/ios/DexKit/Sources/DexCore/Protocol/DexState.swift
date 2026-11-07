@@ -158,6 +158,26 @@ public enum VmSizes {
 public enum VmKeys {
     public static let mcp = "mcp-host"
     public static let shared = "shared"
+
+    /// How many VMs one chat can run (MAX_VMS_PER_CHAT on the web).
+    public static let maxPerChat = 10
+
+    /// The key of a chat's VM number `number`: the chat's id for its first.
+    public static func key(for chatId: String, number: Int = 1) -> String { number <= 1 ? chatId : "\(chatId)~\(number)" }
+
+    /// A chat's further VMs are keyed `<chat id>~2` to `~10` (vmKeyFor in apps/web/src/shared/protocol.ts).
+    private static func split(_ key: String) -> (chat: String, number: Int)? {
+        guard let tilde = key.lastIndex(of: "~"), tilde != key.startIndex,
+              let number = Int(key[key.index(after: tilde)...]), (2...10).contains(number),
+              key[key.index(after: tilde)...] == String(number) else { return nil }
+        return (String(key[..<tilde]), number)
+    }
+
+    /// The chat a VM key belongs to.
+    public static func chat(of key: String) -> String { split(key)?.chat ?? key }
+
+    /// Which of its chat's VMs a key is: 1 for the chat's first.
+    public static func number(of key: String) -> Int { split(key)?.number ?? 1 }
 }
 
 public struct VmSetup: Codable, Sendable, Hashable {

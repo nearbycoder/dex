@@ -8,7 +8,7 @@ import { useDex } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
 import { MenuButton } from "~/client/lib/mobile-nav"
 import { InfoTip } from "~/client/components/info-tip"
-import { VM_SIZES, type VmInfo, type VmSize } from "~/shared/protocol"
+import { chatOfVm, VM_SIZES, type VmInfo, type VmSize, vmNumber } from "~/shared/protocol"
 import { ask } from "~/client/components/confirm-dialog"
 
 /** Every chat's VM at a glance; each opens its desktop, activity, and terminal. */
@@ -22,7 +22,7 @@ function MachineCard({ vm, index }: { vm: VmInfo; index: number }) {
   const [error, setError] = useState<string | null>(null)
   const { title, subtitle, agent, project } = label(vm.key)
   const badge = project ?? agent
-  const session = state?.sessions.find((candidate) => candidate.id === vm.key)
+  const session = state?.sessions.find((candidate) => candidate.id === chatOfVm(vm.key))
   const running = vm.status === "running"
   const canStart = vm.status === "stopped" || vm.status === "error" || vm.status === "none"
 
@@ -103,7 +103,8 @@ function MachineCard({ vm, index }: { vm: VmInfo; index: number }) {
             {vm.status === "stopped" ? "Resume" : "Start"}
           </button>
         )}
-        {!session && (
+        {/* A chat's further VMs can go without the chat; its first goes with it. */}
+        {(!session || vmNumber(vm.key) > 1) && (
           <button
             type="button"
             disabled={busy !== null}

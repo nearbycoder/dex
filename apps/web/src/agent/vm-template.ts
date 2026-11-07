@@ -1,9 +1,10 @@
 import type { Effect } from "effect"
 import { BoatClient, BoatError } from "./boat"
+import { BROWSE_BAKE } from "./browse"
 import { SELKIES_BAKE, SELKIES_TEMPLATE_CLEANUP, SELKIES_VERSION } from "./selkies"
 
 /** Bump when what's baked in changes, so VMs come from a fresh template instead of the old one. */
-const TEMPLATE_REVISION = 3
+const TEMPLATE_REVISION = 4
 /** A boat named snapshot in the user's own boat account (each person uses their own key). */
 const templateName = (revision: number) => `dex-desktop-r${revision}-selkies-${SELKIES_VERSION.replaceAll(".", "-")}`
 export const TEMPLATE_NAME = templateName(TEMPLATE_REVISION)
@@ -26,7 +27,7 @@ export interface TemplateHost {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
- * A prepared disk new VMs start from: boat's base image with Dex's desktop stream already installed, so a new VM is
+ * A prepared disk new VMs start from: boat's base image with Dex's desktop stream and browse (src/agent/browse.ts) already installed, so a new VM is
  * up in seconds with nothing to install. Built once per boat account on a throwaway VM (created without the
  * account's environment, so no credentials end up in the saved disk), then deleted. Until it exists, VMs start from
  * boat's base image and install the stream when the desktop is first opened.
@@ -99,8 +100,8 @@ export class VmTemplate {
         if (sandbox.state === "error" || waited > 5 * 60_000) throw new Error(`The template builder VM didn't start (${sandbox.state})`)
         await sleep(3_000)
       }
-      const baked = await boat((client) => client.exec(created.id, `${SELKIES_BAKE}\n${SELKIES_TEMPLATE_CLEANUP}`, { timeoutSeconds: 300 }))
-      if (baked.exitCode !== 0) throw new Error(`Installing the desktop stream failed: ${(baked.stderr || baked.stdout || "").slice(-600)}`)
+      const baked = await boat((client) => client.exec(created.id, `${SELKIES_BAKE}\n${BROWSE_BAKE}\n${SELKIES_TEMPLATE_CLEANUP}`, { timeoutSeconds: 300 }))
+      if (baked.exitCode !== 0) throw new Error(`Installing the desktop stream and browser tools failed: ${(baked.stderr || baked.stdout || "").slice(-600)}`)
       await boat((client) => client.saveNamedSnapshot(created.id, TEMPLATE_NAME))
       for (let waited = 0; ; waited += 5_000) {
         const status = await boat((client) => client.namedSnapshot(TEMPLATE_NAME))

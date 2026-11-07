@@ -37,6 +37,7 @@ const icons: Record<string, LucideIcon> = {
   vm_write_file: FilePen,
   vm_expose_port: Globe,
   vm_screenshot: Camera,
+  vm_browser: Globe,
   vm_stop: Monitor
 }
 
@@ -77,6 +78,7 @@ const activities: Record<string, string> = {
   vm_write_file: "Writing a file on the VM",
   vm_expose_port: "Opening a port",
   vm_screenshot: "Looking at the VM's screen",
+  vm_browser: "Browsing on the VM",
   vm_stop: "Stopping the VM",
   share_media: "Sharing a file from the VM",
   app_operations: "Looking up app operations",

@@ -169,7 +169,8 @@ fun MachineScreen(key: String, beside: Boolean = false) {
     val confirm = rememberConfirm()
     val now = rememberTicker()
     val current = state
-    val known = current != null && (current.vms.any { it.key == key } || current.sessions.any { it.id == key })
+    val known = current != null &&
+        (current.vms.any { it.key == key } || (Vms.keyFor(Vms.chatOf(key), Vms.number(key)) == key && current.sessions.any { it.id == Vms.chatOf(key) }))
     val vm = if (known) current!!.vms.firstOrNull { it.key == key } ?: VmInfo(key) else null
     val label = current?.let { Vms.label(it, key) }
 
@@ -322,7 +323,7 @@ private fun TabletopSplit(hinge: androidx.compose.ui.geometry.Rect?, top: @Compo
 private fun TitleRow(vm: VmInfo, label: Vms.Label) {
     val app = LocalApp.current
     val state by app.graph.repository.state.collectAsStateWithLifecycle()
-    val session = state?.sessions?.firstOrNull { it.id == vm.key }
+    val session = state?.sessions?.firstOrNull { it.id == Vms.chatOf(vm.key) }
     val scope = rememberCoroutineScope()
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
         label.subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }

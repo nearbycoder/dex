@@ -24,6 +24,7 @@ import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.GridView
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Monitor
 import androidx.compose.material.icons.outlined.Notifications
@@ -81,6 +82,7 @@ import dev.trydex.android.ui.components.rememberConfirm
 import dev.trydex.android.ui.machine.VmPreview
 import dev.trydex.android.ui.nav.AgentEditor
 import dev.trydex.android.ui.nav.ChatFiles
+import dev.trydex.android.ui.nav.ChatControl
 import dev.trydex.android.ui.nav.ChatMachine
 import dev.trydex.android.ui.nav.GeneralSettings
 import dev.trydex.android.ui.nav.NewChat
@@ -95,6 +97,7 @@ import dev.trydex.core.model.SpaceProfile
 import dev.trydex.core.model.Spaces
 import dev.trydex.core.model.VmInfo
 import dev.trydex.core.model.VmStatus
+import dev.trydex.core.model.Vms
 import kotlinx.coroutines.flow.debounce
 
 /** A chat: its transcript, live as the agent works, and the composer, queue, and pickers below it. */
@@ -119,6 +122,8 @@ fun ChatScreen(id: String) {
     val space = state?.coordinatedSpace(session)
     val inSpace = if (space == null) state?.space(session?.spaceId) else null
     val vm = if (state?.vmConfigured == true) state?.vms?.firstOrNull { it.key == id } else null
+    // A chat can run several VMs at once; with more than one, its machine button opens the control panel of all of them.
+    val chatVms = if (state?.vmConfigured == true) state?.vms.orEmpty().filter { Vms.chatOf(it.key) == id } else emptyList()
     if (state != null && session == null) {
         Scaffold(topBar = { CompactTopBar(title = {}) }) { padding ->
             Box(Modifier.padding(padding).fillMaxSize()) { EmptyState("This chat no longer exists.") }
@@ -179,6 +184,7 @@ fun ChatScreen(id: String) {
                 space = space,
                 running = transcript.running,
                 vm = vm,
+                chatVms = chatVms,
                 onRename = { renaming = true },
                 onMenu = { menu = true },
                 actions = actions,
@@ -302,6 +308,8 @@ private fun ChatTopBar(
     space: SpaceProfile?,
     running: Boolean,
     vm: VmInfo?,
+    /** All of the chat's VMs (it can run several; vm is its first). */
+    chatVms: List<VmInfo>,
     onRename: () -> Unit,
     onMenu: () -> Unit,
     actions: ChatActions,
@@ -354,7 +362,35 @@ private fun ChatTopBar(
         actions = {
             val current = state
             if (space != null && current != null) SpaceThreadsButton(space, Spaces.threads(space, current.sessions), current, narrow)
-            if (vm != null) {
+            if (chatVms.size > 1) {
+                val starting = chatVms.any { it.settingUp || it.status == VmStatus.Starting }
+                val color = when {
+                    starting -> DexTheme.colors.warning
+                    chatVms.any { it.running } -> DexTheme.colors.success
+                    else -> MaterialTheme.colorScheme.outline
+                }
+                val describe = Modifier.testTag("vms-chip").semantics { contentDescription = "Watch all ${chatVms.size} of this chat's VMs" }
+                if (narrow) {
+                    IconButton(onClick = { session?.let { app.navigator.open(ChatControl(it.id)) } }, modifier = describe) {
+                        Box {
+                            Icon(Icons.Outlined.GridView, contentDescription = null)
+                            Box(Modifier.align(Alignment.TopEnd)) { StatusDot(color, pulsing = starting, size = 6.dp) }
+                        }
+                    }
+                } else {
+                    AssistChip(
+                        onClick = { session?.let { app.navigator.open(ChatControl(it.id)) } },
+                        label = { Text("${chatVms.size} VMs") },
+                        leadingIcon = {
+                            Box {
+                                Icon(Icons.Outlined.GridView, contentDescription = null, modifier = Modifier.size(AssistChipDefaults.IconSize))
+                                Box(Modifier.align(Alignment.TopEnd)) { StatusDot(color, pulsing = starting, size = 6.dp) }
+                            }
+                        },
+                        modifier = Modifier.padding(end = 4.dp).then(describe),
+                    )
+                }
+            } else if (vm != null) {
                 val starting = vm.settingUp || vm.status == VmStatus.Starting
                 val dot = @Composable {
                     StatusDot(

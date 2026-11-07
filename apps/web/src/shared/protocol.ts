@@ -119,8 +119,24 @@ export const SHARED_VM = "shared"
 /** The VM key of the VM that runs local (stdio) MCP servers for every chat. */
 export const MCP_VM = "mcp-host"
 
+/**
+ * How many VMs one chat can run. A chat's first VM has the chat's id as its key; the rest are `<chat id>~2` to
+ * `<chat id>~10`, so the agent can work on several machines (and browsers) at once.
+ */
+export const MAX_VMS_PER_CHAT = 10
+const VM_NUMBER = /^(.+)~([2-9]|10)$/
+
+/** The key of a chat's VM number `n` (1 is its first, keyed by the chat id). */
+export const vmKeyFor = (chatId: string, n = 1) => (n <= 1 ? chatId : `${chatId}~${n}`)
+
+/** The chat a VM key belongs to (for `shared` and `mcp-host`, the key itself). */
+export const chatOfVm = (key: string) => VM_NUMBER.exec(key)?.[1] ?? key
+
+/** Which of its chat's VMs a key is: 1 for the chat's first. */
+export const vmNumber = (key: string) => Number(VM_NUMBER.exec(key)?.[2] ?? 1)
+
 export interface VmInfo {
-  /** The chat this VM belongs to, or `shared` for the VM from before VMs were per chat. */
+  /** Its chat's id (see vmKeyFor: `<chat id>~N` for a chat's further VMs), or `shared` for the VM from before VMs were per chat. */
   readonly key: string
   /** boat.dev sandbox id. */
   readonly id: string | null

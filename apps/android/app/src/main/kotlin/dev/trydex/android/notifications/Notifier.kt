@@ -34,6 +34,7 @@ import dev.trydex.core.model.InboxState
 import dev.trydex.core.model.McpStatus
 import dev.trydex.core.model.SidekickNotify
 import dev.trydex.core.model.inboxState
+import dev.trydex.core.model.Vms
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
@@ -95,7 +96,7 @@ object Alerts {
         for (vm in after.vms) {
             val old = oldVms[vm.key] ?: continue
             if (old.setup.status != "running" || vm.setup.status == "running") continue
-            val project = after.session(vm.key)?.projectId?.let(after::project)?.name ?: after.session(vm.key)?.title ?: "Your VM"
+            val project = after.session(Vms.chatOf(vm.key))?.projectId?.let(after::project)?.name ?: after.session(Vms.chatOf(vm.key))?.title ?: "Your VM"
             alerts += if (vm.setup.status == "error") {
                 Alert("machine", "machine-${vm.key}", "$project: VM setup failed", vm.setup.error ?: "Open the machine to see what went wrong.", "dex://app/machine/${vm.key}")
             } else {
