@@ -42,6 +42,7 @@ import type {
   DexSettings,
   DexState,
   ScheduledPrompt,
+  VmHelperInfo,
   ServerMessage,
   SessionMeta,
   VmActivity,
@@ -592,6 +593,13 @@ export class DexAgent extends Agent<Env, DexState> {
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_vm_agents (
       conversation_id TEXT PRIMARY KEY, chat_id TEXT NOT NULL, vm INTEGER NOT NULL, created_at INTEGER NOT NULL)`)
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_vm_copies (snapshot TEXT PRIMARY KEY, made_at INTEGER NOT NULL)`)
+    const helperColumns = ctx.storage.sql.exec<{ name: string }>(`PRAGMA table_info(dex_vm_agents)`).toArray().map((column) => column.name)
+    if (!helperColumns.includes("status")) {
+      ctx.storage.sql.exec(`ALTER TABLE dex_vm_agents ADD COLUMN status TEXT NOT NULL DEFAULT 'finished'`)
+      ctx.storage.sql.exec(`ALTER TABLE dex_vm_agents ADD COLUMN task TEXT NOT NULL DEFAULT ''`)
+      ctx.storage.sql.exec(`ALTER TABLE dex_vm_agents ADD COLUMN started_at INTEGER`)
+      ctx.storage.sql.exec(`ALTER TABLE dex_vm_agents ADD COLUMN ended_at INTEGER`)
+    }
     adoptSharedVm(ctx.storage.sql)
     for (const key of storedVmKeys(ctx.storage.sql)) this.vmFor(key)
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_mcp (
@@ -637,6 +645,7 @@ export class DexAgent extends Agent<Env, DexState> {
     this.giveSidekicksLooks()
     this.refreshCharacters()
     this.refreshSpaces()
+    this.publishHelpers()
     this.skills.refresh()
     this.accountSecrets.refresh()
     this.startMcp()
@@ -1824,6 +1833,7 @@ export class DexAgent extends Agent<Env, DexState> {
     this.ctx.storage.sql.exec(`DELETE FROM dex_sessions WHERE id = ?`, sessionId)
     await this.stopHelpers(sessionId).catch(() => [])
     this.ctx.storage.sql.exec(`DELETE FROM dex_vm_agents WHERE chat_id = ?`, sessionId)
+    this.publishHelpers()
     this.skills.forgetSession(sessionId)
     this.messageQueue.clear(sessionId)
     this.secrets.forget(sessionId)
@@ -3133,7 +3143,46 @@ export class DexAgent extends Agent<Env, DexState> {
 
   private async runHelper(helperId: string, content: string) {
     const receipt = await this.harness.session(helperId).submit(content)
+    this.setHelperStatus(helperId, "working", content)
     this.watchHelper(helperId, receipt.operationId)
+  }
+
+  private setHelperStatus(helperId: string, status: VmHelperInfo["status"], task?: string) {
+    const now = Date.now()
+    if (status === "working") {
+      this.ctx.storage.sql.exec(
+        `UPDATE dex_vm_agents SET status = 'working', task = ?, started_at = ?, ended_at = NULL WHERE conversation_id = ?`,
+        (task ?? "").replace(/\s+/g, " ").trim().slice(0, 200), now, helperId
+      )
+    } else this.ctx.storage.sql.exec(`UPDATE dex_vm_agents SET status = ?, ended_at = ? WHERE conversation_id = ?`, status, now, helperId)
+    this.publishHelpers()
+  }
+
+  /** Every chat's helpers (the newest per VM) for the apps; finished ones for a day, so the chat shows what ran. */
+  private publishHelpers() {
+    const rows = this.ctx.storage.sql
+      .exec<{ chat_id: string; vm: number; status: string; task: string; started_at: number | null; ended_at: number | null; created_at: number }>(
+        `SELECT chat_id, vm, status, task, started_at, ended_at, created_at FROM dex_vm_agents ORDER BY created_at DESC`
+      )
+      .toArray()
+    const seen = new Set<string>()
+    const dayAgo = Date.now() - 24 * 60 * 60_000
+    const vmHelpers: VmHelperInfo[] = rows.flatMap((row) => {
+      const key = `${row.chat_id}~${row.vm}`
+      if (seen.has(key)) return []
+      seen.add(key)
+      if (row.status !== "working" && (row.ended_at ?? row.created_at) < dayAgo) return []
+      const status = row.status === "working" || row.status === "stopped" ? row.status : "finished"
+      return [{ chatId: row.chat_id, vm: row.vm, status, task: row.task, startedAt: row.started_at ?? row.created_at, endedAt: row.ended_at }]
+    })
+    this.publish({ vmHelpers })
+  }
+
+  /** Stops a chat's helper on VM `vm`, or all of its helpers (the Helpers bar's Stop). */
+  @callable()
+  async stopVmHelpers(chatId: string, vm?: number) {
+    if (!this.hasSession(chatId)) throw new Error("That chat no longer exists.")
+    return { stopped: await this.stopHelpers(chatId, vm === undefined ? undefined : [Math.round(vm)]) }
   }
 
   /** When a helper's run ends, its final reply goes to its chat, shown like a space thread's report. */
@@ -3141,6 +3190,11 @@ export class DexAgent extends Agent<Env, DexState> {
     this.silencedHelpers.delete(helperId)
     const report = async (result: { status: string; text?: string }) => {
       const worker = this.vmWorker(helperId)
+      // A message sent to it after this run started its next one: that run reports.
+      if (await this.isBusy(helperId)) return
+      this.setHelperStatus(helperId, result.status === "done" ? "finished" : "stopped")
+      // Its work is done: its VM stops soon unless something else uses it.
+      if (worker) this.vms.get(vmKeyFor(worker.chatId, worker.vm))?.stopSoon(2 * 60_000)
       if (!worker || this.silencedHelpers.delete(helperId) || !this.hasSession(worker.chatId)) return
       const body = (result.text ?? "").trim()
       const thread = { id: `vm:${vmKeyFor(worker.chatId, worker.vm)}`, title: `VM ${worker.vm}` }
@@ -3163,6 +3217,7 @@ export class DexAgent extends Agent<Env, DexState> {
       if (!(await this.isBusy(helper.id))) continue
       this.silencedHelpers.add(helper.id)
       await this.harness.session(helper.id).abort().catch(() => false)
+      this.setHelperStatus(helper.id, "stopped")
       stopped.push(helper.vm)
     }
     return stopped.sort((a, b) => a - b)

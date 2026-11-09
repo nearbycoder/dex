@@ -5,6 +5,7 @@ import { Composer } from "~/client/components/composer"
 import { ChatArtifactsContext, type ChatArtifacts } from "~/client/components/media"
 import { MessageList, type Speaker } from "~/client/components/message-list"
 import { McpPicker } from "~/client/components/mcp-picker"
+import { HelpersPanel } from "~/client/components/helpers-panel"
 import { QueuePanel } from "~/client/components/queue-panel"
 import { ModelPicker } from "~/client/components/model-picker"
 import { AgentAvatar, CharacterAvatar } from "~/client/components/agent-avatar"
@@ -414,6 +415,7 @@ function Chat() {
             <History className="size-3.5" /> An earlier conversation with {character.name}. Go to the current one
           </Link>
         )}
+        <HelpersPanel sessionId={sessionId} />
         <QueuePanel sessionId={sessionId} items={transcript.queue} held={transcript.queueHeld} running={transcript.running} />
         <Composer
           autoFocus

@@ -220,6 +220,18 @@ export const withStateDefaults = (state: DexState): DexState => ({
 })
 
 /** Synced to every connected client through the Agents SDK state channel. Never put secrets here. */
+/** A helper agent a chat started on one of its VMs (vm_agents): one task, run in the background, reported back. */
+export interface VmHelperInfo {
+  readonly chatId: string
+  /** Its VM's number in the chat (the VM's key is vmKeyFor(chatId, vm)). */
+  readonly vm: number
+  readonly status: "working" | "finished" | "stopped"
+  /** The start of its latest instructions. */
+  readonly task: string
+  readonly startedAt: number
+  readonly endedAt: number | null
+}
+
 export interface DexState {
   readonly cline: ClineStatus
   /** The OpenCode Go key models with the opencode-go provider run on (same shape as ClinePass's). */
@@ -249,6 +261,8 @@ export interface DexState {
   readonly characters: ReadonlyArray<CharacterProfile>
   /** Spaces, in the sidebar, each a coordinator chat with threads of its own. Missing in state an older agent saved. */
   readonly spaces?: ReadonlyArray<SpaceProfile>
+  /** Helper agents (vm_agents) working on chats' VMs, the newest per VM. Absent from agents before them. */
+  readonly vmHelpers?: ReadonlyArray<VmHelperInfo>
   readonly mcp: ReadonlyArray<McpServerInfo>
   /** MCP access tokens, the audit log of app operations, and admin operations waiting for confirmation. */
   readonly access: AccessState

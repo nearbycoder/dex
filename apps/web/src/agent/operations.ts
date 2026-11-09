@@ -75,6 +75,7 @@ export type OperationHost = Pick<
   | "vmRefresh"
   | "vmStart"
   | "vmStop"
+  | "stopVmHelpers"
   | "vmDestroy"
   | "vmRerunSetup"
   | "vmActivity"
@@ -1347,6 +1348,18 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     covers: ["vmStop"],
     summarize: (args, state) => `Stop the VM of ${quote(vmTitle(state, args.vm_key))}`,
     run: async (host, args) => host.vmStop(args.vm_key)
+  }),
+  define({
+    name: "app_stop_vm_helpers",
+    description: "Stop a chat's helper agents (started with vm_agents): the one on VM `vm`, or all of them. Their VMs keep running until idle.",
+    risk: "write",
+    parameters: Type.Object({
+      session_id: Type.String({ minLength: 1, maxLength: 64, description: "The chat's id (app_list_sessions)." }),
+      vm: Type.Optional(Type.Integer({ minimum: 1, maximum: 10, description: "Only this VM's helper." }))
+    }),
+    covers: ["stopVmHelpers"],
+    summarize: (args, state) => `Stop ${args.vm ? `the helper on VM ${args.vm}` : "the helpers"} of ${quote(chatTitle(state, args.session_id))}`,
+    run: async (host, args) => host.stopVmHelpers(args.session_id, args.vm)
   }),
   define({
     name: "app_vm_run",

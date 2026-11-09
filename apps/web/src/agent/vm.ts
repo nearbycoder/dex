@@ -252,8 +252,19 @@ export class VmManager {
     else this.host.sql.exec(`UPDATE dex_vms SET sandbox_id = NULL WHERE vm_key = ?`, this.key)
   }
 
+  /** Set by `stopSoon`: when the VM may stop early if nothing used it since. */
+  private stopEarlyAt: number | null = null
+
+  /** Lets the VM stop after `ms` with nothing running (its work is done), instead of the idle timeout; use clears it. */
+  stopSoon(ms: number) {
+    if (this.info.status !== "running") return
+    this.stopEarlyAt = Date.now() + ms
+    this.host.scheduleIdleCheck()
+  }
+
   /** Marks the VM as in use now, which restarts its idle countdown. */
   touch() {
+    this.stopEarlyAt = null
     const now = Date.now()
     if (this.row()) this.host.sql.exec(`UPDATE dex_vms SET last_active = ? WHERE vm_key = ?`, now, this.key)
     this.update({ lastActiveAt: now })
@@ -289,6 +300,11 @@ export class VmManager {
     }
     const minutes = this.host.settings(this.key).minutes
     const idleFor = Date.now() - (this.row()?.last_active ?? 0)
+    if (this.stopEarlyAt !== null && Date.now() >= this.stopEarlyAt) {
+      this.stopEarlyAt = null
+      await this.stop("system", "Stop VM: its helper finished (disk is kept)").catch(() => undefined)
+      return this.info.status === "running"
+    }
     if (idleFor < minutes * 60_000) return true
     await this.stop("system", `Stop VM after ${minutes} idle minute${minutes === 1 ? "" : "s"} (disk is kept)`).catch(() => undefined)
     return this.info.status === "running"

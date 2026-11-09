@@ -1,10 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
-import { ChevronLeft, LoaderCircle, Maximize, Minimize, Monitor, MonitorUp, Play, Plus, Square, X } from "lucide-react"
+import { Bot, ChevronLeft, LoaderCircle, Maximize, Minimize, Monitor, MonitorUp, Play, Plus, Square, Trash2, X } from "lucide-react"
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { ask } from "~/client/components/confirm-dialog"
 import { MenuButton } from "~/client/lib/mobile-nav"
 import { ControlPanelSkeleton } from "~/client/components/skeleton"
 import { VM_STATUS } from "~/client/components/vm-status"
 import { useDex } from "~/client/lib/dex"
+import { useLatestActivity } from "~/client/lib/vm-activity"
 import { savedDesktopMode, useDesktopUrl } from "~/client/lib/desktop"
 import { chatOfVm, MAX_VMS_PER_CHAT, type VmInfo, vmKeyFor, vmNumber } from "~/shared/protocol"
 
@@ -22,34 +24,6 @@ const GAP = 8
 const HEADER = 33
 /** Below this desktop width, tiles stop shrinking to fit and the panel scrolls instead. */
 const MIN_PICTURE = 180
-
-/** The latest thing done on each of these VMs ("browse: await page.goto(…)"), kept live from the agent's broadcasts. */
-function useLatestActivity(keys: ReadonlyArray<string>) {
-  const { stub, listen, connected } = useDex()
-  const [latest, setLatest] = useState<Record<string, string>>({})
-  const joined = keys.join("\n")
-  useEffect(() => {
-    if (!connected) return
-    for (const key of joined ? joined.split("\n") : []) {
-      void stub
-        .vmActivity(key, 1)
-        .then((items) => {
-          const last = items.at(-1)
-          if (last) setLatest((current) => (current[key] ? current : { ...current, [key]: last.title }))
-        })
-        .catch(() => undefined)
-    }
-  }, [connected, stub, joined])
-  useEffect(
-    () =>
-      listen((message) => {
-        if (message.type !== "dex.vm.activity") return
-        setLatest((current) => (current[message.vmKey] === message.activity.title ? current : { ...current, [message.vmKey]: message.activity.title }))
-      }),
-    [listen]
-  )
-  return latest
-}
 
 /** An element's size, kept current. */
 function useSize<T extends HTMLElement>() {
@@ -247,9 +221,11 @@ function Tile({
   onToggle: () => void
   onAct: (action: () => Promise<unknown>) => Promise<void>
 }) {
-  const { stub } = useDex()
+  const { state, stub } = useDex()
   const [box, size] = useSize<HTMLDivElement>()
   const running = vm.status === "running"
+  // A helper agent (vm_agents) working on this VM.
+  const helper = state?.vmHelpers?.find((candidate) => candidate.chatId === chatOfVm(vm.key) && candidate.vm === vmNumber(vm.key) && candidate.status === "working")
   const { url, loading, error } = useDesktopUrl(vm.key, savedDesktopMode(), running)
   const n = vmNumber(vm.key)
   // The 16:9 desktop, as large as the tile's picture area allows, centered.
@@ -264,13 +240,31 @@ function Tile({
       <div className="flex h-8 shrink-0 items-center gap-1.5 border-b border-zinc-800 pr-1 pl-2.5">
         <span className={`size-1.5 shrink-0 rounded-full ${VM_STATUS[vm.status].dot}`} title={VM_STATUS[vm.status].label} />
         <span className="shrink-0 text-xs font-medium text-zinc-200">VM {n}</span>
-        <span className="min-w-0 truncate text-[11px] text-zinc-500" title={activity}>
-          {vm.busy ? (activity ?? "Working…") : VM_STATUS[vm.status].label}
+        {helper && (
+          <span className="flex shrink-0 items-center gap-1 rounded bg-emerald-950/60 px-1.5 py-0.5 text-[10px] font-medium text-emerald-300" title={`Helper: ${helper.task}`}>
+            <Bot className="size-3" /> Helper
+          </span>
+        )}
+        <span className="min-w-0 truncate text-[11px] text-zinc-500" title={activity ?? helper?.task}>
+          {vm.busy ? (activity ?? "Working…") : helper ? helper.task : VM_STATUS[vm.status].label}
         </span>
         <div className="ml-auto flex shrink-0 items-center">
           {running && (
             <button type="button" onClick={() => void onAct(() => stub.vmStop(vm.key))} title="Stop this VM (disk is kept)" className={tileButton}>
               <Square className="size-3.5" />
+            </button>
+          )}
+          {(vm.status === "stopped" || vm.status === "error") && !helper && (
+            <button
+              type="button"
+              onClick={async () => {
+                const body = `Deletes VM ${n} and everything on its disk. The chat gets a fresh one if it needs VM ${n} again.`
+                if (await ask({ title: `Delete VM ${n}?`, body, confirm: "Delete" })) await onAct(() => stub.vmDestroy(vm.key))
+              }}
+              title="Delete this VM and its disk"
+              className={`${tileButton} hover:text-red-400`}
+            >
+              <Trash2 className="size-3.5" />
             </button>
           )}
           <Link to="/machine/$vmKey" params={{ vmKey: vm.key }} title="Open its Machine page to take control" className={tileButton}>
