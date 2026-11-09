@@ -1,5 +1,5 @@
 import type { Effect } from "effect"
-import { NO_SETUP, SHARED_VM, type ServerMessage, type VmActivity, type VmInfo, type VmSetup, type VmSize } from "~/shared/protocol"
+import { NO_SETUP, SHARED_VM, type ServerMessage, type VmActivity, type VmInfo, type VmSetup, type VmSize, vmNumber } from "~/shared/protocol"
 import { BoatClient, BoatError, type CommandResult, type Sandbox } from "./boat"
 import { SELKIES_PORT, SELKIES_SETUP } from "./selkies"
 
@@ -76,6 +76,16 @@ export interface VmHost {
   template?(): Promise<string | null>
   /** Creating from the template found it gone. */
   templateMissing?(): void
+}
+
+/** Another VM's saved disk a new VM starts from (`VmManager.saveCopy`). */
+export interface VmCopy {
+  /** The source's number in its chat, for the activity log. */
+  readonly of: number
+  /** The boat saved snapshot. */
+  readonly snapshot: string
+  /** The source had been set up, so the copy has that setup too. */
+  readonly provisioned: boolean
 }
 
 /** What `VmHost.provision` can do on a VM that is up but not handed to the model yet. */
@@ -412,10 +422,14 @@ export class VmManager {
     return this.info
   }
 
-  /** The running, prepared VM: created, resumed, set up, or waited on as needed. Concurrent callers share one start. */
-  ensureRunning(onProgress?: (message: string) => void, signal?: AbortSignal): Promise<Sandbox> {
+  /**
+   * The running, prepared VM: created, resumed, set up, or waited on as needed. Concurrent callers share one start.
+   * `copy` creates a VM that doesn't exist yet from another VM's saved disk (see `saveCopy`) instead of the template;
+   * one that exists just starts.
+   */
+  ensureRunning(onProgress?: (message: string) => void, signal?: AbortSignal, copy?: VmCopy): Promise<Sandbox> {
     if (!this.host.configured()) return Promise.reject(new Error("No boat.dev key: connect yours in Settings → Cloud VMs."))
-    this.starting ??= this.start(onProgress, signal)
+    this.starting ??= this.start(onProgress, signal, copy)
       .then(async (sandbox) => {
         await this.prepare(sandbox, onProgress, signal)
         this.touch()
@@ -427,7 +441,7 @@ export class VmManager {
     return this.starting
   }
 
-  private async start(onProgress?: (message: string) => void, signal?: AbortSignal): Promise<Sandbox> {
+  private async start(onProgress?: (message: string) => void, signal?: AbortSignal, copy?: VmCopy): Promise<Sandbox> {
     const boat = (effect: (client: BoatClient["Service"]) => Effect.Effect<Sandbox, BoatError>) =>
       this.host.run(BoatClient.use(effect), signal)
     const { size, minutes } = this.host.settings(this.key)
@@ -449,22 +463,27 @@ export class VmManager {
     }
 
     const create = async () => {
-      onProgress?.(`Creating a ${size} VM for this chat…\n`)
+      onProgress?.(copy ? `Creating a ${size} VM as a copy of VM ${copy.of}…\n` : `Creating a ${size} VM for this chat…\n`)
       const startedAt = Date.now()
-      return this.logged("system", "lifecycle", `Create ${size} VM`, async () => {
+      return this.logged("system", "lifecycle", copy ? `Create ${size} VM as a copy of VM ${copy.of}` : `Create ${size} VM`, async () => {
         this.ensureRow()
         this.update({ status: "starting", error: null })
-        // From Dex's template when the account has one (the desktop stream is already installed), else boat's base image.
-        const from = (await this.host.template?.()) ?? undefined
+        // A copy starts from the other VM's saved disk; otherwise from Dex's template when the account has one (the
+        // desktop stream is already installed), else boat's base image.
+        const from = copy?.snapshot ?? (await this.host.template?.()) ?? undefined
         const created = await withRoom(() => boat((client) => client.create({ type: size, ttlSeconds, idempotencyKey: crypto.randomUUID(), from }))).catch(
           (error: unknown) => {
-            if (!from || !(error instanceof BoatError && error.status === 404)) throw error
+            if (copy || !from || !(error instanceof BoatError && error.status === 404)) throw error
             this.host.templateMissing?.()
             return withRoom(() => boat((client) => client.create({ type: size, ttlSeconds, idempotencyKey: crypto.randomUUID() })))
           }
         )
         this.setSandboxId(created.id)
-        this.setSetup(NO_SETUP)
+        if (copy?.provisioned) {
+          // The copied disk already has the source's setup (GitHub sign-in, the project's repos).
+          this.host.sql.exec(`UPDATE dex_vms SET provisioned = 1 WHERE vm_key = ?`, this.key)
+          this.setSetup({ ...NO_SETUP, status: "done" })
+        } else this.setSetup(NO_SETUP)
         this.fromSandbox(created)
         return this.waitUntilReady(created.id, onProgress, signal)
       }, () => `Ready in ${Math.round((Date.now() - startedAt) / 1000)}s`).catch((error) => {
@@ -591,6 +610,35 @@ export class VmManager {
       this.inFlight--
       this.update({ busy: this.inFlight > 0 })
     }
+  }
+
+  /**
+   * Saves this VM's disk as it is now under `name` (a boat saved snapshot of the account), so other VMs can start as
+   * exact copies of it: its files, installed tools, browser profile and logins, and setup. Starts the VM first if it's
+   * stopped; resolves once the save is ready. The caller deletes the save with `discardCopy` once the copies exist.
+   */
+  async saveCopy(name: string, signal?: AbortSignal): Promise<VmCopy> {
+    const sandbox = await this.ensureRunning(undefined, signal)
+    const boat = <A>(effect: (client: BoatClient["Service"]) => Effect.Effect<A, BoatError>) => this.host.run(BoatClient.use(effect), signal)
+    await this.track(() =>
+      this.logged("system", "lifecycle", "Save a copy of this VM's disk", async () => {
+        await boat((client) => client.saveNamedSnapshot(sandbox.id, name))
+        for (let waited = 0; ; waited += 2_000) {
+          const status = await boat((client) => client.namedSnapshot(name))
+          if (status === "ready") return
+          if (status === null || status === "failed" || status === "error" || waited > 10 * 60_000) {
+            throw new Error(`Saving a copy of this VM didn't finish (${status ?? "gone"}).`)
+          }
+          await sleep(2_000, signal)
+        }
+      })
+    )
+    return { of: vmNumber(this.key), snapshot: name, provisioned: this.provisioned }
+  }
+
+  /** Deletes a save `saveCopy` made. */
+  async discardCopy(name: string) {
+    await this.host.run(BoatClient.use((client) => client.deleteNamedSnapshot(name)))
   }
 
   /** Runs setup again (e.g. after the project's repos or script changed), now if the VM runs, else on next start. */

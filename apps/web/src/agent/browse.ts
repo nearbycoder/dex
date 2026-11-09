@@ -26,6 +26,29 @@ if [ ! -x "$HOME/.local/bin/browse" ]; then
 fi`
 
 /**
+ * For the template builder, after BROWSE_BAKE: opens Chrome once on the desktop so it fetches the force-installed
+ * extension into its profile, then closes it, so a VM made from the template has the extension from its first start
+ * instead of waiting on the Web Store. Leaves no pairing (each VM pairs its own) and no profile lock (the lock names
+ * the builder's host, and Chrome on another host would refuse the profile). Best effort: a template without the
+ * extension still works, the first vm_browser call fetches it.
+ */
+export const BROWSE_PREWARM = `export DISPLAY=:0
+for i in $(seq 60); do [ -e /tmp/.X11-unix/X0 ] && break; sleep 1; done
+installed() { ls "$HOME"/.config/google-chrome/*/Extensions/${BROWSE_EXTENSION_ID}/*/manifest.json > /dev/null 2>&1; }
+if ! installed; then
+  setsid nohup google-chrome --no-first-run --no-default-browser-check about:blank > /tmp/dex-chrome-prewarm.log 2>&1 < /dev/null &
+  for i in $(seq 180); do installed && break; sleep 0.5; done
+  # Let Chrome finish writing the extension's settings before it closes.
+  sleep 3
+  pkill -TERM -x chrome || true
+  for i in $(seq 30); do pgrep -x chrome > /dev/null || break; sleep 0.5; done
+  pkill -KILL -x chrome 2> /dev/null || true
+fi
+rm -f "$HOME"/.config/google-chrome/Singleton* /tmp/dex-chrome-prewarm.log
+installed || echo "Chrome didn't fetch the browse extension; VMs will fetch it on first use." >&2
+true`
+
+/**
  * Gets the VM's browser ready for `browse execute --session <session>`: browse installed, Chrome open on the desktop,
  * its extension connected to the relay (pairing it the first time, by opening the extension's welcome page with a
  * fresh one-time code, as `browse install` does), and the session created (`session` must be a plain lowercase id,
@@ -42,6 +65,8 @@ connected() { browse status 2>/dev/null | grep -q '^Extension: connected'; }
 browse session list > /dev/null 2>&1 || true
 if ! connected; then
   if ! pgrep -x chrome > /dev/null; then
+    # A lock left by another machine (this disk copied from a VM whose Chrome was open) would make Chrome refuse the profile.
+    rm -f "$HOME"/.config/google-chrome/Singleton*
     setsid nohup google-chrome --no-first-run --no-default-browser-check --start-maximized --hide-crash-restore-bubble > /tmp/dex-chrome.log 2>&1 < /dev/null &
   fi
   for i in $(seq 60); do [ -d "$HOME/.config/google-chrome/Default/Extensions/${BROWSE_EXTENSION_ID}" ] && break; sleep 0.5; done

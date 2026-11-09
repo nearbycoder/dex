@@ -138,7 +138,7 @@ public struct ReplyLayout: Sendable, Equatable {
         "list_scheduled_prompts": "Checking the schedule", "cancel_scheduled_prompt": "Cancelling a scheduled prompt",
         "vm_exec": "Running on the VM", "vm_read_file": "Reading a file on the VM", "vm_write_file": "Writing a file on the VM",
         "vm_expose_port": "Opening a port", "vm_screenshot": "Looking at the VM's screen", "vm_computer": "Using the VM's desktop", "vm_browser": "Browsing on the VM",
-        "vm_stop": "Stopping the VM", "share_media": "Sharing a file from the VM", "app_operations": "Looking up app operations", "app_call": "Managing Dex",
+        "vm_stop": "Stopping the VM", "vm_start": "Starting VMs", "vm_agents": "Running helpers on the VMs", "share_media": "Sharing a file from the VM", "app_operations": "Looking up app operations", "app_call": "Managing Dex",
         "load_ui_guide": "Reading the UI guide", "use_skill": "Reading a skill",
         "space_start_thread": "Starting a thread", "space_message_thread": "Messaging a thread", "space_list_threads": "Checking the threads",
         "space_read_thread": "Reading a thread", "space_stop_thread": "Stopping a thread"

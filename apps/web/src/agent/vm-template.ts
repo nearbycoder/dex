@@ -1,10 +1,10 @@
 import type { Effect } from "effect"
 import { BoatClient, BoatError } from "./boat"
-import { BROWSE_BAKE } from "./browse"
+import { BROWSE_BAKE, BROWSE_PREWARM } from "./browse"
 import { SELKIES_BAKE, SELKIES_TEMPLATE_CLEANUP, SELKIES_VERSION } from "./selkies"
 
 /** Bump when what's baked in changes, so VMs come from a fresh template instead of the old one. */
-const TEMPLATE_REVISION = 4
+const TEMPLATE_REVISION = 5
 /** A boat named snapshot in the user's own boat account (each person uses their own key). */
 const templateName = (revision: number) => `dex-desktop-r${revision}-selkies-${SELKIES_VERSION.replaceAll(".", "-")}`
 export const TEMPLATE_NAME = templateName(TEMPLATE_REVISION)
@@ -27,13 +27,16 @@ export interface TemplateHost {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
- * A prepared disk new VMs start from: boat's base image with Dex's desktop stream and browse (src/agent/browse.ts) already installed, so a new VM is
+ * A prepared disk new VMs start from: boat's base image with Dex's desktop stream and browse (src/agent/browse.ts, its
+ * Chrome extension included) already installed, so a new VM is
  * up in seconds with nothing to install. Built once per boat account on a throwaway VM (created without the
  * account's environment, so no credentials end up in the saved disk), then deleted. Until it exists, VMs start from
  * boat's base image and install the stream when the desktop is first opened.
  */
 export class VmTemplate {
   private known: { ready: boolean; at: number } | null = null
+  /** Whether the previous revision's template is still there, to start from while this one builds. */
+  private previous: { ready: boolean; at: number } | null = null
   private building: Promise<void> | null = null
 
   constructor(private readonly host: TemplateHost) {}
@@ -60,12 +63,28 @@ export class VmTemplate {
     if (this.known.ready && this.meta("vm_template_built") === null) this.setMeta("vm_template_built", Date.now())
     const builtAt = this.meta("vm_template_built")
     if (!this.known.ready || (builtAt !== null && Date.now() - builtAt > MAX_AGE_MS)) this.build()
-    return this.known.ready ? TEMPLATE_NAME : null
+    return this.known.ready ? TEMPLATE_NAME : this.previousTemplate()
+  }
+
+  /**
+   * The previous revision's template while this one builds (it's deleted once this one is ready): it lacks only what
+   * the new revision adds, which VMs install on first use, so it beats boat's bare base image by far.
+   */
+  private async previousTemplate(): Promise<string | null> {
+    const name = templateName(TEMPLATE_REVISION - 1)
+    if (TEMPLATE_REVISION < 2) return null
+    if (!this.previous || Date.now() - this.previous.at > RECHECK_MS) {
+      const status = await this.host.run(BoatClient.use((boat) => boat.namedSnapshot(name))).catch(() => undefined)
+      if (status === undefined) return null
+      this.previous = { ready: status === "ready", at: Date.now() }
+    }
+    return this.previous.ready ? name : null
   }
 
   /** Creating from the template failed as if it's gone (deleted in boat, or another account's key): check again next time. */
   forget() {
     this.known = null
+    this.previous = null
   }
 
   private build() {
@@ -100,8 +119,12 @@ export class VmTemplate {
         if (sandbox.state === "error" || waited > 5 * 60_000) throw new Error(`The template builder VM didn't start (${sandbox.state})`)
         await sleep(3_000)
       }
-      const baked = await boat((client) => client.exec(created.id, `${SELKIES_BAKE}\n${BROWSE_BAKE}\n${SELKIES_TEMPLATE_CLEANUP}`, { timeoutSeconds: 300 }))
+      const baked = await boat((client) => client.exec(created.id, `${SELKIES_BAKE}\n${BROWSE_BAKE}`, { timeoutSeconds: 300 }))
       if (baked.exitCode !== 0) throw new Error(`Installing the desktop stream and browser tools failed: ${(baked.stderr || baked.stdout || "").slice(-600)}`)
+      // Chrome with browse's extension already in its profile, then the cleanup (in a shell of its own: the bake's `set -e`
+      // would stop it at the first hiccup).
+      const finished = await boat((client) => client.exec(created.id, `${BROWSE_PREWARM}\n${SELKIES_TEMPLATE_CLEANUP}`, { timeoutSeconds: 300 }))
+      if (finished.exitCode !== 0) throw new Error(`Finishing the template failed: ${(finished.stderr || finished.stdout || "").slice(-600)}`)
       await boat((client) => client.saveNamedSnapshot(created.id, TEMPLATE_NAME))
       for (let waited = 0; ; waited += 5_000) {
         const status = await boat((client) => client.namedSnapshot(TEMPLATE_NAME))

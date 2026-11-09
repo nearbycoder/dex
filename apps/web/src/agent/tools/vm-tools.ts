@@ -1,16 +1,17 @@
 import { Type } from "@earendil-works/pi-ai"
-import { defineTool } from "@earendil-works/pi-durable"
+import type { Context } from "@earendil-works/chord"
+import { defineTool, type ToolExecutionApi, type ToolRegistration } from "@earendil-works/pi-durable"
 import { browseReady } from "../browse"
 import { VM_ENV_FILE } from "../secrets"
 import { MAX_VMS_PER_CHAT, type VmInfo, vmNumber } from "~/shared/protocol"
-import type { VmManager } from "../vm"
+import type { VmCopy, VmManager } from "../vm"
 
 const text = (value: string) => [{ type: "text" as const, text: value }]
 const MAX_MODEL_OUTPUT = 30_000
 const clip = (value: string) =>
   value.length > MAX_MODEL_OUTPUT ? `… [${value.length - MAX_MODEL_OUTPUT} earlier chars cut]\n${value.slice(-MAX_MODEL_OUTPUT)}` : value
 
-export const VM_GUIDE = `This chat has its own VMs (other chats have their own): each a full Ubuntu machine (user \`user\`, passwordless sudo) with Docker, Node 24, Bun, Python 3.12, git, the GitHub CLI and Google Chrome. Home is /home/user. Every VM tool works on VM 1 unless you pass \`vm\` (2 to ${MAX_VMS_PER_CHAT}): each number is a separate machine with its own disk, desktop, and browser, started the first time a tool uses it (that call can take ~30s), and it keeps its disk across stops. For work that can run side by side (several sites, accounts, or long jobs at once), spread it over several VMs and call their tools in the same step: calls in one step run at the same time, and the user watches every VM live in the chat's control panel. More VMs cost more, so use extra ones only when parallel work pays off, and vm_stop them when done; vm_list shows which you have. A VM stops itself after a few minutes with no VM tool calls running, even if a background server is still up, so check that servers you started are still running before relying on them later. A desktop runs on DISPLAY=:0: GUI apps you launch there (e.g. \`DISPLAY=:0 google-chrome --no-first-run URL &\`) appear on it. For websites, use vm_browser: it runs Playwright in that desktop's Chrome, a real browser that keeps its cookies and logins. The user can watch the desktop and every command you run live on the Machine page, and may take control of the desktop at any time; if something you did changed unexpectedly, take a fresh screenshot.`
+export const VM_GUIDE = `This chat has its own VMs (other chats have their own): each a full Ubuntu machine (user \`user\`, passwordless sudo) with Docker, Node 24, Bun, Python 3.12, git, the GitHub CLI and Google Chrome. Home is /home/user. Every VM tool works on VM 1 unless you pass \`vm\` (2 to ${MAX_VMS_PER_CHAT}): each number is a separate machine with its own disk, desktop, and browser, started the first time a tool uses it (that call can take ~30s), and it keeps its disk across stops. For work that can run side by side (several sites, accounts, or long jobs at once), spread it over several VMs: start them together with vm_start (copy_from makes the new ones copies of a VM you prepared, so setup happens once), then for multi-step work hand each VM its own helper with vm_agents, so every VM goes at its own pace; quick one-off commands can instead go in one step, since calls in one step run at the same time. The user watches every VM live in the chat's control panel. More VMs cost more, so use extra ones only when parallel work pays off, and vm_stop them when done; vm_list shows which you have. A VM stops itself after a few minutes with no VM tool calls running, even if a background server is still up, so check that servers you started are still running before relying on them later. A desktop runs on DISPLAY=:0: GUI apps you launch there (e.g. \`DISPLAY=:0 google-chrome --no-first-run URL &\`) appear on it. For websites, use vm_browser: it runs Playwright in that desktop's Chrome, a real browser that keeps its cookies and logins. The user can watch the desktop and every command you run live on the Machine page, and may take control of the desktop at any time; if something you did changed unexpectedly, take a fresh screenshot.`
 
 /** The chat's secrets (see SecretVault): filled in on the VM, never shown to the model. */
 export interface VmSecrets {
@@ -28,6 +29,10 @@ const SECRET_NOTE =
 export interface ChatVms {
   vmFor(chatId: string, n: number): VmManager
   list(chatId: string): VmInfo[]
+  /** A VM agent's conversation (vm_agents): the chat it works for and its VM. Its VM tools act there, whatever `vm` they pass. */
+  worker(conversationId: string): { chatId: string; vm: number } | undefined
+  /** A saved copy (vm_start's copy_from) the VMs made from it have started from; deleted once they no longer need it. */
+  copyMade(snapshot: string): void
 }
 
 const vmParam = Type.Optional(
@@ -38,9 +43,99 @@ const vmArg = (value: unknown) => Math.min(MAX_VMS_PER_CHAT, Math.max(1, Math.ro
 /** "VM 3: " in front of a result for any VM but the first, so parallel results read apart. */
 const tag = (n: number) => (n === 1 ? "" : `VM ${n}: `)
 
+/**
+ * A VM agent's tool calls act for its chat, on its own VM: the call sees the chat's id and that VM's number. Other
+ * conversations' calls pass through unchanged.
+ */
+export const forWorkers = <T extends ToolRegistration>(vms: Pick<ChatVms, "worker">, tool: T): T =>
+  ({
+    ...tool,
+    execute: (args: Record<string, unknown>, api: Parameters<T["execute"]>[1], context: Parameters<T["execute"]>[2]) => {
+      const worker = vms.worker(String(api.conversationId))
+      if (!worker) return tool.execute(args as never, api, context)
+      return tool.execute({ ...args, vm: worker.vm } as never, { ...api, conversationId: worker.chatId as unknown as typeof api.conversationId }, context)
+    }
+  }) as T
+
+/** Seconds since `at`, for "ready in 12s". */
+const since = (at: number) => Math.round((Date.now() - at) / 1000)
+
 export const vmTools = (vms: ChatVms, secrets: VmSecrets) => {
   const vmFor = (chatId: string, n: unknown) => vms.vmFor(chatId, vmArg(n))
   return [
+    defineTool({
+      name: "vm_start",
+      description:
+        "Start several of your VMs at once and wait until all of them are ready, instead of each starting on its first command " +
+        "(one after another). Use it before work spread over many VMs, so none lags behind. With copy_from, each VM that doesn't " +
+        "exist yet starts as an exact copy of that VM's disk as it is now: files, installed tools, the browser's profile and logins, " +
+        "the project's setup. So prepare one VM (install, sign in, download), then copy it to the rest; running processes and open " +
+        "windows aren't copied. VMs that already exist just start (a copy never replaces one). With browser=true, Chrome also opens " +
+        "on each one's desktop with vm_browser ready.",
+      parameters: Type.Object({
+        vms: Type.Array(Type.Integer({ minimum: 1, maximum: MAX_VMS_PER_CHAT }), {
+          minItems: 1,
+          maxItems: MAX_VMS_PER_CHAT,
+          description: "Which VMs to start, e.g. [1, 2, 3, 4]."
+        }),
+        copy_from: Type.Optional(Type.Integer({ minimum: 1, maximum: MAX_VMS_PER_CHAT, description: "A VM whose disk the new ones copy, e.g. 1." })),
+        browser: Type.Optional(Type.Boolean({ description: "Also open Chrome on each, ready for vm_browser." }))
+      }),
+      execute: async ({ vms: numbers, copy_from, browser }, api, context) => {
+        const chatId = String(api.conversationId)
+        const source = copy_from === undefined ? null : vmArg(copy_from)
+        const wanted = [...new Set(numbers.map(vmArg))].filter((n) => n !== source).sort((a, b) => a - b)
+        if (!wanted.length) return { output: text("Name at least one VM other than the one to copy."), isError: true }
+        const signal = context.abortSignal
+        // Only VMs with no machine yet become copies.
+        const fresh = new Set(wanted.filter((n) => !vmFor(chatId, n).current.id))
+        let copy: VmCopy | undefined
+        const notes: string[] = []
+        if (source !== null && fresh.size) {
+          const at = Date.now()
+          api.output(`Saving a copy of VM ${source}'s disk…\n`)
+          const snapshot = `dex-copy-${crypto.randomUUID().slice(0, 13)}`
+          try {
+            copy = await vmFor(chatId, source).saveCopy(snapshot, signal)
+            api.output(`Saved in ${since(at)}s.\n`)
+          } catch (error) {
+            vms.copyMade(snapshot)
+            return { output: text(`Couldn't copy VM ${source}: ${error instanceof Error ? error.message : String(error)}`), isError: true }
+          }
+        }
+        if (source !== null && wanted.some((n) => !fresh.has(n))) {
+          notes.push(`Already existed, so started as they are (not copies): ${wanted.filter((n) => !fresh.has(n)).map((n) => `VM ${n}`).join(", ")}.`)
+        }
+        const startedAt = Date.now()
+        try {
+          const results = await Promise.allSettled(
+            wanted.map(async (n) => {
+              const vm = vmFor(chatId, n)
+              await vm.ensureRunning(undefined, signal, copy && fresh.has(n) ? copy : undefined)
+              if (browser) {
+                await secrets.prepare(chatId, vm.key)
+                const ran = await vm.exec(browseReady("dex"), { actor: "agent", title: "Open the browser", timeoutSeconds: 180, signal })
+                if (ran.exitCode !== 0) throw new Error(`it started, but its browser didn't: ${ran.output.trim().slice(-400)}`)
+              }
+              api.output(`VM ${n} ready (${since(startedAt)}s)\n`)
+            })
+          )
+          const failed = results.flatMap((result, i) =>
+            result.status === "rejected" ? [`VM ${wanted[i]}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`] : []
+          )
+          const ready = wanted.filter((_, i) => results[i]!.status === "fulfilled")
+          const lines = [
+            ready.length ? `Ready in ${since(startedAt)}s: ${ready.map((n) => `VM ${n}`).join(", ")}${copy ? ` (new ones copied from VM ${source})` : ""}.` : "None started.",
+            ...notes,
+            ...(failed.length ? ["Failed:", ...failed] : [])
+          ]
+          return { output: text(lines.join("\n")), isError: ready.length === 0 }
+        } finally {
+          if (copy) vms.copyMade(copy.snapshot)
+        }
+      }
+    }),
+
     defineTool({
       name: "vm_exec",
       description:
@@ -402,3 +497,56 @@ export const vmTools = (vms: ChatVms, secrets: VmSecrets) => {
     })
   ]
 }
+
+/** One vm_agents agent's outcome. */
+export interface VmAgentResult {
+  readonly vm: number
+  /** "done", "unanswered" (it stopped without a final reply), or "failed". */
+  readonly status: string
+  readonly reply: string
+}
+
+/** What vm_agents needs from the agent: run one helper agent per VM, all at once, owned by this call. */
+export interface VmAgentsHost {
+  run(api: ToolExecutionApi, context: Context, agents: ReadonlyArray<{ vm: number; task: string }>): Promise<VmAgentResult[]>
+}
+
+export const VM_AGENTS_TOOL = "vm_agents"
+
+/**
+ * Hands each of several VMs its own helper agent. Tool calls in one step all wait for the slowest before the model
+ * takes its next step, so ten VMs driven from one chat move in lockstep; helpers each run their own loop on their own
+ * VM, so every VM goes at its own pace.
+ */
+export const vmAgentsTool = (host: VmAgentsHost) =>
+  defineTool({
+    name: VM_AGENTS_TOOL,
+    description:
+      "Run a helper agent on each of several of your VMs at once. Each helper gets its own task and works only on its VM, with your VM tools " +
+      "(vm_browser, vm_exec, vm_computer, …), independently: a slow step on one VM never holds up the others, unlike tool calls in one step, " +
+      "which all wait for the slowest. Use it when multi-step work runs on many VMs at once (play a game in each, test a site several ways, " +
+      "run the same flow for several accounts). Write each task as a complete brief: a helper sees nothing of this chat. Start the VMs first " +
+      "with vm_start (copy_from gives them a prepared VM's disk). Waits until every helper finishes and returns their final reports; the user " +
+      "watches them work in the chat's control panel.",
+    parameters: Type.Object({
+      agents: Type.Array(
+        Type.Object({
+          vm: Type.Integer({ minimum: 1, maximum: MAX_VMS_PER_CHAT, description: "The VM this helper works on." }),
+          task: Type.String({ minLength: 1, maxLength: 20_000, description: "What it should do and report back." })
+        }),
+        { minItems: 1, maxItems: MAX_VMS_PER_CHAT }
+      )
+    }),
+    // A rerun after a restart finds the same helpers and their same messages, and waits for them again.
+    replay: "safe",
+    execute: async ({ agents }, api, context) => {
+      const numbers = agents.map((agent) => vmArg(agent.vm))
+      if (new Set(numbers).size !== numbers.length) return { output: text("Give each VM one helper."), isError: true }
+      const results = await host.run(api as ToolExecutionApi, context, agents.map((agent, i) => ({ vm: numbers[i]!, task: agent.task })))
+      const failed = results.filter((result) => result.status === "failed").length
+      return {
+        output: text(results.map((result) => `## VM ${result.vm}: ${result.status}\n${clip(result.reply || "(no reply)")}`).join("\n\n")),
+        isError: failed === results.length
+      }
+    }
+  })

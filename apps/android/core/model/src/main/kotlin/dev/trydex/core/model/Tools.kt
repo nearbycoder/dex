@@ -22,6 +22,8 @@ object Tools {
         "vm_screenshot" to "Looking at the VM's screen",
         "vm_browser" to "Browsing on the VM",
         "vm_stop" to "Stopping the VM",
+        "vm_start" to "Starting VMs",
+        "vm_agents" to "Running helpers on the VMs",
         "share_media" to "Sharing a file from the VM",
         "app_operations" to "Looking up app operations",
         "app_call" to "Managing Dex",
@@ -66,6 +68,8 @@ object Tools {
         "vm_screenshot" to Icon.Camera,
         "vm_browser" to Icon.Globe,
         "vm_stop" to Icon.Monitor,
+        "vm_start" to Icon.Monitor,
+        "vm_agents" to Icon.Monitor,
     )
 
     fun icon(name: String): Icon = when {

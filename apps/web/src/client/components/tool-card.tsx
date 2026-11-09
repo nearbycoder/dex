@@ -38,7 +38,9 @@ const icons: Record<string, LucideIcon> = {
   vm_expose_port: Globe,
   vm_screenshot: Camera,
   vm_browser: Globe,
-  vm_stop: Monitor
+  vm_stop: Monitor,
+  vm_start: Monitor,
+  vm_agents: Monitor
 }
 
 const summaryKeys = ["command", "path", "query", "url", "prompt", "name", "id", "operation"]
@@ -80,6 +82,8 @@ const activities: Record<string, string> = {
   vm_screenshot: "Looking at the VM's screen",
   vm_browser: "Browsing on the VM",
   vm_stop: "Stopping the VM",
+  vm_start: "Starting VMs",
+  vm_agents: "Running helpers on the VMs",
   share_media: "Sharing a file from the VM",
   app_operations: "Looking up app operations",
   app_call: "Managing Dex"

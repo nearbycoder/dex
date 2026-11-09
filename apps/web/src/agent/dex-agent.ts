@@ -8,8 +8,10 @@ import {
   GenerationTask,
   Harness,
   hook,
+  configure,
   section,
   type ToolExecutionResult,
+  type ToolRegistration,
   UsageDoc
 } from "@earendil-works/pi-durable"
 import { Agent, callable, type Connection, getCurrentAgent, type Schedule, type WSMessage } from "agents"
@@ -104,7 +106,7 @@ import { appTools } from "./tools/app-tools"
 import { loadUiGuideTool, renderUiTool } from "./tools/render-ui"
 import { scheduleTools } from "./tools/schedule-tools"
 import { type SpaceHost, spaceTools } from "./tools/space-tools"
-import { vmTools } from "./tools/vm-tools"
+import { forWorkers, VM_AGENTS_TOOL, type VmAgentsHost, vmAgentsTool, vmTools } from "./tools/vm-tools"
 import { workspaceTools } from "./tools/workspace-tools"
 import { parseVmFiles, vmFilesCommand, type VmFilesView } from "./vm-files"
 import { verifyGitHubToken, type GitHubIdentity } from "./github-token"
@@ -135,7 +137,7 @@ const ClientMessageJson = Schema.fromJsonString(
 const decodeClientMessage = Schema.decodeUnknownOption(ClientMessageJson)
 
 const CAPABILITIES = `You can:
-- Use this chat's own cloud VM, a full Ubuntu machine with a desktop (vm_exec, vm_computer, vm_screenshot, vm_read_file, vm_write_file, vm_expose_port, vm_stop). Use it for real work: cloning repos, installing packages, running code, tests, servers, Docker, and driving a browser. The user can watch it live and take over. It is created the first time you call a VM tool in this chat, which costs time and money, so only use it when the task needs real execution; answer questions, research, and light file work without it.
+- Use this chat's own cloud VMs, full Ubuntu machines with a desktop (vm_exec, vm_browser, vm_computer, vm_screenshot, vm_read_file, vm_write_file, vm_expose_port, vm_stop; up to 10 at once with vm_start and vm_agents). Use it for real work: cloning repos, installing packages, running code, tests, servers, Docker, and driving a browser. The user can watch it live and take over. It is created the first time you call a VM tool in this chat, which costs time and money, so only use it when the task needs real execution; answer questions, research, and light file work without it.
 - Keep notes and small files in ${WORKSPACE_ROOT} with a lightweight simulated shell (bash, read_file, write_file, edit_file). It cannot install or run programs; use the VM for that.
 - Research the web (web_search, web_fetch, and curl inside bash).
 - Build web pages, games, and demos for the user to open (vm_expose_port). Many open them on an iPhone, where sound fails unless it starts from a tap's end and the silent switch is handled: in every page with sound, put this as the first thing in <head>, unchanged (it makes any AudioContext, or library built on one, play after the first tap or key press), and start sounds from click, pointerup, touchend, or keydown, never touchstart alone:
@@ -587,6 +589,10 @@ export class DexAgent extends Agent<Env, DexState> {
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_projects (
       id TEXT PRIMARY KEY, data TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
     migrateVmTables(ctx.storage.sql)
+    // vm_agents' helpers (hidden conversations, each working on one VM of a chat) and vm_start's saved copies.
+    ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_vm_agents (
+      conversation_id TEXT PRIMARY KEY, chat_id TEXT NOT NULL, vm INTEGER NOT NULL, created_at INTEGER NOT NULL)`)
+    ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_vm_copies (snapshot TEXT PRIMARY KEY, made_at INTEGER NOT NULL)`)
     adoptSharedVm(ctx.storage.sql)
     for (const key of storedVmKeys(ctx.storage.sql)) this.vmFor(key)
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_mcp (
@@ -655,6 +661,7 @@ export class DexAgent extends Agent<Env, DexState> {
     }
     for (const vm of this.vms.values()) void vm.refresh()
     this.ctx.waitUntil(this.reapOrphanVms())
+    this.ctx.waitUntil(this.discardVmCopies())
     this.ctx.waitUntil(this.drainQueues().catch(() => undefined))
     this.ctx.waitUntil(this.checkGitHubToken().catch(() => undefined))
     this.ctx.waitUntil(this.media.reap((id) => this.hasSession(id)).catch(() => undefined))
@@ -695,11 +702,20 @@ export class DexAgent extends Agent<Env, DexState> {
         section("user_instructions", () => this.state.settings.instructions.trim() || undefined),
         // The chat's custom agent, read at each request so edits to the agent apply right away.
         section("agent", (input) => {
-          const agent = this.agentForSession(String(input.conversationId))
+          const agent = this.agentForSession(this.chatOf(String(input.conversationId)))
           return agent ? `You are Dex acting as the "${agent.name}" agent.\n\n${agent.instructions}`.trim() : undefined
         }),
         // The chat's project, with where its repos are and how far the VM's setup got.
-        section("project", (input) => this.projectContext(String(input.conversationId))),
+        section("project", (input) => this.projectContext(this.chatOf(String(input.conversationId)))),
+        // A vm_agents helper: one task on one VM, reporting back to the chat that started it.
+        section("vm_agent", (input) => {
+          const worker = this.vmWorker(String(input.conversationId))
+          if (!worker) return undefined
+          return [
+            `You are a helper working on VM ${worker.vm} of a chat, started to do one task there while helpers on the chat's other VMs do theirs. Every VM tool you call acts on VM ${worker.vm} (their \`vm\` argument is ignored).`,
+            "Do the task in the first message on your own: nobody answers questions while you work. When you finish, or can't go on, reply with a short report (what you did, the result, anything left open). It goes back to the chat that started you."
+          ].join("\n\n")
+        }),
         // A space's thread: what it's part of, and that its final reply goes back to the coordinator.
         section("space_thread", (input) => {
           const sessionId = String(input.conversationId)
@@ -711,7 +727,7 @@ export class DexAgent extends Agent<Env, DexState> {
           ].join("\n\n")
         }),
         section("chat_secrets", (input) => {
-          const names = this.secrets.names(String(input.conversationId))
+          const names = this.secrets.names(this.chatOf(String(input.conversationId)))
           return names.length
             ? `Secrets the user gave in this chat (values hidden from you): ${names.map((name) => `{{secret:${name}}}`).join(", ")}. Put the placeholder in vm_exec commands or vm_write_file content and Dex fills in the value on the VM. Never ask the user to paste a secret into the chat; ask with a render_ui password field instead.`
             : "To get an API key, token, or password from the user, ask with a render_ui form using an Input of type \"password\": Dex keeps the value out of the chat and you receive {{secret:<field name>}} to use in vm_exec and vm_write_file. Never ask them to paste one into a message."
@@ -740,7 +756,7 @@ export class DexAgent extends Agent<Env, DexState> {
           // dearer than the last. The model sees the newest few; older ones become a note (the transcript keeps them).
           beforeRequest: (request) => ({ messages: withRecentScreenshots(request.messages) }),
           afterResponse: (message, api) => {
-            this.ledger.recordResponse(String(api.conversationId), message)
+            this.ledger.recordResponse(this.chatOf(String(api.conversationId)), message)
             this.glanceCache = undefined
             // Remembered for the notification when the run ends.
             const text = message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("\n")
@@ -766,7 +782,11 @@ export class DexAgent extends Agent<Env, DexState> {
         // and the vm_access section tells the model up front.
         ...vmTools({
           vmFor: (chatId, n) => this.vmFor(vmKeyFor(chatId, n)),
-          list: (chatId) => this.chatVms(chatId).map((vm) => vm.current)
+          list: (chatId) => this.chatVms(chatId).map((vm) => vm.current),
+          worker: (conversationId) => this.vmWorker(conversationId),
+          copyMade: (snapshot) => {
+            this.ctx.storage.sql.exec(`INSERT OR REPLACE INTO dex_vm_copies (snapshot, made_at) VALUES (?, ?)`, snapshot, Date.now())
+          }
         }, {
           prepare: async (chatId, key = chatId) => {
             await Promise.all([this.secrets.prepare(chatId), this.accountSecrets.load()])
@@ -776,8 +796,9 @@ export class DexAgent extends Agent<Env, DexState> {
           command: (chatId, command) => this.secrets.command(chatId, command),
           fill: (chatId, content) => this.secrets.fill(chatId, content)
         }),
-        ...(this.media.configured ? mediaTools((chatId, path, title, n) => this.shareMediaFromVm(chatId, path, title, { vmKey: vmKeyFor(chatId, n) })) : [])
-      ]
+        ...(this.media.configured ? mediaTools((chatId, path, title, n) => this.shareMediaFromVm(chatId, path, title, { vmKey: vmKeyFor(chatId, n) })) : []),
+        vmAgentsTool(this.vmAgentsHost())
+      ].map((tool) => (tool.name.startsWith("vm_") || tool.name === "share_media" ? forWorkers({ worker: (id) => this.vmWorker(id) }, tool) : tool))
     })
   }
 
@@ -1792,6 +1813,7 @@ export class DexAgent extends Agent<Env, DexState> {
   async deleteSession(sessionId: string) {
     await this.harness.session(sessionId).abort().catch(() => false)
     this.ctx.storage.sql.exec(`DELETE FROM dex_sessions WHERE id = ?`, sessionId)
+    this.ctx.storage.sql.exec(`DELETE FROM dex_vm_agents WHERE chat_id = ?`, sessionId)
     this.skills.forgetSession(sessionId)
     this.messageQueue.clear(sessionId)
     this.secrets.forget(sessionId)
@@ -3015,6 +3037,88 @@ export class DexAgent extends Agent<Env, DexState> {
 
   // ── VMs (one per chat) ────────────────────────────────────────────────────
 
+  /** A vm_agents helper's chat and VM, or undefined for any other conversation. */
+  private vmWorker(conversationId: string): { chatId: string; vm: number } | undefined {
+    const row = this.ctx.storage.sql
+      .exec<{ chat_id: string; vm: number }>(`SELECT chat_id, vm FROM dex_vm_agents WHERE conversation_id = ?`, conversationId)
+      .toArray()[0]
+    return row && { chatId: row.chat_id, vm: row.vm }
+  }
+
+  /** The chat a conversation belongs to: itself, or for a vm_agents helper, the chat that started it. */
+  private chatOf(conversationId: string) {
+    return this.vmWorker(conversationId)?.chatId ?? conversationId
+  }
+
+  /**
+   * vm_agents: one helper conversation per VM, owned by the call (stopping the chat stops them; a rerun after a
+   * restart finds them and their messages again), each running its own loop so no VM waits on another's step.
+   */
+  private vmAgentsHost(): VmAgentsHost {
+    // Helpers do their VM's task and nothing that outlives it or needs a UI they don't have.
+    const leftOut = ["vm_start", VM_AGENTS_TOOL, "app_operations", "app_call", "schedule_prompt", "list_scheduled_prompts", "cancel_scheduled_prompt", "render_ui", "load_ui_guide"]
+    return {
+      run: async (api, context, agents) => {
+        const caller = String(api.conversationId)
+        if (this.vmWorker(caller)) throw new Error("A helper can't start helpers of its own.")
+        const children = await api.commit(async (tx) => {
+          const ids = (await tx.scanConversations({ ownerTaskId: api.taskId }, MAX_VMS_PER_CHAT)).items.map((conversation) => conversation.id)
+          for (let i = ids.length; i < agents.length; i++) {
+            // A copy of this chat's agent (model, thinking, MCP servers), less the tools above.
+            const created = await tx.createConversation({ ownership: { kind: "task", taskId: api.taskId } })
+            await configure(tx, created.id, { tools: { remove: leftOut.map((name) => ({ name }) as unknown as ToolRegistration) } })
+            ids.push(created.id)
+          }
+          return ids
+        }, context)
+        agents.forEach((agent, i) => {
+          this.ctx.storage.sql.exec(
+            `INSERT OR REPLACE INTO dex_vm_agents (conversation_id, chat_id, vm, created_at) VALUES (?, ?, ?, ?)`,
+            String(children[i]), caller, agent.vm, Date.now()
+          )
+        })
+        api.output(`Started ${agents.length} helper${agents.length === 1 ? "" : "s"}: ${agents.map((agent) => `VM ${agent.vm}`).join(", ")}.\n`)
+        const startedAt = Date.now()
+        return Promise.all(
+          agents.map(async (agent, i) => {
+            const id = children[i]!
+            try {
+              const helper = await api.conversation(id, context)
+              if (!helper) throw new Error("Its conversation is gone.")
+              const submission = await helper.submit({ type: "input", content: agent.task, requestId: `vm-agent:${api.taskId}:${agent.vm}` }, context)
+              const settled = await submission.wait(context)
+              const last = (await this.readTranscript(String(id), 1)).at(-1)
+              api.output(`VM ${agent.vm} ${settled.status === "done" ? "finished" : "stopped"} (${Math.round((Date.now() - startedAt) / 1000)}s)\n`)
+              return { vm: agent.vm, status: settled.status, reply: last?.role === "assistant" ? last.text : "" }
+            } catch (error) {
+              api.output(`VM ${agent.vm} failed\n`)
+              return { vm: agent.vm, status: "failed", reply: errorText(error) }
+            }
+          })
+        )
+      }
+    }
+  }
+
+  /**
+   * Deletes vm_start's saved copies once the VMs made from them have had time to fetch their disks (boat fills a new
+   * VM's disk in the background after it's ready), so they don't count against the account's saved snapshots.
+   */
+  private async discardVmCopies() {
+    if (!this.vmHost.configured()) return
+    const old = this.ctx.storage.sql
+      .exec<{ snapshot: string }>(`SELECT snapshot FROM dex_vm_copies WHERE made_at < ?`, Date.now() - 30 * 60_000)
+      .toArray()
+    for (const { snapshot } of old) {
+      try {
+        await this.runtime.runPromise(BoatClient.use((boat) => boat.deleteNamedSnapshot(snapshot)))
+        this.ctx.storage.sql.exec(`DELETE FROM dex_vm_copies WHERE snapshot = ?`, snapshot)
+      } catch (error) {
+        console.warn(`Couldn't delete the VM copy ${snapshot}: ${errorText(error)}`)
+      }
+    }
+  }
+
   private vmFor(key: string): VmManager {
     let vm = this.vms.get(key)
     if (!vm) {
@@ -3111,6 +3215,7 @@ export class DexAgent extends Agent<Env, DexState> {
   }
 
   async vmIdleCheck() {
+    await this.discardVmCopies()
     let again = false
     for (const vm of this.vms.values()) if (await vm.idleCheck()) again = true
     if (again) await this.schedule(60, "vmIdleCheck")
