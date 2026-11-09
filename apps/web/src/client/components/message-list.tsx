@@ -274,10 +274,7 @@ function AssistantTurnView(props: {
         return null
       })}
       {errors.map((message, index) => (
-        <div key={index} className="my-2 flex items-start gap-2 rounded-lg border border-red-900/60 bg-red-950/40 px-3 py-2 text-xs text-red-300">
-          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-          <span className="break-words">{message.errorMessage ?? "The model request failed."}</span>
-        </div>
+        <ErrorNote key={index} className="my-2" text={message.errorMessage ?? "The model request failed."} />
       ))}
       {final?.stopReason === "aborted" && <div className="my-1 text-xs text-zinc-500">Stopped.</div>}
     </div>
@@ -549,13 +546,12 @@ export const MessageList = memo(function MessageList({
                 <LoaderCircle className="size-3.5 animate-spin" /> Working…
               </div>
             ))}
-          {transcript.retry && <div className="pl-9 text-xs text-amber-400/80">Retrying after an error: {transcript.retry.error}</div>}
-          {transcript.error && (
-            <div className="flex items-start gap-2 rounded-lg border border-red-900/60 bg-red-950/40 px-3 py-2 text-xs text-red-300">
-              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-              <span className="break-words">{transcript.error}</span>
+          {transcript.retry && (
+            <div className="line-clamp-2 pl-9 text-xs text-amber-400/80 [overflow-wrap:anywhere]" title={transcript.retry.error}>
+              Retrying after an error: {transcript.retry.error}
             </div>
           )}
+          {transcript.error && <ErrorNote text={transcript.error} />}
         </div>
       </div>
       {!atBottom && (
@@ -578,3 +574,25 @@ export const MessageList = memo(function MessageList({
     </div>
   )
 })
+
+/**
+ * A failed request, in the chat's column: providers' errors carry long unbroken JSON and URLs, so it wraps anywhere,
+ * and a long one shows its first lines until opened.
+ */
+function ErrorNote({ text, className = "" }: { text: string; className?: string }) {
+  const [open, setOpen] = useState(false)
+  const long = text.length > 240
+  return (
+    <div className={`flex min-w-0 items-start gap-2 rounded-lg border border-red-900/60 bg-red-950/40 px-3 py-2 text-xs text-red-300 ${className}`}>
+      <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+      <div className="min-w-0 flex-1">
+        <p className={`[overflow-wrap:anywhere] whitespace-pre-wrap ${long && !open ? "line-clamp-3" : ""}`}>{text}</p>
+        {long && (
+          <button type="button" onClick={() => setOpen(!open)} className="mt-1 text-red-400/80 hover:text-red-200">
+            {open ? "Show less" : "Show all"}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
