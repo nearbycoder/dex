@@ -72,21 +72,38 @@ if ! connected; then
   for i in $(seq 60); do [ -d "$HOME/.config/google-chrome/Default/Extensions/${BROWSE_EXTENSION_ID}" ] && break; sleep 0.5; done
   for i in $(seq 12); do connected && break; sleep 0.5; done
 fi
-if ! connected; then
-  echo "Pairing the VM's Chrome with browse…"
+# browse's setup page ("Connect your agent", in its own window): closed once pairing is over, however it went, so the
+# desktop shows the agent's tab.
+close_setup() {
+  for w in $(xdotool search --name '^Connect your agent' 2> /dev/null); do
+    xdotool windowactivate --sync "$w" key --clearmodifiers ctrl+w 2> /dev/null || true
+  done
+}
+# One pairing attempt: a fresh one-time code from \`browse pair\`, handed to the extension through its welcome page.
+pair() {
+  # A pairing or setup left running (a cut-off attempt, or \`browse install\` run by hand) holds the relay's pairing.
+  pkill -f 'browse (pair|install)' 2> /dev/null || true
   rm -f /tmp/dex-browse-pair.log
   setsid nohup browse pair --wait-seconds 60 > /tmp/dex-browse-pair.log 2>&1 < /dev/null &
   code=""
   for i in $(seq 40); do code=$(grep -o 'Pairing code: [0-9A-Za-z-]*' /tmp/dex-browse-pair.log 2>/dev/null | cut -d' ' -f3); [ -n "$code" ] && break; sleep 0.25; done
-  [ -n "$code" ] || { cat /tmp/dex-browse-pair.log >&2; exit 1; }
+  [ -n "$code" ] || return 1
   google-chrome --new-window "chrome-extension://${BROWSE_EXTENSION_ID}/welcome.html#code=$code" > /dev/null 2>&1 < /dev/null
-  for i in $(seq 60); do connected && break; sleep 0.5; done
-  connected || { echo "The VM's Chrome didn't connect to browse." >&2; cat /tmp/dex-browse-pair.log >&2; browse status >&2; exit 1; }
+  for i in $(seq 40); do connected && return 0; sleep 0.5; done
+  return 1
+}
+if ! connected; then
+  echo "Pairing the VM's Chrome with browse…"
+  # A second try covers an extension that wasn't listening yet (just installed, or Chrome just started).
+  pair || { close_setup; sleep 2; pair; }
+  close_setup
+  if ! connected; then
+    echo "The VM's Chrome didn't connect to browse. Call vm_browser again to retry; don't run browse install or browse pair yourself." >&2
+    tail -5 /tmp/dex-browse-pair.log >&2
+    exit 1
+  fi
   # Show the agent's cursor and keep its tabs an hour: the user is watching, and chats come back to a page.
   browse settings set cursor=always idleMinutes=60 > /dev/null 2>&1 || true
 fi
-# Paired: close browse's setup page (its own window), so the desktop shows the agent's tab rather than "Connect your agent".
-for w in $(xdotool search --name '^Connect your agent' 2> /dev/null); do
-  xdotool windowactivate --sync "$w" key --clearmodifiers ctrl+w 2> /dev/null || true
-done
+close_setup
 browse session new ${session} > /dev/null 2>&1 || true`

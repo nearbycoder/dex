@@ -326,7 +326,8 @@ export const vmTools = (vms: ChatVms, secrets: VmSecrets) => {
         "Use the web in your VM's Chrome (on the desktop the user watches) by running Playwright JavaScript through browse. " +
         "It's a real, visible browser with a person-like fingerprint, input pacing, and the cookies and logins of earlier calls, so prefer " +
         "it over vm_computer for websites, and over curl or headless browsers for anything a person would do in a browser. The first call " +
-        "on a VM sets the browser up (~10s).\n" +
+        "on a VM sets the browser up (~10s); never run browse's own setup (browse install, browse pair) with vm_exec: it waits for a person " +
+        "and blocks the browser. If setup fails, call vm_browser again.\n" +
         "Your code runs as an async function body with `page` (your session's tab, kept between calls), `context`, `browser`, `state` " +
         "(an object kept between calls), and helpers; `return` a value to see it (a single expression returns itself). Work in a loop: " +
         "inspect, act, verify.\n" +
