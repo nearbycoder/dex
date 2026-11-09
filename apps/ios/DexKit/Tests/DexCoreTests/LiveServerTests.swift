@@ -6,7 +6,7 @@ import Testing
 /// DEX_LIVE_TOKEN (a session token from the native sign-in) to run these. Skipped otherwise. They create and delete a
 /// chat and a workspace file, and need no model subscription.
 @MainActor
-@Suite(.enabled(if: ProcessInfo.processInfo.environment["DEX_LIVE_SERVER"] != nil))
+@Suite(.enabled(if: !(ProcessInfo.processInfo.environment["DEX_LIVE_SERVER"] ?? "").isEmpty))
 struct LiveServerTests {
     let server = URL(string: ProcessInfo.processInfo.environment["DEX_LIVE_SERVER"] ?? "http://localhost:5173")!
     let token = ProcessInfo.processInfo.environment["DEX_LIVE_TOKEN"] ?? ""

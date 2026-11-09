@@ -133,8 +133,10 @@ final class OpenUIUITests: DexUITestCase {
             if back.exists { back.tap() } else { app.navigationBars.buttons.firstMatch.tap() }
             XCTAssertTrue(app.staticTexts["Plan a weekend in Lisbon"].waitForExistence(timeout: 10))
         }
+        // The chat's row may be below the fold of the chat list.
         let row = app.staticTexts["Notification preferences"].firstMatch
-        reveal(row)
+        let list = app.collectionViews["chats.list"]
+        for _ in 0..<5 where !(row.exists && row.isHittable) { list.swipeUp() }
         row.tap()
 
         XCTAssertTrue(app.staticTexts["Quiet from 0:00."].waitForExistence(timeout: 10), "the open tab and the $variable are kept")

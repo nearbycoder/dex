@@ -10,21 +10,21 @@ final class AdaptiveLayoutUITests: DexUITestCase {
 
     func testOpenChatSurvivesRotation() {
         launch(["-DexOpenChat", "s-welcome"])
-        XCTAssertTrue(app.staticTexts["Here’s an easy weekend, with time to wander."].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Here's an easy weekend, with time to wander."].waitForExistence(timeout: 10))
         snapshot("adaptive-portrait")
         XCUIDevice.shared.orientation = .landscapeLeft
-        XCTAssertTrue(app.staticTexts["Here’s an easy weekend, with time to wander."].waitForExistence(timeout: 10), "the chat stays open")
+        XCTAssertTrue(app.staticTexts["Here's an easy weekend, with time to wander."].waitForExistence(timeout: 10), "the chat stays open")
         XCTAssertTrue(app.textFields["composer.field"].exists || app.textViews["composer.field"].exists)
         snapshot("adaptive-landscape")
         XCUIDevice.shared.orientation = .portrait
-        XCTAssertTrue(app.staticTexts["Here’s an easy weekend, with time to wander."].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Here's an easy weekend, with time to wander."].waitForExistence(timeout: 10))
     }
 
     func testInboxAndChatAtThisSize() {
         launch()
         XCTAssertTrue(app.staticTexts["Plan a weekend in Lisbon"].waitForExistence(timeout: 10))
         app.staticTexts["Plan a weekend in Lisbon"].tap()
-        XCTAssertTrue(app.staticTexts["Here’s an easy weekend, with time to wander."].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Here's an easy weekend, with time to wander."].waitForExistence(timeout: 10))
         if isRegularWidth {
             // Side by side: the inbox stays visible next to the chat.
             XCTAssertTrue(app.staticTexts["Fix the flaky test in dex"].isHittable)

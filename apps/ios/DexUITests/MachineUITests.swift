@@ -225,10 +225,13 @@ final class MachineUITests: DexUITestCase {
         XCTAssertTrue(element("vmPreview.desktop").waitForExistence(timeout: 10))
         snapshot("chat-preview-open")
 
-        // Move the window by its title bar.
-        // Shrink it first so it has room to cross the chat, then move it by its title bar.
-        if window.frame.width > screen.width / 3 { element("vmPreview.size").tap() }
-        _ = waitFor { window.frame.width <= screen.width / 3 }
+        // Small first (the size is remembered between runs) so it has room to cross the chat, then move it by its title bar.
+        let size = element("vmPreview.size")
+        if size.label == "Smaller" {
+            let wide = window.frame.width
+            size.tap()
+            _ = waitFor { window.frame.width < wide - 20 }
+        }
         let before = window.frame
         let left = before.minX - screen.minX < screen.maxX - before.maxX
         let grab = element("vmPreview.titleBar").coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5))
