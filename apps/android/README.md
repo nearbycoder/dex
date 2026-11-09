@@ -46,7 +46,7 @@ Sign in with your Dex's address (trydex.dev, or your own deployment). The browse
 | `core/fake` | FakeDex: an in-process stand-in for a deployment, for tests and the demo. |
 | `app` | The app: repository, notifications, and the Compose UI (`ui/chat`, `ui/openui`, `ui/machine`, `ui/library`, `ui/settings`, `ui/files`, `ui/usage`). |
 
-Goldens come from the web's TypeScript run by Node: `TZ=America/Chicago node apps/android/tools/goldens/generate.mts`, `node apps/android/tools/goldens/openui.mts`, and `node apps/android/tools/goldens/spaces.mts` (which needs nothing installed) from the repo root. Regenerate them when the web's shared code or OpenUI changes, and the Kotlin tests say what drifted.
+Goldens come from the web's TypeScript run by Node: `TZ=America/Chicago node apps/android/tools/goldens/generate.mts`, `node apps/android/tools/goldens/openui.mts`, and `node apps/android/tools/goldens/spaces.mts` and `node apps/android/tools/goldens/ui-action.mts` (which need nothing installed) from the repo root. Regenerate them when the web's shared code or OpenUI changes, and the Kotlin tests say what drifted.
 
 ## Form factors
 

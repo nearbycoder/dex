@@ -542,7 +542,7 @@ private struct QueueItemRow: View {
                         .frame(width: 20, height: 20)
                         .background(.quaternary, in: .circle)
                     VStack(alignment: .leading, spacing: 2) {
-                        if !item.text.isEmpty { Text(item.text).font(.subheadline).lineLimit(3) }
+                        if !item.text.isEmpty { Text(UserText.withoutUiAction(item.text)).font(.subheadline).lineLimit(3) }
                         if !item.attachments.isEmpty {
                             Text("Attached: \(attachmentSummary(item.attachments.map(\.name)))")
                                 .font(.caption)

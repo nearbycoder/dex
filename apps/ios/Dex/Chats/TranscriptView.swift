@@ -233,6 +233,9 @@ struct UserBubble: View {
 
     var body: some View {
         let split = UserText.splitUiNotes(text)
+        // A button pressed in the chat's UI: its words and what it carried, not the lines the model reads.
+        let action = UserText.uiAction(split.text)
+        let words = action?.message ?? split.text
         HStack {
             Spacer(minLength: 48)
             VStack(alignment: .trailing, spacing: 6) {
@@ -246,7 +249,9 @@ struct UserBubble: View {
                     if !files.isEmpty || !imageParts.isEmpty {
                         UserAttachmentsView(feed: feed, images: imageParts, files: files)
                     }
-                    if !split.text.isEmpty {
+                    if let action {
+                        UiActionText(action: action)
+                    } else if !split.text.isEmpty {
                         Self.styled(split.text)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -264,17 +269,17 @@ struct UserBubble: View {
                 .background(Color.selectionAccent.gradient, in: .rect(cornerRadius: 20, style: .continuous))
                 .opacity(pending ? 0.65 : 1)
                 .contextMenu {
-                    Button { UIPasteboard.general.string = split.text } label: { Label("Copy", systemImage: "doc.on.doc") }
+                    Button { UIPasteboard.general.string = words } label: { Label("Copy", systemImage: "doc.on.doc") }
                     if let editInto {
-                        Button { editInto.fill(text) } label: { Label("Edit as New Message", systemImage: "pencil") }
+                        Button { editInto.fill(action == nil ? text : words) } label: { Label("Edit as New Message", systemImage: "pencil") }
                     }
-                    ShareLink(item: split.text)
+                    ShareLink(item: words)
                 }
             }
             .frame(maxWidth: 560, alignment: .trailing)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(pending ? "You, sending: \(split.text)" : "You: \(split.text)")
+        .accessibilityLabel("\(pending ? "You, sending" : "You"): \(action?.spoken ?? split.text)")
         .accessibilityIdentifier(pending ? "chat.pending" : "chat.user")
     }
 
@@ -283,6 +288,33 @@ struct UserBubble: View {
         guard let skill = Format.invokedSkill(text), let range = text.range(of: "/\(skill)") else { return Text(text) }
         let name = Text("/\(skill)").font(.body.monospaced().weight(.semibold))
         return Text("\(Text(text[..<range.lowerBound]))\(name)\(Text(text[range.upperBound...]))")
+    }
+}
+
+/// A button you pressed in the chat's UI, inside your bubble: what it does, then what it carried as small labels.
+private struct UiActionText: View {
+    let action: UiAction
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "cursorarrow.click").font(.footnote).opacity(0.8)
+                Text(action.message).fixedSize(horizontal: false, vertical: true)
+            }
+            if !action.details.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(action.details, id: \.self) { detail in
+                        Text("\(Text(detail.label.isEmpty ? "" : "\(detail.label) ").foregroundStyle(.white.opacity(0.7)))\(detail.value)")
+                            .font(.caption)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(.black.opacity(0.18), in: .rect(cornerRadius: 7, style: .continuous))
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -48,7 +48,7 @@ final class OpenUIUITests: DexUITestCase {
         let button = app.buttons["openui.button.Explain the peak"]
         XCTAssertTrue(button.waitForExistence(timeout: 10))
         button.tap()
-        XCTAssertTrue(text(containing: "[UI action] Why was Friday the busiest day?").waitForExistence(timeout: 10))
+        XCTAssertTrue(text(containing: "Pressed in the UI: Why was Friday the busiest day?").waitForExistence(timeout: 10))
     }
 
     func testFormValidatesAndSendsThePasswordAsASecret() {
@@ -58,7 +58,7 @@ final class OpenUIUITests: DexUITestCase {
         reveal(connect)
         connect.tap()
         XCTAssertTrue(text(containing: "This field is required").waitForExistence(timeout: 5), "an empty required field shows its error")
-        XCTAssertFalse(text(containing: "[UI action]").exists, "an invalid form isn't sent")
+        XCTAssertFalse(text(containing: "Pressed in the UI").exists, "an invalid form isn't sent")
         snapshot("openui-form-errors")
 
         let host = app.textFields["openui.field.host"]
@@ -80,9 +80,9 @@ final class OpenUIUITests: DexUITestCase {
         snapshot("openui-form-filled")
         connect.tap()
 
-        let sent = text(containing: "[UI action] Connect the database")
+        let sent = text(containing: "Pressed in the UI: Connect the database")
         XCTAssertTrue(sent.waitForExistence(timeout: 20))
-        XCTAssertTrue(sent.label.contains("{{secret:password}}"), sent.label)
+        XCTAssertTrue(sent.label.contains("password ••••••"), sent.label)
         XCTAssertFalse(sent.label.contains("hunter2"), "the password itself is never sent")
         XCTAssertTrue(sent.label.contains("db.example.com"))
         snapshot("openui-form-sent")

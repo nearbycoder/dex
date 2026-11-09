@@ -1,7 +1,13 @@
 package dev.trydex.core.model
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.doubleOrNull
 
 /** How the activity row and tool cards describe tool calls (apps/web/src/client/components/tool-card.tsx). */
 object Tools {
@@ -126,6 +132,89 @@ object UiNotes {
         val end = text.indexOf("\n\n")
         val block = if (end == -1) text else text.substring(0, end)
         return Split(block.split("\n").drop(1).map { it.removePrefix("- ") }, if (end == -1) "" else text.substring(end + 2))
+    }
+}
+
+/**
+ * A button pressed in a chat's generated UI: what it does in words, and what it carried (form fields, the button's
+ * context). The agent's transcript holds it as `[UI action] …` with JSON lines for the model; chats show this instead.
+ * The same reading as apps/web/src/shared/ui-action.ts (checked by goldens).
+ */
+data class UiAction(val message: String, val details: List<Detail>) {
+    /** One form field or piece of context; `label` may be empty. */
+    data class Detail(val label: String, val value: String)
+
+    /** For screen readers: "Pressed in the UI: Deploy it. env prod, notify Yes". */
+    val spoken: String
+        get() {
+            val carried = details.joinToString(", ") { if (it.label.isEmpty()) it.value else "${it.label} ${it.value}" }
+            return "Pressed in the UI: $message" + if (carried.isEmpty()) "" else ". $carried"
+        }
+
+    companion object {
+        const val PREFIX = "[UI action] "
+        const val MAX_DETAILS = 6
+        private const val MAX_DETAIL_CHARS = 80
+        private val secret = Regex("^\\{\\{secret:[^}]*\\}\\}$")
+        private val spaces = Regex("\\s+")
+        private val separators = Regex("[_-]+")
+
+        /** The action a message is, or null for any other message. */
+        fun parse(text: String): UiAction? {
+            if (!text.startsWith(PREFIX)) return null
+            val lines = text.substring(PREFIX.length).split("\n").toMutableList()
+            fun jsonLine(prefix: String): JsonElement? {
+                val line = lines.last().takeIf { lines.size > 1 && it.startsWith(prefix) } ?: return null
+                val value = runCatching { Json.parseToJsonElement(line.substring(prefix.length)) }.getOrNull()?.takeIf(::isJson) ?: return null
+                lines.removeAt(lines.lastIndex)
+                return value
+            }
+            val context = jsonLine("Context: ")
+            val values = jsonLine("Form values: ")
+            val details = mutableListOf<Detail>()
+            values?.let { collect(it, "", details) }
+            context?.takeIf(::isReadable)?.let { collect(it, "", details) }
+            return UiAction(lines.joinToString("\n").trim(), details.take(MAX_DETAILS))
+        }
+
+        /** A message as plain words for lists: a UI action's words, anything else as it is. */
+        fun strip(text: String): String = parse(text)?.message ?: text
+
+        /** The parser also takes a bare word (`Context: soon`) as a value; JSON has none. */
+        private fun isJson(node: JsonElement) = node !is JsonPrimitive || node is JsonNull || node.isString || node.booleanOrNull != null || node.doubleOrNull != null
+
+        /** A context worth showing: a plain value or a flat set of them. Anything nested is the UI's own bookkeeping. */
+        private fun isReadable(context: JsonElement): Boolean {
+            fun isPlain(value: JsonElement) = value is JsonPrimitive && (!value.isString || ('{' !in value.content && '[' !in value.content))
+            return isPlain(context) || (context is JsonObject && context.values.all(::isPlain))
+        }
+
+        /** A value as you'd read it: a stored secret's placeholder as dots, long text cut short. Null unless it's a single value. */
+        private fun shown(node: JsonElement): String? {
+            if (node !is JsonPrimitive || node is JsonNull) return null
+            if (!node.isString) return node.booleanOrNull?.let { if (it) "Yes" else "No" } ?: node.content
+            if (secret.matches(node.content)) return "••••••"
+            val text = node.content.replace(spaces, " ").trim()
+            return if (text.length > MAX_DETAIL_CHARS) text.take(MAX_DETAIL_CHARS - 1) + "…" else text
+        }
+
+        /** The values in a form's state or a context, by field name: `{ value }` wrappers opened, nesting flattened. */
+        private fun collect(node: JsonElement, name: String, into: MutableList<Detail>) {
+            fun add(value: String) {
+                val detail = Detail(name.removePrefix("$").replace(separators, " ").trim(), value)
+                if (value.isNotEmpty() && detail !in into) into += detail
+            }
+            when (node) {
+                is JsonNull -> Unit
+                is JsonPrimitive -> add(shown(node).orEmpty())
+                is JsonArray -> {
+                    val leaves = node.mapNotNull(::shown)
+                    if (leaves.size == node.size) add(leaves.filter { it.isNotEmpty() }.joinToString(", "))
+                    else node.forEach { collect(it, name, into) }
+                }
+                is JsonObject -> node["value"]?.let { collect(it, name, into) } ?: node.forEach { (key, value) -> collect(value, key, into) }
+            }
+        }
     }
 }
 

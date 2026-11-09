@@ -6,6 +6,7 @@ import { useContext, useEffect, useMemo, useRef, useState } from "react"
 import { ChatSecretsContext } from "~/client/lib/chat-secrets"
 import { OpenUIHostContext } from "~/client/lib/openui-host"
 import { library } from "~/client/openui/library"
+import { uiActionMessage } from "~/shared/ui-action"
 // Loaded with this lazy chunk rather than on every page; its layer order is fixed in styles.css.
 import "@openuidev/react-ui/layered/styles/index.css"
 
@@ -48,12 +49,7 @@ const withoutPasswords = (node: unknown, fields: ReadonlySet<string>): unknown =
   return Object.fromEntries(Object.entries(node).flatMap(([key, value]) => (fields.has(key) ? [] : [[key, withoutPasswords(value, fields)]])))
 }
 
-const toModelMessage = (event: ActionEvent, formState: unknown) => {
-  const lines = [`[UI action] ${event.humanFriendlyMessage}`]
-  if (isRecord(formState) && Object.keys(formState).length > 0) lines.push(`Form values: ${JSON.stringify(formState)}`)
-  if (event.params?.context !== undefined) lines.push(`Context: ${JSON.stringify(event.params.context)}`)
-  return lines.join("\n")
-}
+const toModelMessage = (event: ActionEvent, formState: unknown) => uiActionMessage(event.humanFriendlyMessage, formState, event.params?.context)
 
 type ToolResult = Awaited<ReturnType<McpClientLike["callTool"]>>
 const CANCELLED = "You cancelled it."

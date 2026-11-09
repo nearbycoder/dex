@@ -81,6 +81,118 @@ public enum UserText {
         }
         return (notes, end.map { String(text[$0.upperBound...]) } ?? "")
     }
+
+    static let uiActionPrefix = "[UI action] "
+
+    /// A message a button in the chat's generated UI sent (`OpenUICard.modelMessage`), or nil for any other message.
+    /// The same reading as the web's shared/ui-action.ts.
+    public static func uiAction(_ text: String) -> UiAction? {
+        guard text.hasPrefix(uiActionPrefix) else { return nil }
+        var lines = text.dropFirst(uiActionPrefix.count).split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        func jsonLine(_ prefix: String) -> (value: JSONValue, raw: String)? {
+            guard lines.count > 1, let line = lines.last, line.hasPrefix(prefix) else { return nil }
+            let raw = String(line.dropFirst(prefix.count))
+            guard let value = try? JSONValue.parse(raw) else { return nil }
+            lines.removeLast()
+            return (value, raw)
+        }
+        let context = jsonLine("Context: ")
+        let values = jsonLine("Form values: ")
+        var details: [UiAction.Detail] = []
+        if let values { collect(values.value, name: "", raw: values.raw, into: &details) }
+        if let context, isReadable(context.value) { collect(context.value, name: "", raw: context.raw, into: &details) }
+        return UiAction(message: lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines), details: Array(details.prefix(UiAction.maxDetails)))
+    }
+
+    /// A message as plain words for lists: a UI action's words, anything else as it is.
+    public static func withoutUiAction(_ text: String) -> String { uiAction(text)?.message ?? text }
+
+    /// A context worth showing: a plain value or a flat set of them. Anything nested is the UI's own bookkeeping.
+    private static func isReadable(_ context: JSONValue) -> Bool {
+        func isPlain(_ value: JSONValue) -> Bool {
+            switch value {
+            case .null, .bool, .number: true
+            case .string(let text): !text.contains("{") && !text.contains("[")
+            default: false
+            }
+        }
+        return isPlain(context) || (context.object?.values.allSatisfy(isPlain) ?? false)
+    }
+
+    /// The values in a form's state or a context, by field name: `{ value }` wrappers opened, nesting flattened.
+    private static func collect(_ node: JSONValue, name: String, raw: String, into details: inout [UiAction.Detail]) {
+        func add(_ value: String) {
+            let detail = UiAction.Detail(label: label(name), value: value)
+            if !value.isEmpty, !details.contains(detail) { details.append(detail) }
+        }
+        switch node {
+        case .null: return
+        case .bool, .number, .string: add(shown(node) ?? "")
+        case .array(let items):
+            let leaves = items.compactMap(shown)
+            if leaves.count == items.count {
+                add(leaves.filter { !$0.isEmpty }.joined(separator: ", "))
+            } else {
+                for item in items { collect(item, name: name, raw: raw, into: &details) }
+            }
+        case .object(let object):
+            if let value = object["value"] {
+                collect(value, name: name, raw: raw, into: &details)
+            } else {
+                for key in inSourceOrder(object.keys, raw: raw) { collect(object[key] ?? .null, name: key, raw: raw, into: &details) }
+            }
+        }
+    }
+
+    /// An object's keys in the order its JSON wrote them (a decoded object has none of its own).
+    private static func inSourceOrder(_ keys: some Collection<String>, raw: String) -> [String] {
+        func place(_ key: String) -> Int {
+            raw.range(of: "\"\(key)\":").map { raw.distance(from: raw.startIndex, to: $0.lowerBound) } ?? Int.max
+        }
+        return keys.map { (key: $0, at: place($0)) }.sorted { ($0.at, $0.key) < ($1.at, $1.key) }.map(\.key)
+    }
+
+    /// A value as you'd read it: a stored secret's placeholder as dots, long text cut short. Nil unless it's a single value.
+    private static func shown(_ value: JSONValue) -> String? {
+        switch value {
+        case .bool(let flag): return flag ? "Yes" : "No"
+        case .number(let number):
+            return number.rounded() == number && abs(number) < 1e15 ? String(Int(number)) : String(number)
+        case .string(let text):
+            if text.wholeMatch(of: /\{\{secret:[^}]*\}\}/) != nil { return "••••••" }
+            let line = text.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression).trimmingCharacters(in: .whitespaces)
+            return line.count > UiAction.maxDetailCharacters ? "\(line.prefix(UiAction.maxDetailCharacters - 1))…" : line
+        default: return nil
+        }
+    }
+
+    /// "$first_name" → "first name".
+    private static func label(_ name: String) -> String {
+        (name.hasPrefix("$") ? String(name.dropFirst()) : name)
+            .replacingOccurrences(of: "[_-]+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+    }
+}
+
+/// A button pressed in a chat's generated UI: what it does in words, and what it carried (form fields, the button's context).
+public struct UiAction: Hashable, Sendable {
+    public struct Detail: Hashable, Sendable {
+        /// The field's name, or empty.
+        public let label: String
+        public let value: String
+    }
+
+    public static let maxDetails = 6
+    static let maxDetailCharacters = 80
+
+    public let message: String
+    public let details: [Detail]
+
+    /// The action in a sentence, for VoiceOver: "Pressed in the UI: Deploy it. env prod, notify Yes".
+    public var spoken: String {
+        let carried = details.map { $0.label.isEmpty ? $0.value : "\($0.label) \($0.value)" }.joined(separator: ", ")
+        return "Pressed in the UI: \(message)" + (carried.isEmpty ? "" : ". \(carried)")
+    }
 }
 
 /// The slash menu's skill lookups (DirectorySkill itself is in API/Library.swift).

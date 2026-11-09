@@ -96,6 +96,36 @@ import Testing
         #expect(UserText.splitUiNotes("Plain").notes.isEmpty)
     }
 
+    @Test func uiActions() {
+        let picked = UserText.uiAction("[UI action] Build the direction I picked\nForm values: {\"$direction\":\"ironfront\"}\nContext: {\"direction\":\"ironfront\"}")
+        #expect(picked?.message == "Build the direction I picked")
+        #expect(picked?.details == [.init(label: "direction", value: "ironfront")])
+        #expect(picked?.spoken == "Pressed in the UI: Build the direction I picked. direction ironfront")
+
+        // Fields in the order the form wrote them, `{ value }` opened, the secret hidden, the empty one dropped.
+        let form = #"{"deploy":{"env":{"value":"prod"},"api_key":{"value":"{{secret:API_KEY}}"},"notify":{"value":true},"notes":{"value":""},"tags":{"value":["a","b"]},"count":{"value":3}}}"#
+        let deploy = UserText.uiAction("[UI action] Deploy it\nForm values: \(form)\nContext: \"Selected item: 2\"")
+        #expect(deploy?.details == [
+            .init(label: "env", value: "prod"), .init(label: "api key", value: "••••••"), .init(label: "notify", value: "Yes"),
+            .init(label: "tags", value: "a, b"), .init(label: "count", value: "3"), .init(label: "", value: "Selected item: 2"),
+        ])
+
+        // Only a simple context is shown: nested data is the UI's own bookkeeping.
+        #expect(UserText.uiAction(#"[UI action] Archive\#nContext: {"id":"t-42","done":true,"note":null}"#)?.details == [.init(label: "id", value: "t-42"), .init(label: "done", value: "Yes")])
+        #expect(UserText.uiAction(#"[UI action] Open it\#nContext: "Selected item: {\"itemIndex\":0}""#) == UiAction(message: "Open it", details: []))
+        #expect(UserText.uiAction(#"[UI action] Open it\#nContext: {"item":{"index":0}}"#) == UiAction(message: "Open it", details: []))
+
+        #expect(UserText.uiAction("[UI action] Why was Friday busiest?\nIt looked odd.") == UiAction(message: "Why was Friday busiest?\nIt looked odd.", details: []))
+        #expect(UserText.uiAction("[UI action] Context: 1")?.message == "Context: 1")
+        #expect(UserText.uiAction("[UI action] Go\nContext: not json")?.message == "Go\nContext: not json")
+        #expect(UserText.uiAction("plain message") == nil)
+        #expect(UserText.withoutUiAction("[UI action] Go\nContext: 3") == "Go")
+
+        let long = UserText.uiAction("[UI action] Save\nForm values: {\"note\":\"\(String(repeating: "x", count: 100))\"}")
+        #expect(long?.details.first?.value.count == 80)
+        #expect(long?.details.first?.value.hasSuffix("…") == true)
+    }
+
     @Test func slashMenu() {
         #expect(DirectorySkill.slashQuery("/") == "")
         #expect(DirectorySkill.slashQuery("/front") == "front")

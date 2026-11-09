@@ -3,6 +3,7 @@ import { ArrowDown, ArrowUp, Check, ChevronUp, Hourglass, Pause, Pencil, Trash2,
 import { useEffect, useRef, useState } from "react"
 import { useDex } from "~/client/lib/dex"
 import type { QueuedMessage } from "~/shared/protocol"
+import { withoutUiAction } from "~/shared/ui-action"
 
 const iconButton = "rounded-md p-1.5 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 disabled:pointer-events-none disabled:opacity-30"
 
@@ -89,7 +90,7 @@ function QueueItem({
           {index + 1}
         </span>
         <div className="min-w-0 flex-1">
-          {item.text && <p className="line-clamp-3 text-sm whitespace-pre-wrap text-zinc-200 [overflow-wrap:anywhere]">{item.text}</p>}
+          {item.text && <p className="line-clamp-3 text-sm whitespace-pre-wrap text-zinc-200 [overflow-wrap:anywhere]">{withoutUiAction(item.text)}</p>}
           {item.attachments && item.attachments.length > 0 && (
             <p className="truncate text-xs text-zinc-500" title={item.attachments.map((file) => file.name).join(", ")}>
               Attached: {attachmentSummary(item.attachments)}

@@ -7,6 +7,7 @@ import type { AttachedFile } from "~/shared/attachments"
 import { lazy, memo, type ReactNode, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { displayItems, type LiveTool, toolResults, type TranscriptState } from "~/client/lib/transcript"
 import { invokedSkill } from "~/shared/skills"
+import { parseUiAction } from "~/shared/ui-action"
 import { splitUiNotes } from "~/shared/ui-notes"
 import { parseSpaceUpdates, START_THREAD_TOOL } from "~/shared/spaces"
 import { Collapse } from "./collapse"
@@ -287,7 +288,8 @@ function AssistantTurnView(props: {
  */
 function UserText({ text: raw }: { text: string }) {
   const { notes, text } = splitUiNotes(raw)
-  const skill = invokedSkill(text)
+  const action = parseUiAction(text)
+  const skill = action ? null : invokedSkill(text)
   const at = skill ? text.indexOf(`/${skill}`) : -1
   return (
     <>
@@ -297,7 +299,25 @@ function UserText({ text: raw }: { text: string }) {
           <span>In the UI: {notes.join("; ")}</span>
         </span>
       )}
-      {skill && at !== -1 ? (
+      {action ? (
+        // A button pressed in the chat's UI: what it does, and what it carried (form fields, the button's context).
+        <>
+          <span className="flex items-start gap-1.5" title="You pressed this in the chat's UI">
+            <MousePointerClick className="mt-[3px] size-3.5 shrink-0 text-zinc-400" />
+            <span className="min-w-0">{action.message}</span>
+          </span>
+          {action.details.length > 0 && (
+            <span className="mt-1.5 flex flex-wrap gap-1 whitespace-normal">
+              {action.details.map((detail) => (
+                <span key={`${detail.label}:${detail.value}`} className="max-w-full rounded-md bg-zinc-950/40 px-1.5 py-0.5 text-xs text-zinc-300">
+                  {detail.label && <span className="text-zinc-500">{detail.label} </span>}
+                  {detail.value}
+                </span>
+              ))}
+            </span>
+          )}
+        </>
+      ) : skill && at !== -1 ? (
         <>
           {text.slice(0, at)}
           <span className="font-mono font-medium text-emerald-300">/{skill}</span>

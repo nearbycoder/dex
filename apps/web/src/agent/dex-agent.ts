@@ -53,6 +53,7 @@ import type {
 } from "~/shared/protocol"
 import { chatOfVm, connectedProviders, MAX_VMS_PER_CHAT, MCP_VM, SHARED_VM, vmKeyFor, vmNumber } from "~/shared/protocol"
 import { withUiNotes } from "~/shared/ui-notes"
+import { withoutUiAction } from "~/shared/ui-action"
 import { AUDIO_UNLOCK_SCRIPT } from "~/shared/web-audio"
 import { attachmentSummary, type ChatAttachment, splitAttachments } from "~/shared/attachments"
 import { githubFullName, isProjectImage, normalizeRepoUrl, type ProjectDraft, type ProjectImageCandidate, type ProjectProfile, type ProjectRepo, PROJECT_ROOT, repoDirName, repoLabel } from "~/shared/projects"
@@ -1493,7 +1494,7 @@ export class DexAgent extends Agent<Env, DexState> {
     const model = this.ctx.storage.sql.exec<{ model: string }>(`SELECT model FROM dex_sessions WHERE id = ?`, sessionId).toArray()[0]?.model ?? row.model
     const vision = findModel(model)?.input.includes("image") ?? false
     const receipt = await session.submit(messageContent(text, attachments, vision), steer ? { whenBusy: "steer" } : undefined)
-    const title = row.title === "New chat" ? (content || attachmentSummary(attachments)).replace(/\s+/g, " ").slice(0, 60) : row.title
+    const title = row.title === "New chat" ? (withoutUiAction(content) || attachmentSummary(attachments)).replace(/\s+/g, " ").slice(0, 60) : row.title
     this.ctx.storage.sql.exec(`UPDATE dex_sessions SET title = ?, updated_at = ?, read_at = ? WHERE id = ?`, title, Date.now(), Date.now(), sessionId)
     // Something new in it: back to the inbox, whether it was settled or snoozed.
     await this.returnToInbox(sessionId)

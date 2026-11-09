@@ -1,0 +1,177 @@
+{
+ "parse": [
+  {
+   "input": "[UI action] Build the direction I picked\nForm values: {\"$direction\":\"ironfront\"}\nContext: {\"direction\":\"ironfront\"}",
+   "action": {
+    "message": "Build the direction I picked",
+    "details": [
+     {
+      "label": "direction",
+      "value": "ironfront"
+     }
+    ]
+   }
+  },
+  {
+   "input": "[UI action] Deploy it\nForm values: {\"deploy\":{\"env\":{\"value\":\"prod\"},\"api_key\":{\"value\":\"{{secret:API_KEY}}\"},\"notify\":{\"value\":true},\"quiet\":{\"value\":false},\"notes\":{\"value\":\"\"},\"tags\":{\"value\":[\"a\",\"b\"]},\"count\":{\"value\":3},\"ratio\":{\"value\":0.5}}}\nContext: \"Selected item: 2\"",
+   "action": {
+    "message": "Deploy it",
+    "details": [
+     {
+      "label": "env",
+      "value": "prod"
+     },
+     {
+      "label": "api key",
+      "value": "••••••"
+     },
+     {
+      "label": "notify",
+      "value": "Yes"
+     },
+     {
+      "label": "quiet",
+      "value": "No"
+     },
+     {
+      "label": "tags",
+      "value": "a, b"
+     },
+     {
+      "label": "count",
+      "value": "3"
+     }
+    ]
+   }
+  },
+  {
+   "input": "[UI action] Deploy it\nContext: {\"item\":{\"index\":0,\"name\":\"First  one\\nhere\"},\"rows\":[{\"id\":1},{\"id\":2}],\"none\":null}",
+   "action": {
+    "message": "Deploy it",
+    "details": []
+   }
+  },
+  {
+   "input": "[UI action] Open it\nForm values: {\"filter\":{\"value\":\"open\"}}\nContext: \"Selected item: {\\\"itemIndex\\\":0}\"",
+   "action": {
+    "message": "Open it",
+    "details": [
+     {
+      "label": "filter",
+      "value": "open"
+     }
+    ]
+   }
+  },
+  {
+   "input": "[UI action] Archive\nContext: {\"id\":\"t-42\",\"done\":true,\"note\":null}",
+   "action": {
+    "message": "Archive",
+    "details": [
+     {
+      "label": "id",
+      "value": "t-42"
+     },
+     {
+      "label": "done",
+      "value": "Yes"
+     }
+    ]
+   }
+  },
+  {
+   "input": "[UI action] Save\nForm values: {\"field-0\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"field-1\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"field-2\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"field-3\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"field-4\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"field-5\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"field-6\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"field-7\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\"field-8\":\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}",
+   "action": {
+    "message": "Save",
+    "details": [
+     {
+      "label": "field 0",
+      "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…"
+     },
+     {
+      "label": "field 1",
+      "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…"
+     },
+     {
+      "label": "field 2",
+      "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…"
+     },
+     {
+      "label": "field 3",
+      "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…"
+     },
+     {
+      "label": "field 4",
+      "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…"
+     },
+     {
+      "label": "field 5",
+      "value": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…"
+     }
+    ]
+   }
+  },
+  {
+   "input": "[UI action] Explain the dip on Saturday",
+   "action": {
+    "message": "Explain the dip on Saturday",
+    "details": []
+   }
+  },
+  {
+   "input": "[UI action] Pick\nContext: 4",
+   "action": {
+    "message": "Pick",
+    "details": [
+     {
+      "label": "",
+      "value": "4"
+     }
+    ]
+   }
+  },
+  {
+   "input": "[UI action] Why was Friday busiest?\nIt looked odd.",
+   "action": {
+    "message": "Why was Friday busiest?\nIt looked odd.",
+    "details": []
+   }
+  },
+  {
+   "input": "[UI action] Context: 1",
+   "action": {
+    "message": "Context: 1",
+    "details": []
+   }
+  },
+  {
+   "input": "[UI action] Go\nContext: not json",
+   "action": {
+    "message": "Go\nContext: not json",
+    "details": []
+   }
+  },
+  {
+   "input": "[UI action] Go\nContext: soon",
+   "action": {
+    "message": "Go\nContext: soon",
+    "details": []
+   }
+  },
+  {
+   "input": "[UI action] Go\nForm values: {\"a\":1}\nand more",
+   "action": {
+    "message": "Go\nForm values: {\"a\":1}\nand more",
+    "details": []
+   }
+  },
+  {
+   "input": "[UI action]",
+   "action": null
+  },
+  {
+   "input": "plain message",
+   "action": null
+  }
+ ]
+}

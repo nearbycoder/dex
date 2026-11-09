@@ -59,6 +59,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.trydex.android.ui.theme.DexTheme
 import dev.trydex.core.model.QueuedMessage
+import dev.trydex.core.model.UiAction
 import dev.trydex.core.model.attachmentSummary
 import kotlinx.coroutines.launch
 
@@ -167,7 +168,7 @@ private fun QueueRow(item: QueuedMessage, index: Int, count: Int, running: Boole
                     Text("${index + 1}", style = MaterialTheme.typography.labelSmall.copy(fontFeatureSettings = "tnum"), color = MaterialTheme.colorScheme.onSecondaryContainer)
                 }
                 Column(Modifier.weight(1f)) {
-                    if (item.text.isNotEmpty()) Text(item.text, style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                    if (item.text.isNotEmpty()) Text(UiAction.strip(item.text), style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
                     if (item.attachments.isNotEmpty()) {
                         Text(
                             "Attached: ${attachmentSummary(item.attachments.map { it.name })}",

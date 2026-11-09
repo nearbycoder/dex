@@ -84,6 +84,7 @@ import dev.trydex.core.model.AssistantMessage
 import dev.trydex.core.model.CharacterProfile
 import dev.trydex.core.model.Characters
 import dev.trydex.android.ui.components.CharacterAvatar
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import dev.trydex.core.model.DisplayItem
@@ -102,6 +103,7 @@ import dev.trydex.core.model.ToolResultMessage
 import dev.trydex.core.model.Tools
 import dev.trydex.core.model.TranscriptState
 import dev.trydex.core.model.ScheduledNote
+import dev.trydex.core.model.UiAction
 import dev.trydex.core.model.UiNotes
 import dev.trydex.core.model.displayItems
 import dev.trydex.core.model.obj
@@ -246,7 +248,9 @@ fun UserBubble(
     sessionId: String? = null,
 ) {
     val split = UiNotes.split(raw)
-    val skill = Skills.invoked(split.text)
+    // A button pressed in the chat's UI: its words and what it carried, not the lines the model reads.
+    val action = remember(split.text) { UiAction.parse(split.text) }
+    val skill = if (action == null) Skills.invoked(split.text) else null
     val accent = MaterialTheme.colorScheme.primary
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
         androidx.compose.foundation.layout.Spacer(Modifier.weight(0.12f))
@@ -271,7 +275,8 @@ fun UserBubble(
                         append(split.text.substring(at + skill.length + 1))
                     } else append(split.text)
                 }
-                if (split.text.isNotEmpty()) SelectionContainer { Text(text, style = MaterialTheme.typography.bodyLarge) }
+                if (action != null) UiActionText(action)
+                else if (split.text.isNotEmpty()) SelectionContainer { Text(text, style = MaterialTheme.typography.bodyLarge) }
                 // Without a chat to load them from, images are only counted.
                 if (images > 0 && sessionId == null) Text("+$images image(s)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (sending) {
@@ -279,6 +284,36 @@ fun UserBubble(
                         Icon(Icons.Rounded.Schedule, contentDescription = null, modifier = Modifier.size(12.dp))
                         Text("Sending", style = MaterialTheme.typography.labelSmall)
                     }
+                }
+            }
+        }
+    }
+}
+
+/** A button you pressed in the chat's UI, inside your bubble: what it does, then what it carried as small labels. */
+@Composable
+private fun UiActionText(action: UiAction) {
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    Column(Modifier.clearAndSetSemantics { contentDescription = action.spoken }, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Icon(Icons.Outlined.TouchApp, contentDescription = null, tint = muted, modifier = Modifier.padding(top = 3.dp).size(16.dp))
+            SelectionContainer { Text(action.message, style = MaterialTheme.typography.bodyLarge) }
+        }
+        if (action.details.isNotEmpty()) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                for (detail in action.details) {
+                    Text(
+                        buildAnnotatedString {
+                            if (detail.label.isNotEmpty()) withStyle(SpanStyle(color = muted)) { append("${detail.label} ") }
+                            append(detail.value)
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.55f), RoundedCornerShape(7.dp))
+                            .padding(horizontal = 7.dp, vertical = 3.dp),
+                    )
                 }
             }
         }
