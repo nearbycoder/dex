@@ -135,12 +135,14 @@ private struct SpaceUpdateRow: View {
     @State private var open = false
 
     var body: some View {
-        let exists = client.state?.session(update.threadId) != nil
+        // A VM helper's report (vm_agents) names its VM ("vm:<key>"), not a chat.
+        let vmKey = update.threadId.hasPrefix("vm:") ? String(update.threadId.dropFirst(3)) : nil
+        let exists = vmKey != nil || client.state?.session(update.threadId) != nil
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Image(systemName: symbol).foregroundStyle(color).font(.footnote.weight(.semibold))
                 Button {
-                    router.openChat(update.threadId)
+                    if let vmKey { router.openMachine(vmKey) } else { router.openChat(update.threadId) }
                 } label: {
                     Text("“\(update.title)” \(update.outcome.rawValue)")
                         .font(.footnote.weight(.medium))

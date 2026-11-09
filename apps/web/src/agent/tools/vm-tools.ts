@@ -1,6 +1,5 @@
 import { Type } from "@earendil-works/pi-ai"
-import type { Context } from "@earendil-works/chord"
-import { defineTool, type ToolExecutionApi, type ToolRegistration } from "@earendil-works/pi-durable"
+import { defineTool, type ToolRegistration } from "@earendil-works/pi-durable"
 import { browseReady } from "../browse"
 import { VM_ENV_FILE } from "../secrets"
 import { MAX_VMS_PER_CHAT, type VmInfo, vmNumber } from "~/shared/protocol"
@@ -498,36 +497,36 @@ export const vmTools = (vms: ChatVms, secrets: VmSecrets) => {
   ]
 }
 
-/** One vm_agents agent's outcome. */
-export interface VmAgentResult {
-  readonly vm: number
-  /** "done", "unanswered" (it stopped without a final reply), or "failed". */
-  readonly status: string
-  readonly reply: string
-}
-
-/** What vm_agents needs from the agent: run one helper agent per VM, all at once, owned by this call. */
+/** What the helper tools need from the agent: helpers are hidden conversations, one per VM, that run on their own. */
 export interface VmAgentsHost {
-  run(api: ToolExecutionApi, context: Context, agents: ReadonlyArray<{ vm: number; task: string }>): Promise<VmAgentResult[]>
+  /** Starts a helper on each VM with its task; one line per VM saying what happened. */
+  start(chatId: string, agents: ReadonlyArray<{ vm: number; task: string }>): Promise<string[]>
+  /** Gives a VM's helper more instructions: into its run if it's working (at once), else a new run. */
+  send(chatId: string, vm: number, message: string): Promise<string>
+  /** Stops these VMs' helpers (all of the chat's when omitted). */
+  stop(chatId: string, vms: ReadonlyArray<number> | undefined): Promise<string>
 }
 
-export const VM_AGENTS_TOOL = "vm_agents"
+/** The helper tools, which helpers themselves don't get. */
+export const VM_AGENT_TOOLS = ["vm_agents", "vm_agent_send", "vm_agent_stop"]
 
 /**
  * Hands each of several VMs its own helper agent. Tool calls in one step all wait for the slowest before the model
  * takes its next step, so ten VMs driven from one chat move in lockstep; helpers each run their own loop on their own
- * VM, so every VM goes at its own pace.
+ * VM, so every VM goes at its own pace. They run in the background: the chat stays free to talk and to redirect them,
+ * and each helper's report arrives in the chat as a message when it finishes.
  */
-export const vmAgentsTool = (host: VmAgentsHost) =>
+export const vmAgentTools = (host: VmAgentsHost) => [
   defineTool({
-    name: VM_AGENTS_TOOL,
+    name: "vm_agents",
     description:
-      "Run a helper agent on each of several of your VMs at once. Each helper gets its own task and works only on its VM, with your VM tools " +
-      "(vm_browser, vm_exec, vm_computer, …), independently: a slow step on one VM never holds up the others, unlike tool calls in one step, " +
+      "Start a helper agent on each of several of your VMs. Each helper gets its own task and works only on its VM, with your VM tools " +
+      "(vm_browser, vm_exec, vm_computer, …), on its own: a slow step on one VM never holds up the others, unlike tool calls in one step, " +
       "which all wait for the slowest. Use it when multi-step work runs on many VMs at once (play a game in each, test a site several ways, " +
       "run the same flow for several accounts). Write each task as a complete brief: a helper sees nothing of this chat. Start the VMs first " +
-      "with vm_start (copy_from gives them a prepared VM's disk). Waits until every helper finishes and returns their final reports; the user " +
-      "watches them work in the chat's control panel.",
+      "with vm_start (copy_from gives them a prepared VM's disk). It returns at once and the helpers work in the background: tell the user " +
+      "they're running and end your turn; each one's report arrives here as a message when it finishes. Meanwhile redirect one with " +
+      "vm_agent_send or stop them with vm_agent_stop. The user watches them in the chat's control panel.",
     parameters: Type.Object({
       agents: Type.Array(
         Type.Object({
@@ -537,16 +536,30 @@ export const vmAgentsTool = (host: VmAgentsHost) =>
         { minItems: 1, maxItems: MAX_VMS_PER_CHAT }
       )
     }),
-    // A rerun after a restart finds the same helpers and their same messages, and waits for them again.
-    replay: "safe",
-    execute: async ({ agents }, api, context) => {
+    execute: async ({ agents }, api) => {
       const numbers = agents.map((agent) => vmArg(agent.vm))
       if (new Set(numbers).size !== numbers.length) return { output: text("Give each VM one helper."), isError: true }
-      const results = await host.run(api as ToolExecutionApi, context, agents.map((agent, i) => ({ vm: numbers[i]!, task: agent.task })))
-      const failed = results.filter((result) => result.status === "failed").length
-      return {
-        output: text(results.map((result) => `## VM ${result.vm}: ${result.status}\n${clip(result.reply || "(no reply)")}`).join("\n\n")),
-        isError: failed === results.length
-      }
+      const lines = await host.start(String(api.conversationId), agents.map((agent, i) => ({ vm: numbers[i]!, task: agent.task })))
+      return { output: text(`${lines.join("\n")}\nEach helper's report arrives here as a message when it finishes.`) }
     }
+  }),
+  defineTool({
+    name: "vm_agent_send",
+    description:
+      "Give the helper on one of your VMs new instructions, e.g. when the user changes what they want. If it's working, the message reaches " +
+      "it right away (its current step is cut short); if it finished, it starts again with the message and reports back again.",
+    parameters: Type.Object({
+      vm: Type.Integer({ minimum: 1, maximum: MAX_VMS_PER_CHAT }),
+      message: Type.String({ minLength: 1, maxLength: 20_000 })
+    }),
+    execute: async ({ vm, message }, api) => ({ output: text(await host.send(String(api.conversationId), vmArg(vm), message)) })
+  }),
+  defineTool({
+    name: "vm_agent_stop",
+    description: "Stop helpers (vm_agents) now: those on the VMs given, or all of this chat's. Their VMs keep running.",
+    parameters: Type.Object({
+      vms: Type.Optional(Type.Array(Type.Integer({ minimum: 1, maximum: MAX_VMS_PER_CHAT }), { maxItems: MAX_VMS_PER_CHAT }))
+    }),
+    execute: async ({ vms }, api) => ({ output: text(await host.stop(String(api.conversationId), vms?.map(vmArg))) })
   })
+]

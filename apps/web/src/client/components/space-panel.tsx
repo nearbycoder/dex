@@ -62,7 +62,11 @@ export const SpaceSelectContext = createContext<((threadId: string) => void) | n
 function useOpenThread() {
   const select = useContext(SpaceSelectContext)
   const navigate = useNavigate()
-  return (threadId: string) => (select ? select(threadId) : void navigate({ to: "/chat/$sessionId", params: { sessionId: threadId } }))
+  return (threadId: string) => {
+    // A VM helper's report (vm_agents) names its VM, not a chat: open that VM's Machine page.
+    if (threadId.startsWith("vm:")) return void navigate({ to: "/machine/$vmKey", params: { vmKey: threadId.slice(3) } })
+    return select ? select(threadId) : void navigate({ to: "/chat/$sessionId", params: { sessionId: threadId } })
+  }
 }
 
 /** A thread the coordinator started, as a card in its reply: title, live status, the latest of what it said. */

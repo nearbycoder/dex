@@ -133,7 +133,7 @@ function QueueItem({
         <button
           type="button"
           onClick={() => act(() => stub.steerQueued(sessionId, item.id))}
-          title={running ? "Send now, into the current run after its current step" : "Send now"}
+          title={running ? "Send now: cuts the current step short so the chat reads it right away" : "Send now"}
           className="ml-auto flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-amber-300 hover:bg-amber-950/40"
         >
           <Zap className="size-3.5" /> {running ? "Steer" : "Send now"}

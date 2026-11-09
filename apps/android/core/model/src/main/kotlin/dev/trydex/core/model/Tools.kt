@@ -23,7 +23,9 @@ object Tools {
         "vm_browser" to "Browsing on the VM",
         "vm_stop" to "Stopping the VM",
         "vm_start" to "Starting VMs",
-        "vm_agents" to "Running helpers on the VMs",
+        "vm_agents" to "Starting helpers on the VMs",
+        "vm_agent_send" to "Messaging a VM helper",
+        "vm_agent_stop" to "Stopping VM helpers",
         "share_media" to "Sharing a file from the VM",
         "app_operations" to "Looking up app operations",
         "app_call" to "Managing Dex",
@@ -70,6 +72,8 @@ object Tools {
         "vm_stop" to Icon.Monitor,
         "vm_start" to Icon.Monitor,
         "vm_agents" to Icon.Monitor,
+        "vm_agent_send" to Icon.Monitor,
+        "vm_agent_stop" to Icon.Monitor,
     )
 
     fun icon(name: String): Icon = when {

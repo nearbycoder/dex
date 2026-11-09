@@ -8,7 +8,6 @@ import {
   GenerationTask,
   Harness,
   hook,
-  configure,
   section,
   type ToolExecutionResult,
   type ToolRegistration,
@@ -106,7 +105,7 @@ import { appTools } from "./tools/app-tools"
 import { loadUiGuideTool, renderUiTool } from "./tools/render-ui"
 import { scheduleTools } from "./tools/schedule-tools"
 import { type SpaceHost, spaceTools } from "./tools/space-tools"
-import { forWorkers, VM_AGENTS_TOOL, type VmAgentsHost, vmAgentsTool, vmTools } from "./tools/vm-tools"
+import { forWorkers, VM_AGENT_TOOLS, type VmAgentsHost, vmAgentTools, vmTools } from "./tools/vm-tools"
 import { workspaceTools } from "./tools/workspace-tools"
 import { parseVmFiles, vmFilesCommand, type VmFilesView } from "./vm-files"
 import { verifyGitHubToken, type GitHubIdentity } from "./github-token"
@@ -649,8 +648,14 @@ export class DexAgent extends Agent<Env, DexState> {
     await this.refreshSessions()
     // Runs going when the object restarted (a deploy) resume on their own, but what waited for their end didn't
     // survive: without this they'd read "working" after they finish, with no notification and the queue held.
+    const helpersWatched = new Set<string>()
     for (const { session, operationId } of await this.harness.pending()) {
       if (this.hasSession(session)) this.afterRun(session, operationId, "reply")
+      // A VM helper's report: its oldest pending run (messages steered in since join that run).
+      else if (this.vmWorker(session) && !helpersWatched.has(session)) {
+        helpersWatched.add(session)
+        this.watchHelper(session, operationId)
+      }
     }
     // Sockets can outlive the object: a deploy's code update keeps hibernated connections open, but the streams
     // they had are gone with the old instance. Each one remembers its chat, so the stream picks up at once rather
@@ -713,7 +718,7 @@ export class DexAgent extends Agent<Env, DexState> {
           if (!worker) return undefined
           return [
             `You are a helper working on VM ${worker.vm} of a chat, started to do one task there while helpers on the chat's other VMs do theirs. Every VM tool you call acts on VM ${worker.vm} (their \`vm\` argument is ignored).`,
-            "Do the task in the first message on your own: nobody answers questions while you work. When you finish, or can't go on, reply with a short report (what you did, the result, anything left open). It goes back to the chat that started you."
+            "Do the task in the first message on your own: nobody answers questions while you work. Later messages are new instructions from the chat that started you; follow them. When you finish, or can't go on, reply with a short report (what you did, the result, anything left open). It goes back to that chat."
           ].join("\n\n")
         }),
         // A space's thread: what it's part of, and that its final reply goes back to the coordinator.
@@ -797,7 +802,7 @@ export class DexAgent extends Agent<Env, DexState> {
           fill: (chatId, content) => this.secrets.fill(chatId, content)
         }),
         ...(this.media.configured ? mediaTools((chatId, path, title, n) => this.shareMediaFromVm(chatId, path, title, { vmKey: vmKeyFor(chatId, n) })) : []),
-        vmAgentsTool(this.vmAgentsHost())
+        ...vmAgentTools(this.vmAgentsHost())
       ].map((tool) => (tool.name.startsWith("vm_") || tool.name === "share_media" ? forWorkers({ worker: (id) => this.vmWorker(id) }, tool) : tool))
     })
   }
@@ -1588,13 +1593,17 @@ export class DexAgent extends Agent<Env, DexState> {
     const message = this.messageQueue.take(sessionId, id)
     this.messageQueue.release(sessionId)
     this.publishQueue(sessionId)
-    await this.deliver(sessionId, message.text, { steer: await this.isBusy(sessionId), attachments: message.attachments })
+    const steer = await this.isBusy(sessionId)
+    await this.deliver(sessionId, message.text, { steer, attachments: message.attachments })
+    // Pi reads a steer between steps: cut the current one short so it's read now, not when a long tool call ends.
+    if (steer) this.ctx.waitUntil(this.interruptTools(sessionId).catch(() => undefined))
   }
 
   @callable()
   async abort(sessionId: string) {
     // Stopping holds what's queued: nothing more goes until you send something or pick a message to send.
     if (this.messageQueue.list(sessionId).length) this.messageQueue.hold(sessionId)
+    await this.stopHelpers(sessionId)
     await this.harness.session(sessionId).abort()
     await this.refreshSessions()
     this.publishQueue(sessionId)
@@ -1813,6 +1822,7 @@ export class DexAgent extends Agent<Env, DexState> {
   async deleteSession(sessionId: string) {
     await this.harness.session(sessionId).abort().catch(() => false)
     this.ctx.storage.sql.exec(`DELETE FROM dex_sessions WHERE id = ?`, sessionId)
+    await this.stopHelpers(sessionId).catch(() => [])
     this.ctx.storage.sql.exec(`DELETE FROM dex_vm_agents WHERE chat_id = ?`, sessionId)
     this.skills.forgetSession(sessionId)
     this.messageQueue.clear(sessionId)
@@ -2178,8 +2188,12 @@ export class DexAgent extends Agent<Env, DexState> {
    * Tells a coordinator a thread's run ended. Updates that arrive while it's busy (or stopped) wait in its queue, joined
    * into one message, so a burst of finished threads is one run rather than many.
    */
-  private async tellCoordinator(space: SpaceProfile, update: string) {
-    const id = space.sessionId
+  private tellCoordinator(space: SpaceProfile, update: string) {
+    return this.tellChat(space.sessionId, update)
+  }
+
+  /** Tells a chat something happened (a space thread or VM helper finished): now if it's idle, else joined in its queue. */
+  private async tellChat(id: string, update: string) {
     if (!this.hasSession(id)) return
     const queued = this.messageQueue.list(id)
     const last = queued.at(-1)
@@ -3050,54 +3064,129 @@ export class DexAgent extends Agent<Env, DexState> {
     return this.vmWorker(conversationId)?.chatId ?? conversationId
   }
 
+  /** A chat's helper on VM `vm`: the newest one started there. */
+  private vmHelper(chatId: string, vm: number): string | undefined {
+    return this.ctx.storage.sql
+      .exec<{ conversation_id: string }>(`SELECT conversation_id FROM dex_vm_agents WHERE chat_id = ? AND vm = ? ORDER BY created_at DESC LIMIT 1`, chatId, vm)
+      .toArray()[0]?.conversation_id
+  }
+
+  /** A chat's helpers, the newest per VM. */
+  private chatHelpers(chatId: string): Array<{ id: string; vm: number }> {
+    const rows = this.ctx.storage.sql
+      .exec<{ conversation_id: string; vm: number }>(`SELECT conversation_id, vm FROM dex_vm_agents WHERE chat_id = ? ORDER BY created_at DESC`, chatId)
+      .toArray()
+    const seen = new Set<number>()
+    return rows.flatMap((row) => (seen.has(row.vm) ? [] : (seen.add(row.vm), [{ id: row.conversation_id, vm: row.vm }])))
+  }
+
+  /** Helpers stopped on purpose (the chat stopped, or vm_agent_stop): their runs end without a report. */
+  private readonly silencedHelpers = new Set<string>()
+
   /**
-   * vm_agents: one helper conversation per VM, owned by the call (stopping the chat stops them; a rerun after a
-   * restart finds them and their messages again), each running its own loop so no VM waits on another's step.
+   * vm_agents: a hidden conversation per VM, with the chat's model and MCP servers, running in the background so the
+   * chat stays free to talk and redirect them; each one's report comes back to the chat as a message.
    */
   private vmAgentsHost(): VmAgentsHost {
     // Helpers do their VM's task and nothing that outlives it or needs a UI they don't have.
-    const leftOut = ["vm_start", VM_AGENTS_TOOL, "app_operations", "app_call", "schedule_prompt", "list_scheduled_prompts", "cancel_scheduled_prompt", "render_ui", "load_ui_guide"]
+    const leftOut = ["vm_start", ...VM_AGENT_TOOLS, "app_operations", "app_call", "schedule_prompt", "list_scheduled_prompts", "cancel_scheduled_prompt", "render_ui", "load_ui_guide"]
     return {
-      run: async (api, context, agents) => {
-        const caller = String(api.conversationId)
-        if (this.vmWorker(caller)) throw new Error("A helper can't start helpers of its own.")
-        const children = await api.commit(async (tx) => {
-          const ids = (await tx.scanConversations({ ownerTaskId: api.taskId }, MAX_VMS_PER_CHAT)).items.map((conversation) => conversation.id)
-          for (let i = ids.length; i < agents.length; i++) {
-            // A copy of this chat's agent (model, thinking, MCP servers), less the tools above.
-            const created = await tx.createConversation({ ownership: { kind: "task", taskId: api.taskId } })
-            await configure(tx, created.id, { tools: { remove: leftOut.map((name) => ({ name }) as unknown as ToolRegistration) } })
-            ids.push(created.id)
-          }
-          return ids
-        }, context)
-        agents.forEach((agent, i) => {
-          this.ctx.storage.sql.exec(
-            `INSERT OR REPLACE INTO dex_vm_agents (conversation_id, chat_id, vm, created_at) VALUES (?, ?, ?, ?)`,
-            String(children[i]), caller, agent.vm, Date.now()
-          )
-        })
-        api.output(`Started ${agents.length} helper${agents.length === 1 ? "" : "s"}: ${agents.map((agent) => `VM ${agent.vm}`).join(", ")}.\n`)
-        const startedAt = Date.now()
+      start: async (chatId, agents) => {
+        const row = this.ctx.storage.sql.exec<SessionRow>(`SELECT * FROM dex_sessions WHERE id = ?`, chatId).toArray()[0]
+        if (!row) throw new Error("Only a chat can start helpers.")
         return Promise.all(
-          agents.map(async (agent, i) => {
-            const id = children[i]!
-            try {
-              const helper = await api.conversation(id, context)
-              if (!helper) throw new Error("Its conversation is gone.")
-              const submission = await helper.submit({ type: "input", content: agent.task, requestId: `vm-agent:${api.taskId}:${agent.vm}` }, context)
-              const settled = await submission.wait(context)
-              const last = (await this.readTranscript(String(id), 1)).at(-1)
-              api.output(`VM ${agent.vm} ${settled.status === "done" ? "finished" : "stopped"} (${Math.round((Date.now() - startedAt) / 1000)}s)\n`)
-              return { vm: agent.vm, status: settled.status, reply: last?.role === "assistant" ? last.text : "" }
-            } catch (error) {
-              api.output(`VM ${agent.vm} failed\n`)
-              return { vm: agent.vm, status: "failed", reply: errorText(error) }
-            }
+          agents.map(async ({ vm, task }) => {
+            const existing = this.vmHelper(chatId, vm)
+            if (existing && (await this.isBusy(existing))) return `VM ${vm}: a helper is already working there; redirect it with vm_agent_send, or vm_agent_stop it first.`
+            const helper = await this.harness.sessions.create()
+            await this.configureConversation(helper.id, row.model, row.thinking as ThinkingLevel, parseIds(row.mcp_servers), false)
+            await (await this.harness.conversation(helper.id)).configure(
+              { tools: { remove: leftOut.map((name) => ({ name }) as unknown as ToolRegistration) } },
+              BACKGROUND_CONTEXT
+            )
+            this.ctx.storage.sql.exec(
+              `INSERT OR REPLACE INTO dex_vm_agents (conversation_id, chat_id, vm, created_at) VALUES (?, ?, ?, ?)`,
+              helper.id, chatId, vm, Date.now()
+            )
+            await this.runHelper(helper.id, task)
+            return `VM ${vm}: helper started.`
           })
         )
+      },
+      send: async (chatId, vm, message) => {
+        const helper = this.vmHelper(chatId, vm)
+        if (!helper) return `VM ${vm} has no helper; start one with vm_agents.`
+        if (await this.isBusy(helper)) {
+          await this.harness.session(helper).submit(message, { whenBusy: "steer" })
+          this.ctx.waitUntil(this.interruptTools(helper))
+          return `Sent to VM ${vm}'s helper; it reads it now.`
+        }
+        await this.runHelper(helper, message)
+        return `VM ${vm}'s helper is working on it; it reports back when it finishes.`
+      },
+      stop: async (chatId, vms) => {
+        const stopped = await this.stopHelpers(chatId, vms)
+        return stopped.length ? `Stopped the helpers on ${stopped.map((vm) => `VM ${vm}`).join(", ")}.` : "No helpers were working."
       }
     }
+  }
+
+  private async runHelper(helperId: string, content: string) {
+    const receipt = await this.harness.session(helperId).submit(content)
+    this.watchHelper(helperId, receipt.operationId)
+  }
+
+  /** When a helper's run ends, its final reply goes to its chat, shown like a space thread's report. */
+  private watchHelper(helperId: string, operationId: string) {
+    this.silencedHelpers.delete(helperId)
+    const report = async (result: { status: string; text?: string }) => {
+      const worker = this.vmWorker(helperId)
+      if (!worker || this.silencedHelpers.delete(helperId) || !this.hasSession(worker.chatId)) return
+      const body = (result.text ?? "").trim()
+      const thread = { id: `vm:${vmKeyFor(worker.chatId, worker.vm)}`, title: `VM ${worker.vm}` }
+      await this.tellChat(worker.chatId, spaceUpdate(thread, result.status === "done" ? "finished" : "stopped", body.length > 6_000 ? `${body.slice(0, 6_000)}…` : body))
+    }
+    this.ctx.waitUntil(
+      this.harness
+        .session(helperId)
+        .wait(operationId)
+        .then((result) => report(result as { status: string; text?: string }))
+        .catch((error: unknown) => console.warn(`A VM helper's report didn't arrive: ${errorText(error)}`))
+    )
+  }
+
+  /** Stops a chat's working helpers (those on `vms`, or all), without reports; returns their VMs. */
+  private async stopHelpers(chatId: string, vms?: ReadonlyArray<number>) {
+    const stopped: number[] = []
+    for (const helper of this.chatHelpers(chatId)) {
+      if (vms && !vms.includes(helper.vm)) continue
+      if (!(await this.isBusy(helper.id))) continue
+      this.silencedHelpers.add(helper.id)
+      await this.harness.session(helper.id).abort().catch(() => false)
+      stopped.push(helper.vm)
+    }
+    return stopped.sort((a, b) => a - b)
+  }
+
+  /**
+   * Cuts a run's current tool calls short (they come back to the model as aborted) so a message steered into it is
+   * read now: Pi reads a steer between steps, and a long call (a browser task, a long command) would hold it back for
+   * minutes. The run itself goes on.
+   */
+  private async interruptTools(sessionId: string) {
+    const pi = await this.harness.pi()
+    const { tasks } = await pi.inspect(BACKGROUND_CONTEXT)
+    const calls = tasks
+      .map((task) => task.record)
+      .filter(
+        (record) =>
+          record.kind === "pi.tool" &&
+          String(record.conversationId) === sessionId &&
+          !record.background &&
+          !record.abortRequested &&
+          (record.input as { kind?: string } | undefined)?.kind !== "nested"
+      )
+    await Promise.all(calls.map((record) => pi.abortTask(record.id, BACKGROUND_CONTEXT).catch(() => undefined)))
   }
 
   /**

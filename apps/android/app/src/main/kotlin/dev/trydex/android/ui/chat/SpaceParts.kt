@@ -63,6 +63,7 @@ import dev.trydex.android.ui.components.StatusDot
 import dev.trydex.android.ui.components.haptics
 import dev.trydex.android.ui.library.touched
 import dev.trydex.android.ui.nav.Chat
+import dev.trydex.android.ui.nav.Machine
 import dev.trydex.android.ui.nav.NewSpace
 import dev.trydex.android.ui.nav.SpaceSettings
 import dev.trydex.android.ui.nav.SpaceThreads
@@ -339,7 +340,10 @@ private fun SpaceUpdateRow(update: SpaceUpdate) {
     Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth().testTag("space-update-${update.threadId}")) {
         Column {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Surface(onClick = { app.navigator.open(Chat(update.threadId)) }, color = Color.Transparent, shape = RoundedCornerShape(16.dp), modifier = Modifier.weight(1f)) {
+                Surface(onClick = {
+                    // A VM helper's report (vm_agents) names its VM, not a chat.
+                    if (update.threadId.startsWith("vm:")) app.navigator.open(Machine(update.threadId.removePrefix("vm:"))) else app.navigator.open(Chat(update.threadId))
+                }, color = Color.Transparent, shape = RoundedCornerShape(16.dp), modifier = Modifier.weight(1f)) {
                     Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(18.dp))
                         Text("“${update.title}” ${update.outcome.id}", style = MaterialTheme.typography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)

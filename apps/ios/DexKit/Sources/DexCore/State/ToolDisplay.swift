@@ -44,7 +44,7 @@ public enum ToolDisplay: Sendable, Equatable {
         case "web_search": return "magnifyingglass"
         case "web_fetch", "vm_expose_port", "vm_browser": return "globe"
         case "schedule_prompt", "list_scheduled_prompts", "cancel_scheduled_prompt": return "clock"
-        case "vm_exec", "vm_stop", "vm_start", "vm_agents": return "desktopcomputer"
+        case "vm_exec", "vm_stop", "vm_start", "vm_agents", "vm_agent_send", "vm_agent_stop": return "desktopcomputer"
         case "vm_screenshot": return "camera"
         case "vm_computer": return "cursorarrow.click.2"
         case "share_media": return "photo.on.rectangle"

@@ -568,7 +568,7 @@ private struct QueueItemRow: View {
                     .buttonStyle(.glass)
                     .tint(.orange)
                     .controlSize(.small)
-                    .accessibilityHint(running ? "Sends it into the current run after its current step" : "Sends it now")
+                    .accessibilityHint(running ? "Sends it into the current run now, cutting its current step short" : "Sends it now")
                     .accessibilityIdentifier("queue.steer.\(index)")
                 }
                 .buttonStyle(.borderless)
