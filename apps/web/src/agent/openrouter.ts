@@ -12,8 +12,18 @@ export const OPENROUTER_PROVIDER_ID = "openrouter"
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 const TIMEOUT_MS = 20_000
 
-/** OpenRouter asks apps to name themselves; it shows these on the key's activity page. */
-const APP_HEADERS = { "HTTP-Referer": "https://trydex.dev", "X-Title": "Dex" }
+/**
+ * OpenRouter asks apps to name themselves (https://openrouter.ai/docs/app-attribution); it shows these on the key's
+ * activity page. The categories say what kind of app Dex is: OpenRouter serves some free models only to agent
+ * harnesses ("Gate Free Endpoints by Agentic Harness", a 403), and an app with no category isn't one to it.
+ * `X-Title` is the title header's older name.
+ */
+const APP_HEADERS = {
+  "HTTP-Referer": "https://trydex.dev",
+  "X-OpenRouter-Title": "Dex",
+  "X-Title": "Dex",
+  "X-OpenRouter-Categories": "personal-agent,cloud-agent"
+}
 
 /**
  * OpenRouter as a pi-ai provider, with the models listed now. `resolveKey` runs before each model request, so a key
