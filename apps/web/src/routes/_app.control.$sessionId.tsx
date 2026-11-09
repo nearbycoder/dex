@@ -9,8 +9,8 @@ import { savedDesktopMode, useDesktopUrl } from "~/client/lib/desktop"
 import { chatOfVm, MAX_VMS_PER_CHAT, type VmInfo, vmKeyFor, vmNumber } from "~/shared/protocol"
 
 /**
- * A chat's control panel: every one of its VMs (up to MAX_VMS_PER_CHAT) live at once, as square tiles that fill the
- * screen, so you can watch an agent work several machines and browsers side by side. Fullscreen hides everything else;
+ * A chat's control panel: every one of its VMs (up to MAX_VMS_PER_CHAT) live at once, as tiles that fill the screen
+ * (laid out so each desktop is as large as it can be), so you can watch an agent work several machines and browsers side by side. Fullscreen hides everything else;
  * a tile opens large on a click, and the Machine page is where you take control of one.
  */
 export const Route = createFileRoute("/_app/control/$sessionId")({ component: ControlPanel })
@@ -18,8 +18,10 @@ export const Route = createFileRoute("/_app/control/$sessionId")({ component: Co
 /** The desktop page lays out at this size and is scaled with CSS (the players fit their picture once, on connect). */
 const FRAME = { width: 960, height: 540 }
 const GAP = 8
-/** Below this, tiles stop shrinking to fit and the panel scrolls instead. */
-const MIN_TILE = 180
+/** A tile's header row (h-8 and its border) above the desktop. */
+const HEADER = 33
+/** Below this desktop width, tiles stop shrinking to fit and the panel scrolls instead. */
+const MIN_PICTURE = 180
 
 /** The latest thing done on each of these VMs ("browse: await page.goto(…)"), kept live from the agent's broadcasts. */
 function useLatestActivity(keys: ReadonlyArray<string>) {
@@ -65,13 +67,18 @@ function useSize<T extends HTMLElement>() {
   return [ref, size] as const
 }
 
-/** The biggest square tile that fits `count` of them in the area, and how many columns that takes. */
+/**
+ * How many columns of tiles make each desktop largest when `count` share the area (each tile's desktop is 16:9 under
+ * its header), and that desktop's width. The tiles then stretch to fill the area; their desktops keep their shape.
+ */
 const fit = (count: number, width: number, height: number) => {
-  let best = { columns: 1, tile: 0 }
+  let best = { columns: 1, rows: 1, picture: 0 }
   for (let columns = 1; columns <= Math.max(1, count); columns++) {
     const rows = Math.ceil(count / columns)
-    const tile = Math.floor(Math.min((width - GAP * (columns - 1)) / columns, (height - GAP * (rows - 1)) / rows))
-    if (tile > best.tile) best = { columns, tile }
+    const cellWidth = (width - GAP * (columns - 1)) / columns
+    const cellHeight = (height - GAP * (rows - 1)) / rows - HEADER
+    const picture = Math.floor(Math.min(cellWidth, (cellHeight * FRAME.width) / FRAME.height))
+    if (picture > best.picture) best = { columns, rows, picture }
   }
   return best
 }
@@ -142,7 +149,7 @@ function ControlPanel() {
   if (!session) return <div className="flex flex-1 items-center justify-center text-sm text-zinc-500">This chat no longer exists.</div>
 
   const layout = fit(vms.length, areaSize.width, areaSize.height)
-  const fits = layout.tile >= MIN_TILE
+  const fits = layout.picture >= MIN_PICTURE
   const iconButton = "flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100 disabled:opacity-40"
 
   return (
@@ -194,19 +201,24 @@ function ControlPanel() {
             </p>
           </div>
         ) : focusedVm ? (
-          <Tile vm={focusedVm} activity={latest[focusedVm.key]} large onToggle={() => setFocused(null)} onAct={act} />
+          <Tile vm={focusedVm} activity={latest[focusedVm.key]} large fill onToggle={() => setFocused(null)} onAct={act} />
         ) : (
           <ul
-            className="grid content-center justify-center"
+            className="grid"
             style={
               fits
-                ? { gap: GAP, gridTemplateColumns: `repeat(${layout.columns}, ${layout.tile}px)`, gridAutoRows: `${layout.tile}px`, height: "100%" }
-                : { gap: GAP, gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${MIN_TILE + 60}px), 1fr))` }
+                ? {
+                    gap: GAP,
+                    gridTemplateColumns: `repeat(${layout.columns}, minmax(0, 1fr))`,
+                    gridTemplateRows: `repeat(${layout.rows}, minmax(0, 1fr))`,
+                    height: "100%"
+                  }
+                : { gap: GAP, gridTemplateColumns: `repeat(auto-fill, minmax(min(100%, ${MIN_PICTURE + 60}px), 1fr))` }
             }
           >
             {vms.map((vm) => (
-              <li key={vm.key} className="min-w-0">
-                <Tile vm={vm} activity={latest[vm.key]} onToggle={() => setFocused(vm.key)} onAct={act} />
+              <li key={vm.key} className="min-h-0 min-w-0">
+                <Tile vm={vm} activity={latest[vm.key]} fill={fits} onToggle={() => setFocused(vm.key)} onAct={act} />
               </li>
             ))}
           </ul>
@@ -216,17 +228,22 @@ function ControlPanel() {
   )
 }
 
-/** One VM, live and watch-only: its number, status, and latest action, with start/stop and a way into its Machine page. */
+/**
+ * One VM, live and watch-only: its number, status, and latest action, with start/stop and a way into its Machine page.
+ * `fill` stretches it to its grid cell (the desktop fits inside); otherwise the desktop sets its height at 16:9.
+ */
 function Tile({
   vm,
   activity,
   large = false,
+  fill = false,
   onToggle,
   onAct
 }: {
   vm: VmInfo
   activity: string | undefined
   large?: boolean
+  fill?: boolean
   onToggle: () => void
   onAct: (action: () => Promise<unknown>) => Promise<void>
 }) {
@@ -235,14 +252,14 @@ function Tile({
   const running = vm.status === "running"
   const { url, loading, error } = useDesktopUrl(vm.key, savedDesktopMode(), running)
   const n = vmNumber(vm.key)
-  // The 16:9 desktop, as large as the tile's picture area allows, centered (letterboxed in a square tile).
+  // The 16:9 desktop, as large as the tile's picture area allows, centered.
   const scale = size.width && size.height ? Math.min(size.width / FRAME.width, size.height / FRAME.height) : 0
   const canStart = vm.status === "stopped" || vm.status === "error" || vm.status === "none"
   const tileButton = "rounded p-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
 
   return (
     <div
-      className={`flex h-full flex-col overflow-hidden rounded-xl border bg-zinc-900 ${large ? "" : "aspect-square"} ${vm.busy ? "border-emerald-700/70" : "border-zinc-800"}`}
+      className={`flex flex-col overflow-hidden rounded-xl border bg-zinc-900 ${fill ? "h-full" : ""} ${vm.busy ? "border-emerald-700/70" : "border-zinc-800"}`}
     >
       <div className="flex h-8 shrink-0 items-center gap-1.5 border-b border-zinc-800 pr-1 pl-2.5">
         <span className={`size-1.5 shrink-0 rounded-full ${VM_STATUS[vm.status].dot}`} title={VM_STATUS[vm.status].label} />
@@ -266,7 +283,7 @@ function Tile({
           )}
         </div>
       </div>
-      <div ref={box} className="relative min-h-0 flex-1 overflow-hidden bg-black">
+      <div ref={box} className={`relative overflow-hidden bg-black ${fill ? "min-h-0 flex-1" : "aspect-video"}`}>
         {running && url && scale > 0 ? (
           <>
             <iframe

@@ -600,13 +600,13 @@ export function ControlPanelSkeleton() {
           <Bone className="h-6 w-24 rounded-md" />
         </HeaderBones>
         <div className="min-h-0 flex-1 overflow-hidden p-2">
-          <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 240px), 1fr))" }}>
+          <div className="grid h-full grid-cols-1 grid-rows-4 gap-2 sm:grid-cols-2 sm:grid-rows-2">
             {[0, 1, 2, 3].map((index) => (
-              <div key={index} className="flex aspect-square flex-col overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900">
-                <div className="flex h-8 items-center border-b border-zinc-800 px-2.5">
+              <div key={index} className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900">
+                <div className="flex h-8 shrink-0 items-center border-b border-zinc-800 px-2.5">
                   <Bone className="h-3 w-12" />
                 </div>
-                <div className="flex-1 bg-black" />
+                <div className="min-h-0 flex-1 bg-black" />
               </div>
             ))}
           </div>

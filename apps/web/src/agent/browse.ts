@@ -79,10 +79,14 @@ if ! connected; then
   code=""
   for i in $(seq 40); do code=$(grep -o 'Pairing code: [0-9A-Za-z-]*' /tmp/dex-browse-pair.log 2>/dev/null | cut -d' ' -f3); [ -n "$code" ] && break; sleep 0.25; done
   [ -n "$code" ] || { cat /tmp/dex-browse-pair.log >&2; exit 1; }
-  google-chrome "chrome-extension://${BROWSE_EXTENSION_ID}/welcome.html#code=$code" > /dev/null 2>&1 < /dev/null
+  google-chrome --new-window "chrome-extension://${BROWSE_EXTENSION_ID}/welcome.html#code=$code" > /dev/null 2>&1 < /dev/null
   for i in $(seq 60); do connected && break; sleep 0.5; done
   connected || { echo "The VM's Chrome didn't connect to browse." >&2; cat /tmp/dex-browse-pair.log >&2; browse status >&2; exit 1; }
   # Show the agent's cursor and keep its tabs an hour: the user is watching, and chats come back to a page.
   browse settings set cursor=always idleMinutes=60 > /dev/null 2>&1 || true
 fi
+# Paired: close browse's setup page (its own window), so the desktop shows the agent's tab rather than "Connect your agent".
+for w in $(xdotool search --name '^Connect your agent' 2> /dev/null); do
+  xdotool windowactivate --sync "$w" key --clearmodifiers ctrl+w 2> /dev/null || true
+done
 browse session new ${session} > /dev/null 2>&1 || true`
