@@ -1,17 +1,22 @@
 /**
- * The VM's browser for agents: browse (https://opencode.ai/browse, by Anomaly) runs Playwright code in the VM's own
- * Chrome through its extension, so the agent browses in a real, visible browser with its cookies and logins, on the
- * desktop the user watches, instead of a headless one. The browse CLI lives on the VM; its extension is force-installed
- * by Chromium policy and paired with the CLI's local relay the first time a chat browses (each VM pairs its own, so no
- * pairing key is baked into the template).
+ * The VM's browser for agents: browse (https://opencode.ai/product/browse, by Anomaly) drives the VM's own Chrome
+ * through its extension, so the agent browses in a real, visible browser with its cookies and logins, on the desktop
+ * the user watches, instead of a headless one. browse 0.1.0 and later is one native binary (CLI and relay, no Node or
+ * Playwright) whose `execute` runs JavaScript with a Playwright-style `page` in the relay; tabs are the handle (there
+ * are no sessions), so each of Dex's sessions is a tab group of that name and Dex keeps the session's tab id on the VM.
+ * The browse CLI lives on the VM; its extension is force-installed by Chromium policy and paired with the CLI's local
+ * relay the first time a chat browses (each VM pairs its own, so no pairing key is baked into the template).
  */
 export const BROWSE_EXTENSION_ID = "mfnicocicmmlkpjnaffgihfjhdgjkdjg"
 
+/** Whether the VM's browse is the Rust one (0.1.0+); the TypeScript one (0.0.x) had sessions and a different CLI. */
+const BROWSE_CURRENT = `case "$("$HOME/.local/bin/browse" --version 2>/dev/null)" in ""|0.0.*) false ;; *) true ;; esac`
+
 /**
- * Installs browse's CLI (into ~/.local/bin, where its own updater keeps it current) and has Chrome install the
- * extension from the Web Store. boat's Chrome is a Chromium build, which reads /etc/chromium/policies; the Google
- * Chrome path is written too in case the image switches. Idempotent; run on the template builder and, from
- * BROWSE_READY, on VMs made before the template had it.
+ * Installs browse's CLI (into ~/.local/bin, where its own updater keeps it current; an older TypeScript one there is
+ * replaced) and has Chrome install the extension from the Web Store. boat's Chrome is a Chromium build, which reads
+ * /etc/chromium/policies; the Google Chrome path is written too in case the image switches. Idempotent; run on the
+ * template builder and, from browseReady, on VMs made before the template had it (or had an older browse).
  */
 export const BROWSE_BAKE = `set -e
 policy='{"ExtensionInstallForcelist":["${BROWSE_EXTENSION_ID};https://clients2.google.com/service/update2/crx"]}'
@@ -19,10 +24,11 @@ for dir in /etc/chromium/policies/managed /etc/opt/chrome/policies/managed; do
   sudo mkdir -p "$dir"
   echo "$policy" | sudo tee "$dir/dex-browse.json" > /dev/null
 done
-if [ ! -x "$HOME/.local/bin/browse" ]; then
+if ! ${BROWSE_CURRENT}; then
   curl -fsSL https://opencode.ai/browse/install -o /tmp/browse-install.sh
   sh /tmp/browse-install.sh --no-setup > /tmp/browse-install.log 2>&1 || { tail -20 /tmp/browse-install.log >&2; exit 1; }
   rm -f /tmp/browse-install.sh /tmp/browse-install.log
+  ${BROWSE_CURRENT} || { echo "browse didn't install." >&2; exit 1; }
 fi`
 
 /**
@@ -48,21 +54,27 @@ rm -f "$HOME"/.config/google-chrome/Singleton* /tmp/dex-chrome-prewarm.log
 installed || echo "Chrome didn't fetch the browse extension; VMs will fetch it on first use." >&2
 true`
 
+/** Where browseReady keeps each session's tab id on the VM. */
+const TABS_DIR = "$HOME/.cache/dex-browse"
+
 /**
- * Gets the VM's browser ready for `browse execute --session <session>`: browse installed, Chrome open on the desktop,
- * its extension connected to the relay (pairing it the first time, by opening the extension's welcome page with a
- * fresh one-time code, as `browse install` does), and the session created (`session` must be a plain lowercase id,
- * it goes into the script as is). Quick when all of that already holds. Runs in the caller's shell (its exports are
- * for the commands after it) and exits it when the browser can't be made ready.
- * The relay is allowed to raise the agent's tab (OPENCODE_BROWSER_ALLOW_FOREGROUND), so the user watching the desktop
- * sees the page the agent is on rather than a background tab.
+ * Gets the VM's browser ready for `browse execute --tab "$tab"`: browse installed and current, Chrome open on the
+ * desktop, its extension connected to the relay (pairing it the first time, by opening the extension's welcome page
+ * with a fresh one-time code, as `browse install` does), and the session's tab open, its id in `$tab` (`session` must
+ * be a plain lowercase id, it goes into the script as is). Quick when all of that already holds. Runs in the caller's
+ * shell (its exports and `$tab` are for the commands after it) and exits it when the browser can't be made ready.
+ * browse opens agent tabs in the background and can't raise them, so a session's new tab is shown with Chrome's own
+ * "last tab" key (agent tabs aren't grouped, so it's last), and the user watching the desktop sees the page the agent
+ * is on. Files under home are reachable from `files` and uploads (OPENCODE_BROWSER_FILE_ROOTS, read when the relay
+ * starts).
  */
-export const browseReady = (session: string) => `export DISPLAY=:0 OPENCODE_BROWSER_ALLOW_FOREGROUND=1 PATH="$HOME/.local/bin:$PATH"
+export const browseReady = (session: string) => `export DISPLAY=:0 OPENCODE_BROWSER_FILE_ROOTS="$HOME" PATH="$HOME/.local/bin:$PATH"
 cd ~
-[ -x "$HOME/.local/bin/browse" ] || ( ${BROWSE_BAKE} ) || exit 1
+${BROWSE_CURRENT} || ( ${BROWSE_BAKE} ) || exit 1
 connected() { browse status 2>/dev/null | grep -q '^Extension: connected'; }
-# Any operational command starts the relay (stopped after a VM stop); a paired extension reconnects within seconds.
-browse session list > /dev/null 2>&1 || true
+# Any tool call starts the relay (stopped after a VM stop, or replaced: an older browse's relay is asked to stop);
+# a paired extension reconnects within seconds.
+browse tabs > /dev/null 2>&1 || true
 if ! connected; then
   if ! pgrep -x chrome > /dev/null; then
     # A lock left by another machine (this disk copied from a VM whose Chrome was open) would make Chrome refuse the profile.
@@ -102,8 +114,24 @@ if ! connected; then
     tail -5 /tmp/dex-browse-pair.log >&2
     exit 1
   fi
-  # Show the agent's cursor and keep its tabs an hour: the user is watching, and chats come back to a page.
-  browse settings set cursor=always idleMinutes=60 > /dev/null 2>&1 || true
 fi
 close_setup
-browse session new ${session} > /dev/null 2>&1 || true`
+# The session's tab: the one kept for it while it's still among the session's tabs (a VM restart or idle cleanup
+# closes them), else a new one.
+mkdir -p "${TABS_DIR}"
+tab=$(cat "${TABS_DIR}/${session}" 2> /dev/null || true)
+if [ -z "$tab" ] || ! browse tabs --group ${session} 2> /dev/null | python3 -c 'import json, sys; sys.exit(0 if any(str(t.get("tab")) == sys.argv[1] for t in json.load(sys.stdin).get("tabs", [])) else 1)' "$tab" 2> /dev/null; then
+  # Keep tabs an hour (chats come back to a page), and ungrouped, so the new tab is the window's last.
+  browse settings --json '{"set":{"idleMinutes":60,"grouping":"none"}}' > /dev/null 2>&1 || true
+  tab=$(browse tabs new --group ${session} 2> /tmp/dex-browse-tab.log | python3 -c 'import json, sys; print(json.load(sys.stdin)["tab"])' 2> /dev/null || true)
+  if [ -z "$tab" ]; then
+    echo "The VM's browser couldn't open a tab. Call vm_browser again to retry." >&2
+    tail -5 /tmp/dex-browse-tab.log >&2
+    exit 1
+  fi
+  echo "$tab" > "${TABS_DIR}/${session}"
+  # Show it on the desktop: Chrome's Ctrl+9 selects a window's last tab.
+  for w in $(xdotool search --onlyvisible --class 'chrom' 2> /dev/null); do
+    xdotool windowactivate --sync "$w" key --clearmodifiers ctrl+9 2> /dev/null || true
+  done
+fi`

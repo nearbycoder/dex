@@ -6,11 +6,17 @@ import { MAX_VMS_PER_CHAT, type VmInfo, vmNumber } from "~/shared/protocol"
 import type { VmCopy, VmManager } from "../vm"
 
 const text = (value: string) => [{ type: "text" as const, text: value }]
+/** Where vm_browser has browse save the images a call returns, until a later call clears them. */
+const BROWSE_IMAGES = "/tmp/dex-browse-img"
+const MAX_BROWSE_IMAGES = 4
+/** An image's type from its first bytes (browse names the files by type, but the first one takes the name Dex gave it). */
+const imageType = (base64: string) =>
+  base64.startsWith("/9j/") ? "image/jpeg" : base64.startsWith("UklGR") ? "image/webp" : base64.startsWith("R0lGOD") ? "image/gif" : "image/png"
 const MAX_MODEL_OUTPUT = 30_000
 const clip = (value: string) =>
   value.length > MAX_MODEL_OUTPUT ? `… [${value.length - MAX_MODEL_OUTPUT} earlier chars cut]\n${value.slice(-MAX_MODEL_OUTPUT)}` : value
 
-export const VM_GUIDE = `This chat has its own VMs (other chats have their own): each a full Ubuntu machine (user \`user\`, passwordless sudo) with Docker, Node 24, Bun, Python 3.12, git, the GitHub CLI and Google Chrome. Home is /home/user. Every VM tool works on VM 1 unless you pass \`vm\` (2 to ${MAX_VMS_PER_CHAT}): each number is a separate machine with its own disk, desktop, and browser, started the first time a tool uses it (that call can take ~30s), and it keeps its disk across stops. For work that can run side by side (several sites, accounts, or long jobs at once), spread it over several VMs: start them together with vm_start (copy_from makes the new ones copies of a VM you prepared, so setup happens once), then for multi-step work hand each VM its own helper with vm_agents, so every VM goes at its own pace; quick one-off commands can instead go in one step, since calls in one step run at the same time. The user watches every VM live in the chat's control panel. More VMs cost more, so use extra ones only when parallel work pays off, and vm_stop them when done; vm_list shows which you have. A VM stops itself after a few minutes with no VM tool calls running, even if a background server is still up, so check that servers you started are still running before relying on them later. A desktop runs on DISPLAY=:0: GUI apps you launch there (e.g. \`DISPLAY=:0 google-chrome --no-first-run URL &\`) appear on it. For websites, use vm_browser: it runs Playwright in that desktop's Chrome, a real browser that keeps its cookies and logins. The user can watch the desktop and every command you run live on the Machine page, and may take control of the desktop at any time; if something you did changed unexpectedly, take a fresh screenshot.`
+export const VM_GUIDE = `This chat has its own VMs (other chats have their own): each a full Ubuntu machine (user \`user\`, passwordless sudo) with Docker, Node 24, Bun, Python 3.12, git, the GitHub CLI and Google Chrome. Home is /home/user. Every VM tool works on VM 1 unless you pass \`vm\` (2 to ${MAX_VMS_PER_CHAT}): each number is a separate machine with its own disk, desktop, and browser, started the first time a tool uses it (that call can take ~30s), and it keeps its disk across stops. For work that can run side by side (several sites, accounts, or long jobs at once), spread it over several VMs: start them together with vm_start (copy_from makes the new ones copies of a VM you prepared, so setup happens once), then for multi-step work hand each VM its own helper with vm_agents, so every VM goes at its own pace; quick one-off commands can instead go in one step, since calls in one step run at the same time. The user watches every VM live in the chat's control panel. More VMs cost more, so use extra ones only when parallel work pays off, and vm_stop them when done; vm_list shows which you have. A VM stops itself after a few minutes with no VM tool calls running, even if a background server is still up, so check that servers you started are still running before relying on them later. A desktop runs on DISPLAY=:0: GUI apps you launch there (e.g. \`DISPLAY=:0 google-chrome --no-first-run URL &\`) appear on it. For websites, use vm_browser: it runs JavaScript with a Playwright-style page in that desktop's Chrome, a real browser that keeps its cookies and logins. The user can watch the desktop and every command you run live on the Machine page, and may take control of the desktop at any time; if something you did changed unexpectedly, take a fresh screenshot.`
 
 /** The chat's secrets (see SecretVault): filled in on the VM, never shown to the model. */
 export interface VmSecrets {
@@ -323,29 +329,35 @@ export const vmTools = (vms: ChatVms, secrets: VmSecrets) => {
     defineTool({
       name: "vm_browser",
       description:
-        "Use the web in your VM's Chrome (on the desktop the user watches) by running Playwright JavaScript through browse. " +
-        "It's a real, visible browser with a person-like fingerprint, input pacing, and the cookies and logins of earlier calls, so prefer " +
-        "it over vm_computer for websites, and over curl or headless browsers for anything a person would do in a browser. The first call " +
-        "on a VM sets the browser up (~10s); never run browse's own setup (browse install, browse pair) with vm_exec: it waits for a person " +
-        "and blocks the browser. If setup fails, call vm_browser again.\n" +
-        "Your code runs as an async function body with `page` (your session's tab, kept between calls), `context`, `browser`, `state` " +
-        "(an object kept between calls), and helpers; `return` a value to see it (a single expression returns itself). Work in a loop: " +
+        "Use the web in your VM's Chrome (on the desktop the user watches) by running JavaScript with a Playwright-style `page` through " +
+        "browse. It's a real, visible browser with a person-like fingerprint, input pacing, and the cookies and logins of earlier calls, so " +
+        "prefer it over vm_computer for websites, and over curl or headless browsers for anything a person would do in a browser. The first " +
+        "call on a VM sets the browser up (~10s); never run browse's own setup (browse install, browse pair) with vm_exec: it waits for a " +
+        "person and blocks the browser. If setup fails, call vm_browser again.\n" +
+        "Your code runs as an async function body in a small sandboxed engine (not Node, not real Playwright) with `page` (your session's " +
+        "tab, kept between calls), `context`, `state` (an object kept with the tab between calls, JSON values only), and helpers; `return` " +
+        "a value to see it (a single expression returns itself). Synchronous code stops after ~2s without an await. Work in a loop: " +
         "inspect, act, verify.\n" +
-        "- Inspect: `return await snapshot()` gives a compact accessibility tree with refs (e12); `snapshot({ find: /checkout/i })` " +
-        "searches it, `snapshot({ diff: true })` shows what changed. `ariaSnapshot()` gives Playwright's full YAML tree.\n" +
-        "- Act: `await ref(\"e12\").click()`, or normal Playwright locators (`page.getByRole(\"button\", { name: \"Save\" }).click()`, " +
-        "`page.getByLabel(\"Email\").fill(...)`). Clicks and keys already move and pace like a person: add no delays. On sites that watch " +
-        "typing (sign-ups, logins behind bot protection) use `locator.pressSequentially(text)` instead of fill.\n" +
+        "- Inspect: `return await snapshot()` gives a compact outline with refs (e12); `snapshot({ find: /checkout/i })` searches it, " +
+        "`snapshot({ diff: true })` shows what changed, `ariaSnapshot()` gives the full YAML tree. To see the page, " +
+        "`return await page.screenshot()` (images you return come back to you).\n" +
+        "- Act: `await ref(\"e12\").click()`, or Playwright-style locators (`page.getByRole(\"button\", { name: \"Save\" }).click()`, " +
+        "`page.getByLabel(\"Email\").fill(...)`; locators are strict: one element). Clicks and keys already move and pace like a person: add no " +
+        "delays. On sites that watch typing (sign-ups, logins behind bot protection) use `locator.pressSequentially(text)` instead of fill.\n" +
         "- Verify: check `page.url()` or wait for an element; a click that didn't throw isn't proof it worked.\n" +
-        "Keep steps that depend on transient UI (open menus, hover) in one call. Popups are ordinary pages: `page.waitForEvent(\"popup\")`. " +
-        "There's no require, fs, process, or Node fetch; files go through `files` (`files.path(\"x.png\")`, `files.write`, `files.read`) " +
-        "in /tmp, and `page.evaluate` runs in the page. When only a person can go on (2FA, passkey, CAPTCHA, payment confirmation), " +
+        "- More: `browse.<tool>(args)` calls browse's tools directly in your tab: wait_for, dialog (answer alerts and confirms), upload, " +
+        "scroll, drag, network (capture traffic), console, recording (video of the tab), emulate (viewport, color scheme, geolocation), " +
+        "screenshot_diff, tabs. Each returns its JSON.\n" +
+        "Keep steps that depend on transient UI (open menus, hover) in one call. Popups and `context.newPage()` open as new tabs, listed by " +
+        "`context.pages()`; there's no page.waitForEvent. There's no require, fs, process, or Node fetch (fetch in the page with " +
+        "`page.evaluate`); files go through `files` (`files.path(\"x.png\")`, `files.write`, `files.read`) in /tmp or /home/user, and " +
+        "`setInputFiles` takes paths there. When only a person can go on (2FA, passkey, CAPTCHA, payment confirmation), " +
         "`await handoff(\"Solve the check, then click Continue\", { timeoutMs: 300_000 })` shows the user a card in the browser and waits " +
         "for them on the Machine page; raise timeout_seconds to match, then verify. If the result reports a bot challenge or block, don't " +
-        "retry or solve it yourself: hand off or stop. Set screenshot=true to also see the desktop afterwards." +
+        "retry or solve it yourself: hand off or stop. Set screenshot=true to also see the tab afterwards." +
         SECRET_NOTE,
       parameters: Type.Object({
-        code: Type.String({ maxLength: 50_000, description: "Playwright JavaScript to run (an async function body)." }),
+        code: Type.String({ maxLength: 50_000, description: "JavaScript to run (an async function body) with a Playwright-style `page`." }),
         session: Type.Optional(
           Type.String({
             pattern: "^[a-z0-9][a-z0-9-]{0,39}$",
@@ -353,30 +365,35 @@ export const vmTools = (vms: ChatVms, secrets: VmSecrets) => {
           })
         ),
         timeout_seconds: Type.Optional(Type.Integer({ minimum: 5, maximum: 540, description: "Default 60; time spent in handoff() doesn't count." })),
-        screenshot: Type.Optional(Type.Boolean({ description: "Also return a screenshot of the VM's desktop after the code runs." })),
+        screenshot: Type.Optional(Type.Boolean({ description: "Also return a screenshot of your tab after the code runs." })),
         vm: vmParam
       }),
       execute: async (args, api, context) => {
         const chatId = String(api.conversationId)
         const vm = vmFor(chatId, args.vm)
+        const signal = context.abortSignal
         // The session goes into the shell command, so only a plain id passes.
         const session = args.session && /^[a-z0-9][a-z0-9-]{0,39}$/.test(args.session) ? args.session : "dex"
         const timeout = Math.min(540, Math.max(5, Math.round(Number(args.timeout_seconds) || 60)))
         await secrets.prepare(chatId, vm.key)
         const id = crypto.randomUUID()
         const script = `/tmp/dex-browse-${id}.js`
-        const result = `/tmp/dex-browse-${id}.json`
-        await vm.writeFile(script, await secrets.fill(chatId, args.code), "agent", context.abortSignal)
+        const result = `/tmp/dex-browse-${id}.txt`
+        // Images the code returned (browse saves them to files and prints their paths) and the screenshot.
+        const images = `${BROWSE_IMAGES}/${id}`
+        await vm.writeFile(script, await secrets.fill(chatId, args.code), "agent", signal)
         const marker = `@@dex-browse-${id}@@`
         const command = [
           // The code may hold filled-in secrets: gone however this ends.
           `trap 'rm -f ${script} ${result}' EXIT`,
+          // Earlier calls' images, long since read (they can show what's on the page, secrets included).
+          `mkdir -p ${BROWSE_IMAGES}; find ${BROWSE_IMAGES} -type f -mmin +10 -delete 2> /dev/null`,
           browseReady(session),
-          `browse execute --session ${session} --json --timeout-ms ${timeout * 1000} --file ${script} > ${result} 2> /dev/null`,
+          `browse execute --tab "$tab" --timeout-ms ${timeout * 1000} --file ${script} --output ${images}.png > ${result} 2>&1`,
+          `status=$?`,
           `rm -f ${script}`,
-          // Raise the agent's tab, so the user watching the desktop sees the page it's on.
-          `browse execute --session ${session} 'await page.bringToFront()' > /dev/null 2>&1 || true`,
-          `echo ${marker}; cat ${result}`
+          ...(args.screenshot ? [`browse screenshot --tab "$tab" --output ${images}-tab.png > /dev/null 2>&1 && echo ${images}-tab.png >> ${result}`] : []),
+          `echo ${marker}; echo "$status"; cat ${result}`
         ].join("\n")
         const firstLine = args.code.trim().split("\n")[0] ?? ""
         const ran = await vm.exec(command, {
@@ -384,43 +401,23 @@ export const vmTools = (vms: ChatVms, secrets: VmSecrets) => {
           title: `browse: ${firstLine.length > 80 ? `${firstLine.slice(0, 80)}…` : firstLine}`,
           // Room for setting the browser up, around the code's own timeout (paused while handing off).
           timeoutSeconds: Math.min(600, timeout + 60),
-          signal: context.abortSignal
+          signal
         })
         const at = ran.output.lastIndexOf(marker)
         if (at < 0) return { output: text(`The VM's browser couldn't run the code:\n${clip(ran.output)}`), isError: true }
-        type Envelope = {
-          ok?: boolean
-          text?: string
-          error?: { message?: string }
-          logs?: unknown[]
-          warnings?: unknown[]
-          diagnostic?: unknown
-          aftermath?: { endUrl?: string; challenge?: unknown }
-        }
-        let envelope: Envelope
-        try {
-          envelope = JSON.parse(ran.output.slice(at + marker.length)) as Envelope
-        } catch {
-          return { output: text(`browse's result wasn't readable:\n${clip(ran.output.slice(at + marker.length))}`), isError: true }
-        }
-        const show = (value: unknown) => (typeof value === "string" ? value : JSON.stringify(value))
-        const parts = [
-          envelope.error?.message && `Error: ${envelope.error.message}`,
-          envelope.text,
-          envelope.logs?.length && `Logs:\n${envelope.logs.map(show).join("\n")}`,
-          envelope.warnings?.length && `Warnings:\n${envelope.warnings.map(show).join("\n")}`,
-          envelope.diagnostic !== undefined && `Diagnostic: ${show(envelope.diagnostic)}`,
-          envelope.aftermath?.endUrl && `Page: ${envelope.aftermath.endUrl}`,
-          envelope.aftermath?.challenge !== undefined && `Bot check: ${show(envelope.aftermath.challenge)}`
-        ].filter((part): part is string => typeof part === "string" && part !== "")
+        const [status = "", ...lines] = ran.output.slice(at + marker.length).replace(/^\r?\n/, "").split("\n")
+        // `browse execute` exits 0 when the code succeeded and 1 when it threw; anything else is browse failing.
+        const files = lines.map((line) => line.trim()).filter((line) => line.startsWith(images))
+        const body = lines.filter((line) => !line.trim().startsWith(images)).join("\n").trim()
         const output: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }> = text(
-          tag(vmArg(args.vm)) + clip(parts.join("\n\n") || "(no result)")
+          tag(vmArg(args.vm)) + clip(body || "(no result)")
         )
-        if (args.screenshot) {
-          const shot = await vm.screenshot("agent", context.abortSignal)
-          output.push({ type: "image", data: shot.data, mimeType: "image/jpeg" })
+        // The newest few: the model sees only the latest screenshots anyway.
+        for (const file of files.slice(-MAX_BROWSE_IMAGES)) {
+          const image = await vm.readFile(file, "agent", "base64", signal).catch(() => null)
+          if (image) output.push({ type: "image", data: image.content, mimeType: imageType(image.content) })
         }
-        return { output, isError: envelope.ok === false }
+        return { output, isError: status.trim() !== "0" }
       }
     }),
 

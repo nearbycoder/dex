@@ -4,7 +4,7 @@ import { BROWSE_BAKE, BROWSE_PREWARM } from "./browse"
 import { SELKIES_BAKE, SELKIES_TEMPLATE_CLEANUP, SELKIES_VERSION } from "./selkies"
 
 /** Bump when what's baked in changes, so VMs come from a fresh template instead of the old one. */
-const TEMPLATE_REVISION = 5
+const TEMPLATE_REVISION = 6
 /** A boat named snapshot in the user's own boat account (each person uses their own key). */
 const templateName = (revision: number) => `dex-desktop-r${revision}-selkies-${SELKIES_VERSION.replaceAll(".", "-")}`
 export const TEMPLATE_NAME = templateName(TEMPLATE_REVISION)
