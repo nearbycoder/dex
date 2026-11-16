@@ -64,7 +64,8 @@ const withSecurityHeaders = (response: Response, request: Request) => {
   if (!secured.headers.has("Content-Security-Policy")) secured.headers.set("Content-Security-Policy", CONTENT_SECURITY_POLICY)
   secured.headers.set("X-Content-Type-Options", "nosniff")
   secured.headers.set("Referrer-Policy", "strict-origin-when-cross-origin")
-  secured.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+  // The microphone is Dex's own, for calls with sidekicks; nothing it frames or opens gets it.
+  secured.headers.set("Permissions-Policy", "camera=(), microphone=(self), geolocation=()")
   // Pages opened from Dex (links in chats) get no handle back to it, and Dex none to them.
   secured.headers.set("Cross-Origin-Opener-Policy", "same-origin")
   if (new URL(request.url).protocol === "https:") secured.headers.set("Strict-Transport-Security", "max-age=31536000")
