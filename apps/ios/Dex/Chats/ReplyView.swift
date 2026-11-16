@@ -24,6 +24,9 @@ struct ReplyView: View {
             if !layout.steps.isEmpty {
                 ActivityRow(feed: feed, layout: layout, running: running, startedAt: messages.first?.timestamp ?? .nowMs, endedAt: endedAt, results: results, tools: tools)
             }
+            if !layout.recoveredErrors.isEmpty {
+                RecoveredErrors(errors: layout.recoveredErrors)
+            }
             if layout.touchedMemory {
                 Button {
                     router.openFile("/MEMORY.md")
@@ -60,8 +63,8 @@ struct ReplyView: View {
                     EmptyView()
                 }
             }
-            ForEach(Array(layout.errors.enumerated()), id: \.offset) { index, error in
-                ErrorCard(message: error, onRetry: index == layout.errors.count - 1 && !running ? onRetry : nil)
+            if let failure = layout.failure, !running {
+                ErrorCard(message: failure, onRetry: onRetry)
             }
             if messages.last?.stopReason == "aborted" {
                 Text("Stopped.").font(.caption).foregroundStyle(.secondary).accessibilityIdentifier("chat.stopped")
@@ -112,6 +115,43 @@ private struct ReplyActions: View {
 }
 
 /// A failed model request (or run), with Retry when it's the latest.
+/// Requests that failed and were retried, folded into one line; open, each different error once with its count.
+struct RecoveredErrors: View {
+    let errors: [String]
+    @State private var open = false
+
+    var body: some View {
+        let counts = errors.reduce(into: [(String, Int)]()) { list, error in
+            if let index = list.firstIndex(where: { $0.0 == error }) { list[index].1 += 1 } else { list.append((error, 1)) }
+        }
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                withAnimation(.snappy) { open.toggle() }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle")
+                    Text(errors.count == 1 ? "Retried after an error" : "Retried after \(errors.count) errors")
+                    Image(systemName: "chevron.right").font(.caption2).rotationEffect(.degrees(open ? 90 : 0))
+                }
+                .font(.caption)
+                .foregroundStyle(.orange.opacity(0.8))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("chat.retried")
+            if open {
+                ForEach(counts, id: \.0) { error, count in
+                    Text(count > 1 ? "\(count)× \(error)" : error)
+                        .font(.caption)
+                        .foregroundStyle(.orange.opacity(0.7))
+                        .lineLimit(3)
+                        .textSelection(.enabled)
+                        .padding(.leading, 20)
+                }
+            }
+        }
+    }
+}
+
 struct ErrorCard: View {
     let message: String
     var onRetry: (() -> Void)? = nil

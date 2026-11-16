@@ -195,7 +195,10 @@ function AssistantTurnView(props: {
   const steps = blocks.slice(0, lastWork + 1).filter((step) => !isUi(step.block))
   const shown = [...blocks.slice(0, lastWork + 1).filter((step) => isUi(step.block)), ...blocks.slice(lastWork + 1)]
   const final = messages.at(-1)
-  const errors = messages.filter((message) => message.stopReason === "error")
+  // A failed request the chat retried and got past isn't the reply's outcome: it's noted quietly with the work. Only a
+  // failure the reply ended on shows as an error (while it's still running, the retry note below the chat says so).
+  const failedLast = final?.stopReason === "error"
+  const recovered = messages.filter((message, index) => message.stopReason === "error" && !(failedLast && index === messages.length - 1))
   // Memory feeds every future chat, so a change to it is never tucked away in the activity row.
   const touchedMemory = blocks.some(({ block }) => {
     if (block.type !== "toolCall") return false
@@ -237,6 +240,7 @@ function AssistantTurnView(props: {
           tools={props.tools}
         />
       )}
+      {recovered.length > 0 && <RecoveredErrors errors={recovered.map((message) => message.errorMessage ?? "The model request failed.")} />}
       {touchedMemory && (
         <Link
           to="/files"
@@ -274,9 +278,7 @@ function AssistantTurnView(props: {
         }
         return null
       })}
-      {errors.map((message, index) => (
-        <ErrorNote key={index} className="my-2" text={message.errorMessage ?? "The model request failed."} />
-      ))}
+      {failedLast && !props.active && <ErrorNote className="my-2" text={final.errorMessage ?? "The model request failed."} />}
       {final?.stopReason === "aborted" && <div className="my-1 text-xs text-zinc-500">Stopped.</div>}
     </div>
   )
@@ -669,6 +671,32 @@ export const MessageList = memo(function MessageList({
     </div>
   )
 })
+
+/** Requests that failed and were retried, folded into one line; open, each different error once with its count. */
+function RecoveredErrors({ errors }: { errors: readonly string[] }) {
+  const [open, setOpen] = useState(false)
+  const counts = new Map<string, number>()
+  for (const error of errors) counts.set(error, (counts.get(error) ?? 0) + 1)
+  return (
+    <div className="my-1 text-xs text-amber-400/70">
+      <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className="flex items-center gap-1.5 hover:text-amber-300">
+        <AlertTriangle className="size-3.5 shrink-0" />
+        Retried after {errors.length === 1 ? "an error" : `${errors.length} errors`}
+        <ChevronRight className={`size-3 transition-transform ${open ? "rotate-90" : ""}`} />
+      </button>
+      {open && (
+        <ul className="mt-1 space-y-1 pl-5 text-amber-300/70">
+          {[...counts].map(([error, count]) => (
+            <li key={error} className="line-clamp-3 [overflow-wrap:anywhere]" title={error}>
+              {count > 1 && <span className="text-amber-400/90">{count}× </span>}
+              {error}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
 
 /**
  * A failed request, in the chat's column: providers' errors carry long unbroken JSON and URLs, so it wraps anywhere,

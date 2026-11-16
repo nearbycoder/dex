@@ -16,7 +16,10 @@ public struct ReplyLayout: Sendable, Equatable {
     public let shown: [Step]
     /// Still on the work: no answer text yet.
     public let active: Bool
-    public let errors: [String]
+    /// Requests that failed and were retried past: noted quietly with the work, not as the reply's outcome.
+    public let recoveredErrors: [String]
+    /// The failure the reply ended on, if it did (while the run goes on, a retry may still get past it).
+    public let failure: String?
     /// A change to MEMORY.md, which is never tucked away.
     public let touchedMemory: Bool
 
@@ -34,7 +37,10 @@ public struct ReplyLayout: Sendable, Equatable {
         shown = work.filter { Self.isUI($0.block) } + blocks.dropFirst(lastWork + 1)
         let hasAnswer = shown.contains { if case .text(let text) = $0.block { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } else { false } }
         active = (streaming || running) && !hasAnswer
-        errors = messages.filter { $0.stopReason == "error" }.map { $0.errorMessage ?? "The model returned an error." }
+        let failedLast = messages.last?.stopReason == "error"
+        let failed = messages.enumerated().filter { $0.element.stopReason == "error" && !(failedLast && $0.offset == messages.count - 1) }
+        recoveredErrors = failed.map { $0.element.errorMessage ?? "The model returned an error." }
+        failure = failedLast ? (messages.last?.errorMessage ?? "The model returned an error.") : nil
         touchedMemory = blocks.contains { step in
             guard case .toolCall(let call) = step.block else { return false }
             let path = call.arguments["path"]?.string ?? ""

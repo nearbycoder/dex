@@ -226,6 +226,36 @@ private fun Centered(content: @Composable () -> Unit) {
 }
 
 @Composable
+private fun RecoveredErrors(errors: List<String>) {
+    var open by remember { mutableStateOf(false) }
+    val tint = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.8f)
+    Column(Modifier.testTag("retried-errors")) {
+        Row(
+            Modifier.clickable { open = !open }.padding(vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Rounded.ErrorOutline, contentDescription = null, tint = tint, modifier = Modifier.size(14.dp))
+            Text(if (errors.size == 1) "Retried after an error" else "Retried after ${errors.size} errors", style = MaterialTheme.typography.labelMedium, color = tint)
+        }
+        if (open) {
+            // Each different error once, with how many times it came.
+            errors.groupingBy { it }.eachCount().forEach { (error, count) ->
+                Text(
+                    if (count > 1) "$count× $error" else error,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = tint,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = 20.dp, top = 4.dp),
+                )
+            }
+        }
+    }
+}
+
+/** A failure the reply ended on. */
+@Composable
 private fun ErrorCard(text: String) {
     Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -421,7 +451,10 @@ fun AssistantTurn(
     val sharedMedia = turn.sharedMedia
     val confirmations = turn.confirmations
     val threads = turn.threads
-    val errors = turn.errors
+    // A failed request the chat retried past is noted quietly with the work; only a failure the reply ended on shows
+    // as an error card (while the run goes on, a retry may still get past it).
+    val failedLast = messages.lastOrNull()?.stopReason == "error"
+    val recovered = turn.errors.let { if (failedLast) it.dropLast(1) else it }
     Row(Modifier.fillMaxWidth().testTag("assistant-turn"), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         if (character != null) CharacterAvatar(character, size = 28.dp, modifier = Modifier.semantics { contentDescription = character.name })
         else Image(painterResource(R.drawable.ic_launcher_foreground), contentDescription = "Dex", modifier = Modifier.size(28.dp).padding(top = 2.dp))
@@ -437,6 +470,7 @@ fun AssistantTurn(
                     tools = tools,
                 )
             }
+            if (recovered.isNotEmpty()) RecoveredErrors(recovered.map { it.errorMessage ?: "The model request failed." })
             if (touchedMemory) {
                 AssistChip(
                     // A character keeps their own notes about you.
@@ -466,7 +500,7 @@ fun AssistantTurn(
                     else -> Unit
                 }
             }
-            errors.forEach { ErrorCard(it.errorMessage ?: "The model request failed.") }
+            if (failedLast && !active) ErrorCard(messages.last().errorMessage ?: "The model request failed.")
             if (messages.lastOrNull()?.stopReason == "aborted") Text("Stopped.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
