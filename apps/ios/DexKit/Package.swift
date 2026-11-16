@@ -8,7 +8,13 @@ let package = Package(
     name: "DexKit",
     platforms: [.iOS(.v26), .macOS(.v26)],
     products: [
-        .library(name: "DexCore", targets: ["DexCore"])
+        .library(name: "DexCore", targets: ["DexCore"]),
+        // Calls' voice (tiny-voca on ONNX Runtime): the app only.
+        .library(name: "DexVoice", targets: ["DexVoice"])
+    ],
+    dependencies: [
+        // Runs tiny-voca, the voice of calls with sidekicks (DexVoice). Pinned to an exact release.
+        .package(url: "https://github.com/microsoft/onnxruntime-swift-package-manager", exact: "1.24.2")
     ],
     targets: [
         .target(
@@ -16,9 +22,13 @@ let package = Package(
             // Sidekicks: the ready-made looks (assets/sidekicks at the repo root), as PNGs with presets.json.
             resources: [.copy("Resources/openui-engine.js"), .copy("Resources/openui-spec.json"), .copy("Resources/Sidekicks")]
         ),
+        .target(
+            name: "DexVoice",
+            dependencies: ["DexCore", .product(name: "onnxruntime", package: "onnxruntime-swift-package-manager")]
+        ),
         .testTarget(
             name: "DexCoreTests",
-            dependencies: ["DexCore"],
+            dependencies: ["DexCore", "DexVoice"],
             resources: [.copy("Fixtures")]
         )
     ]

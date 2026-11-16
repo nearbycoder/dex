@@ -16,9 +16,11 @@ apps/ios/
       Auth/          the PKCE sign-in client and the Keychain store
       State/         DexClient and ChatFeed, the transcript reducer, ReplyLayout, Inbox, models, the device cache
       OpenUI/        the generative UI engine (OpenUI's lang-core in JavaScriptCore)
-      Mock/          MockAgent: an in-process agent speaking the real protocol, for tests and demos
+      Voice/         voice calls: the text rules, the voice endpoints and model download, the call controller
+      Mock/          MockAgent: an in-process agent speaking the real protocol, for tests and demos (MockVoice for calls)
+    Sources/DexVoice/  tiny-voca on ONNX Runtime (the app links it; the extensions don't)
     Tests/           Swift Testing: protocol, reducer, connection, cache, and opt-in live-server tests
-  Dex/               the app: App, Navigation, SignIn, Chats, Machines, Files, Library, Settings, OpenUI, DesignSystem
+  Dex/               the app: App, Navigation, SignIn, Chats, Calls, Machines, Files, Library, Settings, OpenUI, DesignSystem
   DexWidgets/        the WidgetKit extension (dev.trydex.Dex.Widgets): the Sidekick and Sidekicks widgets
   Shared/            compiled into the app and the widgets: the widgets' views, agent colors, the widgets' palette
   DexTests/          app-level unit tests
@@ -107,6 +109,17 @@ Dex pushes to the app through APNs (`apps/web/src/agent/native-push.ts`, with th
 - **Settings → Notifications**: this device (permission, push, the kinds including Sidekicks, Only when I'm away, Send a Test), each sidekick's setting (Every message / When they reach out / Off; also on their page, and the bell in their chat toggles every message ↔ off), other devices with their platform, muted chats.
 - **Without push** (a deployment without APNs keys, or an older agent: `push.native.ios` is false) the app posts local notifications while it runs or for a short while in the background, with choices kept on the device, as before. With push it posts none of its own, so nothing arrives twice. Mock mode makes up a token and registers it with the mock agent only.
 - Scheduled prompts (`[Scheduled task] …` user messages) show as a small "⏰ Scheduled: …" note in every chat, not as a message from you.
+
+## Voice calls
+
+A sidekick's chat (their current conversation) has Call in its header: a full-screen call where you talk and they talk back, as on the web (`apps/web/src/shared/voice.ts`, `client/voice/call.ts`).
+
+- **Hearing you**: the device's speech recognition (`SFSpeechRecognizer`, en-US, on the device when it can be) on an `AVAudioEngine` with voice processing (`.playAndRecord`, `.voiceChat`), so their voice is cancelled out of the microphone. A pause of 0.9 s after your last words sends what you said with `sendMessage(sessionId, text, null, { spoken: true })`, and the agent answers briefly, to be heard.
+- **Their voice**: tiny-voca (`DexKit/Sources/DexVoice`, ONNX Runtime from Microsoft's Swift package, pinned in `DexKit/Package.swift`), on the device. The model downloads once from `/api/voice/model/model.onnx?v=<revision>` into Application Support/Voice (older revisions are deleted); the reply's sentences go to `/api/voice/phonemes` as they complete, and each piece of audio plays right after the last on the same engine.
+- **Turn-taking** (`VoiceCall` in DexCore, tested on macOS with MockVoice's ear, voice, and speaker): talking over them (two words that aren't their own voice coming back through the microphone) stops them, and the rest of that reply goes unsaid. Mute stops listening; leaving the chat or End ends the call.
+- **Their voice setting** is on their page (Bright or Warm, each previewed with their greeting); without one, a voice is picked from their id (`Voice.of`, the web's `voiceOf`).
+- The text rules (`VoiceText`) are the web's, checked against its own output in `Fixtures/Voice/voice-parity.json` (made by running `shared/voice.ts` in Node). `TinyVocaTests` runs the model on `Fixtures/Voice/phonemes.json` and compares with onnxruntime-web's `reference.json`; it takes the model from `DEX_VOICE_MODEL`, a copy in the user's caches, or Hugging Face.
+- In mock mode (`-DexMock`) a call hears a scripted line (`-DexCallSays "Hi there|And another"`, one line each time it starts listening) and plays silently; no microphone or server.
 
 ## Widgets
 

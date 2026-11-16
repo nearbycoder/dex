@@ -37,6 +37,9 @@ targets:
     dependencies:
       - package: DexKit
         product: DexCore
+      # Calls' voice: tiny-voca on ONNX Runtime (the app only; the extensions don't link it).
+      - package: DexKit
+        product: DexVoice
       - package: Markdown
       - target: DexWidgets
       - target: DexNotifications

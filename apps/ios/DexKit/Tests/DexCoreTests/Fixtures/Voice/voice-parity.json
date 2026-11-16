@@ -1,0 +1,744 @@
+{
+ "sentences": [
+  {
+   "input": "Hello! This is tiny voca, a small text to speech model that runs on a phone or in a browser.",
+   "output": [
+    "Hello!",
+    "This is tiny voca, a small text to speech model that runs on a phone or in a browser."
+   ]
+  },
+  {
+   "input": "Mr. Smith went to Washington. He met Dr. Jones at 3 p.m. today.",
+   "output": [
+    "Mr. Smith went to Washington.",
+    "He met Dr. Jones at 3 p.m. today."
+   ]
+  },
+  {
+   "input": "The meeting moved to 3:30 pm on March 14th, so we have about 45 minutes left.",
+   "output": [
+    "The meeting moved to 3:30 pm on March 14th, so we have about 45 minutes left."
+   ]
+  },
+  {
+   "input": "J. R. R. Tolkien wrote books. They're long!",
+   "output": [
+    "J. R. R. Tolkien wrote books.",
+    "They're long!"
+   ]
+  },
+  {
+   "input": "It costs $3.50. Is that ok? \"Yes,\" she said. (Really.) [Note] 42 is the answer.",
+   "output": [
+    "It costs $3.50.",
+    "Is that ok?",
+    "\"Yes,\" she said.",
+    "(Really.)",
+    "[Note] 42 is the answer."
+   ]
+  },
+  {
+   "input": "Wait… what? No way!",
+   "output": [
+    "Wait… what?",
+    "No way!"
+   ]
+  },
+  {
+   "input": "e.g. this one. i.e. that one. Prof. X is here. etc. and more",
+   "output": [
+    "e.g. this one. i.e. that one.",
+    "Prof. X is here. etc. and more"
+   ]
+  },
+  {
+   "input": "   lots   of\n\nspace\there.   Next one.  ",
+   "output": [
+    "lots of space here.",
+    "Next one."
+   ]
+  },
+  {
+   "input": "see you :)",
+   "output": [
+    "see you :)"
+   ]
+  },
+  {
+   "input": "ok 👍",
+   "output": [
+    "ok 👍"
+   ]
+  },
+  {
+   "input": "Done, ",
+   "output": [
+    "Done,"
+   ]
+  },
+  {
+   "input": "Hmm,",
+   "output": [
+    "Hmm,"
+   ]
+  },
+  {
+   "input": "Really?!",
+   "output": [
+    "Really?!"
+   ]
+  },
+  {
+   "input": "He said \"stop.\"",
+   "output": [
+    "He said \"stop.\""
+   ]
+  },
+  {
+   "input": "Ends with a quote'",
+   "output": [
+    "Ends with a quote'"
+   ]
+  },
+  {
+   "input": "(parenthetical)",
+   "output": [
+    "(parenthetical)"
+   ]
+  },
+  {
+   "input": "word…",
+   "output": [
+    "word…"
+   ]
+  },
+  {
+   "input": "list:",
+   "output": [
+    "list:"
+   ]
+  },
+  {
+   "input": "a ;",
+   "output": [
+    "a ;"
+   ]
+  },
+  {
+   "input": "Café. Über alles. Ça va? Éclair time.",
+   "output": [
+    "Café. Über alles. Ça va? Éclair time."
+   ]
+  },
+  {
+   "input": "No. 5 is next. Inc. stuff. vs. them.",
+   "output": [
+    "No. 5 is next.",
+    "Inc. stuff. vs. them."
+   ]
+  },
+  {
+   "input": "U.S. policy changed. A. B. Smith arrived.",
+   "output": [
+    "U.S. policy changed.",
+    "A. B. Smith arrived."
+   ]
+  },
+  {
+   "input": "...",
+   "output": []
+  },
+  {
+   "input": "",
+   "output": []
+  },
+  {
+   "input": "?! ...",
+   "output": []
+  },
+  {
+   "input": "Number 1. Number 2.",
+   "output": [
+    "Number 1.",
+    "Number 2."
+   ]
+  },
+  {
+   "input": "Version 2.0 is out. Get it now.",
+   "output": [
+    "Version 2.0 is out.",
+    "Get it now."
+   ]
+  },
+  {
+   "input": "She said: \"Hi.\" Then left.",
+   "output": [
+    "She said: \"Hi.\"",
+    "Then left."
+   ]
+  },
+  {
+   "input": "first sentence.second sentence. Third",
+   "output": [
+    "first sentence.second sentence.",
+    "Third"
+   ]
+  },
+  {
+   "input": "Smiley :) Next sentence here.",
+   "output": [
+    "Smiley :) Next sentence here."
+   ]
+  },
+  {
+   "input": "Emoji 🎉. Done.",
+   "output": [
+    "Emoji 🎉.",
+    "Done."
+   ]
+  },
+  {
+   "input": "‘Quoted’ text. Another one.",
+   "output": [
+    "‘Quoted’ text.",
+    "Another one."
+   ]
+  },
+  {
+   "input": "a.m. meeting. ok",
+   "output": [
+    "a.m. meeting. ok"
+   ]
+  }
+ ],
+ "finished": [
+  {
+   "input": "Hello! This is tiny voca, a small text to speech model that runs on a phone or in a browser.",
+   "output": "Hello! This is tiny voca, a small text to speech model that runs on a phone or in a browser."
+  },
+  {
+   "input": "Mr. Smith went to Washington. He met Dr. Jones at 3 p.m. today.",
+   "output": "Mr. Smith went to Washington. He met Dr. Jones at 3 p.m. today."
+  },
+  {
+   "input": "The meeting moved to 3:30 pm on March 14th, so we have about 45 minutes left.",
+   "output": "The meeting moved to 3:30 pm on March 14th, so we have about 45 minutes left."
+  },
+  {
+   "input": "J. R. R. Tolkien wrote books. They're long!",
+   "output": "J. R. R. Tolkien wrote books. They're long!"
+  },
+  {
+   "input": "It costs $3.50. Is that ok? \"Yes,\" she said. (Really.) [Note] 42 is the answer.",
+   "output": "It costs $3.50. Is that ok? \"Yes,\" she said. (Really.) [Note] 42 is the answer."
+  },
+  {
+   "input": "Wait… what? No way!",
+   "output": "Wait… what? No way!"
+  },
+  {
+   "input": "e.g. this one. i.e. that one. Prof. X is here. etc. and more",
+   "output": "e.g. this one. i.e. that one. Prof. X is here. etc. and more."
+  },
+  {
+   "input": "   lots   of\n\nspace\there.   Next one.  ",
+   "output": "   lots   of\n\nspace\there.   Next one.  "
+  },
+  {
+   "input": "see you :)",
+   "output": "see you :)."
+  },
+  {
+   "input": "ok 👍",
+   "output": "ok 👍."
+  },
+  {
+   "input": "Done, ",
+   "output": "Done, "
+  },
+  {
+   "input": "Hmm,",
+   "output": "Hmm,"
+  },
+  {
+   "input": "Really?!",
+   "output": "Really?!"
+  },
+  {
+   "input": "He said \"stop.\"",
+   "output": "He said \"stop.\""
+  },
+  {
+   "input": "Ends with a quote'",
+   "output": "Ends with a quote'."
+  },
+  {
+   "input": "(parenthetical)",
+   "output": "(parenthetical)."
+  },
+  {
+   "input": "word…",
+   "output": "word…"
+  },
+  {
+   "input": "list:",
+   "output": "list:"
+  },
+  {
+   "input": "a ;",
+   "output": "a ;"
+  },
+  {
+   "input": "Café. Über alles. Ça va? Éclair time.",
+   "output": "Café. Über alles. Ça va? Éclair time."
+  },
+  {
+   "input": "No. 5 is next. Inc. stuff. vs. them.",
+   "output": "No. 5 is next. Inc. stuff. vs. them."
+  },
+  {
+   "input": "U.S. policy changed. A. B. Smith arrived.",
+   "output": "U.S. policy changed. A. B. Smith arrived."
+  },
+  {
+   "input": "...",
+   "output": "..."
+  },
+  {
+   "input": "",
+   "output": ""
+  },
+  {
+   "input": "?! ...",
+   "output": "?! ..."
+  },
+  {
+   "input": "Number 1. Number 2.",
+   "output": "Number 1. Number 2."
+  },
+  {
+   "input": "Version 2.0 is out. Get it now.",
+   "output": "Version 2.0 is out. Get it now."
+  },
+  {
+   "input": "She said: \"Hi.\" Then left.",
+   "output": "She said: \"Hi.\" Then left."
+  },
+  {
+   "input": "first sentence.second sentence. Third",
+   "output": "first sentence.second sentence. Third."
+  },
+  {
+   "input": "Smiley :) Next sentence here.",
+   "output": "Smiley :) Next sentence here."
+  },
+  {
+   "input": "Emoji 🎉. Done.",
+   "output": "Emoji 🎉. Done."
+  },
+  {
+   "input": "‘Quoted’ text. Another one.",
+   "output": "‘Quoted’ text. Another one."
+  },
+  {
+   "input": "a.m. meeting. ok",
+   "output": "a.m. meeting. ok."
+  }
+ ],
+ "speakable": [
+  {
+   "input": "# Heading\nSome **bold** and *italic* and __under__ and ~~strike~~ text.",
+   "output": "Heading.\nSome bold and italic and under and strike text."
+  },
+  {
+   "input": "Here's code:\n```js\nconst x = 1\n```\nAnd after.",
+   "output": "Here's code:\n \nAnd after."
+  },
+  {
+   "input": "Unclosed code:\n```\nnever ends",
+   "output": "Unclosed code:"
+  },
+  {
+   "input": "| a | b |\n|---|---|\n| 1 | 2 |\nAfter table.",
+   "output": "After table."
+  },
+  {
+   "input": "An ![image](http://x/y.png) and a [link](https://example.com) here.",
+   "output": "An and a link here."
+  },
+  {
+   "input": "Visit https://example.com/path?q=1 now. Or http://foo.bar.",
+   "output": "Visit a link now. Or a link"
+  },
+  {
+   "input": "Inline `code` here, and <b>html</b> tags, <Card title=\"x\"/>.",
+   "output": "Inline code here, and html tags, ."
+  },
+  {
+   "input": "- first item\n- second item.\n* third\n+ fourth!\n1. one\n2) two",
+   "output": "first item.\nsecond item.\nthird.\nfourth!\none.\ntwo."
+  },
+  {
+   "input": "> quoted line\n> another\nNormal",
+   "output": "quoted line\nanother\nNormal"
+  },
+  {
+   "input": "  ## Spaced heading  \ntext",
+   "output": "Spaced heading .\ntext"
+  },
+  {
+   "input": "####### seven hashes",
+   "output": "####### seven hashes"
+  },
+  {
+   "input": "Paragraph one.\n\n\n\nParagraph two.",
+   "output": "Paragraph one.\nParagraph two."
+  },
+  {
+   "input": "snake_case_word and 2*3*4 math and **bold with *nested* inside**",
+   "output": "snakecaseword and 234 math and *bold with nested* inside**"
+  },
+  {
+   "input": "Tabs\tand    spaces   collapse.",
+   "output": "Tabs and spaces collapse."
+  },
+  {
+   "input": "Line with trailing spaces   \nnext line",
+   "output": "Line with trailing spaces \nnext line"
+  },
+  {
+   "input": "- item with smile :)\n- item ending in comma,",
+   "output": "item with smile :).\nitem ending in comma,"
+  },
+  {
+   "input": "**Bold.** Then more. _Emph_ end",
+   "output": "Bold. Then more. Emph end"
+  },
+  {
+   "input": "Text with <br> and a <a href='x'>link</a>.",
+   "output": "Text with and a link ."
+  },
+  {
+   "input": "Unclosed [bracket and (paren",
+   "output": "Unclosed [bracket and (paren"
+  },
+  {
+   "input": "1. Step one\n2. Step two\n3. Step three",
+   "output": "Step one.\nStep two.\nStep three."
+  },
+  {
+   "input": "",
+   "output": ""
+  },
+  {
+   "input": "   \n  \n",
+   "output": ""
+  },
+  {
+   "input": "A list:\n\n- apples\n- pears\n\nThat's all.",
+   "output": "A list:\napples.\npears.\nThat's all."
+  },
+  {
+   "input": "Use `npm run dev` then open http://localhost:5173.",
+   "output": "Use npm run dev then open a link"
+  },
+  {
+   "input": "~~gone~~ and *still here* and * not emphasis *",
+   "output": "gone and still here and * not emphasis *"
+  },
+  {
+   "input": "Header\n===\nUnderline style",
+   "output": "Header\n===\nUnderline style"
+  }
+ ],
+ "pipeline": [
+  {
+   "input": "# Heading\nSome **bold** and *italic* and __under__ and ~~strike~~ text.",
+   "output": [
+    "Heading.",
+    "Some bold and italic and under and strike text."
+   ]
+  },
+  {
+   "input": "Here's code:\n```js\nconst x = 1\n```\nAnd after.",
+   "output": [
+    "Here's code: And after."
+   ]
+  },
+  {
+   "input": "Unclosed code:\n```\nnever ends",
+   "output": [
+    "Unclosed code:"
+   ]
+  },
+  {
+   "input": "| a | b |\n|---|---|\n| 1 | 2 |\nAfter table.",
+   "output": [
+    "After table."
+   ]
+  },
+  {
+   "input": "An ![image](http://x/y.png) and a [link](https://example.com) here.",
+   "output": [
+    "An and a link here."
+   ]
+  },
+  {
+   "input": "Visit https://example.com/path?q=1 now. Or http://foo.bar.",
+   "output": [
+    "Visit a link now.",
+    "Or a link"
+   ]
+  },
+  {
+   "input": "Inline `code` here, and <b>html</b> tags, <Card title=\"x\"/>.",
+   "output": [
+    "Inline code here, and html tags, ."
+   ]
+  },
+  {
+   "input": "- first item\n- second item.\n* third\n+ fourth!\n1. one\n2) two",
+   "output": [
+    "first item. second item. third. fourth! one. two."
+   ]
+  },
+  {
+   "input": "> quoted line\n> another\nNormal",
+   "output": [
+    "quoted line another Normal"
+   ]
+  },
+  {
+   "input": "  ## Spaced heading  \ntext",
+   "output": [
+    "Spaced heading . text"
+   ]
+  },
+  {
+   "input": "####### seven hashes",
+   "output": [
+    "####### seven hashes"
+   ]
+  },
+  {
+   "input": "Paragraph one.\n\n\n\nParagraph two.",
+   "output": [
+    "Paragraph one.",
+    "Paragraph two."
+   ]
+  },
+  {
+   "input": "snake_case_word and 2*3*4 math and **bold with *nested* inside**",
+   "output": [
+    "snakecaseword and 234 math and *bold with nested* inside**"
+   ]
+  },
+  {
+   "input": "Tabs\tand    spaces   collapse.",
+   "output": [
+    "Tabs and spaces collapse."
+   ]
+  },
+  {
+   "input": "Line with trailing spaces   \nnext line",
+   "output": [
+    "Line with trailing spaces next line"
+   ]
+  },
+  {
+   "input": "- item with smile :)\n- item ending in comma,",
+   "output": [
+    "item with smile :). item ending in comma,"
+   ]
+  },
+  {
+   "input": "**Bold.** Then more. _Emph_ end",
+   "output": [
+    "Bold.",
+    "Then more.",
+    "Emph end"
+   ]
+  },
+  {
+   "input": "Text with <br> and a <a href='x'>link</a>.",
+   "output": [
+    "Text with and a link ."
+   ]
+  },
+  {
+   "input": "Unclosed [bracket and (paren",
+   "output": [
+    "Unclosed [bracket and (paren"
+   ]
+  },
+  {
+   "input": "1. Step one\n2. Step two\n3. Step three",
+   "output": [
+    "Step one.",
+    "Step two.",
+    "Step three."
+   ]
+  },
+  {
+   "input": "",
+   "output": []
+  },
+  {
+   "input": "   \n  \n",
+   "output": []
+  },
+  {
+   "input": "A list:\n\n- apples\n- pears\n\nThat's all.",
+   "output": [
+    "A list: apples. pears.",
+    "That's all."
+   ]
+  },
+  {
+   "input": "Use `npm run dev` then open http://localhost:5173.",
+   "output": [
+    "Use npm run dev then open a link"
+   ]
+  },
+  {
+   "input": "~~gone~~ and *still here* and * not emphasis *",
+   "output": [
+    "gone and still here and * not emphasis *"
+   ]
+  },
+  {
+   "input": "Header\n===\nUnderline style",
+   "output": [
+    "Header === Underline style"
+   ]
+  }
+ ],
+ "streams": [
+  {
+   "input": "Hi there! I'm doing well. How about you",
+   "output": [
+    [],
+    [],
+    [
+     "Hi there!"
+    ],
+    [],
+    [],
+    [
+     "I'm doing well."
+    ],
+    [],
+    [],
+    [
+     "How about you"
+    ]
+   ]
+  },
+  {
+   "input": "Sure. Here's a **short** answer to “Hi, how are you?”. ",
+   "output": [
+    [],
+    [
+     "Sure."
+    ],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [],
+    [
+     "Here's a short answer to “Hi, how are you?”."
+    ]
+   ]
+  },
+  {
+   "input": "First sentence. Second sentence! Third one? Fourth",
+   "output": [
+    [],
+    [],
+    [
+     "First sentence."
+    ],
+    [],
+    [
+     "Second sentence!"
+    ],
+    [],
+    [
+     "Third one?"
+    ],
+    [
+     "Fourth"
+    ]
+   ]
+  },
+  {
+   "input": "# Plan\n- Wake up\n- Code\n\nThat's it. Bye",
+   "output": [
+    [],
+    [],
+    [
+     "Plan."
+    ],
+    [],
+    [
+     "Wake up.",
+     "Code."
+    ],
+    [],
+    [
+     "That's it."
+    ],
+    [
+     "Bye"
+    ]
+   ]
+  }
+ ],
+ "voices": [
+  {
+   "input": "muse-abc123",
+   "output": "M2"
+  },
+  {
+   "input": "atlas-x9",
+   "output": "M2"
+  },
+  {
+   "input": "c-1",
+   "output": "M2"
+  },
+  {
+   "input": "sage",
+   "output": "F2"
+  },
+  {
+   "input": "rex-42",
+   "output": "F2"
+  },
+  {
+   "input": "",
+   "output": "F2"
+  },
+  {
+   "input": "ünïcødé",
+   "output": "M2"
+  },
+  {
+   "input": "😀-emoji",
+   "output": "F2"
+  },
+  {
+   "input": "a",
+   "output": "M2"
+  },
+  {
+   "input": "zzzzzzzzzzzzzzzzzzzz",
+   "output": "F2"
+  }
+ ]
+}

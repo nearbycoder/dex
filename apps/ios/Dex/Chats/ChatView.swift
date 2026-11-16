@@ -17,6 +17,8 @@ struct ChatView: View {
     @State private var links = LinkOpener()
     @State private var renaming = false
     @State private var draft = ""
+    /// A voice call with this chat's sidekick, over the whole screen while it lasts.
+    @State private var call: VoiceCall?
 
     init(sessionId: String) {
         self.sessionId = sessionId
@@ -98,7 +100,18 @@ struct ChatView: View {
                         }
                     }
                 }
-                .toolbar { ChatToolbar(feed: feed, session: session, character: character, space: space) }
+                .toolbar {
+                    ChatToolbar(feed: feed, session: session, character: character, space: space) {
+                        // Their current conversation only (an earlier one is history).
+                        guard let character, character.sessionId == sessionId, call == nil else { return }
+                        call = Calls.start(with: character, feed: feed, client: client)
+                    }
+                }
+                .fullScreenCover(isPresented: Binding(get: { call != nil }, set: { if !$0 { call?.end(); call = nil } })) {
+                    if let call, let character {
+                        CallView(call: call, character: character, feed: feed) { self.call = nil }
+                    }
+                }
                 .alert("Rename Chat", isPresented: $renaming) {
                     TextField("Title", text: $draft).accessibilityIdentifier("chat.rename.field")
                     Button("Save") { client.perform { try await feed.rename(draft) } }
@@ -153,6 +166,8 @@ struct ChatToolbar: ToolbarContent {
     let session: SessionMeta?
     var character: CharacterProfile? = nil
     var space: SpaceProfile? = nil
+    /// Starts a voice call with the sidekick.
+    var call: (() -> Void)? = nil
 
     var body: some ToolbarContent {
         if let character, let session {
@@ -160,6 +175,12 @@ struct ChatToolbar: ToolbarContent {
                 CharacterHeader(character: character, session: session, typing: feed.transcript.running)
             }
             .sharedBackgroundVisibility(.hidden)
+            // A call, in their current conversation.
+            if let call, character.sessionId == session.id {
+                ToolbarItem(placement: .topBarTrailing) {
+                    CallButton(character: character, start: call)
+                }
+            }
             // Whether their messages notify you: every one ↔ none (their page has "when they reach out" too).
             ToolbarItem(placement: .topBarTrailing) {
                 SidekickBell(character: character)

@@ -314,7 +314,8 @@ public final class ChatFeed {
 
     /// Sends a message: it runs now, or waits in the queue while the chat is busy. `attachments` are as
     /// `DexClient.uploadAttachment` returned them; left out of the call when there are none, as the web does.
-    public func send(_ text: String, attachments: [ChatAttachment] = []) async throws {
+    /// `spoken`: said on a voice call, so the reply is written to be read aloud (an older agent ignores it).
+    public func send(_ text: String, attachments: [ChatAttachment] = [], spoken: Bool = false) async throws {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty || !attachments.isEmpty, let client else { return }
         // Shown until the agent records it; a message of only files shows their names.
@@ -322,7 +323,9 @@ public final class ChatFeed {
         let willQueue = transcript.running || !transcript.queue.isEmpty
         if !willQueue { pending.append(PendingMessage(text: label, after: userCount + pending.count, at: .now)) }
         do {
-            if attachments.isEmpty {
+            if spoken {
+                try await client.run("sendMessage", .string(sessionId), .string(trimmed), attachments.isEmpty ? .null : .array(attachments.map(\.json)), ["spoken": true])
+            } else if attachments.isEmpty {
                 try await client.run("sendMessage", .string(sessionId), .string(trimmed))
             } else {
                 try await client.run("sendMessage", .string(sessionId), .string(trimmed), .array(attachments.map(\.json)))

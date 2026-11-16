@@ -280,6 +280,11 @@ struct CharacterEditor: View {
                 Text("Their first words, at the top of the conversation.")
             }
 
+            VoicePicker(
+                voice: Voice.of(id: existing?.id ?? value.name, voice: value.voice),
+                line: value.greeting.isEmpty ? "Hi, I'm \(value.name.isEmpty ? "your sidekick" : value.name)." : value.greeting
+            ) { draft.wrappedValue.voice = $0.rawValue }
+
             Section {
                 Button {
                     pickingModel = true
@@ -676,5 +681,57 @@ nonisolated enum CharacterPicture {
             if url.count < Characters.maxImageURLLength { return url }
         }
         throw Problem.tooDetailed
+    }
+}
+
+/// Their voice on calls: two choices, each said aloud when picked (their greeting), tap again to stop. Saved with the
+/// rest of the page.
+private struct VoicePicker: View {
+    @Environment(DexClient.self) private var client
+    let voice: Voice
+    let line: String
+    let pick: (Voice) -> Void
+    @State private var preview = VoicePreview()
+
+    var body: some View {
+        Section {
+            ForEach(Voice.allCases) { option in
+                let busy = preview.speaking == option
+                Button {
+                    pick(option)
+                    if busy { preview.stop() } else { preview.play(line, in: option, client: client) }
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: busy ? "stop.fill" : "speaker.wave.2")
+                            .foregroundStyle(busy ? Color.dexAccent : .secondary)
+                            .frame(width: 22)
+                            .contentTransition(.symbolEffect(.replace))
+                        Text(option.label).foregroundStyle(.primary)
+                        Spacer()
+                        if busy, let progress = preview.progress {
+                            Text("\(Int((progress * 100).rounded()))%").font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                        }
+                        if voice == option {
+                            Image(systemName: "checkmark").font(.body.weight(.semibold)).foregroundStyle(Color.dexAccent)
+                        }
+                    }
+                    .contentShape(.rect)
+                }
+                .tint(.primary)
+                .accessibilityLabel(option.label)
+                .accessibilityValue(busy ? "Playing" : "")
+                .accessibilityHint(busy ? "Stops it" : "Picks it and plays their greeting in it")
+                .accessibilityAddTraits(voice == option ? .isSelected : [])
+                .accessibilityIdentifier("character.voice.\(option.rawValue)")
+            }
+            if let error = preview.error {
+                FieldProblem(text: error)
+            }
+        } header: {
+            Text("Voice")
+        } footer: {
+            Text("How they sound on calls. Tap one to hear it.")
+        }
+        .onDisappear { preview.stop() }
     }
 }

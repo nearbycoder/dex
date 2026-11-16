@@ -39,6 +39,8 @@ extension MockAgent {
                 mcpServers: draft.mcpServers.filter { id in self.state.mcp.contains { $0.id == id } },
                 // Left out, the setting stays.
                 notify: draft.notify.flatMap(SidekickNotify.init(rawValue:))?.rawValue ?? existing?.notify ?? SidekickNotify.all.rawValue,
+                // Left out, the voice stays; null (or one it doesn't know) goes back to the one picked from their id.
+                voice: args.value(0).object?["voice"] == nil ? existing?.voice : draft.voice.flatMap(Voice.init(rawValue:))?.rawValue,
                 sessionId: existing?.sessionId ?? "",
                 createdAt: existing?.createdAt ?? now, updatedAt: now
             )
