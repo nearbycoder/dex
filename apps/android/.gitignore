@@ -17,3 +17,9 @@ app/src/test/screenshots/
 
 # Per deployment: release signing (see app/build.gradle.kts).
 /keystore.properties
+*.jks
+*.keystore
+
+# Per deployment: the Google Play upload's settings and service account key (see scripts/play-internal.sh).
+/.deploy.vars
+/play-service-account*.json
