@@ -168,6 +168,8 @@ struct LaunchOptions {
     var longChat = false
     /// Open this chat at launch.
     var openChat: String?
+    /// What a mock call hears (`-DexCallSays`, lines separated by |): one line each time it starts listening.
+    var callScript = ["Hi there, how are you?"]
 
     static let current: LaunchOptions = {
         let arguments = ProcessInfo.processInfo.arguments
@@ -179,6 +181,9 @@ struct LaunchOptions {
         options.longChips = arguments.contains("-DexLongChips")
         options.longChat = arguments.contains("-DexLongChat")
         if let index = arguments.firstIndex(of: "-DexOpenChat"), arguments.indices.contains(index + 1) { options.openChat = arguments[index + 1] }
+        if let index = arguments.firstIndex(of: "-DexCallSays"), arguments.indices.contains(index + 1) {
+            options.callScript = arguments[index + 1].split(separator: "|").map(String.init)
+        }
         return options
     }()
 

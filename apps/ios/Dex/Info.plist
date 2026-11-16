@@ -37,6 +37,10 @@
 	<string>$(APS_ENVIRONMENT)</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Take a photo to attach to a message.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Talk with your sidekicks on voice calls.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>On a voice call, what you say is turned into text and sent to your sidekick.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
