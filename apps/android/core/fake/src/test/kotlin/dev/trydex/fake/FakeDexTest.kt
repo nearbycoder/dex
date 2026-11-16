@@ -458,6 +458,45 @@ class FakeDexTest {
         assertThat((signedOut as dev.trydex.core.client.SidekicksException).status).isEqualTo(401)
     }
 
+    @Test fun aCallWithASidekick() = runBlocking<Unit> {
+        val url = fake.start()
+        val session = DexSession(url.toString(), fake.token, DexUser(FakeData.USER_ID, FakeData.LOGIN), Long.MAX_VALUE)
+        val connection = AgentConnection(OkHttpClient(), url, FakeData.USER_ID, { fake.token }, scope)
+        val api = DexApi(connection.asRpc())
+        var transcript = TranscriptState.Empty
+        scope.launch { connection.messages.collect { message -> if (message.sessionId == "chat-muse") transcript = reduce(transcript, message) } }
+        connection.start()
+        withTimeout(5_000) { connection.status.first { it == ConnectionStatus.Connected } }
+        connection.send(ClientMessages.subscribe("chat-muse"))
+        // A sidekick's voice: none chosen is the one from their id; saving one keeps it, and null goes back.
+        assertThat(connection.state.value!!.character("muse")!!.voice).isNull()
+        val muse = connection.state.value!!.character("muse")!!
+        assertThat(api.saveCharacter(DexApi.characterDraft(muse.copy(voice = "M2"), picture = false)).voice).isEqualTo("M2")
+        assertThat(api.saveCharacter(DexApi.characterDraft(muse.copy(voice = null), picture = false)).voice).isNull()
+
+        // Spoken words get a spoken reply, every sentence of which the fake's phonemes endpoint can say.
+        api.sendMessage("chat-muse", "what are we making", spoken = true)
+        assertThat(fake.spoken).containsExactly("what are we making")
+        withTimeout(10_000) { while (dev.trydex.core.model.Voices.latestReply(transcript)?.done != true) kotlinx.coroutines.delay(20) }
+        val reply = dev.trydex.core.model.Voices.latestReply(transcript)!!
+        val phonemes = dev.trydex.core.client.DexVoice.phonemes(OkHttpClient(), session, reply.text)
+        assertThat(phonemes.sentences).hasSize(2)
+        assertThat(phonemes.sentences.all { it.utterances.isNotEmpty() }).isTrue()
+        // Ones it doesn't know have nothing to say; Muse's greeting it knows whole.
+        assertThat(dev.trydex.core.client.DexVoice.phonemes(OkHttpClient(), session, "Something else entirely.").sentences.single().utterances).isEmpty()
+        assertThat(dev.trydex.core.client.DexVoice.phonemes(OkHttpClient(), session, "Hey you. What are we making today?").sentences.single().utterances).isNotEmpty()
+        // Typed messages aren't spoken.
+        api.sendMessage("chat-muse", "typed")
+        assertThat(fake.spoken).hasSize(1)
+
+        // The model: a 404 without one, else its bytes.
+        val dir = java.nio.file.Files.createTempDirectory("voice").toFile()
+        assertThat((runCatching { dev.trydex.core.client.DexVoice.model(OkHttpClient(), session, dir) }.exceptionOrNull() as dev.trydex.core.client.VoiceException).status).isEqualTo(404)
+        fake.voiceModel = java.io.File(dir.parentFile, "fake-model-${System.nanoTime()}.onnx").apply { writeBytes(ByteArray(1_000) { it.toByte() }); deleteOnExit() }
+        assertThat(dev.trydex.core.client.DexVoice.model(OkHttpClient(), session, dir).length()).isEqualTo(1_000)
+        connection.stop()
+    }
+
     private fun reduce(state: TranscriptState, message: ServerMessage) = when (message) {
         is ServerMessage.Snapshot -> TranscriptReducer.fromSnapshot(message.snapshot, state)
         is ServerMessage.Events -> TranscriptReducer.applyAll(state, message.events)

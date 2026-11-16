@@ -94,10 +94,17 @@ class DexApi(private val rpc: AgentRpc) {
         put("projectId", projectId)
     })
 
-    /** `attachments` as `/api/attachments` returned them (DexUploads); left out when there are none, as the web does. */
-    suspend fun sendMessage(sessionId: String, text: String, attachments: List<ChatAttachment> = emptyList()) {
-        if (attachments.isEmpty()) raw("sendMessage", sessionId, text)
-        else raw("sendMessage", sessionId, text, kotlinx.serialization.json.JsonArray(attachments.map { it.json }))
+    /**
+     * `attachments` as `/api/attachments` returned them (DexUploads); left out when there are none, as the web does.
+     * [spoken]: said on a voice call, so the reply is written to be read aloud (an agent from before calls ignores it).
+     */
+    suspend fun sendMessage(sessionId: String, text: String, attachments: List<ChatAttachment> = emptyList(), spoken: Boolean = false) {
+        val files = attachments.takeIf { it.isNotEmpty() }?.let { list -> kotlinx.serialization.json.JsonArray(list.map { it.json }) }
+        when {
+            spoken -> raw("sendMessage", sessionId, text, files, buildJsonObject { put("spoken", true) })
+            files == null -> raw("sendMessage", sessionId, text)
+            else -> raw("sendMessage", sessionId, text, files)
+        }
     }
     suspend fun renameSession(sessionId: String, title: String) { raw("renameSession", sessionId, title) }
     suspend fun regenerateSessionTitle(sessionId: String): String = typed(String.serializer(), "regenerateSessionTitle", sessionId, timeout = 60_000)
@@ -347,6 +354,8 @@ class DexApi(private val rpc: AgentRpc) {
             json.remove("createdAt")
             json.remove("updatedAt")
             if (character.id.isEmpty()) json.remove("id")
+            // Always stated: left out, the agent keeps the voice it has, and null goes back to the one from their id.
+            json["voice"] = character.voice?.let(::JsonPrimitive) ?: JsonNull
             if (picture) {
                 json["image"] = character.image?.let(::JsonPrimitive) ?: JsonNull
                 // With its finish always: a look without one keeps the finish it had, and null (a plain color) clears it.

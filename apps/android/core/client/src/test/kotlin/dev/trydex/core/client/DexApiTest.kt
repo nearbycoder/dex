@@ -120,6 +120,10 @@ class DexApiTest {
         val kept = DexApi.characterDraft(CharacterProfile("muse", name = "Muse", look = SidekickLook("blob"), image = "data:image/png;base64,AA"), picture = false)
         assertThat(kept["id"].toString()).isEqualTo("\"muse\"")
         assertThat(kept.keys).containsNoneOf("image", "look")
+        // The voice always goes, so saving keeps the one picked and null (automatic) can be chosen again.
+        assertThat(kept["voice"]).isEqualTo(JsonNull)
+        assertThat(DexApi.characterDraft(CharacterProfile("muse", name = "Muse", voice = "M2"), picture = false)["voice"].toString()).isEqualTo("\"M2\"")
+        assertThat(DexApi.characterNotifyDraft(CharacterProfile("muse", voice = "F2"), dev.trydex.core.model.SidekickNotify.Off)["voice"].toString()).isEqualTo("\"F2\"")
         result = """{"id":"muse","name":"Muse","sessionId":"s2"}"""
         assertThat(api.restartCharacter("muse").sessionId).isEqualTo("s2")
         result = "\"- likes cats\""
@@ -129,6 +133,13 @@ class DexApiTest {
         api.deleteCharacter("muse")
         assertThat(calls.map { it.method }).containsExactly("restartCharacter", "characterMemory", "saveCharacterMemory", "deleteCharacter").inOrder()
         assertThat(calls[2].args).isEqualTo("""["muse",""]""")
+    }
+
+    @Test fun spokenMessagesSayWhatTheyAre() = runBlocking<Unit> {
+        api.sendMessage("s1", "hi")
+        api.sendMessage("s1", "hi there", spoken = true)
+        // Older agents take three arguments; a call's message is marked in a fourth, with no attachments.
+        assertThat(calls.map { it.args }).containsExactly("""["s1","hi"]""", """["s1","hi there",null,{"spoken":true}]""").inOrder()
     }
 
     @Test fun spaces() = runBlocking<Unit> {

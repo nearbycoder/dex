@@ -34,6 +34,8 @@ data class CharacterProfile(
     val mcpServers: List<String> = emptyList(),
     /** Which of their messages notify you: "all", "reachouts" (only ones they start themselves), or "off". */
     val notify: String = SidekickNotify.All.id,
+    /** Their voice on calls ("F2" or "M2"); null picks one from their id (Voices.voiceOf). Missing on older agents. */
+    val voice: String? = null,
     /** Their conversation now; Start over replaces it and the old one stays readable. */
     val sessionId: String = "",
     val createdAt: Long = 0,
