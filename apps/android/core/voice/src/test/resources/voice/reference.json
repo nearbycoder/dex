@@ -1,0 +1,82 @@
+[
+ {
+  "text": "Hello! This is tiny voca, a small text to speech model that runs on a phone or in a browser.",
+  "voice": 0,
+  "samples": 137984,
+  "seconds": 5.749,
+  "durationFrames": 539,
+  "peak": 0.8313,
+  "rms": 0.138,
+  "ms": 179
+ },
+ {
+  "text": "Hello! This is tiny voca, a small text to speech model that runs on a phone or in a browser.",
+  "voice": 1,
+  "samples": 135936,
+  "seconds": 5.664,
+  "durationFrames": 531,
+  "peak": 0.7972,
+  "rms": 0.1044,
+  "ms": 154
+ },
+ {
+  "text": "The meeting moved to 3:30 pm on March 14th, so we have about 45 minutes left.",
+  "voice": 0,
+  "samples": 130560,
+  "seconds": 5.44,
+  "durationFrames": 510,
+  "peak": 0.8898,
+  "rms": 0.1231,
+  "ms": 143
+ },
+ {
+  "text": "The meeting moved to 3:30 pm on March 14th, so we have about 45 minutes left.",
+  "voice": 1,
+  "samples": 115712,
+  "seconds": 4.821,
+  "durationFrames": 452,
+  "peak": 0.9173,
+  "rms": 0.1206,
+  "ms": 127
+ },
+ {
+  "text": "Did you really think I would forget your birthday?",
+  "voice": 0,
+  "samples": 57856,
+  "seconds": 2.411,
+  "durationFrames": 226,
+  "peak": 0.8114,
+  "rms": 0.1255,
+  "ms": 57
+ },
+ {
+  "text": "Did you really think I would forget your birthday?",
+  "voice": 1,
+  "samples": 50176,
+  "seconds": 2.091,
+  "durationFrames": 196,
+  "peak": 0.8635,
+  "rms": 0.1314,
+  "ms": 50
+ },
+ {
+  "text": "Hey you. What are we making today?",
+  "voice": 0,
+  "samples": 55040,
+  "seconds": 2.293,
+  "durationFrames": 215,
+  "peak": 0.7394,
+  "rms": 0.1358,
+  "ms": 53
+ },
+ {
+  "text": "Hey you. What are we making today?",
+  "voice": 1,
+  "samples": 49664,
+  "seconds": 2.069,
+  "durationFrames": 194,
+  "peak": 0.7238,
+  "rms": 0.0964,
+  "ms": 48
+ }
+]

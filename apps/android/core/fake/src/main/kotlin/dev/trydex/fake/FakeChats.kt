@@ -142,6 +142,14 @@ buttons = Buttons([Button("Deploy", @ToAssistant("Deploy it"), "primary"), Butto
     )
 
     /**
+     * A sidekick on a call: plain spoken sentences (the agent's voice-call prompt), each one the fake's phonemes
+     * endpoint knows (FakeVoice), so the demo's call speaks the whole reply.
+     */
+    fun spoken(): List<Step> = listOf(
+        Step.Say("Did you really think I would forget your birthday? The meeting moved to 3:30 pm on March 14th, so we have about 45 minutes left."),
+    )
+
+    /**
      * A space's coordinator: it hands what you ask to a new thread (the thread's id from [threadId]), and answers a
      * thread's update in a line.
      */

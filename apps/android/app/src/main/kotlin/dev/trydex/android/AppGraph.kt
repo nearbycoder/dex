@@ -1,5 +1,7 @@
 package dev.trydex.android
 
+import dev.trydex.android.voice.AndroidCallDevices
+import dev.trydex.android.voice.CallDevices
 import android.content.Context
 import coil3.ImageLoader
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
@@ -37,6 +39,7 @@ class AppGraph(
     sessionStore: SessionStore = KeystoreSessionStore(context),
     cacheDir: File = File(context.filesDir, "dex-cache"),
     pushTokens: PushTokens = FirebaseTokens(context.applicationContext),
+    voice: CallDevices? = null,
 ) {
     val preferences = Preferences(context, scope)
     val models = ModelRegistry()
@@ -69,6 +72,9 @@ class AppGraph(
             wantedChanges = preferences.prefs.map { it.notifications },
         )
     }
+
+    /** Voice calls with sidekicks: the device's recognition and speaker, and their voice (tiny-voca, kept loaded). */
+    val voice: CallDevices = voice ?: AndroidCallDevices(context.applicationContext, http, { repository.session.value })
 
     /** For media and images: adds the session cookie to Dex's own host only. */
     val mediaHttp: OkHttpClient = http.newBuilder()

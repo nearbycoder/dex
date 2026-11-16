@@ -24,6 +24,7 @@ googleServices = "4.5.0"
 okhttp = "5.5.0"
 coil = "3.6.3"
 commonmark = "0.30.1"
+onnxruntime = "1.31.1"
 junit = "4.13.2"
 truth = "1.4.5"
 turbine = "1.2.1"
@@ -91,6 +92,10 @@ coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" 
 coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
 coil-svg = { module = "io.coil-kt.coil3:coil-svg", version.ref = "coil" }
 commonmark = { module = "org.commonmark:commonmark", version.ref = "commonmark" }
+# tiny-voca, the voice of calls. The app runs Android's build; core/voice compiles against the same API from the JVM
+# build, which its tests run the model with.
+onnxruntime-android = { module = "com.microsoft.onnxruntime:onnxruntime-android", version.ref = "onnxruntime" }
+onnxruntime-jvm = { module = "com.microsoft.onnxruntime:onnxruntime", version.ref = "onnxruntime" }
 commonmark-gfm-tables = { module = "org.commonmark:commonmark-ext-gfm-tables", version.ref = "commonmark" }
 commonmark-gfm-strikethrough = { module = "org.commonmark:commonmark-ext-gfm-strikethrough", version.ref = "commonmark" }
 commonmark-autolink = { module = "org.commonmark:commonmark-ext-autolink", version.ref = "commonmark" }

@@ -65,6 +65,12 @@ class ChatViewModel(val sessionId: String, private val repository: DexRepository
         }
     }
 
+    /** Words said on a call: sent marked as spoken, so the reply is written to be read aloud. Throws when it didn't send. */
+    suspend fun sendSpoken(text: String) {
+        repository.noteSent(sessionId)
+        repository.api.sendMessage(sessionId, text, spoken = true)
+    }
+
     fun stop() = act { repository.api.abort(sessionId) }
     fun rename(title: String) = act { repository.api.renameSession(sessionId, title) }
     fun configure(model: String, thinking: dev.trydex.core.model.ThinkingLevel) = act { repository.api.configureSession(sessionId, model = model, thinking = thinking) }

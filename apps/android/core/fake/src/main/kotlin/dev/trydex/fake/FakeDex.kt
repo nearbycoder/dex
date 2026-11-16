@@ -118,6 +118,10 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
     val requests = CopyOnWriteArrayList<String>()
     /** RPC calls the app made, as `method(args)`, for tests. */
     val calls = CopyOnWriteArrayList<Pair<String, JsonArray>>()
+    /** Messages sent as spoken (on a call), for tests. */
+    val spoken = CopyOnWriteArrayList<String>()
+    /** The voice model `/api/voice/model/model.onnx` serves (tiny-voca, 21 MB, not in the repo); without one it's a 404. */
+    @Volatile var voiceModel: java.io.File? = null
     /** Callables this agent doesn't have yet, like a live agent still on an older build. */
     @Volatile var missing: Set<String> = emptySet()
 
@@ -210,6 +214,16 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
                 // `images=0` leaves the pictures out, for a widget that already has them.
                 if (url.queryParameter("images") == "0") json(JsonObject(snapshot + ("sidekicks" to JsonArray(snapshot["sidekicks"]!!.jsonArray.map { JsonObject(it.jsonObject - "image") }))))
                 else json(snapshot)
+            }
+            path == "/api/voice/phonemes" -> {
+                if (!authorized(request)) return json(buildJsonObject { put("error", "Sign in again") }, 401)
+                val text = DexJson.parseToJsonElement(request.body?.utf8() ?: "{}").jsonObject["text"].str.orEmpty()
+                json(DexJson.encodeToJsonElement(dev.trydex.core.model.PhonemesResponse.serializer(), FakeVoice.phonemes(text)))
+            }
+            path == "/api/voice/model/model.onnx" -> {
+                if (!authorized(request)) return MockResponse.Builder().code(401).build()
+                val model = voiceModel?.takeIf { it.isFile } ?: return MockResponse.Builder().code(404).body("Not found").build()
+                MockResponse.Builder().addHeader("content-type", "application/octet-stream").body(Buffer().apply { model.inputStream().use { readFrom(it) } }).build()
             }
             path == "/api/version" -> if (authorized(request)) json(buildJsonObject { put("build", state.build) }) else MockResponse.Builder().code(401).build()
             path.startsWith("/api/media/") -> {
@@ -385,7 +399,10 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
         "sendMessage" -> {
             val chat = chats[args.s(0)] ?: error("Chat not found")
             connection.chat = chat.id
-            chat.send(args.s(1).trim(), args.getOrNull(2).arr?.mapNotNull { it.obj }.orEmpty())
+            // A fourth argument marks words said on a call.
+            val spokenMessage = args.getOrNull(3).obj?.get("spoken")?.let { it as? JsonPrimitive }?.content == "true"
+            if (spokenMessage) spoken += args.s(1).trim()
+            chat.send(args.s(1).trim(), args.getOrNull(2).arr?.mapNotNull { it.obj }.orEmpty(), spokenMessage)
             null
         }
         "renameSession" -> { updateSession(args.s(0)) { it.copy(title = args.s(1).trim().ifEmpty { "Untitled" }) }; null }
@@ -1204,7 +1221,7 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
         /** Queued messages' attachments, by queue item id. */
         private val queuedFiles = mutableMapOf<String, List<JsonObject>>()
 
-        fun send(text: String, attachments: List<JsonObject> = emptyList()) {
+        fun send(text: String, attachments: List<JsonObject> = emptyList(), spoken: Boolean = false) {
             if (text.isEmpty() && attachments.isEmpty()) return
             val wasHeld = held
             held = false
@@ -1218,14 +1235,14 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
                 toChat(id, queueMessage())
                 return
             }
-            deliver(text, attachments)
+            deliver(text, attachments, spoken)
             if (wasHeld) toChat(id, queueMessage())
         }
 
         /** A message from Dex itself (a confirmation's answer), delivered like one of yours. */
         fun tell(text: String) = send(text)
 
-        private fun deliver(text: String, attachments: List<JsonObject> = emptyList()) {
+        private fun deliver(text: String, attachments: List<JsonObject> = emptyList(), spoken: Boolean = false) {
             val entry = Pi.entry(nextId++, "pi.user", Pi.userMessage(text, attachments, clock()))
             entries += entry
             events(buildJsonObject { put("type", "entry_appended"); put("entry", entry) })
@@ -1235,6 +1252,7 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
             val space = state.coordinatedSpace(state.session(id))
             run(
                 when {
+                    character != null && spoken -> Scripts.spoken()
                     character != null -> Scripts.companion(character.name)
                     space != null -> Scripts.coordinator(text) { "chat-" + UUID.randomUUID().toString().take(8) }
                     else -> Scripts.pick(text) { (nextId + 1).toString() }
@@ -1262,7 +1280,8 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
                 val started = clock()
                 val content = mutableListOf<JsonObject>()
                 later {
-                    streaming = Pi.assistantMessage(emptyList(), clock(), stopReason = "pending")
+                    // The same timestamp as the message it becomes, as Pi's: a reply keeps its identity as it streams.
+                    streaming = Pi.assistantMessage(emptyList(), started, stopReason = "pending")
                     events(buildJsonObject { put("type", "message_start"); put("message", streaming!!) })
                 }
                 val tools = mutableListOf<Pair<String, Step.Tool>>()
