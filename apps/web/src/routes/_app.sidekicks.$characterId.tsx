@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
-import { ArrowLeft, Check, LoaderCircle, MessageCircle, Plug, RotateCcw, Trash2 } from "lucide-react"
+import { ArrowLeft, Check, LoaderCircle, MessageCircle, Plug, RotateCcw, Square, Trash2, Volume2 } from "lucide-react"
 import { type ReactNode, useEffect, useRef, useState } from "react"
 import { CharacterAvatar } from "~/client/components/agent-avatar"
 import { SidekickLookPicker } from "~/client/components/sidekick-look-picker"
@@ -15,6 +15,8 @@ import { AGENT_COLORS } from "~/shared/agents"
 import { CHARACTER_TEMPLATES, type CharacterDraft, characterMemoryPath, NOTIFY_LABELS, NOTIFY_LEVELS } from "~/shared/characters"
 import { DEFAULT_MODEL_ID, DEFAULT_THINKING } from "~/shared/models"
 import { ask } from "~/client/components/confirm-dialog"
+import { sayOnce } from "~/client/voice/call"
+import { type Voice, VOICE_LABELS, voiceOf, VOICES } from "~/shared/voice"
 
 export const Route = createFileRoute("/_app/sidekicks/$characterId")({ component: CharacterEditorPage })
 
@@ -113,7 +115,9 @@ function CharacterEditor() {
     try {
       // The apps show a picture rather than drawing looks: send one along.
       const image = draft.look ? await lookPng(draft.look) : draft.image
-      const result = await stub.saveCharacter({ ...draft, image })
+      // A new one keeps the voice shown here (with none chosen, it would otherwise come from the id they're given).
+      const voice = isNew && !draft.voice ? voiceOf({ id: draft.name, voice: null }) : draft.voice
+      const result = await stub.saveCharacter({ ...draft, image, voice })
       setDraft({ ...result })
       setSaved(true)
       // A new character: straight to saying hi.
@@ -253,6 +257,14 @@ function CharacterEditor() {
             />
           </Field>
 
+          <Field as="div" label="Voice" hint="How they sound on calls. Tap a voice to hear their greeting in it.">
+            <VoicePicker
+              voice={voiceOf({ id: existing?.id ?? draft.name, voice: draft.voice })}
+              line={draft.greeting || `Hi, I'm ${draft.name || "your sidekick"}.`}
+              onChange={(voice) => update({ voice })}
+            />
+          </Field>
+
           <Field as="div" label="Notifications" hint="Which of their messages notify you on the devices you turned notifications on for.">
             <div className="grid gap-2 sm:grid-cols-3">
               {NOTIFY_LEVELS.map((level) => {
@@ -385,6 +397,57 @@ function CharacterEditor() {
         )}
       </div>
     </div>
+  )
+}
+
+/** tiny-voca's two voices; picking one plays `line` in it. */
+function VoicePicker({ voice, line, onChange }: { voice: Voice; line: string; onChange: (voice: Voice) => void }) {
+  const [playing, setPlaying] = useState<{ voice: Voice; stop: () => void; progress: number | null } | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  // Leaving the page stops it.
+  const stop = useRef<() => void>(undefined)
+  stop.current = playing?.stop
+  useEffect(() => () => stop.current?.(), [])
+
+  const play = (next: Voice) => {
+    playing?.stop()
+    setError(null)
+    const say = sayOnce(line, next, (progress) => setPlaying((current) => (current?.voice === next ? { ...current, progress } : current)))
+    setPlaying({ voice: next, stop: say.stop, progress: null })
+    say.done
+      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => setPlaying((current) => (current?.stop === say.stop ? null : current)))
+  }
+
+  return (
+    <>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {VOICES.map((option) => {
+          const selected = voice === option
+          const busy = playing?.voice === option
+          return (
+            <button
+              key={option}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => {
+                onChange(option)
+                if (busy) playing.stop()
+                else play(option)
+              }}
+              className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm ${
+                selected ? "border-emerald-600/70 bg-emerald-950/40 text-emerald-100" : "border-zinc-800 text-zinc-200 hover:border-zinc-700"
+              }`}
+            >
+              {busy ? <Square className="size-3.5 shrink-0" /> : <Volume2 className="size-4 shrink-0 text-zinc-500" />}
+              <span className="flex-1">{VOICE_LABELS[option]}</span>
+              {busy && playing.progress !== null && playing.progress < 1 && <span className="text-xs text-zinc-500">{Math.round(playing.progress * 100)}%</span>}
+            </button>
+          )
+        })}
+      </div>
+      {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
+    </>
   )
 }
 

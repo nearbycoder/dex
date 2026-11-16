@@ -11,6 +11,7 @@ import { NOTIFY_KINDS, type NotifyKind } from "~/shared/notifications"
 import { githubFullName, normalizeRepoUrl, type ProjectProfile, type ProjectRepo } from "~/shared/projects"
 import { chatOfVm, connectedProviders, type DexState, type VmSize, VM_SIZES, vmNumber } from "~/shared/protocol"
 import { USAGE_RANGES, type UsageRange } from "~/shared/usage"
+import { type Voice, VOICE_LABELS, VOICES } from "~/shared/voice"
 import { VM_PEEK_VIEWS } from "./vm-peek"
 import type { DexAgent } from "./dex-agent"
 
@@ -234,6 +235,11 @@ const characterFields = {
       description: "Which of their messages notify the user: all, reachouts (only ones they start themselves, like check-ins), or off."
     })
   ),
+  voice: Type.Optional(
+    Type.Union([...VOICES.map((value) => Type.Literal(value)), Type.Null()], {
+      description: `Their voice on voice calls: ${VOICES.map((value) => `${value} ${VOICE_LABELS[value].toLowerCase()}`).join(", ")}; null picks one for them.`
+    })
+  ),
   color
 }
 
@@ -321,6 +327,7 @@ const characterDraft = (args: Static<typeof createCharacterParams>, existing?: C
   thinking: (args.thinking ?? existing?.thinking ?? "medium") as ThinkingLevel,
   mcpServers: args.mcp_servers ?? existing?.mcpServers ?? [],
   notify: args.notify ?? existing?.notify ?? "all",
+  ...(args.voice !== undefined && { voice: args.voice as Voice | null }),
   color: (args.color ?? existing?.color ?? "violet") as CharacterProfile["color"]
 })
 

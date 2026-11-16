@@ -725,6 +725,14 @@ export function EditorSkeleton({ kind }: { kind: EditorKind }) {
                 <FieldBones height={146} label="30%" />
                 <FieldBones height={170} label="16%" />
                 <FieldBones height={62} label="20%" />
+                {/* Voice: its two buttons. */}
+                <div>
+                  <LineBone size="sm" width="10%" />
+                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                    <Bone className="h-[38px] rounded-lg" />
+                    <Bone className="h-[38px] rounded-lg" />
+                  </div>
+                </div>
                 <FieldBones height={27} label="40%" />
               </>
             )}

@@ -1,6 +1,7 @@
 import type { AgentColor } from "./agents"
 import type { ThinkingLevel } from "./models"
 import { LOOK_PRESETS, type SidekickLook } from "./sidekick-look"
+import type { Voice } from "./voice"
 
 /**
  * A sidekick (`character` in code and the protocol): a named companion with one long conversation of their own, pinned in the sidebar. Its conversation is
@@ -32,14 +33,18 @@ export interface CharacterProfile {
   readonly mcpServers: ReadonlyArray<string>
   /** Which of their messages notify you: all of them, only ones they start themselves (check-ins), or none. */
   readonly notify?: SidekickNotify
+  /** Their voice on calls (tiny-voca's F2 or M2). Missing picks one from their id (shared/voice.ts `voiceOf`). */
+  readonly voice?: Voice | null
   /** Their conversation now; Start over replaces it and the old one stays readable. */
   readonly sessionId: string
   readonly createdAt: number
   readonly updatedAt: number
 }
 
-export type CharacterDraft = Omit<CharacterProfile, "id" | "sessionId" | "createdAt" | "updatedAt" | "mcpServers" | "image" | "look" | "notify"> & {
+export type CharacterDraft = Omit<CharacterProfile, "id" | "sessionId" | "createdAt" | "updatedAt" | "mcpServers" | "image" | "look" | "notify" | "voice"> & {
   readonly notify?: SidekickNotify
+  /** Left out keeps the voice; null goes back to the one picked from their id. */
+  readonly voice?: Voice | null
   readonly id?: string
   readonly mcpServers?: ReadonlyArray<string>
   /** Left out keeps the picture; null removes it. */

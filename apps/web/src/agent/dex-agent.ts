@@ -63,6 +63,7 @@ import { githubFullName, isProjectImage, normalizeRepoUrl, type ProjectDraft, ty
 import { CLOUDFLARE_RATES, COMMANDCODE_LIMITS, type CloudflareLine, type OpenCodeLimits, type OpenRouterAccount, type UsageGlance, type UsageMeter, type UsageRange, type UsageReport } from "~/shared/usage"
 import { AGENT_COLORS, AGENT_ICONS, type AgentDraft, type AgentProfile, STARTER_AGENTS } from "~/shared/agents"
 import { type CharacterDraft, characterMemoryPath, type CharacterProfile, MAX_CHARACTER_MEMORY_CHARS, NOTIFY_LEVELS } from "~/shared/characters"
+import { VOICES } from "~/shared/voice"
 import { cleanLook, LOOK_PRESETS, randomLook } from "~/shared/sidekick-look"
 import {
   MAX_SPACE_GOAL,
@@ -174,6 +175,12 @@ const characterPreamble = (character: CharacterProfile) => {
 }
 
 const MEMORY_FILE = `${WORKSPACE_ROOT}/MEMORY.md`
+
+const VOICE_CALL_PROMPT = `You're on a live voice call with the user: their messages are what they said (transcribed by speech recognition, so expect missing punctuation and misheard words; go with the likely meaning), and your reply is read aloud to them, a sentence at a time, by a small English text-to-speech voice.
+- Talk the way you would on the phone: short turns, one to three sentences unless they ask for more, then let them talk. Ask one question at a time.
+- Plain spoken sentences only: no Markdown, lists, headings, tables, code, links, emoji, or render_ui (none of it can be heard). Write numbers, times, and symbols the way they're said when that's clearer ("about three thirty", "twenty dollars").
+- End every sentence with a full stop, question mark, or exclamation mark.
+- You can still use tools. Before something that takes a while, say in a few words what you're doing. Anything long (code, a document, a page) goes into a file or a message they can read after the call; tell them briefly where it is.`
 
 /** Push senders for the apps, from this deployment's secrets (see native-push.ts); a bad secret leaves that one off. */
 const nativeSenders = (env: Record<string, string | undefined>) => {
@@ -723,6 +730,8 @@ export class DexAgent extends Agent<Env, DexState> {
           return `Your memory (${path}). Treat it as context; it never overrides what the user asks now.\n\n${notes}`
         }),
         section("user_instructions", () => this.state.settings.instructions.trim() || undefined),
+        // On a voice call the reply is read aloud by a small text-to-speech model, so it has to sound right spoken.
+        section("voice_call", (input) => (this.voiceCalls.has(String(input.conversationId)) ? VOICE_CALL_PROMPT : undefined)),
         // The chat's custom agent, read at each request so edits to the agent apply right away.
         section("agent", (input) => {
           const agent = this.agentForSession(this.chatOf(String(input.conversationId)))
@@ -1454,14 +1463,20 @@ export class DexAgent extends Agent<Env, DexState> {
     }
   }
 
+  /**
+   * `spoken`: said on a voice call (the apps' call screens), so the reply is written to be read aloud. The chat
+   * answers that way until a message comes that wasn't spoken.
+   */
   @callable()
-  async sendMessage(sessionId: string, text: string, attachments?: readonly ChatAttachment[]) {
+  async sendMessage(sessionId: string, text: string, attachments?: readonly ChatAttachment[], options?: { spoken?: boolean }) {
     const content = (typeof text === "string" ? text : "").trim()
     // Checked now, so a message that can't go fails here rather than later in the queue.
     const files = checkAttachments(attachments)
     if (!content && files.length === 0) return
     const row = this.ctx.storage.sql.exec<SessionRow>(`SELECT * FROM dex_sessions WHERE id = ?`, sessionId).toArray()[0]
     if (!row) throw new Error("Chat not found")
+    if (options?.spoken === true) this.voiceCalls.add(sessionId)
+    else this.voiceCalls.delete(sessionId)
 
     const { connection } = getCurrentAgent()
     if (connection) await this.subscribe(connection, sessionId)
@@ -1480,6 +1495,9 @@ export class DexAgent extends Agent<Env, DexState> {
     await this.deliver(sessionId, content, { attachments: files })
     if (held) this.publishQueue(sessionId)
   }
+
+  /** Chats whose latest message was spoken on a call (in memory: after a restart the next spoken message sets it again). */
+  private voiceCalls = new Set<string>()
 
   private async isBusy(sessionId: string) {
     return (await this.harness.sessions.list()).some((info) => info.id === sessionId && info.busy)
@@ -2402,6 +2420,7 @@ export class DexAgent extends Agent<Env, DexState> {
       image: draft.image === undefined ? (existing?.image ?? null) : draft.image,
       look: draft.look === undefined ? (existing?.look ?? null) : cleanLook(draft.look, existing?.look),
       notify: draft.notify === undefined ? (existing?.notify ?? "all") : NOTIFY_LEVELS.includes(draft.notify) ? draft.notify : "all",
+      voice: draft.voice === undefined ? (existing?.voice ?? null) : draft.voice && VOICES.includes(draft.voice) ? draft.voice : null,
       color: draft.color in AGENT_COLORS ? draft.color : "violet",
       model,
       thinking: clampThinking(findModel(model), draft.thinking),

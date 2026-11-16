@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
-import { ArrowLeft, Bell, BellOff, Check, CheckCheck, FolderOpen, History, KeyRound, LayoutGrid, ListTree, Monitor, Pencil, RotateCcw, X } from "lucide-react"
+import { ArrowLeft, Bell, BellOff, Check, CheckCheck, FolderOpen, History, KeyRound, LayoutGrid, ListTree, Monitor, Pencil, Phone, RotateCcw, X } from "lucide-react"
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Composer } from "~/client/components/composer"
 import { ChatArtifactsContext, type ChatArtifacts } from "~/client/components/media"
@@ -12,6 +12,8 @@ import { AgentAvatar, CharacterAvatar } from "~/client/components/agent-avatar"
 import { SessionMenu, useNaming } from "~/client/components/session-menu"
 import { SpaceGlyph, SpaceIntro, SpacePanel, SpaceSelectContext, useSpaceOf } from "~/client/components/space-panel"
 import { VmPreview } from "~/client/components/vm-preview"
+import { canCall, startCall, VoiceCallPanel } from "~/client/components/voice-call"
+import type { VoiceCall } from "~/client/voice/call"
 import { Bone, ChatSkeleton, VmFilesSkeleton } from "~/client/components/skeleton"
 import { type OpenUIHost, OpenUIHostContext } from "~/client/lib/openui-host"
 import { ChatSecretsContext } from "~/client/lib/chat-secrets"
@@ -116,6 +118,15 @@ function Chat() {
     [stub, sessionId]
   )
   const pendingTexts = useMemo(() => pending.map((item) => item.text), [pending])
+  // A voice call with this chat's sidekick: what you say is sent marked as spoken, so they answer to be heard.
+  const [call, setCall] = useState<{ sessionId: string; call: VoiceCall } | null>(null)
+  const activeCall = call?.sessionId === sessionId ? call.call : null
+  useEffect(() => {
+    if (call && call.sessionId !== sessionId) {
+      call.call.end()
+      setCall(null)
+    }
+  }, [call, sessionId])
   // A suggestion picked from a new space's intro, put in the message box to edit before sending.
   const [draft, setDraft] = useState<{ text: string; key: number } | undefined>()
   const storeSecret = useCallback((field: string, value: string) => stub.storeChatSecret(sessionId, field, value), [stub, sessionId])
@@ -162,7 +173,7 @@ function Chat() {
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1">
-      <div className={`${filesOpen ? "hidden xl:flex" : panelOpen ? "hidden lg:flex" : "flex"} min-h-0 min-w-0 flex-1 flex-col`}>
+      <div className={`${filesOpen ? "hidden xl:flex" : panelOpen ? "hidden lg:flex" : "flex"} relative min-h-0 min-w-0 flex-1 flex-col`}>
       <header className="dex-chrome dex-topbar flex h-12 shrink-0 items-center gap-3 border-b border-zinc-900 px-4">
         <MenuButton />
         {character && (
@@ -319,6 +330,20 @@ function Chat() {
               </Link>
             )
           })()}
+          {character && !earlier && (
+            <button
+              type="button"
+              disabled={!connected || !canCall() || Boolean(activeCall)}
+              onClick={() =>
+                setCall({ sessionId, call: startCall(character, (text) => stub.sendMessage(sessionId, text, undefined, { spoken: true })) })
+              }
+              title={canCall() ? `Call ${character.name}` : "Calls need speech recognition: use Chrome, Edge, or Safari."}
+              aria-label={`Call ${character.name}`}
+              className="shrink-0 rounded-md p-1.5 text-zinc-500 hover:bg-zinc-900 hover:text-emerald-300 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-zinc-500"
+            >
+              <Phone className="size-4" />
+            </button>
+          )}
           {/* A sidekick's notifications: every message, or off (their page has "when they reach out" too). */}
           {character && (
             <button
@@ -399,6 +424,8 @@ function Chat() {
           </ChatArtifactsContext.Provider>
         </OpenUIHostContext.Provider>
       </ChatSecretsContext.Provider>
+
+      {activeCall && character && <VoiceCallPanel call={activeCall} character={character} transcript={transcript} onEnd={() => setCall(null)} />}
 
       <div className="mx-auto w-full max-w-3xl px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:px-4 md:pb-[max(1rem,env(safe-area-inset-bottom))]">
         {state && session && !connectedProviders(state)[providerOf(session.model)] && (

@@ -15,7 +15,9 @@
     "openui:spec": "openui generate src/client/openui/library.tsx --spec --out src/shared/openui-spec.json",
     "test:spaces": "node --test tests/spaces.test.ts",
     "test:ui-action": "node --test tests/ui-action.test.ts",
-    "test:transcript": "node --test tests/transcript.test.ts"
+    "test:transcript": "node --test tests/transcript.test.ts",
+    "test:dizione": "node --test tests/dizione.test.ts",
+    "test:voice": "node --test tests/voice.test.ts"
   },
   "dependencies": {
     "@block65/webcrypto-web-push": "^2.0.0",
@@ -37,6 +39,7 @@
     "effect": "^4.0.5",
     "just-bash": "^3.6.0",
     "lucide-react": "^1.59.0",
+    "onnxruntime-web": "1.31.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-markdown": "^10.1.0",
