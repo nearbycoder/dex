@@ -354,19 +354,22 @@ public struct CharacterProfile: Codable, Sendable, Hashable, Identifiable {
     /// Which of their messages notify you: "all", "reachouts" (only ones they start themselves, like check-ins), or
     /// "off" (`SidekickNotify`). Missing from older agents: all.
     public var notify: String
+    /// Their voice on calls: "F2" or "M2" (`Voice`). Missing (older agents) or null: one picked from their id
+    /// (`callVoice`).
+    public var voice: String?
     public var sessionId: String
     public var createdAt: Double
     public var updatedAt: Double
 
     public init(id: String, name: String, tagline: String = "", persona: String = "", instructions: String = "", greeting: String = "", avatar: String = "",
                 look: JSONValue? = nil, image: String? = nil, color: String = "violet", model: String = "", thinking: ThinkingLevel = "low", mcpServers: [String] = [],
-                notify: String = "all", sessionId: String, createdAt: Double = 0, updatedAt: Double = 0) {
+                notify: String = "all", voice: String? = nil, sessionId: String, createdAt: Double = 0, updatedAt: Double = 0) {
         self.id = id; self.name = name; self.tagline = tagline; self.persona = persona; self.instructions = instructions; self.greeting = greeting
         self.avatar = avatar; self.look = look; self.image = image; self.color = color; self.model = model; self.thinking = thinking; self.mcpServers = mcpServers
-        self.notify = notify; self.sessionId = sessionId; self.createdAt = createdAt; self.updatedAt = updatedAt
+        self.notify = notify; self.voice = voice; self.sessionId = sessionId; self.createdAt = createdAt; self.updatedAt = updatedAt
     }
 
-    enum CodingKeys: String, CodingKey { case id, name, tagline, persona, instructions, greeting, avatar, look, image, color, model, thinking, mcpServers, notify, sessionId, createdAt, updatedAt }
+    enum CodingKeys: String, CodingKey { case id, name, tagline, persona, instructions, greeting, avatar, look, image, color, model, thinking, mcpServers, notify, voice, sessionId, createdAt, updatedAt }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
@@ -384,6 +387,8 @@ public struct CharacterProfile: Codable, Sendable, Hashable, Identifiable {
         thinking = c.value(.thinking, default: "low")
         mcpServers = c.value(.mcpServers, default: [])
         notify = c.value(.notify, default: "all")
+        // Only a voice the app knows (anything else reads as none, as the agent treats it).
+        voice = c.value(.voice, default: String?.none).flatMap { Voice(rawValue: $0)?.rawValue }
         sessionId = c.value(.sessionId, default: "")
         createdAt = c.value(.createdAt, default: 0)
         updatedAt = c.value(.updatedAt, default: 0)

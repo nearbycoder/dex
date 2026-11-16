@@ -24,21 +24,23 @@ public struct CharacterDraft: Codable, Sendable, Hashable {
     /// Their notification setting ("all", "reachouts", "off"). Left out (nil), the server keeps it: it's set only to
     /// change it (`withNotify`), so saving the editor never undoes a change made from their chat's bell meanwhile.
     public var notify: String?
+    /// Their voice on calls ("F2", "M2"); nil picks one from their id. Always sent (null too), so saving keeps it.
+    public var voice: String?
     /// A look was picked, a photo chosen, or the picture removed: send `look` and `image`.
     public var pictureChanged = false
 
     public init(id: String? = nil, name: String = "", tagline: String = "", persona: String = "", instructions: String = "", greeting: String = "",
                 avatar: String = "", look: JSONValue? = nil, image: String? = nil, color: String = "violet", model: String, thinking: ThinkingLevel,
-                mcpServers: [String] = [], pictureChanged: Bool = false) {
+                mcpServers: [String] = [], voice: String? = nil, pictureChanged: Bool = false) {
         self.id = id; self.name = name; self.tagline = tagline; self.persona = persona; self.instructions = instructions; self.greeting = greeting
         self.avatar = avatar; self.look = look; self.image = image; self.color = color; self.model = model; self.thinking = thinking
-        self.mcpServers = mcpServers; self.pictureChanged = pictureChanged
+        self.mcpServers = mcpServers; self.voice = voice; self.pictureChanged = pictureChanged
     }
 
     public init(_ character: CharacterProfile) {
         self.init(id: character.id, name: character.name, tagline: character.tagline, persona: character.persona, instructions: character.instructions,
                   greeting: character.greeting, avatar: character.avatar, look: character.look, image: character.image, color: character.color,
-                  model: character.model, thinking: character.thinking, mcpServers: character.mcpServers)
+                  model: character.model, thinking: character.thinking, mcpServers: character.mcpServers, voice: character.voice)
     }
 
     /// A ready-made look: its parts, its picture, and its background color.
@@ -85,7 +87,7 @@ public struct CharacterDraft: Codable, Sendable, Hashable {
         return name.trimmingCharacters(in: .whitespacesAndNewlines).first.map { String($0).uppercased() } ?? "?"
     }
 
-    enum CodingKeys: String, CodingKey { case id, name, tagline, persona, instructions, greeting, avatar, look, image, color, model, thinking, mcpServers, notify }
+    enum CodingKeys: String, CodingKey { case id, name, tagline, persona, instructions, greeting, avatar, look, image, color, model, thinking, mcpServers, notify, voice }
 
     /// A sidekick as they are, with only their notification setting changed (their picture left out, so it's kept).
     public static func withNotify(_ character: CharacterProfile, _ level: SidekickNotify) -> CharacterDraft {
@@ -106,6 +108,7 @@ public struct CharacterDraft: Codable, Sendable, Hashable {
         try c.encode(color, forKey: .color); try c.encode(model, forKey: .model); try c.encode(thinking, forKey: .thinking)
         try c.encode(mcpServers, forKey: .mcpServers)
         try c.encodeIfPresent(notify, forKey: .notify)
+        if let voice { try c.encode(voice, forKey: .voice) } else { try c.encodeNil(forKey: .voice) }
     }
 
     /// As the agent reads it (the mock agent): a picture that's there, even null, changed.
@@ -120,6 +123,7 @@ public struct CharacterDraft: Codable, Sendable, Hashable {
         color = c.value(.color, default: "violet"); model = c.value(.model, default: ""); thinking = c.value(.thinking, default: "low")
         mcpServers = c.value(.mcpServers, default: [])
         notify = c.value(.notify, default: nil)
+        voice = c.value(.voice, default: nil)
     }
 }
 
