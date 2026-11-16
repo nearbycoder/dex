@@ -139,7 +139,8 @@ export class VoiceCall {
       const { ready } = speechWorker((fraction) => this.update({ downloading: fraction }))
       await ready
       if (this.snapshot.phase === "ended") return
-      this.update({ downloading: null, phase: this.waitingForReply ? "thinking" : "listening" })
+      // A reply may have started speaking while the voice downloaded.
+      this.update({ downloading: null, phase: this.speaking() ? "speaking" : this.waitingForReply ? "thinking" : "listening" })
     } catch (error) {
       this.fail(error instanceof Error ? error.message : String(error))
     }
