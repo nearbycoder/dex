@@ -61,6 +61,20 @@ xcodebuild archive -project Dex.xcodeproj -scheme Dex -configuration Release \
   -allowProvisioningUpdates $AUTH \
   DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
 
+# A framework's Info.plist must state the minimum iOS its binary was built for, or App Store Connect rejects the
+# build ("does not support the minimum OS Version specified in the Info.plist"). ONNX Runtime's says 15.1 while Xcode
+# links it for the app's deployment target. Export re-signs every framework, so the archive's copies can be fixed here.
+for framework in "$ARCHIVE"/Products/Applications/Dex.app/Frameworks/*.framework; do
+  [ -d "$framework" ] || continue
+  binary="$framework/$(plutil -extract CFBundleExecutable raw "$framework/Info.plist")"
+  built=$(xcrun vtool -show-build "$binary" 2>/dev/null | awk '/minos/ { print $2; exit }')
+  stated=$(plutil -extract MinimumOSVersion raw "$framework/Info.plist" 2>/dev/null || true)
+  if [ -n "$built" ] && [ "$built" != "$stated" ]; then
+    echo "› $(basename "$framework"): MinimumOSVersion ${stated:-unset} → $built (its binary's)"
+    plutil -replace MinimumOSVersion -string "$built" "$framework/Info.plist"
+  fi
+done
+
 if [ "$UPLOAD" = 1 ]; then echo "› Uploading to App Store Connect"; else echo "› Exporting the .ipa"; fi
 # shellcheck disable=SC2086
 xcodebuild -exportArchive -archivePath "$ARCHIVE" -exportOptionsPlist "$OUT/ExportOptions.plist" \
