@@ -163,7 +163,16 @@ sealed interface DisplayItem {
         val endedAt: Long?,
     ) : DisplayItem
 
-    data class Divider(override val id: String, val label: String) : DisplayItem
+    /** A summary or reset: where the model's context starts again. `summary`: what the model was given instead. */
+    data class Divider(override val id: String, val label: String, val summary: String? = null) : DisplayItem
+}
+
+private val summaryWrapper = Regex("<summary>\\n?([\\s\\S]*?)\\n?</summary>\\s*$")
+
+/** What a summary or reset gave the model: the summary without Pi's wrapper, or the handoff (transcript.ts summaryText). */
+private fun summaryText(entry: EntryRecord): String {
+    val text = entry.model.orEmpty().filterIsInstance<UserMessage>().joinToString("\n\n") { splitAttachments(it.text).first }
+    return (summaryWrapper.find(text)?.groupValues?.get(1) ?: text).trim()
 }
 
 /** The transcript as rows: user messages, replies (consecutive assistant messages), and context dividers. */
@@ -179,9 +188,11 @@ fun displayItems(state: TranscriptState): List<DisplayItem> {
         }
     }
     for (entry in state.entries) {
-        when (entry.kind) {
-            "pi.reset" -> items += DisplayItem.Divider(entry.id.toString(), "Context reset")
-            "pi.compaction" -> items += DisplayItem.Divider(entry.id.toString(), "Earlier messages summarized")
+        // A summary's text (and a reset's handoff) is a user message for the model, not something you said.
+        if (entry.kind == "pi.reset" || entry.kind == "pi.compaction") {
+            val label = if (entry.kind == "pi.reset") "Context reset" else "Earlier messages summarized"
+            items += DisplayItem.Divider(entry.id.toString(), label, summaryText(entry).ifEmpty { null })
+            continue
         }
         entry.model.orEmpty().forEachIndexed { index, message ->
             val id = "${entry.id}:$index"

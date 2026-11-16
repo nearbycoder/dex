@@ -165,11 +165,12 @@ public enum DisplayItem: Sendable, Hashable, Identifiable {
     case user(id: String, text: String, images: Int, files: [AttachedFile] = [], imageParts: [ImagePart] = [])
     /// One reply: the assistant messages between two user messages, the last one possibly still streaming.
     case assistant(id: String, messages: [AssistantMessage], streaming: Bool, endedAt: Double?)
-    case divider(id: String, label: String)
+    /// A summary or reset: where the model's context starts again. `summary`: what the model was given instead.
+    case divider(id: String, label: String, summary: String?)
 
     public var id: String {
         switch self {
-        case .user(let id, _, _, _, _), .assistant(let id, _, _, _), .divider(let id, _): id
+        case .user(let id, _, _, _, _), .assistant(let id, _, _, _), .divider(let id, _, _): id
         }
     }
 }
@@ -198,14 +199,25 @@ public extension TranscriptState {
         return items
     }
 
+    /// What a summary or reset gave the model: the summary without Pi's wrapper, or the handoff (transcript.ts summaryText).
+    static func summaryText(_ entry: EntryRecord) -> String {
+        let text = (entry.model ?? []).compactMap { message -> String? in
+            if case .user(let user) = message { splitAttachments(user.text).text } else { nil }
+        }.joined(separator: "\n\n")
+        let inner = text.firstMatch(of: /<summary>\n?([\s\S]*?)\n?<\/summary>\s*$/).map { String($0.output.1) } ?? text
+        return inner.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     /// The items from the recorded entries alone.
     var recordedItems: [DisplayItem] {
         var items: [DisplayItem] = []
         for entry in entries {
-            if entry.kind == "pi.reset" { items.append(.divider(id: entry.id, label: "Context reset")) }
-            else if entry.kind == "pi.compaction" { items.append(.divider(id: entry.id, label: "Earlier messages summarized")) }
             // A compaction's summary (and a reset's handoff) is a user message for the model, not something you said.
-            if entry.kind == "pi.compaction" || entry.kind == "pi.reset" { continue }
+            if entry.kind == "pi.compaction" || entry.kind == "pi.reset" {
+                let summary = Self.summaryText(entry)
+                items.append(.divider(id: entry.id, label: entry.kind == "pi.reset" ? "Context reset" : "Earlier messages summarized", summary: summary.isEmpty ? nil : summary))
+                continue
+            }
             for (index, message) in (entry.model ?? []).enumerated() {
                 let id = "\(entry.id):\(index)"
                 switch message {

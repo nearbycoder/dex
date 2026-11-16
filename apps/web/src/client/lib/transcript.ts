@@ -33,6 +33,8 @@ export interface TranscriptState {
   /** Messages waiting for the chat to finish its run (Dex's queue), next first; held after you stopped the chat. */
   readonly queue: ReadonlyArray<QueuedMessage>
   readonly queueHeld: boolean
+  /** The chat has older entries than `entries` holds ("Show earlier messages" loads them). */
+  readonly earlier: boolean
 }
 
 export const emptyTranscript: TranscriptState = {
@@ -47,29 +49,49 @@ export const emptyTranscript: TranscriptState = {
   artifacts: [],
   savingArtifacts: [],
   queue: [],
-  queueHeld: false
+  queueHeld: false,
+  earlier: false
 }
 
-export const fromSnapshot = (snapshot: SnapshotEvent, previous: TranscriptState = emptyTranscript): TranscriptState => ({
-  entries: snapshot.entries,
-  streaming: snapshot.generation?.message ? structuredClone(snapshot.generation.message) : null,
-  tools: Object.fromEntries(
-    snapshot.tools.map((slot) => [
-      slot.callId,
-      { callId: slot.callId, name: slot.name, status: slot.status, output: slot.output ?? "", details: slot.details }
-    ])
-  ),
-  running: snapshot.run !== undefined,
-  queued: snapshot.inbox.length,
-  retry: snapshot.generation?.retry ?? null,
-  error: null,
-  loaded: true,
-  // Sent right after the snapshot; keep what's known until then.
-  artifacts: previous.artifacts,
-  savingArtifacts: previous.savingArtifacts,
-  queue: previous.queue,
-  queueHeld: previous.queueHeld
-})
+const oldestId = (entries: ReadonlyArray<EntryRecord>) =>
+  entries.reduce<number | undefined>((oldest, entry) => (oldest === undefined || entry.id < oldest ? entry.id : oldest), undefined)
+
+/**
+ * `earlier`: the agent has older entries than the snapshot's (dex.snapshot's flag). Older ones loaded before (Show
+ * earlier messages) stay in front of a fresh snapshot.
+ */
+export const fromSnapshot = (snapshot: SnapshotEvent, previous: TranscriptState = emptyTranscript, earlier = previous.earlier): TranscriptState => {
+  const oldest = oldestId(snapshot.entries)
+  const kept = oldest === undefined ? [] : previous.entries.filter((entry) => entry.id < oldest)
+  return {
+    entries: kept.length ? [...kept, ...snapshot.entries] : snapshot.entries,
+    streaming: snapshot.generation?.message ? structuredClone(snapshot.generation.message) : null,
+    tools: Object.fromEntries(
+      snapshot.tools.map((slot) => [
+        slot.callId,
+        { callId: slot.callId, name: slot.name, status: slot.status, output: slot.output ?? "", details: slot.details }
+      ])
+    ),
+    running: snapshot.run !== undefined,
+    queued: snapshot.inbox.length,
+    retry: snapshot.generation?.retry ?? null,
+    error: null,
+    loaded: true,
+    // Sent right after the snapshot; keep what's known until then.
+    artifacts: previous.artifacts,
+    savingArtifacts: previous.savingArtifacts,
+    queue: previous.queue,
+    queueHeld: previous.queueHeld,
+    earlier: kept.length ? previous.earlier : earlier
+  }
+}
+
+/** Older entries (chatHistory's) in front of the ones shown. */
+export const withEarlier = (state: TranscriptState, older: ReadonlyArray<EntryRecord>, more: boolean): TranscriptState => {
+  const oldest = oldestId(state.entries)
+  const fresh = older.filter((entry) => oldest === undefined || entry.id < oldest)
+  return { ...state, entries: [...fresh, ...state.entries], earlier: more }
+}
 
 const appendEntry = (entries: ReadonlyArray<EntryRecord>, entry: EntryRecord) =>
   entries.some((existing) => existing.id === entry.id) ? entries : [...entries, entry]
@@ -127,7 +149,7 @@ const updateTool = (state: TranscriptState, callId: string, update: (tool: LiveT
 export const applyEvent = (state: TranscriptState, event: AgentEvent): TranscriptState => {
   switch (event.type) {
     case "snapshot":
-      return fromSnapshot(event)
+      return fromSnapshot(event, state)
     case "run_start":
       return { ...state, running: true, error: null }
     case "run_end":
@@ -185,7 +207,8 @@ export type DisplayItem =
     }
   /** One reply: the assistant messages between two user messages, the last one possibly still streaming. */
   | { readonly kind: "assistant"; readonly id: string; readonly messages: ReadonlyArray<AssistantMessage>; readonly streaming: boolean; readonly endedAt: number | null }
-  | { readonly kind: "divider"; readonly id: string; readonly label: string }
+  /** A summary or reset: where the model's context starts again. `summary`: what the model was given instead. */
+  | { readonly kind: "divider"; readonly id: string; readonly label: string; readonly summary?: string }
 
 const userText = (message: UserMessage) => {
   if (typeof message.content === "string") {
@@ -209,6 +232,12 @@ export const toolResults = (entries: ReadonlyArray<EntryRecord>) => {
   return results
 }
 
+/** What a summary or reset gave the model: the summary without Pi's wrapper, or the handoff. */
+const summaryText = (entry: EntryRecord) => {
+  const text = (entry.model ?? []).flatMap((message) => (message.role === "user" ? [userText(message).text] : [])).join("\n\n")
+  return (/<summary>\n?([\s\S]*?)\n?<\/summary>\s*$/.exec(text)?.[1] ?? text).trim()
+}
+
 export const displayItems = (state: TranscriptState): DisplayItem[] => {
   const items: DisplayItem[] = []
   // Consecutive assistant messages (tool results don't interrupt them) are one reply.
@@ -222,8 +251,13 @@ export const displayItems = (state: TranscriptState): DisplayItem[] => {
     }
   }
   for (const entry of state.entries) {
-    if (entry.kind === "pi.reset") items.push({ kind: "divider", id: String(entry.id), label: "Context reset" })
-    else if (entry.kind === "pi.compaction") items.push({ kind: "divider", id: String(entry.id), label: "Earlier messages summarized" })
+    // A summary's text (and a reset's handoff) is a user message for the model, not something you said.
+    if (entry.kind === "pi.reset" || entry.kind === "pi.compaction") {
+      const summary = summaryText(entry)
+      const label = entry.kind === "pi.reset" ? "Context reset" : "Earlier messages summarized"
+      items.push({ kind: "divider", id: String(entry.id), label, ...(summary && { summary }) })
+      continue
+    }
     for (const [index, message] of (entry.model ?? []).entries()) {
       const id = `${entry.id}:${index}`
       if (message.role === "user") items.push({ kind: "user", id, ...userText(message) })

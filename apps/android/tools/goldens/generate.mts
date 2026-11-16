@@ -38,7 +38,14 @@ globalThis.Date = FakeDate as DateConstructor
 const { videoSource } = load("client/components/media.tsx", ["DIRECT_VIDEO", "videoSource"], { MEDIA_PREFIX, mediaTypeOf, vmMediaSource })
 const { summarize, toolActivity } = load("client/components/tool-card.tsx", ["summaryKeys", "summarize", "toolActivity", "activities"], { Predicate })
 const { inboxState, snoozeOptions, snoozedLabel } = load("client/components/session-menu.tsx", ["inboxState", "at", "when", "snoozeOptions", "snoozedLabel"])
-const { formatTokens, releaseLabel, PERIODS, WITHIN } = load("client/components/model-picker.tsx", ["formatTokens", "releaseLabel", "PERIODS", "WITHIN"])
+const { formatTokens, releaseLabel, PERIODS } = load("client/components/model-picker.tsx", ["formatTokens", "releaseLabel", "PERIODS"])
+// The web's picker dropped its released-within chips (f1e6d8c); Android still has them, as they were.
+const WITHIN = [
+  { days: 0, label: "Any time" },
+  { days: 7, label: "7 days" },
+  { days: 30, label: "30 days" },
+  { days: 90, label: "90 days" }
+]
 const { usd, compact } = load("routes/_app.usage.tsx", ["usd", "compact"])
 
 // ── Formatting ───────────────────────────────────────────────────────────────
@@ -194,7 +201,19 @@ const snapshot = {
     entry(3, "pi.assistant", assistant([{ type: "thinking", thinking: "Let me look.\n**Plan**: read files" }, { type: "toolCall", id: "call_1", name: "bash", arguments: { command: "ls -la\npwd" } }], { stopReason: "toolUse", durationMs: 2_000 })),
     entry(4, "pi.toolResult", { role: "toolResult", toolCallId: "call_1", toolName: "bash", content: [{ type: "text", text: "README.md\nsrc" }], isError: false, timestamp: NOW - 55_000 }),
     entry(5, "pi.assistant", assistant([{ type: "text", text: "It has a README and src." }], { timestamp: NOW - 54_000, durationMs: 1_500 })),
-    { id: 6, conversationId: 1, kind: "pi.compaction", model: [{ role: "user", content: "Summary of earlier messages", timestamp: NOW - 50_000 }] },
+    {
+      id: 6,
+      conversationId: 1,
+      kind: "pi.compaction",
+      head: 6,
+      model: [
+        {
+          role: "user",
+          content: "The conversation history before this point was compacted into the following summary:\n\n<summary>\n## Goal\nSummary of earlier messages\n</summary>",
+          timestamp: NOW - 50_000
+        }
+      ]
+    },
     { id: 7, conversationId: 1, kind: "pi.user", model: [{ role: "user", content: [{ type: "text", text: "[Done in this chat's UI since my last message]\n- Ran x\n\nAnd now?" }, { type: "image", data: "", mimeType: "image/png", ref: "7:0:1" }], timestamp: NOW - 40_000 }] }
   ],
   tools: [],

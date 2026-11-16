@@ -94,7 +94,7 @@ export function slimEvents<T>(events: readonly T[]): readonly T[] {
 }
 
 /** The image a `ref` from withoutImages points to. */
-export function findImage(snapshot: SnapshotEvent, ref: string): { data: string; mimeType: string } | null {
+export function findImage(snapshot: Pick<SnapshotEvent, "entries">, ref: string): { data: string; mimeType: string } | null {
   const [index, m, ...rest] = ref.split(":").reverse()
   const id = rest.reverse().join(":")
   const entry = snapshot.entries.find((candidate) => String(candidate.id) === id)

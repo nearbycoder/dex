@@ -76,6 +76,11 @@ import dev.trydex.android.R
 import dev.trydex.android.ui.LocalApp
 import dev.trydex.android.ui.LocalOpenInBrowser
 import dev.trydex.android.ui.components.Markdown
+import dev.trydex.android.ui.components.MarkdownOptions
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.rotate
+import androidx.compose.material.icons.rounded.ExpandMore
 import dev.trydex.android.ui.components.MediaPlayer
 import dev.trydex.android.ui.nav.WorkspaceFile
 import dev.trydex.android.ui.openui.OpenUICard
@@ -178,11 +183,7 @@ fun MessageList(
                             sessionId, item.messages, item.streaming, active = transcript.running && item === last,
                             endedAt = item.endedAt, results = results, tools = transcript.tools, onSend = onSend, character = character,
                         )
-                        is DisplayItem.Divider -> Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            HorizontalDivider(Modifier.weight(1f))
-                            Text(item.label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 12.dp))
-                            HorizontalDivider(Modifier.weight(1f))
-                        }
+                        is DisplayItem.Divider -> ContextDivider(item)
                     }
                 }
             }
@@ -284,6 +285,47 @@ fun UserBubble(
                         Icon(Icons.Rounded.Schedule, contentDescription = null, modifier = Modifier.size(12.dp))
                         Text("Sending", style = MaterialTheme.typography.labelSmall)
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Where the model's context starts again: a summary of what came before (or a reset). Tapping it shows the summary,
+ * which is what the model was given in place of the messages above.
+ */
+@Composable
+private fun ContextDivider(item: DisplayItem.Divider) {
+    var open by rememberSaveable(item.id) { mutableStateOf(false) }
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp).testTag("context-divider")) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            HorizontalDivider(Modifier.weight(1f))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .then(if (item.summary != null) Modifier.clickable(onClickLabel = if (open) "Hide the summary" else "Show the summary") { open = !open } else Modifier)
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            ) {
+                Text(item.label, style = MaterialTheme.typography.labelSmall, color = muted)
+                if (item.summary != null) {
+                    Icon(Icons.Rounded.ExpandMore, contentDescription = null, tint = muted, modifier = Modifier.size(16.dp).rotate(if (open) 180f else 0f))
+                }
+            }
+            HorizontalDivider(Modifier.weight(1f))
+        }
+        AnimatedVisibility(open && item.summary != null) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            ) {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("What the model was given in place of the messages above", style = MaterialTheme.typography.labelSmall, color = muted)
+                    Markdown(item.summary.orEmpty(), options = MarkdownOptions(textStyle = MaterialTheme.typography.bodyMedium))
                 }
             }
         }

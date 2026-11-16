@@ -387,14 +387,55 @@ export interface Speaker {
   readonly greeting?: string
 }
 
+/**
+ * Where the model's context starts again: a summary of what came before (or a reset). The summary is what the model
+ * was given in place of the messages above it; it opens from the divider.
+ */
+function ContextDivider({ label, summary }: { label: string; summary?: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div>
+      <div className="flex items-center gap-3 text-xs text-zinc-600">
+        <div className="h-px flex-1 bg-zinc-800" />
+        {summary ? (
+          <button
+            type="button"
+            onClick={() => setOpen(!open)}
+            aria-expanded={open}
+            className="flex shrink-0 items-center gap-1.5 rounded-full px-2 py-1 text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300"
+          >
+            <ListChecks className="size-3.5" />
+            {label}
+            <ChevronRight className={`size-3 transition-transform ${open ? "rotate-90" : ""}`} />
+          </button>
+        ) : (
+          label
+        )}
+        <div className="h-px flex-1 bg-zinc-800" />
+      </div>
+      {summary && (
+        <Collapse open={open}>
+          <div className="mt-3 rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3 text-sm text-zinc-300">
+            <p className="mb-2 text-xs text-zinc-500">What the model was given in place of the messages above</p>
+            <Markdown>{summary}</Markdown>
+          </div>
+        </Collapse>
+      )}
+    </div>
+  )
+}
+
 export const MessageList = memo(function MessageList({
   transcript,
   onSend,
+  onLoadEarlier,
   pending = [],
   speaker
 }: {
   transcript: TranscriptState
   onSend: (text: string) => void
+  /** Loads the chat's older messages (shown while `transcript.earlier`). */
+  onLoadEarlier?: () => Promise<void>
   /** Messages just sent that the agent hasn't recorded yet, shown at once (see the chat page). */
   pending?: readonly string[]
   /** Who answers, when it isn't Dex (a character): their face beside replies, and their greeting first. */
@@ -439,6 +480,32 @@ export const MessageList = memo(function MessageList({
     return () => observer.disconnect()
   }, [])
 
+  // Older messages go in above what you're reading without moving it: keep the distance from the bottom.
+  const [loadingEarlier, setLoadingEarlier] = useState(false)
+  const [earlierError, setEarlierError] = useState<string | null>(null)
+  const restoreFromBottom = useRef<number | null>(null)
+  useLayoutEffect(() => {
+    const element = scroller.current
+    if (!element || restoreFromBottom.current === null) return
+    element.scrollTop = element.scrollHeight - restoreFromBottom.current
+    restoreFromBottom.current = null
+  }, [items])
+  const loadEarlier = async () => {
+    const element = scroller.current
+    if (!onLoadEarlier || loadingEarlier) return
+    setLoadingEarlier(true)
+    setEarlierError(null)
+    try {
+      if (element) restoreFromBottom.current = element.scrollHeight - element.scrollTop
+      await onLoadEarlier()
+    } catch (error) {
+      restoreFromBottom.current = null
+      setEarlierError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setLoadingEarlier(false)
+    }
+  }
+
   // Sending a message always brings you to the bottom.
   const lastUser = `${items.findLast((item) => item.kind === "user")?.id ?? ""}:${pending.length}`
   const seenUser = useRef(lastUser)
@@ -480,6 +547,20 @@ export const MessageList = memo(function MessageList({
         }}
       >
         <div ref={content} onClickCapture={() => (clickedAt.current = Date.now())} className="mx-auto max-w-3xl space-y-5 px-4 py-6">
+          {transcript.earlier && onLoadEarlier && (
+            <div className="flex flex-col items-center gap-1">
+              <button
+                type="button"
+                onClick={() => void loadEarlier()}
+                disabled={loadingEarlier}
+                className="flex items-center gap-1.5 rounded-full border border-zinc-800 px-3 py-1.5 text-xs text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 disabled:opacity-60"
+              >
+                {loadingEarlier && <LoaderCircle className="size-3.5 animate-spin" />}
+                Show earlier messages
+              </button>
+              {earlierError && <ErrorNote text={earlierError} className="text-center" />}
+            </div>
+          )}
           {speaker?.greeting && (
             <div className="flex animate-rise gap-3">
               <span className="mt-0.5 shrink-0" title={speaker.name}>{speaker.greeter ?? speaker.avatar}</span>
@@ -535,13 +616,7 @@ export const MessageList = memo(function MessageList({
                   </div>
                 )
               case "divider":
-                return (
-                  <div key={item.id} className="flex items-center gap-3 text-xs text-zinc-600">
-                    <div className="h-px flex-1 bg-zinc-800" />
-                    {item.label}
-                    <div className="h-px flex-1 bg-zinc-800" />
-                  </div>
-                )
+                return <ContextDivider key={item.id} label={item.label} summary={item.summary} />
             }
           })}
           {pending.map((text, index) => (

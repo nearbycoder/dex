@@ -206,7 +206,7 @@ class GoldenTest {
             val items = displayItems(state).map { item ->
                 when (item) {
                     is DisplayItem.User -> item.comparable()
-                    is DisplayItem.Divider -> listOf("divider", item.id, item.label)
+                    is DisplayItem.Divider -> listOf("divider", item.id, item.label, item.summary)
                     is DisplayItem.Assistant -> listOf(
                         "assistant", item.id, item.streaming.toString(), item.endedAt.toString(), item.messages.size.toString(),
                         item.messages.flatMap { m -> m.content.map { it.typeName() } }.joinToString(","),
@@ -216,7 +216,7 @@ class GoldenTest {
             val expectedItems = step.items("items").map { item ->
                 when (item["kind"].str) {
                     "user" -> item.comparableUser()
-                    "divider" -> listOf("divider", item["id"].str, item["label"].str)
+                    "divider" -> listOf("divider", item["id"].str, item["label"].str, item["summary"].str)
                     else -> listOf(
                         "assistant", item["id"].str, item["streaming"].bool.toString(), item["endedAt"].long.toString(),
                         item["messages"].long.toString(), item["blocks"]!!.jsonArray.joinToString(",") { it.str!! },

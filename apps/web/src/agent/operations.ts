@@ -152,6 +152,7 @@ export const EXCLUDED: Readonly<Record<string, string>> = {
   saveSecret: "Secrets are entered only in Settings, never through a chat or an external agent.",
   removeSecret: "Secrets are managed only in Settings.",
   transcriptImage: "The chat page loading a screenshot it shows; chats and external agents read chats with app_read_session.",
+  chatHistory: "The chat page loading the older messages it shows (before a summary); chats and external agents read chats with app_read_session.",
   storeChatSecret: "Secrets come only from the user's password fields in the browser; no chat or external agent may set or read them.",
   disconnectBoat: "Credentials are managed only in Settings.",
   connectGitHub: "Credentials are entered only in Settings, never through a chat or an external agent.",

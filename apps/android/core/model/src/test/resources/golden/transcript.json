@@ -127,10 +127,11 @@
        "id": 6,
        "conversationId": 1,
        "kind": "pi.compaction",
+       "head": 6,
        "model": [
         {
          "role": "user",
-         "content": "Summary of earlier messages",
+         "content": "The conversation history before this point was compacted into the following summary:\n\n<summary>\n## Goal\nSummary of earlier messages\n</summary>",
          "timestamp": 1792447660000
         }
        ]
@@ -207,13 +208,8 @@
     {
      "kind": "divider",
      "id": "6",
-     "label": "Earlier messages summarized"
-    },
-    {
-     "kind": "user",
-     "id": "6:0",
-     "text": "Summary of earlier messages",
-     "images": 0
+     "label": "Earlier messages summarized",
+     "summary": "## Goal\nSummary of earlier messages"
     },
     {
      "kind": "user",
@@ -291,13 +287,8 @@
     {
      "kind": "divider",
      "id": "6",
-     "label": "Earlier messages summarized"
-    },
-    {
-     "kind": "user",
-     "id": "6:0",
-     "text": "Summary of earlier messages",
-     "images": 0
+     "label": "Earlier messages summarized",
+     "summary": "## Goal\nSummary of earlier messages"
     },
     {
      "kind": "user",
@@ -408,13 +399,8 @@
     {
      "kind": "divider",
      "id": "6",
-     "label": "Earlier messages summarized"
-    },
-    {
-     "kind": "user",
-     "id": "6:0",
-     "text": "Summary of earlier messages",
-     "images": 0
+     "label": "Earlier messages summarized",
+     "summary": "## Goal\nSummary of earlier messages"
     },
     {
      "kind": "user",
@@ -549,13 +535,8 @@
     {
      "kind": "divider",
      "id": "6",
-     "label": "Earlier messages summarized"
-    },
-    {
-     "kind": "user",
-     "id": "6:0",
-     "text": "Summary of earlier messages",
-     "images": 0
+     "label": "Earlier messages summarized",
+     "summary": "## Goal\nSummary of earlier messages"
     },
     {
      "kind": "user",
@@ -723,13 +704,8 @@
     {
      "kind": "divider",
      "id": "6",
-     "label": "Earlier messages summarized"
-    },
-    {
-     "kind": "user",
-     "id": "6:0",
-     "text": "Summary of earlier messages",
-     "images": 0
+     "label": "Earlier messages summarized",
+     "summary": "## Goal\nSummary of earlier messages"
     },
     {
      "kind": "user",
@@ -851,13 +827,8 @@
     {
      "kind": "divider",
      "id": "6",
-     "label": "Earlier messages summarized"
-    },
-    {
-     "kind": "user",
-     "id": "6:0",
-     "text": "Summary of earlier messages",
-     "images": 0
+     "label": "Earlier messages summarized",
+     "summary": "## Goal\nSummary of earlier messages"
     },
     {
      "kind": "user",
@@ -957,13 +928,8 @@
     {
      "kind": "divider",
      "id": "6",
-     "label": "Earlier messages summarized"
-    },
-    {
-     "kind": "user",
-     "id": "6:0",
-     "text": "Summary of earlier messages",
-     "images": 0
+     "label": "Earlier messages summarized",
+     "summary": "## Goal\nSummary of earlier messages"
     },
     {
      "kind": "user",
@@ -1071,13 +1037,8 @@
     {
      "kind": "divider",
      "id": "6",
-     "label": "Earlier messages summarized"
-    },
-    {
-     "kind": "user",
-     "id": "6:0",
-     "text": "Summary of earlier messages",
-     "images": 0
+     "label": "Earlier messages summarized",
+     "summary": "## Goal\nSummary of earlier messages"
     },
     {
      "kind": "user",
@@ -1182,13 +1143,8 @@
     {
      "kind": "divider",
      "id": "6",
-     "label": "Earlier messages summarized"
-    },
-    {
-     "kind": "user",
-     "id": "6:0",
-     "text": "Summary of earlier messages",
-     "images": 0
+     "label": "Earlier messages summarized",
+     "summary": "## Goal\nSummary of earlier messages"
     },
     {
      "kind": "user",
@@ -1306,13 +1262,8 @@
     {
      "kind": "divider",
      "id": "6",
-     "label": "Earlier messages summarized"
-    },
-    {
-     "kind": "user",
-     "id": "6:0",
-     "text": "Summary of earlier messages",
-     "images": 0
+     "label": "Earlier messages summarized",
+     "summary": "## Goal\nSummary of earlier messages"
     },
     {
      "kind": "user",
@@ -1505,13 +1456,8 @@
     {
      "kind": "divider",
      "id": "6",
-     "label": "Earlier messages summarized"
-    },
-    {
-     "kind": "user",
-     "id": "6:0",
-     "text": "Summary of earlier messages",
-     "images": 0
+     "label": "Earlier messages summarized",
+     "summary": "## Goal\nSummary of earlier messages"
     },
     {
      "kind": "user",
@@ -1653,13 +1599,8 @@
     {
      "kind": "divider",
      "id": "6",
-     "label": "Earlier messages summarized"
-    },
-    {
-     "kind": "user",
-     "id": "6:0",
-     "text": "Summary of earlier messages",
-     "images": 0
+     "label": "Earlier messages summarized",
+     "summary": "## Goal\nSummary of earlier messages"
     },
     {
      "kind": "user",
@@ -1827,13 +1768,8 @@
     {
      "kind": "divider",
      "id": "6",
-     "label": "Earlier messages summarized"
-    },
-    {
-     "kind": "user",
-     "id": "6:0",
-     "text": "Summary of earlier messages",
-     "images": 0
+     "label": "Earlier messages summarized",
+     "summary": "## Goal\nSummary of earlier messages"
     },
     {
      "kind": "user",
@@ -1970,13 +1906,8 @@
     {
      "kind": "divider",
      "id": "6",
-     "label": "Earlier messages summarized"
-    },
-    {
-     "kind": "user",
-     "id": "6:0",
-     "text": "Summary of earlier messages",
-     "images": 0
+     "label": "Earlier messages summarized",
+     "summary": "## Goal\nSummary of earlier messages"
     },
     {
      "kind": "user",
@@ -2065,13 +1996,8 @@
     {
      "kind": "divider",
      "id": "6",
-     "label": "Earlier messages summarized"
-    },
-    {
-     "kind": "user",
-     "id": "6:0",
-     "text": "Summary of earlier messages",
-     "images": 0
+     "label": "Earlier messages summarized",
+     "summary": "## Goal\nSummary of earlier messages"
     },
     {
      "kind": "user",
@@ -2231,10 +2157,11 @@
      "id": 6,
      "conversationId": 1,
      "kind": "pi.compaction",
+     "head": 6,
      "model": [
       {
        "role": "user",
-       "content": "Summary of earlier messages",
+       "content": "The conversation history before this point was compacted into the following summary:\n\n<summary>\n## Goal\nSummary of earlier messages\n</summary>",
        "timestamp": 1792447660000
       }
      ]

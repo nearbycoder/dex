@@ -314,7 +314,11 @@ export interface QueuedMessage {
 }
 
 export type ServerMessage =
-  | { readonly type: "dex.snapshot"; readonly sessionId: string; readonly snapshot: SnapshotEvent }
+  /**
+   * The chat's entries begin with older ones than the model's context (from before its latest summary or reset; agents
+   * from before this send only the context). `earlier`: there are older entries still, which `chatHistory` loads.
+   */
+  | { readonly type: "dex.snapshot"; readonly sessionId: string; readonly snapshot: SnapshotEvent; readonly earlier?: boolean }
   | { readonly type: "dex.events"; readonly sessionId: string; readonly events: ReadonlyArray<AgentEvent> }
   | { readonly type: "dex.error"; readonly sessionId: string | null; readonly message: string }
   /** Messages waiting their turn in the chat; `held` after you stopped it (nothing goes until you send or pick one). */

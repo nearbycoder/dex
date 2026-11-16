@@ -82,8 +82,8 @@ struct TranscriptView: View {
                         } else {
                             reply
                         }
-                    case .divider(_, let label):
-                        DividerRow(label: label)
+                    case .divider(_, let label, let summary):
+                        DividerRow(label: label, summary: summary)
                     }
                 }
                 ForEach(feed.pending) { pending in
@@ -343,15 +343,53 @@ struct ScheduledNote: View {
     }
 }
 
+/// Where the model's context starts again: a summary of what came before (or a reset). Tapping it shows the summary,
+/// which is what the model was given in place of the messages above.
 struct DividerRow: View {
     let label: String
+    var summary: String? = nil
+    @State private var open = false
+
     var body: some View {
-        HStack(spacing: 10) {
-            Rectangle().fill(.quaternary).frame(height: 1)
-            Text(label).font(.caption).foregroundStyle(.secondary).fixedSize()
-            Rectangle().fill(.quaternary).frame(height: 1)
+        VStack(spacing: 8) {
+            HStack(spacing: 10) {
+                Rectangle().fill(.quaternary).frame(height: 1)
+                if summary != nil {
+                    Button {
+                        withAnimation(.smooth) { open.toggle() }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(label)
+                            Image(systemName: "chevron.down").font(.caption2.weight(.semibold)).rotationEffect(.degrees(open ? 180 : 0))
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .contentShape(.capsule)
+                    }
+                    .buttonStyle(.plain)
+                    .fixedSize()
+                    .accessibilityHint(open ? "Hides the summary" : "Shows what the model was given in place of the messages above")
+                    .accessibilityIdentifier("chat.contextDivider")
+                } else {
+                    Text(label).font(.caption).foregroundStyle(.secondary).fixedSize()
+                }
+                Rectangle().fill(.quaternary).frame(height: 1)
+            }
+            if open, let summary {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("What the model was given in place of the messages above").font(.caption).foregroundStyle(.secondary)
+                    MarkdownView(text: summary, font: .subheadline)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 16, style: .continuous))
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: summary == nil ? .combine : .contain)
     }
 }
 

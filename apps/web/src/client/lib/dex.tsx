@@ -8,7 +8,8 @@ import { AGENT_CLASS, type ClientMessage, type DexState, isServerMessage, type S
 import { clearPageCache } from "./cache"
 import { skeletonPreview } from "./skeleton-preview"
 import { clearNotifications } from "./push"
-import { applyEvent, emptyTranscript, fromSnapshot, type TranscriptState } from "./transcript"
+import type { EntryRecord } from "@earendil-works/pi-durable"
+import { applyEvent, emptyTranscript, fromSnapshot, type TranscriptState, withEarlier } from "./transcript"
 import { clearCachedPages } from "./updates"
 import { clearTranscripts, loadTranscript, saveTranscript, setTranscriptStoreUser } from "./transcript-store"
 
@@ -164,7 +165,10 @@ export function useDex() {
   return context
 }
 
-type Action = { type: "reset"; to: TranscriptState } | { type: "message"; message: ServerMessage }
+type Action =
+  | { type: "reset"; to: TranscriptState }
+  | { type: "message"; message: ServerMessage }
+  | { type: "earlier"; entries: ReadonlyArray<EntryRecord>; more: boolean }
 
 /** Recently opened chats as last seen, so going back to one shows it at once; the fresh snapshot replaces it. */
 const transcripts = new Map<string, TranscriptState>()
@@ -183,10 +187,11 @@ const remember = (sessionId: string, transcript: TranscriptState) => {
 
 const reduce = (state: TranscriptState, action: Action): TranscriptState => {
   if (action.type === "reset") return action.to
+  if (action.type === "earlier") return withEarlier(state, action.entries, action.more)
   const { message } = action
   switch (message.type) {
     case "dex.snapshot":
-      return fromSnapshot(message.snapshot, state)
+      return fromSnapshot(message.snapshot, state, message.earlier ?? false)
     case "dex.events":
       return message.events.reduce(applyEvent, state)
     case "dex.error":
@@ -202,9 +207,12 @@ const reduce = (state: TranscriptState, action: Action): TranscriptState => {
 
 const PING_MS = 20_000
 
-/** Live transcript of one chat. Re-subscribes on reconnect and pings so an evicted object resumes the stream. */
+/**
+ * Live transcript of one chat. Re-subscribes on reconnect and pings so an evicted object resumes the stream.
+ * `loadEarlier` puts the chat's older messages in front (while `transcript.earlier`).
+ */
 export function useTranscript(sessionId: string) {
-  const { send, listen, connected } = useDex()
+  const { send, listen, connected, stub } = useDex()
   const cachedOr = (id: string) => transcripts.get(id) ?? emptyTranscript
   // Tagged with its chat: right after switching, the reducer still holds the previous chat until the reset lands.
   const [tagged, dispatch] = useReducer(
@@ -248,5 +256,12 @@ export function useTranscript(sessionId: string) {
     if (tagged.id === sessionId) remember(sessionId, tagged.transcript)
   }, [sessionId, tagged])
 
-  return state
+  const oldest = state.entries.reduce((min, entry) => Math.min(min, entry.id), Number.POSITIVE_INFINITY)
+  const loadEarlier = useCallback(async () => {
+    if (!Number.isFinite(oldest)) return
+    const { entries, more } = await stub.chatHistory(sessionId, oldest)
+    dispatch({ type: "earlier", entries, more, id: sessionId })
+  }, [oldest, sessionId, stub])
+
+  return { transcript: state, loadEarlier }
 }

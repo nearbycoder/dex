@@ -3,6 +3,9 @@ import type { Message as PiMessage } from "@earendil-works/pi-ai"
 import { createModels } from "@earendil-works/pi-ai/models"
 import {
   type AgentEventStream,
+  type Cursor,
+  type EntryRecord,
+  type SnapshotEvent,
   createRegistry,
   defineExtension,
   GenerationTask,
@@ -97,7 +100,7 @@ import { mediaTools } from "./tools/media-tools"
 import { GitHubRepos } from "./github-repos"
 import { checkServer, searchRegistry, searchSmithery } from "./mcp-registry"
 import { MessageQueue } from "./queue"
-import { findImage, slimEvents, withoutImages } from "./transcript-images"
+import { findImage, slimEntry, slimEvents, withoutImages } from "./transcript-images"
 import { AccountSecrets, SecretVault, VM_ENV_FILE, VM_ENV_HOOK } from "./secrets"
 import { SkillCenter } from "./skills"
 import { skillTools } from "./tools/skill-tools"
@@ -198,6 +201,11 @@ const MAX_MEMORY_CHARS = 8_000
 /** How long before an expiring GitHub token runs out Dex renews it, so a VM never gets one with little time left. */
 const GITHUB_RENEW_EARLY_MS = 60 * 60_000
 const SCHEDULE_CALLBACK = "runScheduledPrompt"
+/**
+ * How much of a chat's history from before its latest summary (JSON characters, after slimEntry) opening it sends, and
+ * each "Show earlier messages" after that.
+ */
+const HISTORY_BUDGET = 1_500_000
 const VM_SIZES = new Set<VmSize>(["small", "default", "large"])
 
 const DEFAULT_SETTINGS: DexSettings = {
@@ -1930,13 +1938,18 @@ export class DexAgent extends Agent<Env, DexState> {
       this.subscriptions.set(connection.id, { sessionId, stream })
       watching(connection, sessionId)
       // Screenshots load when shown (transcriptImage), so opening a long VM chat doesn't send megabytes.
-      this.send(connection, { type: "dex.snapshot", sessionId, snapshot: withoutImages(stream.snapshot) })
+      const { snapshot, earlier } = await this.withHistory(sessionId, withoutImages(stream.snapshot))
+      this.send(connection, { type: "dex.snapshot", sessionId, snapshot, ...(earlier && { earlier }) })
       this.send(connection, this.artifactsMessage(sessionId))
       this.send(connection, this.queueMessage(sessionId))
       stream.start(async (events) => {
         // Screenshots and long outputs stay on the agent here too (see slimEntry); a computer-use run sends a
         // screenshot per step.
-        if (!this.send(connection, { type: "dex.events", sessionId, events: slimEvents(events) })) {
+        // A stream that fell behind sends a fresh snapshot in its batch: it gets the older messages too.
+        const batch = await Promise.all(
+          slimEvents(events).map(async (event) => (event.type === "snapshot" ? (await this.withHistory(sessionId, withoutImages(event))).snapshot : event))
+        )
+        if (!this.send(connection, { type: "dex.events", sessionId, events: batch })) {
           await this.unsubscribe(connection.id)
           return
         }
@@ -1951,6 +1964,47 @@ export class DexAgent extends Agent<Env, DexState> {
     })
     this.subscribing.set(connection.id, settled)
     return settled
+  }
+
+  /**
+   * A chat's snapshot with the messages before its latest summary or reset: Pi's snapshot holds only the model's
+   * context, which starts there, and the page shows the whole chat. `earlier`: there are older ones still
+   * (chatHistory loads them).
+   */
+  private async withHistory(sessionId: string, snapshot: SnapshotEvent): Promise<{ snapshot: SnapshotEvent; earlier: boolean }> {
+    const head = snapshot.entries[0]?.head
+    if (head === undefined) return { snapshot, earlier: false }
+    const older = await this.earlierEntries(sessionId, Number(head)).catch((error: unknown) => {
+      console.warn(`Couldn't read the older messages of chat ${sessionId}: ${errorText(error)}`)
+      return { entries: [], more: false }
+    })
+    return { snapshot: { ...snapshot, entries: [...older.entries, ...snapshot.entries] }, earlier: older.more }
+  }
+
+  /** A chat's entries before `before`, newest first until about `HISTORY_BUDGET` characters, returned oldest first. */
+  private async earlierEntries(sessionId: string, before: number): Promise<{ entries: EntryRecord[]; more: boolean }> {
+    const conversation = await this.harness.conversation(sessionId)
+    const entries: EntryRecord[] = []
+    let size = 0
+    let cursor: Cursor | undefined
+    do {
+      const page = await conversation.entries({ maxEntryId: (before - 1) as never }, 100, cursor, BACKGROUND_CONTEXT)
+      for (const entry of page.items) {
+        const slim = slimEntry(entry)
+        size += JSON.stringify(slim).length
+        if (size > HISTORY_BUDGET && entries.length > 0) return { entries: entries.reverse(), more: true }
+        entries.push(slim)
+      }
+      cursor = page.next
+    } while (cursor !== undefined)
+    return { entries: entries.reverse(), more: false }
+  }
+
+  /** Older messages of a chat than entry `before`, for the chat page's "Show earlier messages". */
+  @callable()
+  async chatHistory(sessionId: string, before: number): Promise<{ entries: EntryRecord[]; more: boolean }> {
+    if (!this.hasSession(sessionId) || !Number.isSafeInteger(before) || before < 1) return { entries: [], more: false }
+    return this.earlierEntries(sessionId, before)
   }
 
   private async unsubscribe(connectionId: string) {
@@ -4027,10 +4081,17 @@ export class DexAgent extends Agent<Env, DexState> {
     if (!this.hasSession(sessionId) || typeof ref !== "string") return null
     const stream = await this.harness.session(sessionId).events()
     try {
-      return findImage(stream.snapshot, ref)
+      const found = findImage(stream.snapshot, ref)
+      if (found) return found
     } finally {
       await stream.stop().catch(() => undefined)
     }
+    // An older message's, from before the chat's latest summary (see withHistory).
+    const id = Number(ref.split(":")[0])
+    if (!Number.isSafeInteger(id) || id < 1) return null
+    const conversation = await this.harness.conversation(sessionId)
+    const page = await conversation.entries({ minEntryId: id as never, maxEntryId: id as never }, 1, undefined, BACKGROUND_CONTEXT)
+    return findImage({ entries: page.items }, ref)
   }
 
   /** A chat's latest messages as text, for operations that read chats. */

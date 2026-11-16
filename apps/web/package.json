@@ -14,7 +14,8 @@
     "cf-typegen": "wrangler types worker-configuration.d.ts --strict-vars=false",
     "openui:spec": "openui generate src/client/openui/library.tsx --spec --out src/shared/openui-spec.json",
     "test:spaces": "node --test tests/spaces.test.ts",
-    "test:ui-action": "node --test tests/ui-action.test.ts"
+    "test:ui-action": "node --test tests/ui-action.test.ts",
+    "test:transcript": "node --test tests/transcript.test.ts"
   },
   "dependencies": {
     "@block65/webcrypto-web-push": "^2.0.0",

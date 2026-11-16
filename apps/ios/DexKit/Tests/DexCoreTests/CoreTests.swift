@@ -180,6 +180,14 @@ import Testing
             EntryRecord(id: "3", kind: "pi.reset")
         ]
         #expect(state.displayItems.map(\.id) == ["1:0", "2", "3"])
+        guard case .divider(_, let label, let summary) = state.displayItems[1] else { Issue.record("not a divider"); return }
+        #expect(label == "Earlier messages summarized")
+        #expect(summary == "summary")
+        if case .divider(_, _, let none) = state.displayItems[2] { #expect(none == nil) }
+
+        // Pi's wrapper around the summary is left out.
+        let wrapped = EntryRecord(id: "4", kind: "pi.compaction", model: [.user(UserMessage(text: "The conversation history before this point was compacted into the following summary:\n\n<summary>\n## Goal\nShip it\n</summary>"))])
+        #expect(TranscriptState.summaryText(wrapped) == "## Goal\nShip it")
     }
 }
 

@@ -32,7 +32,7 @@ const VmFilesPanel = lazy<typeof import("~/client/components/vm-files")["default
 function Chat() {
   const { sessionId } = Route.useParams()
   const { state, stub, connected } = useDex()
-  const transcript = useTranscript(sessionId)
+  const { transcript, loadEarlier } = useTranscript(sessionId)
   const session = state?.sessions.find((candidate) => candidate.id === sessionId)
   const [editing, setEditing] = useState<string | null>(null)
   const [filesSession, setFilesSession] = useState<string | null>(null)
@@ -393,7 +393,7 @@ function Chat() {
                   onPick={(text) => setDraft({ text, key: Date.now() })}
                 />
               ) : (
-                <MessageList key={sessionId} transcript={transcript} onSend={send} pending={pendingTexts} speaker={speaker} />
+                <MessageList key={sessionId} transcript={transcript} onSend={send} onLoadEarlier={loadEarlier} pending={pendingTexts} speaker={speaker} />
               )}
             </SpaceSelectContext.Provider>
           </ChatArtifactsContext.Provider>
