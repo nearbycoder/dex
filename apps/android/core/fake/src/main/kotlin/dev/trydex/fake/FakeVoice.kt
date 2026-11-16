@@ -19,7 +19,20 @@ object FakeVoice {
     val sentences: Set<String> get() = known.keys
 
     fun phonemes(text: String): PhonemesResponse {
-        known[text.trim()]?.let { return PhonemesResponse(listOf(it)) }
-        return PhonemesResponse(Voices.sentences(text).map { known[it] ?: SpokenSentence(it) })
+        val sentences = Voices.sentences(text)
+        val out = mutableListOf<SpokenSentence>()
+        var from = 0
+        // The longest run of sentences it knows as one ("Hey you. What are we making today?"), else one it doesn't.
+        while (from < sentences.size) {
+            val match = (sentences.size downTo from + 1).firstNotNullOfOrNull { to -> known[sentences.subList(from, to).joinToString(" ")]?.let { it to to } }
+            if (match != null) {
+                out += match.first
+                from = match.second
+            } else {
+                out += SpokenSentence(sentences[from])
+                from++
+            }
+        }
+        return PhonemesResponse(out)
     }
 }

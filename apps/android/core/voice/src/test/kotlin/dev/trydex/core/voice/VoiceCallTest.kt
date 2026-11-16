@@ -9,6 +9,7 @@ import dev.trydex.core.model.Utterance
 import dev.trydex.core.model.Voice
 import dev.trydex.core.model.Voices
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -65,13 +66,22 @@ class VoiceCallTest {
         var stops = 0
         var closed = false
         override var onIdle: (() -> Unit)? = null
-        override fun play(samples: FloatArray) {
+        override fun play(samples: FloatArray, onStart: () -> Unit) {
+            // Nothing before it: it starts at once; else when what's ahead of it has played.
+            if (queued.isEmpty()) onStart() else waiting += onStart
             queued += samples.toList()
             played += samples.toList()
+        }
+        private val waiting = mutableListOf<() -> Unit>()
+        /** The piece playing now has finished; the next starts. */
+        fun next() {
+            queued.removeAt(0)
+            if (queued.isEmpty()) onIdle?.invoke() else waiting.removeAt(0).invoke()
         }
         override fun stop() {
             stops++
             queued.clear()
+            waiting.clear()
         }
         override val busy get() = queued.isNotEmpty()
         override fun level() = 0.5f
@@ -81,6 +91,7 @@ class VoiceCallTest {
         /** Everything queued has played. */
         fun drain() {
             queued.clear()
+            waiting.clear()
             onIdle?.invoke()
         }
     }
@@ -234,6 +245,11 @@ class VoiceCallTest {
         runCurrent()
         assertThat(s.said()).containsExactly("First one.", "Second one.", "Third one.").inOrder()
         assertThat(s.phase).isEqualTo(CallPhase.Speaking)
+        // The caption is the sentence playing, not the last one made.
+        assertThat(s.call.state.value.saying).isEqualTo("First one.")
+        s.player.next()
+        runCurrent()
+        assertThat(s.call.state.value.saying).isEqualTo("Second one.")
         s.player.drain()
         runCurrent()
         assertThat(s.phase).isEqualTo(CallPhase.Listening)
@@ -338,5 +354,38 @@ class VoiceCallTest {
         advanceTimeBy(5_000)
         assertThat(s.player.played.size).isEqualTo(played)
         assertThat(s.phase).isEqualTo(CallPhase.Ended)
+    }
+
+    @Test fun theStatusLine() {
+        assertThat(CallSnapshot(downloading = 0.426f).status).isEqualTo("Getting their voice ready… 43%")
+        assertThat(CallSnapshot().status).isEqualTo("Getting their voice ready…")
+        assertThat(CallSnapshot(phase = CallPhase.Listening).status).isEqualTo("Listening")
+        assertThat(CallSnapshot(phase = CallPhase.Thinking, muted = true).status).isEqualTo("Muted")
+        assertThat(CallSnapshot(phase = CallPhase.Speaking).status).isEqualTo("Speaking")
+        assertThat(CallSnapshot(phase = CallPhase.Failed, muted = true).status).isEqualTo("Call ended")
+    }
+
+    @Test fun tryingAVoiceSaysTheLineAndWaitsForIt() = runTest {
+        val speech = FakeSpeech()
+        val player = FakePlayer()
+        val progress = mutableListOf<Float>()
+        val saying = backgroundScope.launch { sayOnce(speech, player, "Hey you. What are we making today?", Voice.F2) { progress += it } }
+        runCurrent()
+        assertThat(speech.synthesized.map { it.first }).containsExactly("Hey you.", "What are we making today?").inOrder()
+        assertThat(speech.synthesized.map { it.second }.toSet()).containsExactly(Voice.F2)
+        assertThat(progress).containsExactly(0.5f)
+        assertThat(saying.isActive).isTrue()
+        player.drain()
+        runCurrent()
+        assertThat(saying.isCompleted).isTrue()
+        assertThat(player.closed).isTrue()
+        // Cut short: it stops at once.
+        val again = FakePlayer()
+        val cut = backgroundScope.launch { sayOnce(speech, again, "Hi.", Voice.M2) }
+        runCurrent()
+        cut.cancel()
+        runCurrent()
+        assertThat(again.stops).isEqualTo(1)
+        assertThat(again.closed).isTrue()
     }
 }

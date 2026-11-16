@@ -6,3 +6,6 @@
 }
 -dontwarn org.commonmark.**
 -dontwarn okhttp3.internal.**
+
+# ONNX Runtime (calls' voice) reaches its Java classes from native code by name.
+-keep class ai.onnxruntime.** { *; }

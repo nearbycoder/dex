@@ -175,85 +175,94 @@ fun ChatScreen(id: String) {
     // The first sidekick you open is when the app asks whether it may notify you.
     AskForNotificationsOnce(character?.id)
 
-    Scaffold(
-        modifier = Modifier.nestedScroll(scroll.nestedScrollConnection).testTag("chat-screen"),
-        topBar = {
-            ChatTopBar(
-                session = session,
-                character = character,
-                space = space,
-                running = transcript.running,
-                vm = vm,
-                chatVms = chatVms,
-                onRename = { renaming = true },
-                onMenu = { menu = true },
-                actions = actions,
-                scroll = scroll,
-            )
-        },
-        snackbarHost = { SnackbarHost(snackbar) },
-        contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
-    ) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding)) {
-            Column(Modifier.fillMaxSize()) {
-                Box(Modifier.weight(1f).fillMaxWidth()) {
-                    // Files saved into this chat replace the VM links they came from.
-                    val media = remember(transcript.artifacts, transcript.savingArtifacts, id) {
-                        dev.trydex.android.ui.components.ChatMedia(
-                            bySource = transcript.artifacts.mapNotNull { artifact -> artifact.source?.let { it to artifact } }.toMap(),
-                            saving = transcript.savingArtifacts.toSet(),
-                            save = { url -> repository.api.saveArtifact(id, url) },
-                        )
+    // A voice call with the sidekick, in their current conversation: what you say is sent marked as spoken.
+    val chatCall = rememberChatCall(id, snackbar, model::sendSpoken)
+    val callable = character != null && character.sessionId == id
+
+    Box(Modifier.fillMaxSize()) {
+        Scaffold(
+            modifier = Modifier.nestedScroll(scroll.nestedScrollConnection).testTag("chat-screen"),
+            topBar = {
+                ChatTopBar(
+                    session = session,
+                    character = character,
+                    space = space,
+                    running = transcript.running,
+                    vm = vm,
+                    chatVms = chatVms,
+                    onRename = { renaming = true },
+                    onMenu = { menu = true },
+                    actions = actions,
+                    scroll = scroll,
+                    call = { if (callable && character != null) CallButton(character, chatCall, enabled = connected) },
+                )
+            },
+            snackbarHost = { SnackbarHost(snackbar) },
+            contentWindowInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal),
+        ) { padding ->
+            Box(Modifier.fillMaxSize().padding(padding)) {
+                Column(Modifier.fillMaxSize()) {
+                    Box(Modifier.weight(1f).fillMaxWidth()) {
+                        // Files saved into this chat replace the VM links they came from.
+                        val media = remember(transcript.artifacts, transcript.savingArtifacts, id) {
+                            dev.trydex.android.ui.components.ChatMedia(
+                                bySource = transcript.artifacts.mapNotNull { artifact -> artifact.source?.let { it to artifact } }.toMap(),
+                                saving = transcript.savingArtifacts.toSet(),
+                                save = { url -> repository.api.saveArtifact(id, url) },
+                            )
+                        }
+                        if (transcript.loaded) androidx.compose.runtime.CompositionLocalProvider(dev.trydex.android.ui.components.LocalChatMedia provides media) {
+                            MessageList(
+                                sessionId = id,
+                                transcript = transcript,
+                                pending = pending,
+                                onSend = model::send,
+                                character = character,
+                                emptyHint = if (space != null) dev.trydex.core.model.Spaces.EMPTY_HINT else null,
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                            )
+                        } else {
+                            ChatSkeleton()
+                        }
                     }
-                    if (transcript.loaded) androidx.compose.runtime.CompositionLocalProvider(dev.trydex.android.ui.components.LocalChatMedia provides media) {
-                        MessageList(
-                            sessionId = id,
-                            transcript = transcript,
-                            pending = pending,
-                            onSend = model::send,
-                            character = character,
-                            emptyHint = if (space != null) dev.trydex.core.model.Spaces.EMPTY_HINT else null,
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                        )
-                    } else {
-                        ChatSkeleton()
+                    Column(
+                        Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)).padding(horizontal = 12.dp).padding(bottom = 12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Column(Modifier.widthIn(max = 800.dp).fillMaxWidth()) {
+                            if (session != null && state != null) ProviderWarning(session, state!!)
+                            if (character != null && character.sessionId != id) EarlierConversationNote(character)
+                            if (inSpace != null) InSpaceNote(inSpace)
+                            QueuePanel(transcript.queue, transcript.queueHeld, transcript.running, remember(id) { queueActions(id, app) })
+                            Composer(
+                                onSend = model::send,
+                                onStop = model::stop,
+                                running = transcript.running,
+                                enabled = connected,
+                                autoFocus = false,
+                                draft = draft,
+                                state = composer,
+                                placeholder = if (transcript.running) "Queue a follow-up…" else "Message ${character?.name ?: "Dex"}, or / for skills…",
+                                toolbar = {
+                                    if (session != null) {
+                                        ModelPicker(session.model, session.thinking, onChange = { picked, thinking ->
+                                            model.configure(picked, thinking)
+                                        }, compact = app.panes > 1)
+                                        McpPicker(state?.mcp.orEmpty(), session.mcpServers, onChange = { model.configureMcp(it) })
+                                    }
+                                },
+                            )
+                        }
                     }
                 }
-                Column(
-                    Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)).padding(horizontal = 12.dp).padding(bottom = 12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Column(Modifier.widthIn(max = 800.dp).fillMaxWidth()) {
-                        if (session != null && state != null) ProviderWarning(session, state!!)
-                        if (character != null && character.sessionId != id) EarlierConversationNote(character)
-                        if (inSpace != null) InSpaceNote(inSpace)
-                        QueuePanel(transcript.queue, transcript.queueHeld, transcript.running, remember(id) { queueActions(id, app) })
-                        Composer(
-                            onSend = model::send,
-                            onStop = model::stop,
-                            running = transcript.running,
-                            enabled = connected,
-                            autoFocus = false,
-                            draft = draft,
-                            state = composer,
-                            placeholder = if (transcript.running) "Queue a follow-up…" else "Message ${character?.name ?: "Dex"}, or / for skills…",
-                            toolbar = {
-                                if (session != null) {
-                                    ModelPicker(session.model, session.thinking, onChange = { picked, thinking ->
-                                        model.configure(picked, thinking)
-                                    }, compact = app.panes > 1)
-                                    McpPicker(state?.mcp.orEmpty(), session.mcpServers, onChange = { model.configureMcp(it) })
-                                }
-                            },
-                        )
-                    }
+                if (vm != null && (vm.status == VmStatus.Running || vm.status == VmStatus.Starting)) {
+                    VmPreview(vm, session?.title ?: "VM desktop")
                 }
-            }
-            if (vm != null && (vm.status == VmStatus.Running || vm.status == VmStatus.Starting)) {
-                VmPreview(vm, session?.title ?: "VM desktop")
             }
         }
+        val call = chatCall.call
+        if (call != null && character != null) VoiceCallScreen(call, character, model.transcript, onClose = chatCall::end)
     }
 
     if (menu && session != null) ChatMenuSheet(session, actions, onDismiss = { menu = false }, showMute = true, character = character, showFiles = vm != null && narrowBar(), space = space ?: inSpace)
@@ -314,6 +323,8 @@ private fun ChatTopBar(
     onMenu: () -> Unit,
     actions: ChatActions,
     scroll: androidx.compose.material3.TopAppBarScrollBehavior,
+    /** A sidekick's Call button, in their current conversation. */
+    call: @Composable () -> Unit = {},
 ) {
     val app = LocalApp.current
     val state by app.graph.repository.state.collectAsStateWithLifecycle()
@@ -431,6 +442,7 @@ private fun ChatTopBar(
                     )
                 }
             }
+            call()
             if (session != null && character != null) {
                 // A sidekick's notifications: every message, or off (their page has "when they reach out" too).
                 val notify = character.notifyLevel

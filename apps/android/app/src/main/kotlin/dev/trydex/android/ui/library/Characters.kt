@@ -108,6 +108,13 @@ import dev.trydex.android.ui.components.SidekickArt
 import androidx.compose.foundation.border
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import dev.trydex.core.model.Voice
+import dev.trydex.core.model.Voices
+import dev.trydex.core.voice.sayOnce
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
+import androidx.compose.material.icons.rounded.Stop
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 import java.time.Instant
@@ -257,7 +264,8 @@ fun CharacterEditorScreen(id: String, route: Route) {
     }
 
     fun save() {
-        val value = draft ?: return
+        // A new one keeps the voice shown here (with none chosen, it would otherwise come from the id they're given).
+        val value = draft?.let { if (isNew && it.voice == null) it.copy(voice = Voices.voiceOf(it.name, null).id) else it } ?: return
         if (saving || value.name.isBlank()) return
         saving = true
         error = null
@@ -463,6 +471,17 @@ private fun CharacterForm(draft: CharacterProfile, state: DexState, onChange: ((
     }
 
     SectionCard {
+        ProfileField("Voice", "How they sound on calls. Tap a voice to hear their greeting in it.") {
+            VoicePicker(
+                // Without one chosen, the one from their id (a new one's name, which saving keeps).
+                selected = Voices.voiceOf(draft.id.ifEmpty { draft.name }, draft.voice),
+                line = draft.greeting.ifBlank { "Hi, I'm ${draft.name.ifBlank { "your sidekick" }}." },
+                onPick = { voice -> onChange { it.copy(voice = voice.id) } },
+            )
+        }
+    }
+
+    SectionCard {
         ProfileField("Notifications", "Which of their messages notify you on the devices you turned notifications on for.") {
             Column {
                 SidekickNotifyChoices(draft.notifyLevel) { level -> onChange { it.copy(notify = level.id) } }
@@ -485,6 +504,60 @@ private fun CharacterForm(draft: CharacterProfile, state: DexState, onChange: ((
         ProfileField("MCP servers", "Tools from these servers are always on in their conversation.") {
             ProfileMcpChips(state, draft.mcpServers, tag = "character-mcp") { ids -> onChange { it.copy(mcpServers = ids) } }
         }
+    }
+}
+
+/** tiny-voca's two voices; picking one plays [line] in it (tapping it again while it plays stops it). */
+@Composable
+private fun VoicePicker(selected: Voice, line: String, onPick: (Voice) -> Unit) {
+    val devices = LocalApp.current.graph.voice
+    val scope = rememberCoroutineScope()
+    var playing by remember { mutableStateOf<Pair<Voice, Job>?>(null) }
+    var progress by remember { mutableStateOf<Float?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    fun play(voice: Voice) {
+        playing?.second?.cancel()
+        error = null
+        progress = null
+        val job = scope.launch {
+            try {
+                sayOnce(devices.speech, devices.player(preview = true), line, voice) { fraction -> progress = fraction }
+            } catch (cause: CancellationException) {
+                throw cause
+            } catch (cause: Exception) {
+                error = cause.message ?: "Their voice isn't available right now."
+            }
+        }
+        playing = voice to job
+        job.invokeOnCompletion { if (playing?.second == job) playing = null }
+    }
+
+    Column(Modifier.selectableGroup()) {
+        Voice.entries.forEach { voice ->
+            val busy = playing?.first == voice
+            Row(
+                Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    .selectable(selected = voice == selected, role = Role.RadioButton) {
+                        onPick(voice)
+                        if (busy) playing?.second?.cancel() else play(voice)
+                    }
+                    .testTag("voice-${voice.id}"),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(selected = voice == selected, onClick = null)
+                Text(voice.label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 12.dp).weight(1f))
+                val percent = progress?.takeIf { busy && it < 1f }
+                if (percent != null) Text("${(percent * 100).roundToInt()}%", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(
+                    if (busy) Icons.Rounded.Stop else Icons.AutoMirrored.Rounded.VolumeUp,
+                    contentDescription = if (busy) "Stop" else "Hear ${voice.label}",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 8.dp).size(20.dp),
+                )
+            }
+        }
+        error?.let { ErrorText(it, Modifier.padding(top = 4.dp).testTag("voice-error")) }
     }
 }
 

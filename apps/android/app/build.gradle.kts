@@ -128,6 +128,9 @@ dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:client"))
     implementation(project(":core:openui"))
+    implementation(project(":core:voice"))
+    // tiny-voca, the voice of calls, on the CPU (core/voice compiles against the same API).
+    implementation(libs.onnxruntime.android)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)

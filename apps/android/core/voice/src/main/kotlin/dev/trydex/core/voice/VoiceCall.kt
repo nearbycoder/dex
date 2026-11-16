@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 /**
  * One voice call with a sidekick (apps/web/src/client/voice/call.ts): speech recognition hears you, what you say goes
@@ -261,8 +262,8 @@ class VoiceCall(
                     val samples = speech.synthesize(utterance, voice)
                     if (batch.generation != generation || over) return
                     recentlySaid += Said(Voices.words(sentence.text), clock())
-                    update { copy(saying = sentence.text) }
-                    player.play(samples)
+                    // The caption follows the voice: it changes when this piece starts playing.
+                    player.play(samples) { work.launch { if (batch.generation == generation) update { copy(saying = sentence.text) } } }
                 }
             }
         } catch (error: CancellationException) {
@@ -329,6 +330,19 @@ data class CallSnapshot(
     val error: String? = null,
 ) {
     val over: Boolean get() = phase == CallPhase.Ended || phase == CallPhase.Failed
+
+    /** The call's status line. */
+    val status: String get() = when {
+        downloading != null -> "Getting their voice ready… ${(downloading * 100).roundToInt()}%"
+        muted && !over -> "Muted"
+        else -> when (phase) {
+            CallPhase.Starting -> "Getting their voice ready…"
+            CallPhase.Listening -> "Listening"
+            CallPhase.Thinking -> "Thinking…"
+            CallPhase.Speaking -> "Speaking"
+            CallPhase.Ended, CallPhase.Failed -> "Call ended"
+        }
+    }
 }
 
 /** What recognition reports: your words as they come, the final words of an utterance, its end, or that it can't go on. */
@@ -359,7 +373,8 @@ interface Speech {
 
 /** Plays their voice: each piece right after the one before, without gaps. */
 interface CallPlayer {
-    fun play(samples: FloatArray)
+    /** Queues [samples] after what's queued; [onStart] (on any thread) when they begin to play. */
+    fun play(samples: FloatArray, onStart: () -> Unit = {})
     /** Stops at once and drops what's queued. */
     fun stop()
     /** Whether anything is playing or queued. */

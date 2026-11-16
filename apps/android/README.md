@@ -30,6 +30,8 @@ Sign in with your Dex's address (trydex.dev, or your own deployment). The browse
 
 **Sidekick looks:** a look is a BoopFace (github.com/CX-ArtLab/BoopFace), as on the web: a robot head with two big eyes and an antenna dot, in a color or one of BoopFace's finishes (`look.finish`). It's shown whole, never cropped to a circle: avatars, the editor, notifications, and widgets. The app draws a plain-color face itself from BoopFace's geometry (`SidekickLooks`, `SidekickArt`; it blinks now and then in a chat's header and the editor, unless animations are off; `SidekickArtTest` checks it against the web's PNG); a finish only the web can draw, so the app shows the PNG it saved (`image`, on a clear background). The editor has the ready-made looks (their bundled PNGs), a Color row, an Accent row, Shuffle, and a photo; more finishes are picked on the web. Saving sends a picture only when the look changed on the phone: a ready-made look's bundled PNG (drawn smaller if it passes the agent's 48 KB) or a color's PNG drawn here, with the finish always stated (`null` for a plain color).
 
+**Calls with sidekicks** (the phone button in a sidekick's current conversation): a live voice call, as on the web (`apps/web/src/shared/voice.ts`, `client/voice/call.ts`). The phone's own speech recognition hears you (on-device when it has it, American English, started again after each utterance); about 0.9 s after your last words what you said goes into their conversation marked as spoken (`sendMessage`'s fourth argument), so they answer briefly in plain sentences. Their reply is read aloud a sentence at a time as it streams in, by tiny-voca (4.5M parameters, ONNX Runtime on the CPU): Dex turns the text into phonemes (`/api/voice/phonemes`), the model makes 24 kHz audio, and an AudioTrack plays it gaplessly as a call (communication mode, the speaker unless headphones are in). Talking over them (two words or more that aren't their own voice leaking into the microphone) stops them, and the rest of that reply goes unsaid. The model (21 MB, `/api/voice/model/model.onnx`) downloads once, with its progress on the call screen, into the app's files, kept by revision. The call ends when you end it, leave the chat, or leave the app. Each sidekick's page has a **Voice** setting (two voices; tapping one plays their greeting in it); without one chosen, the voice comes from their id. The call itself is `core/voice` (turn-taking, the echo check, cutting off, ordering), with the text rules in `core/model` Voice, checked by goldens. The demo's fake knows the phonemes of a few sentences and can't serve the model; to try a demo call, put a copy of the model at the app's `files/voice/tiny-voca-e5f9b11651a4.onnx`.
+
 **Home-screen widgets** (Jetpack Glance, `widget/`): **Sidekick** shows one sidekick (picked when you place it) with their face, name, an unread dot, their latest words, and Message (their chat with the keyboard up); **Sidekicks** shows up to four with unread dots. They read `GET /api/sidekicks` with the stored session every 15 minutes (WorkManager) and on each push, and redraw from the synced state while the app is open; pictures are cached on disk. Signed out, they say "Sign in to Dex".
 
 **Demo:** debug builds have **Try the demo** on the sign-in screen. It starts an in-process fake Dex (`core/fake`) with sample chats, generated UIs, machines, and a desktop, so you can try every screen without an account. Release builds don't include it.
@@ -43,10 +45,11 @@ Sign in with your Dex's address (trydex.dev, or your own deployment). The browse
 | `core/model` | The wire protocol and synced state, Pi transcripts and their reducer, inbox, snoozes, tools, media, models, and formatting: ports of `apps/web/src/shared` and the client libs, checked against the web's own code by golden tests. |
 | `core/client` | The agent socket (reconnects, ordered delivery, RPC with timeouts), native sign-in, and typed wrappers for every callable. |
 | `core/openui` | OpenUI's lang-core in Kotlin: the streaming parser, evaluator, store, queries and mutations, actions, and form validation, checked against lang-core by goldens. |
+| `core/voice` | Voice calls: the call controller (over injected recognition, voice, and speaker) and tiny-voca on ONNX Runtime (compiled against its JVM build, whose tests run the model; the app brings `onnxruntime-android`). |
 | `core/fake` | FakeDex: an in-process stand-in for a deployment, for tests and the demo. |
 | `app` | The app: repository, notifications, and the Compose UI (`ui/chat`, `ui/openui`, `ui/machine`, `ui/library`, `ui/settings`, `ui/files`, `ui/usage`). |
 
-Goldens come from the web's TypeScript run by Node: `TZ=America/Chicago node apps/android/tools/goldens/generate.mts`, `node apps/android/tools/goldens/openui.mts`, and `node apps/android/tools/goldens/spaces.mts` and `node apps/android/tools/goldens/ui-action.mts` (which need nothing installed) from the repo root. Regenerate them when the web's shared code or OpenUI changes, and the Kotlin tests say what drifted.
+Goldens come from the web's TypeScript run by Node: `TZ=America/Chicago node apps/android/tools/goldens/generate.mts`, `node apps/android/tools/goldens/openui.mts`, and `node apps/android/tools/goldens/spaces.mts`, `node apps/android/tools/goldens/ui-action.mts`, and `node apps/android/tools/goldens/voice.mts` (which need nothing installed) from the repo root. Regenerate them when the web's shared code or OpenUI changes, and the Kotlin tests say what drifted.
 
 ## Form factors
 
@@ -65,7 +68,11 @@ Goldens come from the web's TypeScript run by Node: `TZ=America/Chicago node app
 ./gradlew :app:connectedDebugAndroidTest   # on a running emulator or device
 ```
 
+`core/voice`'s TinyVocaModelTest runs tiny-voca on fixed phonemes and compares with what onnxruntime-web made of them; it needs the model, so point `DEX_VOICE_MODEL` at a copy (else it's skipped).
+
 ## Limits
+
+- **Calls** need the app in front: leaving it ends the call (Android doesn't let an app use the microphone from the background without a foreground service). ONNX Runtime's native code adds about 34 MB per ABI (arm64-v8a), about 140 MB across the four the app ships.
 
 - **Notifications** are instant only with Firebase (above). Without `app/google-services.json`, or on a deployment without `FCM_SERVICE_ACCOUNT`, they're local: from the app's own connection and a check about every 15 minutes, and a sidekick set to "When they reach out" can only tell those apart from replies to messages sent from this device.
 - **Widgets** refresh at most every 15 minutes while the app is closed (WorkManager's shortest period), sooner when a push arrives.

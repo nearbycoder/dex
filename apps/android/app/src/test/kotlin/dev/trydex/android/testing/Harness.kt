@@ -37,16 +37,21 @@ class FakePushTokens(override val available: Boolean = true, var value: String? 
     }
 }
 
-class Harness(chunkMs: Long = 0, val pushTokens: FakePushTokens = FakePushTokens()) : AutoCloseable {
+class Harness(chunkMs: Long = 0, val pushTokens: FakePushTokens = FakePushTokens(), val voice: FakeCallDevices = FakeCallDevices()) : AutoCloseable {
     val fake = FakeDex(chunkMs = chunkMs)
     val server = fake.start()
     val context: Application = ApplicationProvider.getApplicationContext()
-    val graph = AppGraph(context, sessionStore = MemorySessionStore(), cacheDir = Files.createTempDirectory("dex-cache").toFile(), pushTokens = pushTokens)
+    val graph = AppGraph(context, sessionStore = MemorySessionStore(), cacheDir = Files.createTempDirectory("dex-cache").toFile(), pushTokens = pushTokens, voice = voice)
     val links = LinkInbox()
     val pip = PipController()
     val opened = mutableListOf<String>()
 
     val session = DexSession(server.toString(), fake.token, DexUser(FakeData.USER_ID, FakeData.LOGIN, "Mona Octocat"), System.currentTimeMillis() + 30L * 86_400_000)
+
+    init {
+        // Calls' phonemes from the fake's endpoint, as the app would get them.
+        voice.phonemes = { text -> dev.trydex.core.client.DexVoice.phonemes(graph.http, session, text) }
+    }
 
     fun signIn() {
         graph.repository.setVisible(true)

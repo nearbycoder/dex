@@ -1280,7 +1280,8 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
                 val started = clock()
                 val content = mutableListOf<JsonObject>()
                 later {
-                    streaming = Pi.assistantMessage(emptyList(), clock(), stopReason = "pending")
+                    // The same timestamp as the message it becomes, as Pi's: a reply keeps its identity as it streams.
+                    streaming = Pi.assistantMessage(emptyList(), started, stopReason = "pending")
                     events(buildJsonObject { put("type", "message_start"); put("message", streaming!!) })
                 }
                 val tools = mutableListOf<Pair<String, Step.Tool>>()
