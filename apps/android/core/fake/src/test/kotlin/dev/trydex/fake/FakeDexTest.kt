@@ -230,12 +230,15 @@ class FakeDexTest {
         assertThat(renamed.image).isEqualTo(rex.image)
         assertThat(renamed.look).isEqualTo(rex.look)
         withTimeout(5_000) { while (connection.state.value!!.session(rex.sessionId)?.title != "Coach Rex") kotlinx.coroutines.delay(10) }
-        // A look without a finish (from an older app) keeps Rex's; a plain color (finish null) clears it.
+        // A look without a shape (from an older app) keeps Rex's, in its color, and always has the finish older apps
+        // show pictures for.
         val older = DexApi.characterDraft(rex.copy(look = rex.look!!.copy(skin = "teal")), picture = true).let { draft ->
-            JsonObject(draft + ("look" to JsonObject(draft["look"]!!.jsonObject - "finish")))
+            JsonObject(draft + ("look" to JsonObject(draft["look"]!!.jsonObject - "shape" - "finish")))
         }
-        assertThat(api.saveCharacter(older).look!!.finish).isEqualTo(306)
-        assertThat(api.saveCharacter(DexApi.characterDraft(rex.copy(look = rex.look!!.copy(finish = null)), picture = true)).look!!.finish).isNull()
+        val kept = api.saveCharacter(older).look!!
+        assertThat(kept.shape).isEqualTo(rex.look!!.shape)
+        assertThat(kept.skin).isEqualTo("teal")
+        assertThat(kept.finish).isEqualTo(101)
         // A photo replaces the look; null removes the picture.
         val photo = api.saveCharacter(DexApi.characterDraft(rex.copy(image = "data:image/webp;base64,AAAA", look = null), picture = true))
         assertThat(photo.look).isNull()

@@ -4,6 +4,7 @@ import dev.trydex.core.model.AgentProfile
 import dev.trydex.core.model.AttachedFile
 import dev.trydex.core.model.CharacterProfile
 import dev.trydex.core.model.Characters
+import dev.trydex.core.model.SidekickLooks
 import dev.trydex.core.model.attachmentSummary
 import dev.trydex.core.model.ChatArtifact
 import dev.trydex.core.model.DexJson
@@ -859,7 +860,10 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
         return id
     }
 
-    /** saveCharacter: creates (no id) or updates; a left-out `image` or `look` (or a look's `finish`) is kept, null removes it. */
+    /**
+     * saveCharacter: creates (no id) or updates; a left-out `image` or `look` is kept, null removes it. A look's picture is
+     * the agent's to draw: the fake has the ready-made looks' (and none for others, which the app draws itself).
+     */
     private fun saveCharacter(draft: JsonObject): JsonElement {
         val name = draft["name"].str?.trim()?.take(40).orEmpty()
         if (name.isEmpty()) error("Give your sidekick a name.")
@@ -871,14 +875,18 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
         val id = existing?.id ?: (name.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').take(32).ifEmpty { "character" } + "-" + UUID.randomUUID().toString().take(6))
         val now = clock()
         val parsed = DexJson.decodeFromJsonElement(CharacterProfile.serializer(), JsonObject(draft + mapOf("id" to JsonPrimitive(id))))
+        // As the agent's cleanLook: a look without a shape (from an app that predates them) keeps the shape it had.
+        val look = if ("look" in draft) parsed.look?.let { sent ->
+            val shaped = if ("shape" in draft["look"]!!.jsonObject) sent else existing?.look?.let { sent.copy(shape = it.shape, custom = it.custom) } ?: sent
+            SidekickLooks.clean(shaped)
+        } else existing?.look
         var character = parsed.copy(
             name = name,
             tagline = parsed.tagline.trim().take(120),
             greeting = parsed.greeting.trim().take(2_000),
             avatar = parsed.avatar.trim().let { if (it.isEmpty()) "" else it.substring(0, it.offsetByCodePoints(0, 1)) },
-            image = image,
-            // A look without a finish (from an app that predates them) keeps the one it had, as the agent's cleanLook.
-            look = if ("look" in draft) parsed.look?.let { look -> if ("finish" in draft["look"]!!.jsonObject) look else look.copy(finish = existing?.look?.finish) } else existing?.look,
+            image = if (look != null && "look" in draft) Characters.PRESETS.firstOrNull { it.look == look }?.dataUrl else image,
+            look = look,
             color = parsed.color.takeIf { it in dev.trydex.core.model.Catalogs.AGENT_COLORS } ?: "violet",
             mcpServers = if ("mcpServers" in draft) parsed.mcpServers.filter { server -> state.mcp.any { it.id == server } } else existing?.mcpServers.orEmpty(),
             sessionId = existing?.sessionId.orEmpty(),
