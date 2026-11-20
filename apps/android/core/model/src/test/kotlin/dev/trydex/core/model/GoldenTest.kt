@@ -256,7 +256,7 @@ class GoldenTest {
             val (text, files) = splitAttachments(case["input"].str!!)
             assertWithMessage(case["input"].str).that(text).isEqualTo(case["text"].str)
             assertWithMessage(case["input"].str).that(files)
-                .isEqualTo(case["files"]!!.jsonArray.map { AttachedFile(it["name"].str!!, it["mimeType"].str!!) })
+                .isEqualTo(case["files"]!!.jsonArray.map { AttachedFile(it["name"].str!!, it["mimeType"].str!!, it["key"].str) })
         }
         for (case in golden.items("summary")) {
             assertThat(attachmentSummary(case["names"]!!.jsonArray.map { it.str!! })).isEqualTo(case["text"].str)

@@ -41,7 +41,7 @@ extension ComposerModel {
     func removeAttachment(_ id: UUID) { attachments.removeAll { $0.id == id } }
 
     /// What can be dropped on the composer (or pasted into it) as a file: text goes into the box as text instead.
-    static let droppableTypes: [UTType] = [.image, .pdf, .movie, .fileURL]
+    static let droppableTypes: [UTType] = [.image, .pdf, .movie, .audio, .archive, .fileURL]
 
     /// Attaches dropped or pasted items: images, PDFs, and files (a file by its contents, with its name).
     func attach(_ providers: [NSItemProvider], client: DexClient) {
@@ -274,7 +274,7 @@ struct AttachmentChips: View {
                     Image(uiImage: thumbnail).resizable().scaledToFill().frame(width: 56, height: 56)
                 } else {
                     HStack(spacing: 6) {
-                        Image(systemName: "doc.text").foregroundStyle(failed ? .red : .secondary)
+                        Image(systemName: fileSymbol(mimeType: draft.mimeType, name: draft.name)).foregroundStyle(failed ? .red : .secondary)
                         Text(draft.name).font(.caption).lineLimit(2)
                     }
                     .padding(.leading, 10)
@@ -321,7 +321,7 @@ struct UserAttachmentsView: View {
                 }
             }
             ForEach(Array(others.enumerated()), id: \.offset) { _, file in
-                Label(file.name, systemImage: "doc.text")
+                Label(file.name, systemImage: fileSymbol(mimeType: file.mimeType, name: file.name))
                     .font(.caption)
                     .lineLimit(1)
                     .padding(.horizontal, 8)
@@ -364,4 +364,14 @@ private struct AttachedImage: View {
             do { loaded = try await MediaLoader.shared.screenshot(ref: ref, feed: feed); failed = loaded == nil } catch { failed = true }
         }
     }
+}
+
+/// An attached file's symbol, by its type (or name): audio, video, an archive, or a document.
+func fileSymbol(mimeType: String, name: String) -> String {
+    let type = mimeType.lowercased()
+    let ext = name.split(separator: ".").last.map { $0.lowercased() } ?? ""
+    if type.hasPrefix("audio/") || ["mp3", "m4a", "wav", "ogg", "flac", "aac", "opus"].contains(ext) { return "waveform" }
+    if type.hasPrefix("video/") || ["mp4", "mov", "m4v", "webm", "mkv", "avi"].contains(ext) { return "film" }
+    if type.contains("zip") || type.contains("tar") || type.contains("gzip") || ["zip", "tar", "tgz", "gz", "7z", "rar"].contains(ext) { return "doc.zipper" }
+    return "doc.text"
 }

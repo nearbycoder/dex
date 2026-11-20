@@ -828,7 +828,12 @@ export class DexAgent extends Agent<Env, DexState> {
           command: (chatId, command) => this.secrets.command(chatId, command),
           fill: (chatId, content) => this.secrets.fill(chatId, content)
         }),
-        ...(this.media.configured ? mediaTools((chatId, path, title, n) => this.shareMediaFromVm(chatId, path, title, { vmKey: vmKeyFor(chatId, n) })) : []),
+        ...(this.media.configured
+          ? mediaTools(
+              (chatId, path, title, n) => this.shareMediaFromVm(chatId, path, title, { vmKey: vmKeyFor(chatId, n) }),
+              (chatId, name, path, n) => this.attachmentToVm(chatId, name, path, n)
+            )
+          : []),
         ...vmAgentTools(this.vmAgentsHost())
       ].map((tool) => (tool.name.startsWith("vm_") || tool.name === "share_media" ? forWorkers({ worker: (id) => this.vmWorker(id) }, tool) : tool))
     })
@@ -1470,11 +1475,12 @@ export class DexAgent extends Agent<Env, DexState> {
   @callable()
   async sendMessage(sessionId: string, text: string, attachments?: readonly ChatAttachment[], options?: { spoken?: boolean }) {
     const content = (typeof text === "string" ? text : "").trim()
-    // Checked now, so a message that can't go fails here rather than later in the queue.
-    const files = checkAttachments(attachments)
-    if (!content && files.length === 0) return
     const row = this.ctx.storage.sql.exec<SessionRow>(`SELECT * FROM dex_sessions WHERE id = ?`, sessionId).toArray()[0]
     if (!row) throw new Error("Chat not found")
+    // Checked now, so a message that can't go fails here rather than later in the queue. Stored files become this chat's.
+    const files = checkAttachments(attachments, (key) => this.media.claimAttachment(sessionId, key))
+    if (!content && files.length === 0) return
+    if (files.some((file) => file.kind === "file")) this.publishArtifacts(sessionId)
     if (options?.spoken === true) this.voiceCalls.add(sessionId)
     else this.voiceCalls.delete(sessionId)
 
@@ -4443,6 +4449,43 @@ export class DexAgent extends Agent<Env, DexState> {
   async saveArtifact(sessionId: string, url: string) {
     const media = await this.saveVmArtifact(sessionId, url)
     return { url: media.url, name: media.name, kind: media.kind, size: media.size }
+  }
+
+  /** A file attached in the composer and stored by the Worker (/api/attachments), until a message claims it. Worker-only. */
+  registerAttachment(key: string, name: string, contentType: string, size: number) {
+    this.media.registerAttachment(key, name, contentType, size)
+  }
+
+  /**
+   * Copies a file attached to a chat onto one of its VMs (the get_attachment tool): the VM downloads it from Dex with
+   * a single-use link, so it never passes through this object.
+   */
+  async attachmentToVm(sessionId: string, name: string, path: string | undefined, vm: number) {
+    const file = this.media.attachmentOf(sessionId, name)
+    if (!file) {
+      const names = this.media.attachments(sessionId).map((attached) => attached.name)
+      throw new Error(names.length ? `No attachment named ${name}. This chat has: ${names.join(", ")}.` : "This chat has no attached files.")
+    }
+    if (!this.vmHost.configured()) throw new Error("VMs aren't set up on this deployment, so attached files can't be used here.")
+    const origin = this.appOrigin()
+    if (!origin || !origin.startsWith("https://")) throw new Error("Dex needs a public https address for downloads; open it once from its deployed URL.")
+    const target = path?.trim() || `/home/user/attachments/${file.name.replace(/[/\\]/g, "_")}`
+    const token = await this.media.createDownload(file.key)
+    const quote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`
+    const command = [
+      `f=${quote(target)}`,
+      `mkdir -p "$(dirname "$f")"`,
+      `curl -sS --fail-with-body --max-time 560 -o "$f" ${quote(`${origin}/api/media/download/${token}`)}`,
+      `ls -l "$f"`
+    ].join("\n")
+    const result = await this.vmFor(vmKeyFor(sessionId, vm)).exec(command, { actor: "agent", timeoutSeconds: 600 })
+    if (result.exitCode !== 0) throw new Error(result.output.trim().slice(-600) || "The download failed.")
+    return { path: target, name: file.name, size: file.size, contentType: file.contentType }
+  }
+
+  /** Claims a download token: the stored file it's for (the Worker calls this before streaming it to a VM). */
+  async consumeMediaDownload(token: string) {
+    return this.media.consumeDownload(token)
   }
 
   /** Claims a media upload token for `size` bytes (the Worker calls this before storing the body). */

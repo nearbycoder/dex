@@ -17,7 +17,8 @@
     "test:ui-action": "node --test tests/ui-action.test.ts",
     "test:transcript": "node --test tests/transcript.test.ts",
     "test:dizione": "node --test tests/dizione.test.ts",
-    "test:voice": "node --test tests/voice.test.ts"
+    "test:voice": "node --test tests/voice.test.ts",
+    "test:attachments": "node --test tests/attachments.test.ts"
   },
   "dependencies": {
     "@block65/webcrypto-web-push": "^2.0.0",

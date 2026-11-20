@@ -1,9 +1,10 @@
 import type { AssistantMessage, ToolResultMessage } from "@earendil-works/pi-ai"
 import { Predicate } from "effect"
 import { Link } from "@tanstack/react-router"
-import { AlarmClock, AlertTriangle, ArrowDown, Brain, ChevronRight, Clock, FileText, ListChecks, LoaderCircle, MousePointerClick } from "lucide-react"
+import { AlarmClock, AlertTriangle, ArrowDown, Brain, ChevronRight, Clock, ListChecks, LoaderCircle, MousePointerClick } from "lucide-react"
 import { useParams } from "@tanstack/react-router"
 import type { AttachedFile } from "~/shared/attachments"
+import { FileIcon } from "~/client/components/file-icon"
 import { lazy, memo, type ReactNode, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { displayItems, type LiveTool, toolResults, type TranscriptState } from "~/client/lib/transcript"
 import { invokedSkill } from "~/shared/skills"
@@ -366,12 +367,25 @@ function UserAttachments({
           />
         ) : null
       )}
-      {others.map((file, index) => (
-        <span key={`file-${index}`} title={file.name} className="flex max-w-56 items-center gap-1.5 rounded-lg bg-zinc-900/80 px-2 py-1.5 text-xs text-zinc-300">
-          <FileText className="size-3.5 shrink-0 text-zinc-400" />
-          <span className="min-w-0 truncate">{file.name}</span>
-        </span>
-      ))}
+      {others.map((file, index) => {
+        const chip = "flex max-w-56 items-center gap-1.5 rounded-lg bg-zinc-900/80 px-2 py-1.5 text-xs text-zinc-300"
+        const content = (
+          <>
+            <FileIcon mimeType={file.mimeType} name={file.name} className="size-3.5 shrink-0 text-zinc-400" />
+            <span className="min-w-0 truncate">{file.name}</span>
+          </>
+        )
+        // A stored file opens (media plays, anything else downloads).
+        return file.key ? (
+          <a key={`file-${index}`} href={`/api/media/${file.key}`} target="_blank" rel="noreferrer" title={file.name} className={`${chip} hover:bg-zinc-800`}>
+            {content}
+          </a>
+        ) : (
+          <span key={`file-${index}`} title={file.name} className={chip}>
+            {content}
+          </span>
+        )
+      })}
     </div>
   )
 }

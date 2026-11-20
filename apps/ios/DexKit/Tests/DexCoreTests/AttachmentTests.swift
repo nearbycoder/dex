@@ -22,6 +22,9 @@ import Testing
              [AttachedFile(name: "IMG_0036.png", mimeType: "image/png")]),
             (#"<attachment name="broken" type="text/plain">no closing tag"#, #"<attachment name="broken" type="text/plain">no closing tag"#, []),
             ("  spaced text with no tags  ", "  spaced text with no tags  ", []),
+            ("Transcribe this\n" + #"<attachment name="demo take 3.mp3" type="audio/mpeg" size="4718592" key="ZGV2/0b6f2e9a-1c2d-4e5f-8a9b-0c1d2e3f4a5b.mp3">"#
+                + "\n(A file the user attached, 4.5 MB, stored in Dex; you can't read it here.)\n</attachment>", "Transcribe this",
+             [AttachedFile(name: "demo take 3.mp3", mimeType: "audio/mpeg", key: "ZGV2/0b6f2e9a-1c2d-4e5f-8a9b-0c1d2e3f4a5b.mp3")]),
         ]
         for (input, text, files) in cases {
             let split = splitAttachments(input)
@@ -79,19 +82,23 @@ import Testing
         await eventually { client.isConnected }
         let photo = try await client.uploadAttachment(Data([1, 2]), name: "shot.png", mimeType: "image/png")
         let notes = try await client.uploadAttachment(Data("# n".utf8), name: "notes.md", mimeType: "text/markdown")
-        await #expect(throws: AttachmentError("Dex can't read .zip files yet.", status: 415)) {
-            try await client.uploadAttachment(Data([0]), name: "a.zip", mimeType: "application/zip")
+        let song = try await client.uploadAttachment(Data([1, 2, 3]), name: "song.mp3", mimeType: "audio/mpeg")
+        #expect(song.kind == "file")
+        #expect(song.size == 3)
+        await #expect(throws: AttachmentError("Dex can't store .exe files.", status: 415)) {
+            try await client.uploadAttachment(Data([0]), name: "a.exe", mimeType: "application/octet-stream")
         }
         let feed = client.chat(MockData.welcomeId)
         await eventually { feed.transcript.loaded }
-        try await feed.send("", attachments: [photo, notes])
+        try await feed.send("", attachments: [photo, notes, song])
         await eventually {
             feed.transcript.displayItems.contains { if case .user(_, _, _, let files, _) = $0 { !files.isEmpty } else { false } }
         }
         let sent = feed.transcript.displayItems.compactMap { item -> ([AttachedFile], [ImagePart])? in
             if case .user(_, _, _, let files, let parts) = item, !files.isEmpty { (files, parts) } else { nil }
         }.last
-        #expect(sent?.0.map(\.name) == ["shot.png", "notes.md"])
+        #expect(sent?.0.map(\.name) == ["shot.png", "notes.md", "song.mp3"])
+        #expect(sent?.0.last?.key?.hasSuffix(".mp3") == true)
         #expect(sent?.1.count == 1)
         #expect(agent.calls.last { $0.method == "sendMessage" }?.args.count == 3)
     }

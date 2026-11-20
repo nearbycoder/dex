@@ -1,7 +1,8 @@
-import { ArrowUp, FileText, LoaderCircle, Paperclip, Square, X } from "lucide-react"
+import { ArrowUp, LoaderCircle, Paperclip, Square, X } from "lucide-react"
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { type DraftAttachment, uploadAttachment } from "~/client/lib/attachments"
-import { ATTACHMENT_ACCEPT, ATTACHMENT_LIMITS, type ChatAttachment } from "~/shared/attachments"
+import { ATTACHMENT_LIMITS, type ChatAttachment } from "~/shared/attachments"
+import { FileIcon } from "~/client/components/file-icon"
 import { SkillMenu, type SkillMenuHandle } from "./skill-menu"
 
 /** Files attached in the composer: each uploads (to be prepared for the model) as soon as it's added. */
@@ -64,7 +65,7 @@ function AttachmentChip({ draft, onRemove }: { draft: DraftAttachment; onRemove:
         <img src={draft.preview} alt={draft.name} className="size-full object-cover" />
       ) : (
         <>
-          <FileText className={`size-5 shrink-0 ${failed ? "text-red-400" : "text-zinc-400"}`} />
+          <FileIcon mimeType={draft.mimeType} name={draft.name} className={`size-5 shrink-0 ${failed ? "text-red-400" : "text-zinc-400"}`} />
           <span className="min-w-0 truncate text-xs text-zinc-300">{draft.name}</span>
         </>
       )}
@@ -244,7 +245,6 @@ export function Composer(props: {
           ref={picker}
           type="file"
           multiple
-          accept={ATTACHMENT_ACCEPT}
           className="hidden"
           onChange={(event) => {
             if (event.target.files) add(event.target.files)

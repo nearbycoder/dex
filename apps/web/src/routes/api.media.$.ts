@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router"
 import { getAgentByName } from "agents"
 import { env } from "cloudflare:workers"
 import type { DexAgent } from "~/agent/dex-agent"
-import { encodeUserId, parseUploadToken } from "~/agent/media"
+import { encodeUserId, parseDownloadToken, parseUploadToken } from "~/agent/media"
 import { activeViewer } from "~/server/active-session"
 import { Keys } from "~/server/crypto"
 import { serverRuntime } from "~/server/runtime"
@@ -12,15 +12,18 @@ const KEY = /^[A-Za-z0-9_-]+\/[0-9a-f-]{36}\.[a-z0-9]+$/
 const agentFor = (userId: string) => getAgentByName(env.DexAgent as unknown as DurableObjectNamespace<DexAgent>, userId)
 const status = (code: number, message: string) => new Response(message, { status: code, headers: { "cache-control": "no-store" } })
 
+/** `attachment; filename*=…` for a file's name (RFC 6266/5987). */
+const downloadDisposition = (name: string) => `attachment; filename*=UTF-8''${encodeURIComponent(name.replace(/[\u0000-\u001f]/g, "")).replace(/['()*]/g, (char) => `%${char.charCodeAt(0).toString(16)}`)}`
+
 /**
- * GET/HEAD /api/media/<user>/<id>.<ext>: a shared file, for its owner only (session cookie), with byte ranges so
- * Safari can play and seek video. The type comes from the extension's allowlist and the response is sandboxed, so
- * nothing served here can run as a page on Dex's origin.
+ * GET/HEAD /api/media/<user>/<id>.<ext>: a stored file, for its owner only (session cookie), with byte ranges so
+ * Safari can play and seek video. Media types (the extension's allowlist) are served inline; any other file (an
+ * attachment such as a zip) only as a download of octet-stream. Every response is sandboxed, so nothing served here
+ * can run as a page on Dex's origin.
  */
 async function serve(request: Request, key: string, head: boolean) {
   if (!KEY.test(key)) return status(404, "Not found")
   const media = mediaTypeOf(key)
-  if (!media) return status(404, "Not found")
   const viewer = await activeViewer(request, env)
   if (!viewer) return status(401, "Unauthorized")
   // Someone else's key looks the same as a missing one.
@@ -30,11 +33,11 @@ async function serve(request: Request, key: string, head: boolean) {
   if (!object) return status(404, "Not found")
 
   const headers = new Headers({
-    "content-type": media.type,
+    "content-type": media?.type ?? "application/octet-stream",
     "accept-ranges": "bytes",
     etag: object.httpEtag,
     "cache-control": "private, max-age=31536000, immutable",
-    "content-disposition": "inline",
+    "content-disposition": media ? "inline" : downloadDisposition(object.customMetadata?.name ?? key.split("/").pop() ?? "file"),
     "x-content-type-options": "nosniff",
     "content-security-policy": "default-src 'none'; sandbox",
     "cross-origin-resource-policy": "same-origin"
@@ -84,10 +87,35 @@ async function upload(request: Request, token: string) {
   return new Response(JSON.stringify({ url: `/api/media/${claim.key}` }), { status: 201, headers: { "content-type": "application/json" } })
 }
 
+/**
+ * GET /api/media/download/<token>: a chat's VM fetching a file attached to the chat (the get_attachment tool). The
+ * single-use token (HMAC-checked here, claimed in the user's agent) is the only credential; browsers can't use it.
+ */
+async function download(request: Request, token: string) {
+  if (request.headers.get("origin")) return status(403, "Downloads go to VMs, not browsers")
+  const parsed = parseDownloadToken(token)
+  const valid = parsed ? await serverRuntime(env).runPromise(Keys.use((keys) => keys.verify(parsed.signed, parsed.tag))) : false
+  if (!parsed || !valid) {
+    await env.LOGIN_LIMITER.limit({ key: request.headers.get("cf-connecting-ip") ?? "unknown" })
+    return status(401, "Invalid download token")
+  }
+  const agent = await agentFor(parsed.userId)
+  const file = (await agent.consumeMediaDownload(token)) as { key: string; contentType: string } | null
+  if (!file || !file.key.startsWith(`${encodeUserId(parsed.userId)}/`)) return status(401, "Download token expired or already used")
+  const object = await env.MEDIA.get(file.key)
+  if (!object) return status(404, "Not found")
+  return new Response(object.body, {
+    headers: { "content-type": "application/octet-stream", "content-length": String(object.size), "cache-control": "no-store", "x-content-type-options": "nosniff" }
+  })
+}
+
 export const Route = createFileRoute("/api/media/$")({
   server: {
     handlers: {
-      GET: ({ request, params }) => serve(request, params._splat ?? "", false),
+      GET: ({ request, params }) => {
+        const path = params._splat ?? ""
+        return path.startsWith("download/") ? download(request, path.slice("download/".length)) : serve(request, path, false)
+      },
       HEAD: ({ request, params }) => serve(request, params._splat ?? "", true),
       PUT: ({ request, params }) => {
         const path = params._splat ?? ""

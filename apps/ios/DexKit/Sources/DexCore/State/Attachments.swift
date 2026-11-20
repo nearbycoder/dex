@@ -1,15 +1,18 @@
 import Foundation
 
 // Files attached to a chat message (apps/web/src/shared/attachments.ts). `POST /api/attachments` turns an upload into a
-// ChatAttachment (an image prepared for the model, or a file's text); the app sends it back unchanged with the message,
-// and the agent writes each one into the message as an `<attachment …>` tag. Apps show those tags as chips.
+// ChatAttachment (an image prepared for the model, a file's text, or any other file stored in Dex for the chat's VM);
+// the app sends it back unchanged with the message, and the agent writes each one into the message as an
+// `<attachment …>` tag. Apps show those tags as chips.
 
 /// An attachment as the server prepared it. Kept as its JSON, so it goes back to `sendMessage` exactly as it came.
 public struct ChatAttachment: Sendable, Hashable {
     public var json: JSONValue
     public init(json: JSONValue) { self.json = json }
-    /// `image` or `text`.
+    /// `image`, `text`, or `file` (stored in Dex: audio, video, archives, …). Others may come; they go back as they came.
     public var kind: String { json["kind"]?.string ?? "text" }
+    /// A stored file's size in bytes.
+    public var size: Int? { json["size"]?.number.map { Int($0) } }
     public var name: String { json["name"]?.string ?? "file" }
     public var mimeType: String { json["mimeType"]?.string ?? "application/octet-stream" }
     /// An image's base64.
@@ -20,19 +23,22 @@ public struct ChatAttachment: Sendable, Hashable {
 public struct AttachedFile: Codable, Sendable, Hashable {
     public var name: String
     public var mimeType: String
-    public init(name: String, mimeType: String) { self.name = name; self.mimeType = mimeType }
-    enum CodingKeys: String, CodingKey { case name, mimeType }
+    /// A stored file's key: its owner opens it at /api/media/<key>.
+    public var key: String?
+    public init(name: String, mimeType: String, key: String? = nil) { self.name = name; self.mimeType = mimeType; self.key = key }
+    enum CodingKeys: String, CodingKey { case name, mimeType, key }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         name = c.value(.name, default: "file"); mimeType = c.value(.mimeType, default: "application/octet-stream")
+        key = try? c.decodeIfPresent(String.self, forKey: .key)
     }
 }
 
 public enum AttachmentLimits {
     /// Files per message.
     public static let files = 10
-    /// An upload's size before the server prepares it.
-    public static let uploadBytes = 25 * 1024 * 1024
+    /// An upload's size. The server reads images, text, and documents up to 25 MB inline and stores anything else up to this.
+    public static let uploadBytes = 50 * 1024 * 1024
 }
 
 /// Why a file couldn't be attached; `status` is the server's (401: the session ended; 503: try again soon).
@@ -63,7 +69,7 @@ public func splitAttachments(_ text: String) -> (text: String, files: [AttachedF
         for pair in attachmentAttribute.matches(in: attributes, range: NSRange(location: 0, length: attributeSource.length)) {
             values[attributeSource.substring(with: pair.range(at: 1))] = unescapeAttribute(attributeSource.substring(with: pair.range(at: 2)))
         }
-        return AttachedFile(name: values["name"] ?? "file", mimeType: values["type"] ?? "application/octet-stream")
+        return AttachedFile(name: values["name"] ?? "file", mimeType: values["type"] ?? "application/octet-stream", key: values["key"])
     }
     let rest = attachmentTag.stringByReplacingMatches(in: text, range: NSRange(location: 0, length: source.length), withTemplate: "")
     let collapsed = blankLines.stringByReplacingMatches(in: rest, range: NSRange(location: 0, length: (rest as NSString).length), withTemplate: "\n\n")
@@ -80,7 +86,7 @@ public func attachmentSummary(_ names: [String]) -> String {
 }
 
 /// `POST /api/attachments` (apps/web/src/routes/api.attachments.ts): sends one file, which comes back prepared for the
-/// model. Nothing is stored; the result goes with the message.
+/// model (or, for a file the model can't read inline, stored in Dex); the result goes with the message.
 public enum AttachmentUploader {
     public static func upload(server: URL, token: String, data: Data, name: String, mimeType: String,
                               session: URLSession = DexHTTP.session) async throws -> ChatAttachment {

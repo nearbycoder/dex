@@ -5,8 +5,30 @@ import type { SharedMedia } from "../media"
 
 const text = (value: string) => [{ type: "text" as const, text: value }]
 
-/** Puts a video, audio file, or image from this chat's VM in front of the user, playable inline. */
-export const mediaTools = (share: (chatId: string, path: string, title: string | undefined, vm: number) => Promise<SharedMedia>) => [
+/** Puts a video, audio file, or image from this chat's VM in front of the user, playable inline; and gets files the user attached onto the VM. */
+export const mediaTools = (
+  share: (chatId: string, path: string, title: string | undefined, vm: number) => Promise<SharedMedia>,
+  fetchAttachment: (chatId: string, name: string, path: string | undefined, vm: number) => Promise<{ path: string; name: string; size: number; contentType: string }>
+) => [
+  defineTool({
+    name: "get_attachment",
+    description:
+      "Copy a file the user attached to this chat (one shown to you as <attachment … key=\"…\">, e.g. audio, video, or an archive) onto " +
+      "your VM, so you can work on it there (ffmpeg, a transcription model, unzip, Python, …). Starts the VM if needed. Returns the path.",
+    parameters: Type.Object({
+      name: Type.String({ maxLength: 300, description: "The attachment's name (or key), as in its tag." }),
+      path: Type.Optional(Type.String({ maxLength: 500, description: "Where to put it on the VM (default /home/user/attachments/<name>)." })),
+      vm: Type.Optional(Type.Integer({ minimum: 1, maximum: MAX_VMS_PER_CHAT, description: "Which of your VMs (default 1)." }))
+    }),
+    execute: async ({ name, path, vm }, api) => {
+      try {
+        const file = await fetchAttachment(String(api.conversationId), name, path, Math.min(MAX_VMS_PER_CHAT, Math.max(1, Math.round(Number(vm) || 1))))
+        return { output: text(`Copied ${file.name} (${file.contentType}, ${(file.size / 1024 / 1024).toFixed(1)} MB) to ${file.path} on VM ${Math.round(Number(vm) || 1)}.`) }
+      } catch (error) {
+        return { output: text(error instanceof Error ? error.message : String(error)), isError: true }
+      }
+    }
+  }),
   defineTool({
     name: "share_media",
     description:

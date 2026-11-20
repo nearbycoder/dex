@@ -277,6 +277,7 @@ write("transcript.json", {
 const pdf = { kind: "text" as const, name: "Q3 report.pdf", mimeType: "application/pdf", converted: true }
 const notes = { kind: "text" as const, name: "notes \"draft\" <1>.md", mimeType: "text/markdown", truncated: true }
 const photo = { kind: "image" as const, name: "IMG_0036.png", mimeType: "image/png" }
+const song = { kind: "file" as const, name: "demo take 3.mp3", mimeType: "audio/mpeg", size: 4718592, key: "ZGV2/0b6f2e9a-1c2d-4e5f-8a9b-0c1d2e3f4a5b.mp3" }
 const attachmentCases = [
   "plain message, no files",
   `What does this say?\n${attachmentTag(pdf, "# Q3\nRevenue up 12%.")}`,
@@ -285,7 +286,8 @@ const attachmentCases = [
   `${attachmentTag(photo)}\n${attachmentTag(pdf, "text")}\n\n\n\nAnd these two`,
   attachmentTag(photo, "(An image the user attached. This chat's model reads text only, so it can't see it.)"),
   '<attachment name="broken" type="text/plain">no closing tag',
-  "  spaced text with no tags  "
+  "  spaced text with no tags  ",
+  `Transcribe this\n${attachmentTag(song, "(A file the user attached, 4.5 MB, stored in Dex; you can't read it here.)")}`
 ]
 const attachmentEntries = [
   { id: 1, conversationId: 1, kind: "pi.user", model: [{ role: "user", content: attachmentCases[1], timestamp: NOW - 30_000 }] },

@@ -1,8 +1,9 @@
 /**
  * Files attached to a chat message. `POST /api/attachments` turns an upload into one of these (src/server/attachments.ts):
- * an image prepared for the model, or text (a text or code file as it is, a PDF or Office document converted to
- * Markdown). The app then sends it with the message (`sendMessage(chatId, text, attachments)`), and the agent checks
- * it again before the model sees it.
+ * an image prepared for the model, text (a text or code file as it is, a PDF or Office document converted to
+ * Markdown), or any other file (audio, video, archives, …) stored privately in Dex for the chat's tools to use. The
+ * app then sends it with the message (`sendMessage(chatId, text, attachments)`), and the agent checks it again before
+ * the model sees it. Apps keep an attachment as the JSON they got and send it back as is.
  *
  * A chat's messages live in rows of the agent's SQLite, which hold at most 2 MB, so a message's attachments share a
  * budget well under that.
@@ -20,12 +21,23 @@ export type ChatAttachment =
       /** Cut to the limit. */
       readonly truncated?: boolean
     }
+  | {
+      /** A file the model can't read inline, stored in Dex (R2): it gets the file's name, type, and size, and copies it to its VM to use it. */
+      readonly kind: "file"
+      readonly name: string
+      readonly mimeType: string
+      readonly size: number
+      /** Where it's stored: `<user>/<id>.<ext>`, served to its owner at /api/media/<key>. */
+      readonly key: string
+    }
 
 export const ATTACHMENT_LIMITS = {
   /** Files per message. */
   files: 10,
-  /** An upload's size before it's prepared. */
+  /** An upload's size before it's prepared, for an image, text, or a document. */
   uploadBytes: 25 * 1024 * 1024,
+  /** Any other file, stored as it is. The Worker reads the whole form into its 128 MB of memory, so well under that. */
+  fileBytes: 50 * 1024 * 1024,
   /** One prepared image (base64 characters), and all of a message's together. */
   imageBase64: 400_000,
   imagesBase64: 1_200_000,
@@ -40,16 +52,6 @@ export const ATTACHMENT_LIMITS = {
 /** Image types every provider takes inline. */
 export const INLINE_IMAGE_TYPES: ReadonlySet<string> = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"])
 
-/** What the file picker offers (anything else is checked on upload). */
-export const ATTACHMENT_ACCEPT = [
-  "image/*",
-  "text/*",
-  "application/json",
-  "application/pdf",
-  ".md,.csv,.tsv,.json,.yaml,.yml,.toml,.xml,.log,.ini,.sql,.graphql",
-  ".js,.mjs,.cjs,.ts,.tsx,.jsx,.py,.rb,.go,.rs,.java,.kt,.swift,.c,.h,.cc,.cpp,.hpp,.cs,.php,.sh,.zsh,.lua,.r,.scala,.dart,.vue,.svelte,.css,.scss",
-  ".pdf,.docx,.xlsx,.xlsm,.xlsb,.xls,.et,.ods,.odt,.numbers,.html,.htm"
-].join(",")
 
 const escapeAttribute = (value: string) => value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
 const unescapeAttribute = (value: string) => value.replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&")
@@ -58,12 +60,17 @@ const unescapeAttribute = (value: string) => value.replace(/&quot;/g, '"').repla
  * How an attachment reads in the message the model gets: a tag naming the file, around its text, or (for an image)
  * on its own just before the image. Apps find these tags to show the files as chips instead of their contents.
  */
-export const attachmentTag = (attachment: { name: string; mimeType: string; kind: "image" | "text"; converted?: boolean; truncated?: boolean }, body?: string) => {
+export const attachmentTag = (
+  attachment: { name: string; mimeType: string; kind: ChatAttachment["kind"]; converted?: boolean; truncated?: boolean; size?: number; key?: string },
+  body?: string
+) => {
   const attributes = [
     `name="${escapeAttribute(attachment.name)}"`,
     `type="${escapeAttribute(attachment.mimeType)}"`,
     ...(attachment.converted ? ['converted="markdown"'] : []),
-    ...(attachment.truncated ? ['truncated="true"'] : [])
+    ...(attachment.truncated ? ['truncated="true"'] : []),
+    ...(attachment.size !== undefined ? [`size="${attachment.size}"`] : []),
+    ...(attachment.key ? [`key="${escapeAttribute(attachment.key)}"`] : [])
   ].join(" ")
   return body === undefined ? `<attachment ${attributes} />` : `<attachment ${attributes}>\n${body}\n</attachment>`
 }
@@ -72,6 +79,8 @@ export const attachmentTag = (attachment: { name: string; mimeType: string; kind
 export interface AttachedFile {
   readonly name: string
   readonly mimeType: string
+  /** A stored file's key (kind "file"): its owner opens it at /api/media/<key>. */
+  readonly key?: string
 }
 
 const TAG = /<attachment ((?:[a-z]+="[^"]*"\s*)+)(?:\/>|>\n?[\s\S]*?\n?<\/attachment>)/g
@@ -82,7 +91,7 @@ export function splitAttachments(text: string): { text: string; files: AttachedF
   const files: AttachedFile[] = []
   const rest = text.replace(TAG, (_match, attributes: string) => {
     const values = Object.fromEntries([...attributes.matchAll(ATTRIBUTE)].map(([, key, value]) => [key, unescapeAttribute(value!)]))
-    files.push({ name: values.name ?? "file", mimeType: values.type ?? "application/octet-stream" })
+    files.push({ name: values.name ?? "file", mimeType: values.type ?? "application/octet-stream", ...(values.key && { key: values.key }) })
     return ""
   })
   return { text: files.length ? rest.replace(/\n{3,}/g, "\n\n").trim() : text, files }

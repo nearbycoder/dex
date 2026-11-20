@@ -21,7 +21,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AudioFile
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.FolderZip
+import androidx.compose.material.icons.outlined.VideoFile
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -201,7 +204,7 @@ private fun AttachmentChip(draft: DraftAttachment, onRemove: () -> Unit) {
                 AsyncImage(model = draft.preview, contentDescription = draft.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
             } else {
                 Row(Modifier.fillMaxSize().padding(start = 10.dp, end = 28.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Outlined.Description, contentDescription = null, tint = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                    Icon(fileIcon(draft.mimeType, draft.name), contentDescription = null, tint = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
                     Text(draft.name, style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
             }
@@ -220,5 +223,21 @@ private fun AttachmentChip(draft: DraftAttachment, onRemove: () -> Unit) {
                 }
             }
         }
+    }
+}
+
+private val AUDIO_EXTENSIONS = setOf("mp3", "m4a", "wav", "ogg", "flac", "aac", "opus")
+private val VIDEO_EXTENSIONS = setOf("mp4", "mov", "m4v", "webm", "mkv", "avi")
+private val ARCHIVE_EXTENSIONS = setOf("zip", "tar", "tgz", "gz", "7z", "rar")
+
+/** An attached file's icon, by its type (or name): audio, video, an archive, or a document. */
+fun fileIcon(mimeType: String, name: String): androidx.compose.ui.graphics.vector.ImageVector {
+    val type = mimeType.lowercase()
+    val extension = name.substringAfterLast('.', "").lowercase()
+    return when {
+        type.startsWith("audio/") || extension in AUDIO_EXTENSIONS -> Icons.Outlined.AudioFile
+        type.startsWith("video/") || extension in VIDEO_EXTENSIONS -> Icons.Outlined.VideoFile
+        "zip" in type || "tar" in type || extension in ARCHIVE_EXTENSIONS -> Icons.Outlined.FolderZip
+        else -> Icons.Outlined.Description
     }
 }

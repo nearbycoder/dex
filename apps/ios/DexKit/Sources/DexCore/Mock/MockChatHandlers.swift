@@ -301,8 +301,14 @@ extension MockAgent {
     /// written into the message as the agent writes them (messageContent in apps/web/src/agent/attachments.ts).
     func deliver(_ text: String, files: [ChatAttachment] = [], to id: String) {
         let tags = files.map { file -> String in
-            let attributes = "name=\"\(Self.escape(file.name))\" type=\"\(Self.escape(file.mimeType))\""
-            return file.kind == "image" ? "<attachment \(attributes) />" : "<attachment \(attributes)>\n\(file.json["text"]?.string ?? "")\n</attachment>"
+            var attributes = "name=\"\(Self.escape(file.name))\" type=\"\(Self.escape(file.mimeType))\""
+            switch file.kind {
+            case "image": return "<attachment \(attributes) />"
+            case "file":
+                attributes += " size=\"\(file.size ?? 0)\" key=\"\(Self.escape(file.json["key"]?.string ?? ""))\""
+                return "<attachment \(attributes)>\n(A file the user attached, stored in Dex.)\n</attachment>"
+            default: return "<attachment \(attributes)>\n\(file.json["text"]?.string ?? "")\n</attachment>"
+            }
         }
         let images = files.compactMap { file in file.kind == "image" ? ImagePart(data: file.data ?? "", mimeType: file.mimeType) : nil }
         let message = UserMessage(text: ([text].filter { !$0.isEmpty } + tags).joined(separator: "\n"), imageParts: images, timestamp: .nowMs)
@@ -325,10 +331,19 @@ extension MockAgent {
             .replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;")
     }
 
-    /// The mock's `/api/attachments`: images come back as a small PNG, other files as a line of text; .zip is refused.
+    /// The mock's `/api/attachments`: images come back as a small PNG; audio, video, and archives as stored files; other
+    /// files as a line of text; .exe is refused.
     public static func upload(data: Data, name: String, mimeType: String) async throws -> ChatAttachment {
         try await Task.sleep(for: .milliseconds(150))
-        if name.lowercased().hasSuffix(".zip") { throw AttachmentError("Dex can't read .zip files yet.", status: 415) }
+        let lower = name.lowercased()
+        if lower.hasSuffix(".exe") { throw AttachmentError("Dex can't store .exe files.", status: 415) }
+        if mimeType.hasPrefix("audio/") || mimeType.hasPrefix("video/") || lower.hasSuffix(".zip") {
+            let ext = lower.split(separator: ".").last.map(String.init) ?? "bin"
+            return ChatAttachment(json: [
+                "kind": "file", "name": .string(name), "mimeType": .string(mimeType), "size": .number(Double(data.count)),
+                "key": .string("bW9jaw/\(UUID().uuidString.lowercased()).\(ext)")
+            ])
+        }
         if mimeType.hasPrefix("image/") {
             return ChatAttachment(json: ["kind": "image", "name": .string(name), "mimeType": "image/png", "data": .string(Self.desktopPNG)])
         }

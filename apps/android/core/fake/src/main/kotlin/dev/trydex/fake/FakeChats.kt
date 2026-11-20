@@ -3,6 +3,7 @@ package dev.trydex.fake
 import dev.trydex.core.model.Spaces
 import dev.trydex.core.model.bool
 import dev.trydex.core.model.get
+import dev.trydex.core.model.long
 import dev.trydex.core.model.str
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -49,6 +50,9 @@ object Pi {
                 if (file["kind"].str == "image") {
                     add(buildJsonObject { put("type", "text"); put("text", "<attachment $attributes />") })
                     add(buildJsonObject { put("type", "image"); put("data", file["data"].str ?: ""); put("mimeType", type) })
+                } else if (file["kind"].str == "file") {
+                    val stored = "$attributes size=\"${file["size"].long ?: 0}\" key=\"${escape(file["key"].str ?: "")}\""
+                    add(buildJsonObject { put("type", "text"); put("text", "<attachment $stored>\n(A file the user attached, stored in Dex.)\n</attachment>") })
                 } else {
                     add(buildJsonObject { put("type", "text"); put("text", "<attachment $attributes>\n${file["text"].str ?: ""}\n</attachment>") })
                 }

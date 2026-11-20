@@ -131,6 +131,17 @@
    "input": "  spaced text with no tags  ",
    "text": "  spaced text with no tags  ",
    "files": []
+  },
+  {
+   "input": "Transcribe this\n<attachment name=\"demo take 3.mp3\" type=\"audio/mpeg\" size=\"4718592\" key=\"ZGV2/0b6f2e9a-1c2d-4e5f-8a9b-0c1d2e3f4a5b.mp3\">\n(A file the user attached, 4.5 MB, stored in Dex; you can't read it here.)\n</attachment>",
+   "text": "Transcribe this",
+   "files": [
+    {
+     "name": "demo take 3.mp3",
+     "mimeType": "audio/mpeg",
+     "key": "ZGV2/0b6f2e9a-1c2d-4e5f-8a9b-0c1d2e3f4a5b.mp3"
+    }
+   ]
   }
  ],
  "summary": [

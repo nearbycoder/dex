@@ -1,12 +1,17 @@
 import { createCloudflarePhotonImages } from "@earendil-works/pi-durable/images/cloudflare"
 import { ATTACHMENT_LIMITS, type ChatAttachment, INLINE_IMAGE_TYPES } from "~/shared/attachments"
+import { mediaTypeOf } from "~/shared/media"
 
 /**
- * `POST /api/attachments` (one file, as multipart `file`): turns an upload into something a model can take, without
- * storing it. Images are turned upright, scaled, and re-encoded to fit (Photon, here in the Worker rather than in the
- * agent, whose memory every chat shares); text and code files are read as text; PDFs, Office documents, and web pages
- * become Markdown through Workers AI. The app sends the result with the message.
+ * `POST /api/attachments` (one file, as multipart `file`): turns an upload into something a model can take. Images
+ * are turned upright, scaled, and re-encoded to fit (Photon, here in the Worker rather than in the agent, whose memory
+ * every chat shares); text and code files are read as text; PDFs, Office documents, and web pages become Markdown
+ * through Workers AI. Those aren't stored. Anything else (audio, video, archives, a scanned PDF, a file too big to
+ * read inline) is stored as it is by `store`, for the chat's tools to use. The app sends the result with the message.
  */
+
+/** Stores a file as it is and returns it as a "file" attachment (src/routes/api.attachments.ts). */
+export type StoreFile = (file: File, name: string, mimeType: string) => Promise<ChatAttachment>
 
 /** Types and extensions read as plain text. */
 const TEXT_TYPES = /^(text\/|application\/(json|ld\+json|xml|x-yaml|yaml|toml|javascript|typescript|x-sh|x-python|sql|graphql|x-httpd-php))/
@@ -50,13 +55,17 @@ const asText = (bytes: Uint8Array): { text: string; truncated?: true } | null =>
     : { text }
 }
 
-export async function prepareAttachment(file: File, ai: Ai): Promise<ChatAttachment> {
+export async function prepareAttachment(file: File, ai: Ai, store: StoreFile | null): Promise<ChatAttachment> {
   const name = cleanName(file.name)
   const extension = extensionOf(name)
-  if (file.size > ATTACHMENT_LIMITS.uploadBytes) {
-    throw new AttachmentError(`${name} is too large (limit ${ATTACHMENT_LIMITS.uploadBytes / 1024 / 1024} MB).`, 413)
-  }
   const declared = file.type.toLowerCase()
+  const asFile = () => {
+    if (!store) throw new AttachmentError(`Dex can't store files on this deployment (no MEDIA bucket), and it can't read ${name} inline.`)
+    if (file.size > ATTACHMENT_LIMITS.fileBytes) throw new AttachmentError(`${name} is too large (limit ${ATTACHMENT_LIMITS.fileBytes / 1024 / 1024} MB).`, 413)
+    return store(file, name, (declared && declared !== "application/octet-stream" ? declared : mediaTypeOf(name)?.type) ?? "application/octet-stream")
+  }
+  // Too big to prepare for the model inline: kept as a file for its tools.
+  if (file.size > ATTACHMENT_LIMITS.uploadBytes) return asFile()
   const imageType = declared.startsWith("image/") ? declared : IMAGE_EXTENSIONS[extension]
 
   if (imageType === "image/heic" || imageType === "image/heif" || extension === "heic" || extension === "heif") {
@@ -81,16 +90,17 @@ export async function prepareAttachment(file: File, ai: Ai): Promise<ChatAttachm
 
   if (DOCUMENT_EXTENSIONS.has(extension) || declared === "application/pdf") {
     const result = await ai.toMarkdown({ name, blob: file }).catch((error: unknown) => {
-      throw new AttachmentError(`Couldn't convert ${name}: ${error instanceof Error ? error.message : String(error)}`, 422)
+      console.warn(`Couldn't convert ${name}:`, error)
+      return null
     })
-    if (result.format === "error") throw new AttachmentError(`Couldn't convert ${name}: ${result.error}`, 422)
-    const text = result.data.trim()
-    if (!text) throw new AttachmentError(`${name} has no text Dex could read (a scanned PDF?).`, 422)
+    const text = result?.format === "markdown" ? result.data.trim() : ""
+    // A scanned PDF or a document Workers AI can't read: the model can still work on it on its VM.
+    if (!result || result.format === "error" || !text) return asFile()
     const truncated = text.length > ATTACHMENT_LIMITS.textChars
     return {
       kind: "text",
       name,
-      mimeType: declared || result.mimeType || "application/octet-stream",
+      mimeType: declared || (result.format === "markdown" ? result.mimeType : "") || "application/octet-stream",
       text: truncated ? text.slice(0, ATTACHMENT_LIMITS.textChars) : text,
       converted: true,
       ...(truncated && { truncated: true })
@@ -105,7 +115,6 @@ export async function prepareAttachment(file: File, ai: Ai): Promise<ChatAttachm
     if (known) throw new AttachmentError(`${name} isn't UTF-8 text.`, 422)
   }
 
-  throw new AttachmentError(
-    `Dex can't read ${extension ? `.${extension} files` : "this kind of file"} yet. Attach images, text or code, PDFs, Office documents, or web pages.`
-  )
+  // Audio, video, archives, and the rest: stored for the model's tools.
+  return asFile()
 }

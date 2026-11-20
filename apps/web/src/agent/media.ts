@@ -2,6 +2,10 @@ import { type ChatArtifact, MAX_MEDIA_BYTES, mediaTypeOf } from "~/shared/media"
 
 const UPLOAD_TTL_MS = 15 * 60_000
 const TOKEN_PREFIX = "dexu"
+/** Download tokens: a chat's VM fetching a file attached to it. */
+const DOWNLOAD_PREFIX = "dexd"
+/** A file attached in the composer but never sent is deleted after this. */
+const UNSENT_TTL_MS = 24 * 60 * 60_000
 
 interface UploadRow {
   token_hash: string
@@ -36,16 +40,36 @@ const sha256 = async (text: string) => toHex(await crypto.subtle.digest("SHA-256
 const base64url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
 export const encodeUserId = (userId: string) => base64url(new TextEncoder().encode(userId))
 
-/** `dexu.<user>.<random>.<tag>`: a single-use upload credential for one file, checked by the Worker's HMAC first. */
-export const parseUploadToken = (token: string) => {
+const parseToken = (token: string, expected: string) => {
   const [prefix, user, random, tag, ...rest] = token.split(".")
-  if (prefix !== TOKEN_PREFIX || !user || !random || !tag || rest.length) return null
+  if (prefix !== expected || !user || !random || !tag || rest.length) return null
   try {
     const userId = new TextDecoder().decode(Uint8Array.from(atob(user.replace(/-/g, "+").replace(/_/g, "/")), (char) => char.charCodeAt(0)))
-    return { userId, signed: `${TOKEN_PREFIX}.${user}.${random}`, tag }
+    return { userId, signed: `${expected}.${user}.${random}`, tag }
   } catch {
     return null
   }
+}
+
+/** `dexu.<user>.<random>.<tag>`: a single-use upload credential for one file, checked by the Worker's HMAC first. */
+export const parseUploadToken = (token: string) => parseToken(token, TOKEN_PREFIX)
+
+/** `dexd.<user>.<random>.<tag>`: a single-use download of one stored file (a chat's VM fetching an attachment). */
+export const parseDownloadToken = (token: string) => parseToken(token, DOWNLOAD_PREFIX)
+
+/** A stored attachment's key: `<user>/<uuid>.<ext>`, the extension from its name (`bin` without a usable one). */
+export const attachmentKey = (userId: string, name: string) => {
+  const extension = /\.([a-z0-9]{1,10})$/i.exec(name)?.[1]?.toLowerCase() ?? "bin"
+  return `${encodeUserId(userId)}/${crypto.randomUUID()}.${extension}`
+}
+
+/** A stored file, whatever its type. */
+export interface StoredFile {
+  readonly key: string
+  readonly sessionId: string
+  readonly name: string
+  readonly contentType: string
+  readonly size: number
 }
 
 /**
@@ -61,6 +85,8 @@ export class MediaCenter {
     host.sql.exec(`CREATE TABLE IF NOT EXISTS dex_media_uploads (
       token_hash TEXT PRIMARY KEY, session_id TEXT NOT NULL, key TEXT NOT NULL, name TEXT NOT NULL, content_type TEXT NOT NULL,
       expires_at INTEGER NOT NULL, used INTEGER NOT NULL DEFAULT 0)`)
+    host.sql.exec(`CREATE TABLE IF NOT EXISTS dex_media_downloads (
+      token_hash TEXT PRIMARY KEY, key TEXT NOT NULL, expires_at INTEGER NOT NULL, used INTEGER NOT NULL DEFAULT 0)`)
     // Where a file was saved from: the VM link a chat served it at (see vmMediaSource), so that link plays this copy.
     const columns = host.sql.exec<{ name: string }>(`PRAGMA table_info(dex_media)`).toArray()
     if (!columns.some((column) => column.name === "source")) host.sql.exec(`ALTER TABLE dex_media ADD COLUMN source TEXT`)
@@ -105,6 +131,78 @@ export class MediaCenter {
     )
   }
 
+  /**
+   * A file attached in the composer, stored by the Worker before its message is sent: it belongs to no chat yet
+   * (session ''), and is deleted after a day unless a message claims it.
+   */
+  registerAttachment(key: string, name: string, contentType: string, size: number) {
+    if (!key.startsWith(`${encodeUserId(this.host.userId())}/`)) throw new Error("Not this user's file")
+    this.host.sql.exec(
+      `INSERT OR REPLACE INTO dex_media (key, session_id, name, content_type, size, created_at) VALUES (?, '', ?, ?, ?, ?)`,
+      key, name, contentType, size, Date.now()
+    )
+  }
+
+  /** Gives an unsent attachment to the chat it was sent in; null if it's unknown or another chat's. */
+  claimAttachment(sessionId: string, key: string): StoredFile | null {
+    const file = this.file(key)
+    if (!file || (file.sessionId !== "" && file.sessionId !== sessionId)) return null
+    if (file.sessionId === "") this.host.sql.exec(`UPDATE dex_media SET session_id = ? WHERE key = ?`, sessionId, key)
+    return { ...file, sessionId }
+  }
+
+  /** Any stored file (media or not). */
+  file(key: string): StoredFile | null {
+    const row = this.host.sql
+      .exec<{ key: string; session_id: string; name: string; content_type: string; size: number }>(
+        `SELECT key, session_id, name, content_type, size FROM dex_media WHERE key = ?`,
+        key
+      )
+      .toArray()[0]
+    return row ? { key: row.key, sessionId: row.session_id, name: row.name, contentType: row.content_type, size: row.size } : null
+  }
+
+  /** A chat's stored files of every type (attachments and shared media), newest first. */
+  attachments(sessionId: string): StoredFile[] {
+    return this.host.sql
+      .exec<{ key: string; name: string; content_type: string; size: number }>(
+        `SELECT key, name, content_type, size FROM dex_media WHERE session_id = ? ORDER BY created_at DESC`,
+        sessionId
+      )
+      .toArray()
+      .map((row) => ({ key: row.key, sessionId, name: row.name, contentType: row.content_type, size: row.size }))
+  }
+
+  /** A chat's file by its name (exactly, then ignoring case) or its key; the newest if several share it. */
+  attachmentOf(sessionId: string, name: string): StoredFile | null {
+    const files = this.attachments(sessionId)
+    const wanted = name.trim()
+    return (
+      files.find((file) => file.name === wanted || file.key === wanted) ??
+      files.find((file) => file.name.toLowerCase() === wanted.toLowerCase()) ??
+      null
+    )
+  }
+
+  /** A single-use token to download a chat's file (from its VM), good for 15 minutes. */
+  async createDownload(key: string) {
+    const random = base64url(crypto.getRandomValues(new Uint8Array(32)))
+    const signed = `${DOWNLOAD_PREFIX}.${encodeUserId(this.host.userId())}.${random}`
+    const token = `${signed}.${await this.host.sign(signed)}`
+    this.host.sql.exec(`DELETE FROM dex_media_downloads WHERE expires_at < ?`, Date.now())
+    this.host.sql.exec(`INSERT INTO dex_media_downloads (token_hash, key, expires_at) VALUES (?, ?, ?)`, await sha256(token), key, Date.now() + UPLOAD_TTL_MS)
+    return token
+  }
+
+  /** Claims a download token (once): the file it's for, or null. */
+  async consumeDownload(token: string): Promise<StoredFile | null> {
+    const hash = await sha256(token)
+    const row = this.host.sql.exec<{ key: string; expires_at: number; used: number }>(`SELECT key, expires_at, used FROM dex_media_downloads WHERE token_hash = ?`, hash).toArray()[0]
+    if (!row || row.used || row.expires_at < Date.now()) return null
+    this.host.sql.exec(`UPDATE dex_media_downloads SET used = 1 WHERE token_hash = ?`, hash)
+    return this.file(row.key)
+  }
+
   setSource(key: string, source: string) {
     this.host.sql.exec(`UPDATE dex_media SET source = ? WHERE key = ?`, source, key)
   }
@@ -143,8 +241,11 @@ export class MediaCenter {
 
   /** Deletes the media of chats that are gone (`alive` says which still exist). */
   async reap(alive: (sessionId: string) => boolean) {
-    const rows = this.host.sql.exec<{ key: string; session_id: string }>(`SELECT key, session_id FROM dex_media`).toArray()
-    const dead = rows.filter((row) => !alive(row.session_id)).map((row) => row.key)
+    const rows = this.host.sql.exec<{ key: string; session_id: string; created_at: number }>(`SELECT key, session_id, created_at FROM dex_media`).toArray()
+    // Attachments never sent belong to no chat: they go after a day.
+    const dead = rows
+      .filter((row) => (row.session_id === "" ? row.created_at < Date.now() - UNSENT_TTL_MS : !alive(row.session_id)))
+      .map((row) => row.key)
     if (!dead.length || !this.host.bucket) return
     for (let index = 0; index < dead.length; index += 500) await this.host.bucket.delete(dead.slice(index, index + 500))
     for (const key of dead) this.host.sql.exec(`DELETE FROM dex_media WHERE key = ?`, key)

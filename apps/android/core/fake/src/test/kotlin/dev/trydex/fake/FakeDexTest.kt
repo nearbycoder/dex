@@ -104,20 +104,24 @@ class FakeDexTest {
         val report = DexUploads.upload(OkHttpClient(), session, "%PDF".toByteArray(), "report.pdf", "application/pdf")
         assertThat(photo.kind).isEqualTo("image")
         assertThat(report.kind).isEqualTo("text")
-        val refused = runCatching { DexUploads.upload(OkHttpClient(), session, byteArrayOf(0), "a.zip", "application/zip") }.exceptionOrNull()
-        assertThat(refused!!.message).isEqualTo("Dex can't read .zip files yet.")
+        val song = DexUploads.upload(OkHttpClient(), session, byteArrayOf(1, 2, 3, 4), "song.mp3", "audio/mpeg")
+        assertThat(song.kind).isEqualTo("file")
+        assertThat(song.size).isEqualTo(4L)
+        val refused = runCatching { DexUploads.upload(OkHttpClient(), session, byteArrayOf(0), "a.exe", "application/octet-stream") }.exceptionOrNull()
+        assertThat(refused!!.message).isEqualTo("Dex can't store .exe files.")
 
         val chat = api.createSession(null, null, agentId = null, mcpServers = null, projectId = null)
         connection.send(ClientMessages.subscribe(chat.id))
-        api.sendMessage(chat.id, "", listOf(photo, report))
+        api.sendMessage(chat.id, "", listOf(photo, report, song))
         withTimeout(10_000) { while (displayItems(transcript).none { it is DisplayItem.User }) kotlinx.coroutines.delay(20) }
         val sent = displayItems(transcript).first { it is DisplayItem.User } as DisplayItem.User
         assertThat(sent.text).isEmpty()
-        assertThat(sent.files.map { it.name }).containsExactly("shot.png", "report.pdf").inOrder()
+        assertThat(sent.files.map { it.name }).containsExactly("shot.png", "report.pdf", "song.mp3").inOrder()
+        assertThat(sent.files.last().key).endsWith(".mp3")
         assertThat(sent.imageParts).hasSize(1)
         assertThat(fake.calls.last { it.first == "sendMessage" }.second).hasSize(3)
         // A chat named after its files when the message has no text.
-        assertThat(connection.state.value!!.session(chat.id)!!.title).isEqualTo("shot.png and 1 more")
+        assertThat(connection.state.value!!.session(chat.id)!!.title).isEqualTo("shot.png and 2 more")
         connection.stop()
     }
 

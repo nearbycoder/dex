@@ -240,13 +240,20 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
         }
     }
 
-    /** A fake `/api/attachments`: images come back as a small PNG, other files as a line of text; .zip is refused. */
+    /**
+     * A fake `/api/attachments`: images come back as a small PNG; audio, video, and archives as stored files; other files
+     * as a line of text; .exe is refused.
+     */
     private fun attachment(multipart: String): MockResponse {
         val name = Regex("filename=\"([^\"]*)\"").find(multipart)?.groupValues?.get(1) ?: "file"
         val type = Regex("Content-Type: ([^\\s;]+)").findAll(multipart).lastOrNull()?.groupValues?.get(1) ?: "application/octet-stream"
-        if (name.endsWith(".zip")) return json(buildJsonObject { put("error", "Dex can't read .zip files yet.") }, 415)
+        if (name.endsWith(".exe")) return json(buildJsonObject { put("error", "Dex can't store .exe files.") }, 415)
         return json(
-            if (type.startsWith("image/")) buildJsonObject {
+            if (type.startsWith("audio/") || type.startsWith("video/") || name.endsWith(".zip")) buildJsonObject {
+                val body = multipart.substringAfter("\r\n\r\n", "").substringBeforeLast("\r\n--", "")
+                put("kind", "file"); put("name", name); put("mimeType", type); put("size", body.toByteArray(Charsets.ISO_8859_1).size)
+                put("key", "ZmFrZQ/${java.util.UUID.randomUUID()}.${name.substringAfterLast('.', "bin")}")
+            } else if (type.startsWith("image/")) buildJsonObject {
                 put("kind", "image"); put("name", name); put("mimeType", "image/png"); put("data", FakeAssets.CHART_PNG)
             } else buildJsonObject {
                 put("kind", "text"); put("name", name); put("mimeType", type); put("text", "(The contents of $name.)")

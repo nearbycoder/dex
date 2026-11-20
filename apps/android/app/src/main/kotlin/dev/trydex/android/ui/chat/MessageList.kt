@@ -3,7 +3,6 @@ package dev.trydex.android.ui.chat
 import androidx.compose.animation.AnimatedVisibility
 import dev.trydex.core.model.ImageBlock
 import dev.trydex.core.model.AttachedFile
-import androidx.compose.material.icons.outlined.Description
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.draw.clip
@@ -423,7 +422,7 @@ private fun UserAttachments(sessionId: String?, images: List<ImageBlock>, files:
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Icon(Icons.Outlined.Description, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(fileIcon(file.mimeType, file.name), contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(file.name, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
