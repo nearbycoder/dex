@@ -3,6 +3,17 @@ import DexCore
 import os
 @preconcurrency import Speech
 
+/// The app's audio session outside calls: playback, so what you play (a video or audio file in a chat) is heard with the
+/// Ring/Silent switch on silent, as in any media app. iOS's default (solo ambient) follows the switch. Setting the
+/// category doesn't start the session or stop other apps' sound; that happens when something plays.
+enum AppAudio {
+    nonisolated static let log = Logger(subsystem: "dev.trydex.Dex", category: "audio")
+
+    nonisolated static func useDefault() {
+        do { try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default) } catch { log.error("Couldn't set the audio session's category: \(error)") }
+    }
+}
+
 /// One call's audio: an AVAudioEngine that hears the microphone (for speech recognition) and plays the sidekick's voice
 /// on the same engine, so voice processing cancels their voice out of the microphone (talking over them works on the
 /// speaker). A voice preview uses it without the microphone. Not on the main actor: the engine's taps and callbacks
@@ -36,6 +47,11 @@ nonisolated final class CallAudio: @unchecked Sendable {
             try session.setCategory(.playback, mode: .spokenAudio)
         }
         try session.setActive(true)
+        if listens {
+            // Takes the speaker's sound out of the microphone's (the simulator may not have it). Before the graph is
+            // built: it changes both of the engine's I/O nodes, and their formats with them.
+            try? engine.inputNode.setVoiceProcessingEnabled(true)
+        }
         engine.attach(player)
         engine.connect(player, to: engine.mainMixerNode, format: format)
         let loudness = loudness
@@ -48,8 +64,6 @@ nonisolated final class CallAudio: @unchecked Sendable {
         }
         if listens {
             let input = engine.inputNode
-            // Takes the speaker's sound out of the microphone's (the simulator may not have it).
-            try? input.setVoiceProcessingEnabled(true)
             let microphone = microphone
             let format = input.outputFormat(forBus: 0)
             guard format.sampleRate > 0, format.channelCount > 0 else { throw VoiceError("No microphone was found.") }
@@ -89,6 +103,8 @@ nonisolated final class CallAudio: @unchecked Sendable {
         microphone.withLock { $0 = nil }
         loudness.withLock { $0 = 0 }
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        // Back to the app's own category: a call's (voice chat) would otherwise stay for videos played after it.
+        AppAudio.useDefault()
     }
 }
 
@@ -110,7 +126,10 @@ final class EnginePlayer: VoicePlaying {
                 finished()
             }
         }
-        do { try audio.schedule(samples, heard: heard) } catch { finished() }
+        do { try audio.schedule(samples, heard: heard) } catch {
+            AppAudio.log.error("Couldn't play the voice: \(error)")
+            finished()
+        }
     }
 
     func stop() {

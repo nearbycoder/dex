@@ -1,3 +1,4 @@
+@preconcurrency import AVFoundation
 import DexCore
 import SwiftUI
 
@@ -18,6 +19,7 @@ struct DexApp: App {
 final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         Notifications.shared.install()
+        AppAudio.useDefault()
         if LaunchOptions.current.isUITest { UIView.setAnimationsEnabled(true) }
         return true
     }
