@@ -1,6 +1,7 @@
 package dev.trydex.core.model
 
 import com.google.common.truth.Truth.assertThat
+import com.google.common.truth.Truth.assertWithMessage
 import org.junit.Test
 
 /** Characters in the synced state: additive fields read with defaults, and the helpers the chat list and editor use. */
@@ -58,15 +59,31 @@ class CharactersTest {
         assertThat(Characters.PRESETS.all { SidekickLooks.clean(it.look) == it.look }).isTrue()
     }
 
-    @Test fun finishRoundTrips() {
-        val json = """{"id":"a","name":"A","look":{"body":"bot","skin":"pink","eyes":"round","mouth":"smile","extra":"none","blush":false,"finish":605}}"""
+    @Test fun looksRoundTrip() {
+        val json = """{"id":"a","name":"A","look":{"shape":"mug","custom":null,"skin":"pink","body":"blob","eyes":"round","mouth":"smile","extra":"none","blush":false,"finish":101}}"""
         val character = DexJson.decodeFromString(CharacterProfile.serializer(), json)
-        assertThat(character.look!!.finish).isEqualTo(605)
+        assertThat(character.look!!.shape).isEqualTo("mug")
         assertThat(DexJson.decodeFromString(CharacterProfile.serializer(), DexJson.encodeToString(CharacterProfile.serializer(), character))).isEqualTo(character)
-        // Older looks have none: the plain color.
-        assertThat(DexJson.decodeFromString(CharacterProfile.serializer(), """{"id":"b","look":{"skin":"mint"}}""").look!!.finish).isNull()
+        // A shape a chat drew comes with its outline and eyes.
+        val drawn = DexJson.decodeFromString(
+            CharacterProfile.serializer(),
+            """{"id":"b","look":{"shape":"custom","skin":"teal","custom":{"name":"Box","path":"M20 20 H80 V80 H20 Z","eyes":{"x":50,"y":46,"spacing":15,"scale":1}}}}""",
+        ).look!!
+        assertThat(SidekickLooks.clean(drawn).custom!!.eyes.spacing).isEqualTo(15.0)
+        assertThat(SidekickLooks.name(drawn)).isEqualTo("Box")
+        // Older looks have no shape: the one nearest their body.
+        assertThat(SidekickLooks.clean(DexJson.decodeFromString(CharacterProfile.serializer(), """{"id":"c","look":{"body":"cat","skin":"mint"}}""").look!!).shape).isEqualTo("cat")
         assertThat(Characters.presetOf(character)).isNull()
         assertThat(Characters.presetOf(character.copy(look = Characters.preset("muse")!!.look))!!.key).isEqualTo("muse")
+    }
+
+    @Test fun shapesAreBundled() {
+        assertThat(SidekickLooks.SHAPES).hasSize(17)
+        for (shape in SidekickLooks.SHAPES) {
+            for (part in listOf("body", "eyes")) assertWithMessage("${shape.key} $part").that(SidekickLooks.layer(shape.key, part)?.take(4)).isEqualTo(listOf<Byte>(-119, 80, 78, 71))
+            assertThat(shape.eyes.top).isLessThan(shape.eyes.bottom)
+        }
+        assertThat(SidekickLooks.layer("teapot", "body")).isNull()
     }
 
     @Test fun lookIsOptional() {
@@ -90,7 +107,7 @@ class CharactersTest {
         assertThat(muse.greeting).startsWith("Hey you.")
         assertThat(muse.model).isEqualTo("cline-pass/kimi-k3")
         assertThat(muse.thinking).isEqualTo(ThinkingLevel.High)
-        assertThat(muse.look).isEqualTo(SidekickLook("blob", "pink", "sparkle", "grin", "beret", blush = true, finish = 605))
+        assertThat(muse.look).isEqualTo(SidekickLooks.make("lightbulb", "pink"))
         assertThat(muse.image).startsWith("data:image/png;base64,iVBORw0KGgo")
         assertThat(Characters.presetOf(muse)!!.key).isEqualTo("muse")
         assertThat(Characters.TEMPLATES.map { it.name }).containsExactly("Muse", "Atlas", "Sage", "Rex").inOrder()

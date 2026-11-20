@@ -28,7 +28,7 @@ import {
 import { AGENT_COLORS, type AgentColor, type AgentIcon } from "~/shared/agents"
 import type { CharacterProfile } from "~/shared/characters"
 import type { LookMood } from "~/shared/sidekick-look"
-import { BoopAvatar } from "./boop-face"
+import { SidekickFace } from "./sidekick-face"
 
 export const AGENT_ICON_COMPONENTS: Record<AgentIcon, LucideIcon> = {
   bot: Bot,
@@ -97,9 +97,10 @@ export function AgentAvatar({
 }
 
 /**
- * A sidekick's face: their BoopFace (live: it blinks, follows the pointer, waits while `mood` is working and smiles
- * when it's done, or droops if `failed`), else their photo, else their emoji (or initial) on their color. A still face
- * is the PNG saved with the look when there is one, so a long chat isn't dozens of live faces.
+ * A sidekick's face: their Open Bot Avatar (live: it breathes, blinks, follows the pointer, thinks and works with them,
+ * and celebrates when it's done, or shows an exclamation mark if `failed`), else their photo, else their emoji (or
+ * initial) on their color. A still face is the PNG the agent saved with the look, so a long chat isn't dozens of
+ * live faces.
  */
 export function CharacterAvatar({
   character,
@@ -121,7 +122,7 @@ export function CharacterAvatar({
     if (mood === "still" && character.image) {
       return <img src={character.image} alt="" className={`shrink-0 ${className}`} style={{ width: size, height: size }} draggable={false} />
     }
-    return <BoopAvatar look={character.look} size={size} mood={mood} failed={failed} interactive={interactive} className={className} />
+    return <SidekickFace look={character.look} size={size} mood={mood} failed={failed} interactive={interactive} className={className} />
   }
   if (character.image) {
     return (

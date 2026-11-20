@@ -1,67 +1,65 @@
 import DexCore
 import SwiftUI
+import UIKit
 
-/// A sidekick's look drawn natively: a flat BoopFace in the look's color, framed as the web's PNG of it (`lookPng` in
-/// apps/web/src/client/components/boop-face.tsx) on a clear background. A finish (`parts.finish`) only the web draws;
-/// this is the plain color.
+/// A sidekick's look drawn natively: one of Dex's shapes from the layers bundled with it (`SidekickShapes.layer`, drawn
+/// by the agent's renderer): the body tinted the look's color, the eyes over it. That's the agent's picture of the look
+/// to the pixel, in any color, before it's saved. `live` ones blink now and then, as on the web, unless Reduce Motion is
+/// on. Draws nothing for a shape it doesn't have (`SidekickParts.isDrawable`).
 struct SidekickArt: View {
     let parts: SidekickParts
+    var live = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        Canvas { context, size in
-            Self.draw(parts, in: &context, size: size)
+        Group {
+            if let shape = SidekickShapes.shape(parts.shape), parts.isDrawable, let bodyLayer = Self.layer(shape.key, "body"), let eyesLayer = Self.layer(shape.key, "eyes") {
+                if live && !reduceMotion {
+                    // A blink every five seconds or so; each face starts at its own point, so faces don't blink together.
+                    TimelineView(.periodic(from: .now, by: 1 / 30)) { context in
+                        face(shape, body: bodyLayer, eyes: eyesLayer, blink: Self.blink(at: context.date, offset: offset))
+                    }
+                } else {
+                    face(shape, body: bodyLayer, eyes: eyesLayer, blink: 0)
+                }
+            } else {
+                Color.clear
+            }
         }
         .aspectRatio(1, contentMode: .fit)
         .accessibilityHidden(true)
     }
 
-    /// The PNG the look is saved with (what the apps and widgets show), as a data: URL.
-    @MainActor
-    static func png(_ parts: SidekickParts, size: CGFloat = 256) -> String? {
-        let renderer = ImageRenderer(content: SidekickArt(parts: parts).frame(width: size, height: size))
-        renderer.scale = 1
-        renderer.isOpaque = false
-        guard let data = renderer.uiImage?.pngData() else { return nil }
-        return "data:image/png;base64," + data.base64EncodedString()
-    }
+    @State private var offset = Double.random(in: 0..<Self.blinkEvery)
 
-    private static let head = path(BoopFace.headPath)
-        .applying(CGAffineTransform(scaleX: BoopFace.headScale, y: BoopFace.headScale)
-            .concatenating(CGAffineTransform(translationX: BoopFace.headOffset, y: BoopFace.headOffset)))
-
-    static func draw(_ parts: SidekickParts, in context: inout GraphicsContext, size: CGSize) {
-        // The view box, fitted and centered (as an SVG's xMidYMid meet).
-        let box = BoopFace.viewBox
-        let scale = min(size.width / box.width, size.height / box.height)
-        context.translateBy(x: (size.width - box.width * scale) / 2, y: (size.height - box.height * scale) / 2)
-        context.scaleBy(x: scale, y: scale)
-        context.translateBy(x: -box.x, y: -box.y)
-
-        let color = Color(hex: SidekickParts.skinHex(parts.skin))
-        let antenna = BoopFace.antenna
-        context.fill(Path(ellipseIn: CGRect(x: antenna.x - antenna.r, y: antenna.y - antenna.r, width: antenna.r * 2, height: antenna.r * 2)), with: .color(color))
-        context.fill(head, with: .color(color))
-        var face = context
-        face.clip(to: head)
-        let radius = BoopFace.eyeRadius
-        for eye in BoopFace.eyes {
-            face.fill(Path(ellipseIn: CGRect(x: eye.x - radius.x, y: eye.y - radius.y, width: radius.x * 2, height: radius.y * 2)), with: .color(.white))
+    private func face(_ shape: SidekickShape, body: UIImage, eyes: UIImage, blink: Double) -> some View {
+        ZStack {
+            Image(uiImage: body).renderingMode(.template).resizable().interpolation(.high)
+                .foregroundStyle(Color(hex: SidekickParts.skinHex(parts.skin)))
+            Image(uiImage: eyes).resizable().interpolation(.high)
+                .scaleEffect(x: 1, y: 1 - blink * 0.9, anchor: UnitPoint(x: 0.5, y: (shape.eyesTop + shape.eyesBottom) / 2))
         }
     }
 
-    private static func path(_ data: String) -> Path {
-        var path = Path()
-        for step in SVGPathData.parse(data) {
-            switch step {
-            case .move(let x, let y): path.move(to: CGPoint(x: x, y: y))
-            case .line(let x, let y): path.addLine(to: CGPoint(x: x, y: y))
-            case .curve(let x1, let y1, let x2, let y2, let x, let y):
-                path.addCurve(to: CGPoint(x: x, y: y), control1: CGPoint(x: x1, y: y1), control2: CGPoint(x: x2, y: y2))
-            case .quad(let x1, let y1, let x, let y): path.addQuadCurve(to: CGPoint(x: x, y: y), control: CGPoint(x: x1, y: y1))
-            case .close: path.closeSubpath()
-            }
-        }
-        return path
+    private static let blinkEvery = 5.2
+
+    /// How shut the eyes are at `date`: open, then closing and opening again over the last fifth of a second.
+    private static func blink(at date: Date, offset: Double) -> Double {
+        let t = (date.timeIntervalSinceReferenceDate + offset).truncatingRemainder(dividingBy: blinkEvery)
+        let left = blinkEvery - t
+        guard left < 0.2 else { return 0 }
+        return left > 0.12 ? (0.2 - left) / 0.08 : left / 0.12
+    }
+
+    @MainActor private static let cache = NSCache<NSString, UIImage>()
+
+    /// A shape's layer, decoded once.
+    @MainActor private static func layer(_ key: String, _ part: String) -> UIImage? {
+        let name = "\(key)-\(part)" as NSString
+        if let image = cache.object(forKey: name) { return image }
+        guard let data = SidekickShapes.layer(key, part), let image = UIImage(data: data) else { return nil }
+        cache.setObject(image, forKey: name)
+        return image
     }
 }
 
@@ -73,38 +71,45 @@ extension Color {
     }
 }
 
-/// A look of your own (the web's look picker, without finishes, which only the web draws): Shuffle, the face's color
-/// (each drawn as the face you'd get), and their accent color.
+/// A look of your own (the web's look picker): Shuffle, the shape (each drawn in the look's color), the face's color
+/// (each drawn as the face you'd get), and their accent color. A shape a chat drew shows among the shapes while it's the
+/// look; its color changes on the web or in a chat, which can draw it.
 struct LookMixer: View {
     /// The look being worn, if it's one (a photo or an emoji has none).
     let parts: SidekickParts?
-    /// The look is a ready-made one (its color isn't a pick of yours, so none is marked).
+    /// The look is a ready-made one (its shape and color aren't picks of yours, so none is marked).
     let isPreset: Bool
     let color: String
-    /// A ready-made look picked (Shuffle).
+    /// The picture of the look being worn (for a shape a chat drew, which only the agent draws).
+    var image: String? = nil
+    /// A ready-made look picked.
     let preset: (SidekickLook) -> Void
-    /// A face color picked: the new look (plain color, no finish) and the accent.
+    /// A shape or face color picked: the new look and the accent.
     let change: (SidekickParts, String) -> Void
-    /// Only the accent changed: a photo stays a photo, a finish stays as it is.
+    /// Only the accent changed: a photo stays a photo.
     let accent: (String) -> Void
 
     var body: some View {
-        // Keep what isn't drawn any more (the old parts), so a color pick changes only the color.
         let current = parts ?? SidekickLook.all.first.flatMap { SidekickParts($0.look) } ?? SidekickParts()
-        let picked = parts != nil && !isPreset && parts?.finish == nil ? parts?.skin : nil
+        let mine = parts != nil && !isPreset
         VStack(alignment: .leading, spacing: 14) {
             Button {
-                shuffle(from: current)
+                // Any shape in any color, with any accent, as the web's Shuffle.
+                change(SidekickParts.random(), AgentColors.all.randomElement() ?? color)
             } label: {
                 Label("Shuffle", systemImage: "dice")
             }
             .buttonStyle(.bordered)
             .accessibilityIdentifier("character.shuffle")
-            faces(selected: picked) { skin in
-                var next = current
-                next.skin = skin
-                next.finish = nil
-                change(next, color)
+            shapes(current: current, selected: mine ? current.shape : nil)
+            if current.shape == "custom" && parts != nil {
+                Text("A chat drew this shape: change its color on the web, or ask a chat.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else {
+                faces(current: current, selected: mine ? current.skin : nil) { skin in
+                    change(SidekickParts.make(current.shape, skin: skin, custom: current.custom), color)
+                }
             }
             swatches("Accent", SidekickParts.backgrounds.map { ($0.name, $0.hex) }, selected: color, pick: accent)
         }
@@ -113,38 +118,60 @@ struct LookMixer: View {
         .sensoryFeedback(.selection, trigger: color)
     }
 
-    /// As the web's Shuffle, with the finishes it can't draw swapped for the ready-made looks (which have them):
-    /// often one of those, else any color on any accent.
-    private func shuffle(from current: SidekickParts) {
-        if Bool.random(), let look = SidekickLook.all.randomElement() {
-            preset(look)
-        } else {
-            var next = SidekickParts.random()
-            next.finish = nil
-            change(next, AgentColors.all.randomElement() ?? color)
+    private func tile<Content: View>(selected: Bool, @ViewBuilder _ content: () -> Content) -> some View {
+        content()
+            .frame(width: 40, height: 40)
+            .padding(4)
+            .overlay {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(selected ? Color.dexAccent : .clear, lineWidth: 2.5)
+            }
+            .contentShape(.rect(cornerRadius: 12))
+    }
+
+    private func shapes(current: SidekickParts, selected: String?) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Shape").font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    if current.shape == "custom", let picture = image.flatMap(AgentAvatar.decode) {
+                        tile(selected: selected == "custom") { Image(uiImage: picture).resizable().scaledToFit() }
+                            .accessibilityLabel("Shape \(current.shapeName)")
+                            .accessibilityAddTraits(selected == "custom" ? .isSelected : [])
+                            .accessibilityIdentifier("character.shape.custom")
+                    }
+                    ForEach(SidekickShapes.all) { shape in
+                        let candidate = SidekickParts.make(shape.key, skin: current.skin)
+                        Button { change(candidate, color) } label: {
+                            tile(selected: selected == shape.key) { SidekickArt(parts: candidate) }
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Shape \(shape.name)")
+                        .accessibilityAddTraits(selected == shape.key ? .isSelected : [])
+                        .accessibilityIdentifier("character.shape.\(shape.key)")
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+            .scrollClipDisabled()
+            Text("Want something else? Ask a chat to draw your sidekick as anything, like “a teapot”.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
     }
 
-    private func faces(selected: String?, pick: @escaping (String) -> Void) -> some View {
+    private func faces(current: SidekickParts, selected: String?, pick: @escaping (String) -> Void) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Color").font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(SidekickParts.skins.map(\.name), id: \.self) { skin in
-                        let isSelected = selected == skin
                         Button { pick(skin) } label: {
-                            SidekickArt(parts: SidekickParts(skin: skin))
-                                .frame(width: 40, height: 40)
-                                .padding(4)
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .strokeBorder(isSelected ? Color.dexAccent : .clear, lineWidth: 2.5)
-                                }
-                                .contentShape(.rect(cornerRadius: 12))
+                            tile(selected: selected == skin) { SidekickArt(parts: SidekickParts.make(current.isDrawable ? current.shape : "bot", skin: skin)) }
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Color \(SidekickParts.skinLabel(skin))")
-                        .accessibilityAddTraits(isSelected ? .isSelected : [])
+                        .accessibilityAddTraits(selected == skin ? .isSelected : [])
                         .accessibilityIdentifier("character.skin.\(skin)")
                     }
                 }

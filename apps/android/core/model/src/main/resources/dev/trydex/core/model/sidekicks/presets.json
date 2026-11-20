@@ -2,15 +2,17 @@
   {
     "key": "boop",
     "name": "Boop",
-    "color": "zinc",
+    "color": "orange",
     "look": {
+      "shape": "bot",
+      "custom": null,
+      "skin": "peach",
       "body": "bot",
-      "skin": "slate",
       "eyes": "round",
       "mouth": "smile",
       "extra": "none",
       "blush": false,
-      "finish": null
+      "finish": 101
     },
     "image": "boop.png"
   },
@@ -19,13 +21,15 @@
     "name": "Muse",
     "color": "violet",
     "look": {
-      "body": "blob",
+      "shape": "lightbulb",
+      "custom": null,
       "skin": "pink",
-      "eyes": "sparkle",
-      "mouth": "grin",
-      "extra": "beret",
-      "blush": true,
-      "finish": 605
+      "body": "blob",
+      "eyes": "round",
+      "mouth": "smile",
+      "extra": "none",
+      "blush": false,
+      "finish": 101
     },
     "image": "muse.png"
   },
@@ -34,13 +38,15 @@
     "name": "Atlas",
     "color": "sky",
     "look": {
-      "body": "cube",
-      "skin": "cloud",
+      "shape": "cloud",
+      "custom": null,
+      "skin": "sky",
+      "body": "blob",
       "eyes": "round",
       "mouth": "smile",
-      "extra": "glasses",
+      "extra": "none",
       "blush": false,
-      "finish": 102
+      "finish": 101
     },
     "image": "atlas.png"
   },
@@ -49,28 +55,32 @@
     "name": "Sage",
     "color": "teal",
     "look": {
-      "body": "ghost",
+      "shape": "sprout",
+      "custom": null,
       "skin": "mint",
-      "eyes": "sleepy",
+      "body": "blob",
+      "eyes": "round",
       "mouth": "smile",
-      "extra": "sprout",
-      "blush": true,
-      "finish": 202
+      "extra": "none",
+      "blush": false,
+      "finish": 101
     },
     "image": "sage.png"
   },
   {
     "key": "rex",
     "name": "Rex",
-    "color": "orange",
+    "color": "rose",
     "look": {
-      "body": "bean",
-      "skin": "peach",
-      "eyes": "happy",
-      "mouth": "grin",
-      "extra": "headband",
+      "shape": "controller",
+      "custom": null,
+      "skin": "coral",
+      "body": "blob",
+      "eyes": "round",
+      "mouth": "smile",
+      "extra": "none",
       "blush": false,
-      "finish": 306
+      "finish": 101
     },
     "image": "rex.png"
   },
@@ -79,13 +89,15 @@
     "name": "Byte",
     "color": "zinc",
     "look": {
-      "body": "bot",
-      "skin": "sky",
-      "eyes": "visor",
-      "mouth": "flat",
-      "extra": "headphones",
+      "shape": "screen",
+      "custom": null,
+      "skin": "slate",
+      "body": "blob",
+      "eyes": "round",
+      "mouth": "smile",
+      "extra": "none",
       "blush": false,
-      "finish": 1702
+      "finish": 101
     },
     "image": "byte.png"
   },
@@ -94,13 +106,15 @@
     "name": "Mochi",
     "color": "rose",
     "look": {
-      "body": "cat",
+      "shape": "cat",
+      "custom": null,
       "skin": "cloud",
-      "eyes": "dot",
-      "mouth": "purr",
-      "extra": "bow",
-      "blush": true,
-      "finish": 1504
+      "body": "cat",
+      "eyes": "round",
+      "mouth": "smile",
+      "extra": "none",
+      "blush": false,
+      "finish": 101
     },
     "image": "mochi.png"
   },
@@ -109,13 +123,15 @@
     "name": "Nova",
     "color": "violet",
     "look": {
-      "body": "bean",
+      "shape": "rocket",
+      "custom": null,
       "skin": "lilac",
-      "eyes": "sparkle",
-      "mouth": "o",
-      "extra": "wizard",
-      "blush": true,
-      "finish": 1606
+      "body": "blob",
+      "eyes": "round",
+      "mouth": "smile",
+      "extra": "none",
+      "blush": false,
+      "finish": 101
     },
     "image": "nova.png"
   },
@@ -124,13 +140,15 @@
     "name": "Pip",
     "color": "emerald",
     "look": {
-      "body": "blob",
+      "shape": "blob",
+      "custom": null,
       "skin": "lemon",
-      "eyes": "wink",
-      "mouth": "tongue",
+      "body": "blob",
+      "eyes": "round",
+      "mouth": "smile",
       "extra": "none",
-      "blush": true,
-      "finish": 303
+      "blush": false,
+      "finish": 101
     },
     "image": "pip.png"
   },
@@ -139,13 +157,15 @@
     "name": "Duke",
     "color": "amber",
     "look": {
-      "body": "cube",
-      "skin": "coral",
+      "shape": "mug",
+      "custom": null,
+      "skin": "peach",
+      "body": "blob",
       "eyes": "round",
       "mouth": "smile",
-      "extra": "crown",
+      "extra": "none",
       "blush": false,
-      "finish": 901
+      "finish": 101
     },
     "image": "duke.png"
   },
@@ -154,13 +174,15 @@
     "name": "Fern",
     "color": "emerald",
     "look": {
-      "body": "cat",
+      "shape": "watering-can",
+      "custom": null,
       "skin": "teal",
-      "eyes": "happy",
+      "body": "blob",
+      "eyes": "round",
       "mouth": "smile",
-      "extra": "sprout",
-      "blush": true,
-      "finish": 1603
+      "extra": "none",
+      "blush": false,
+      "finish": 101
     },
     "image": "fern.png"
   },
@@ -169,13 +191,15 @@
     "name": "Ziggy",
     "color": "sky",
     "look": {
-      "body": "ghost",
+      "shape": "ghost",
+      "custom": null,
       "skin": "lilac",
-      "eyes": "dot",
-      "mouth": "o",
-      "extra": "beanie",
+      "body": "ghost",
+      "eyes": "round",
+      "mouth": "smile",
+      "extra": "none",
       "blush": false,
-      "finish": 1303
+      "finish": 101
     },
     "image": "ziggy.png"
   },
@@ -184,13 +208,15 @@
     "name": "Bolt",
     "color": "amber",
     "look": {
-      "body": "bot",
-      "skin": "slate",
+      "shape": "cube",
+      "custom": null,
+      "skin": "lemon",
+      "body": "cube",
       "eyes": "round",
-      "mouth": "grin",
+      "mouth": "smile",
       "extra": "none",
       "blush": false,
-      "finish": 926
+      "finish": 101
     },
     "image": "bolt.png"
   }

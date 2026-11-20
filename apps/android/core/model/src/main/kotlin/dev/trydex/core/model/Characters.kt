@@ -23,7 +23,7 @@ data class CharacterProfile(
     val greeting: String = "",
     /** An emoji, from before sidekicks had looks; empty shows the name's first letter. */
     val avatar: String = "",
-    /** Their BoopFace: a color or a finish (the web draws it live; the app draws plain colors and shows [image] for finishes). Missing on older ones. */
+    /** Their face: an Open Bot Avatar shape in a color (the web draws it live; [image] is the agent's picture of it). Missing on older ones. */
     val look: SidekickLook? = null,
     /** A picture as a data: URL: a photo, or the PNG of their look (on a clear background). Shown instead of the emoji. */
     val image: String? = null,
@@ -60,25 +60,29 @@ enum class SidekickNotify(val id: String, val label: String, val description: St
 }
 
 /**
- * A sidekick's look (SidekickLook in apps/web/src/shared/sidekick-look.ts): a BoopFace in the color [skin], or in the
- * finish [finish]. The other parts are from before BoopFace; they're kept so older apps still read looks.
+ * A sidekick's look (SidekickLook in apps/web/src/shared/sidekick-look.ts): an Open Bot Avatar [shape] (or [custom], one
+ * a chat drew) in the color [skin]. The other parts are from before; they're kept so older apps still read looks.
  */
 @Serializable
 data class SidekickLook(
-    val body: String = "blob",
-    /** The face's color (a key of SidekickLooks.SKINS), shown when there's no finish. */
+    /** One of SidekickLooks.SHAPES, or "custom". Empty on looks from older agents. */
+    val shape: String = "",
+    /** The shape when [shape] is "custom". */
+    val custom: CustomShape? = null,
+    /** The face's color (a key of SidekickLooks.SKINS). */
     val skin: String = "",
+    val body: String = "",
     val eyes: String = "",
     val mouth: String = "",
     val extra: String = "",
     val blush: Boolean = false,
-    /** A BoopFace skin number (605: jelly pink), or null for the plain color. Only the web can draw one; apps show the PNG. */
+    /** Always SidekickLooks.LEGACY_FINISH now: it has older apps show the picture. */
     val finish: Int? = null,
 )
 
 /**
- * One of the ready-made looks (bundled here from the web's LOOK_PRESETS): its name, accent color, look, and the PNG of
- * its BoopFace, which is what a sidekick saves as its `image`.
+ * One of the ready-made looks (bundled here from the web's LOOK_PRESETS): its name, accent color, look, and its picture
+ * as the agent draws it.
  */
 @Serializable
 data class SidekickPreset(val key: String, val name: String = "", val color: String = "violet", val look: SidekickLook = SidekickLook(), val image: String = "") {

@@ -30,7 +30,7 @@ apps/ios/
 
 The wire protocol is `apps/web/src/shared/protocol.ts`; the Swift models decode older and newer agents alike (missing fields get the defaults `withStateDefaults` gives them, unknown events and messages are ignored).
 
-Sidekicks' ready-made looks (`assets/sidekicks` at the repo root, exported by the web app) are bundled as `DexKit/Sources/DexCore/Resources/Sidekicks`: copy them over again when they change.
+Sidekicks' faces are [Open Bot Avatars](https://github.com/DominikScholz/open-bot-avatar). The ready-made looks and each shape's layers (`assets/sidekicks` at the repo root, drawn by the agent's renderer) are bundled as `DexKit/Sources/DexCore/Resources/Sidekicks`; `npm run sidekicks:assets -w @dex/web` rewrites them. The app draws Dex's shapes from those layers (`SidekickArt`: the body tinted, the eyes over it, blinking in a chat's header and on calls) and shows the agent's picture (`image`) for a shape a chat drew. Saving a look sends it without a picture: the agent draws one.
 
 ## Run it
 

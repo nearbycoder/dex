@@ -35,7 +35,7 @@ enum SidekickWidgetContent: Hashable {
     case unavailable
 }
 
-/// A sidekick's face: their look (a BoopFace on a clear background) whole, else a photo or their emoji or initial
+/// A sidekick's face: their look (the agent's picture of it, on a clear background) whole, else a photo or their emoji or initial
 /// round on their color; a dot while they have something you haven't read.
 struct WidgetFace: View {
     let sidekick: WidgetSidekick

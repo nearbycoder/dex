@@ -358,7 +358,7 @@ class DexApi(private val rpc: AgentRpc) {
             json["voice"] = character.voice?.let(::JsonPrimitive) ?: JsonNull
             if (picture) {
                 json["image"] = character.image?.let(::JsonPrimitive) ?: JsonNull
-                // With its finish always: a look without one keeps the finish it had, and null (a plain color) clears it.
+                // With its finish always stated: apps from before Open Bot Avatar show the picture of a look with one.
                 json["look"] = character.look?.let { look ->
                     JsonObject(DexJson.encodeToJsonElement(SidekickLook.serializer(), look).jsonObject + ("finish" to (look.finish?.let(::JsonPrimitive) ?: JsonNull)))
                 } ?: JsonNull

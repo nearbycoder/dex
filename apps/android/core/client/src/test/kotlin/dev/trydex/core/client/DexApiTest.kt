@@ -4,6 +4,7 @@ import com.google.common.truth.Truth.assertThat
 import dev.trydex.core.model.CharacterProfile
 import dev.trydex.core.model.DexJson
 import dev.trydex.core.model.SidekickLook
+import dev.trydex.core.model.SidekickLooks
 import dev.trydex.core.model.ThinkingLevel
 import dev.trydex.core.model.UiOperationResult
 import kotlinx.coroutines.runBlocking
@@ -111,13 +112,14 @@ class DexApiTest {
         assertThat(draft.keys).containsNoneOf("id", "sessionId", "createdAt", "updatedAt")
         assertThat(draft["image"].toString()).isEqualTo("\"data:image/png;base64,AA\"")
         assertThat(draft["look"].toString()).isEqualTo("null")
-        // A look always says its finish: a plain color clears the one it had, explicitly.
-        val plain = DexApi.characterDraft(CharacterProfile("muse", name = "Muse", look = SidekickLook("bot", "mint"), image = "data:image/png;base64,AA"), picture = true)
-        assertThat(plain["look"]!!.jsonObject["finish"]).isEqualTo(JsonNull)
-        val finished = DexApi.characterDraft(CharacterProfile("muse", name = "Muse", look = SidekickLook("bot", "pink", finish = 605), image = "data:image/png;base64,AA"), picture = true)
-        assertThat(finished["look"]!!.jsonObject["finish"].toString()).isEqualTo("605")
+        // A look goes whole: its shape, and its finish always stated (it has apps from before Open Bot Avatar show the picture).
+        val look = DexApi.characterDraft(CharacterProfile("muse", name = "Muse", look = SidekickLooks.make("mug", "mint")), picture = true)
+        assertThat(look["look"]!!.jsonObject["shape"].toString()).isEqualTo("\"mug\"")
+        assertThat(look["look"]!!.jsonObject["finish"].toString()).isEqualTo("101")
+        assertThat(DexApi.characterDraft(CharacterProfile("muse", name = "Muse", look = SidekickLook(shape = "bot", skin = "pink")), picture = true)["look"]!!.jsonObject["finish"])
+            .isEqualTo(JsonNull)
         // Unchanged, they're left out so the agent keeps them.
-        val kept = DexApi.characterDraft(CharacterProfile("muse", name = "Muse", look = SidekickLook("blob"), image = "data:image/png;base64,AA"), picture = false)
+        val kept = DexApi.characterDraft(CharacterProfile("muse", name = "Muse", look = SidekickLook(body = "blob"), image = "data:image/png;base64,AA"), picture = false)
         assertThat(kept["id"].toString()).isEqualTo("\"muse\"")
         assertThat(kept.keys).containsNoneOf("image", "look")
         // The voice always goes, so saving keeps the one picked and null (automatic) can be chosen again.
@@ -168,7 +170,7 @@ class DexApiTest {
 
     @Test fun aSidekicksNotificationsKeepTheirPicture() {
         val draft = DexApi.characterNotifyDraft(
-            CharacterProfile("atlas", name = "Atlas", look = SidekickLook("blob"), image = "data:image/png;base64,AA", sessionId = "s", createdAt = 1),
+            CharacterProfile("atlas", name = "Atlas", look = SidekickLook(body = "blob"), image = "data:image/png;base64,AA", sessionId = "s", createdAt = 1),
             dev.trydex.core.model.SidekickNotify.Reachouts,
         )
         assertThat(draft["notify"].toString()).isEqualTo("\"reachouts\"")

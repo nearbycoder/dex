@@ -11,7 +11,7 @@ import { githubFullName, normalizeRepoUrl, repoDirName, repoLabel } from "../../
 import { formatInstalls, invokedSkill, skillSlug } from "../../../web/src/shared/skills.ts"
 import { splitUiNotes } from "../../../web/src/shared/ui-notes.ts"
 import { attachmentSummary, attachmentTag, splitAttachments } from "../../../web/src/shared/attachments.ts"
-import { cleanLook, LOOK_PRESETS, SKINS } from "../../../web/src/shared/sidekick-look.ts"
+import { cleanLook, LOOK_PRESETS, SHAPES, SKINS } from "../../../web/src/shared/sidekick-look.ts"
 // The jsdiff that @pierre/diffs (the web's Files panel) diffs with.
 import { structuredPatch } from "../../../../node_modules/@pierre/diffs/node_modules/diff/libesm/index.js"
 
@@ -349,13 +349,18 @@ write("vmfiles.json", {
 
 write("sidekicks.json", {
   skins: SKINS,
+  shapes: SHAPES.map((shape) => shape.key),
   presets: LOOK_PRESETS,
   clean: [
     {},
+    // From apps before Open Bot Avatar: parts and a color, no shape.
     { body: "cube", skin: "teal", eyes: "visor", mouth: "o", extra: "crown", blush: true, finish: 605 },
     { body: "bot", skin: "slate", eyes: "round", mouth: "smile", extra: "none", blush: false, finish: null },
     { body: "dragon", skin: "plaid", eyes: "laser", mouth: "", extra: "cape", blush: false, finish: 1800 },
-    ...[101, 1717, 1730, 1731, 100, 131, 0, 99, 2001].map((finish) => ({ skin: "mint", finish }))
+    { shape: "mug", skin: "sky" },
+    { shape: "watering-can", skin: "lemon", body: "cat", finish: null },
+    { shape: "teapot", skin: "mint", body: "ghost" },
+    { shape: "custom", skin: "coral", custom: { name: "Box", path: "M20 20 H80 V80 H20 Z", eyes: { x: 50, y: 46, spacing: 15, scale: 1 } } }
   ].map((input) => ({ input, look: cleanLook(input) }))
 })
 

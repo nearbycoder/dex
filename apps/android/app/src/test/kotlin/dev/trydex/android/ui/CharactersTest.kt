@@ -11,7 +11,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.common.truth.Truth.assertThat
-import dev.trydex.core.model.Characters
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import dev.trydex.android.testing.Harness
@@ -122,27 +122,27 @@ class CharactersTest {
         assertThat(renamed).doesNotContain("\"look\"")
         rule.awaitText("Saved")
 
-        // A ready-made look goes with its bundled PNG, made small enough for the agent, and its finish.
+        // A ready-made look goes alone, with its finish for older apps: the agent draws its picture (null, not left out).
         rule.onNodeWithTag("character-look-byte").performScrollTo().performClick()
         rule.onNodeWithTag("character-save").performClick()
         rule.waitUntil(10_000) { harness.fake.calls.count { it.first == "saveCharacter" } == 2 }
         val picked = harness.fake.calls.last { it.first == "saveCharacter" }.second[0].jsonObject
-        assertThat(picked["image"]!!.jsonPrimitive.content).startsWith("data:image/png;base64,")
-        assertThat(picked["image"]!!.jsonPrimitive.content.length).isLessThan(63_000)
+        assertThat(picked["image"]).isEqualTo(JsonNull)
         assertThat(picked["color"]!!.jsonPrimitive.content).isEqualTo("zinc")
-        assertThat(picked["look"]!!.jsonObject["finish"].toString()).isEqualTo("1702")
+        assertThat(picked["look"]!!.jsonObject["shape"]!!.jsonPrimitive.content).isEqualTo("screen")
+        assertThat(picked["look"]!!.jsonObject["finish"].toString()).isEqualTo("101")
         rule.awaitText("Saved")
 
-        // A plain color: the finish goes, explicitly, and the PNG is drawn here. The accent alone sends no picture.
+        // A shape, then a color: the look changes, in the color it had, then the shape it had.
+        rule.onNodeWithTag("look-shape-mug").performScrollTo().performClick()
         rule.onNodeWithTag("look-color-coral").performScrollTo().performClick()
         rule.onNodeWithTag("character-save").performClick()
         rule.waitUntil(10_000) { harness.fake.calls.count { it.first == "saveCharacter" } == 3 }
         val colored = harness.fake.calls.last { it.first == "saveCharacter" }.second[0].jsonObject
-        assertThat(colored["look"].toString()).isEqualTo("""{"body":"bot","skin":"coral","eyes":"visor","mouth":"flat","extra":"headphones","blush":false,"finish":null}""")
-        val image = colored["image"]!!.jsonPrimitive.content
-        assertThat(image).startsWith("data:image/png;base64,")
-        assertThat(image.length).isLessThan(63_000)
-        assertThat(image).isNotEqualTo(Characters.preset("byte")!!.dataUrl)
+        val look = colored["look"]!!.jsonObject
+        assertThat(look["shape"]!!.jsonPrimitive.content).isEqualTo("mug")
+        assertThat(look["skin"]!!.jsonPrimitive.content).isEqualTo("coral")
+        assertThat(colored["image"]).isEqualTo(JsonNull)
         rule.awaitText("Saved")
 
         rule.onNodeWithTag("look-accent-rose").performScrollTo().performClick()

@@ -1,0 +1,153 @@
+{
+  "skins": {
+    "peach": "#ff6a1a",
+    "lemon": "#facc15",
+    "mint": "#34d399",
+    "teal": "#2dd4bf",
+    "sky": "#38bdf8",
+    "lilac": "#a78bfa",
+    "pink": "#f472b6",
+    "coral": "#fb7185",
+    "cloud": "#d4d4d8",
+    "slate": "#94a3b8"
+  },
+  "ink": "#151515",
+  "shapes": [
+    {
+      "key": "bot",
+      "name": "Robot",
+      "eyes": {
+        "top": 0.40719012698458334,
+        "bottom": 0.62214909223873
+      }
+    },
+    {
+      "key": "blob",
+      "name": "Blob",
+      "eyes": {
+        "top": 0.3266741602414174,
+        "bottom": 0.5326428785034036
+      }
+    },
+    {
+      "key": "ghost",
+      "name": "Ghost",
+      "eyes": {
+        "top": 0.31065196526276323,
+        "bottom": 0.5088046525664657
+      }
+    },
+    {
+      "key": "cat",
+      "name": "Cat",
+      "eyes": {
+        "top": 0.4081195028981091,
+        "bottom": 0.6074464062356881
+      }
+    },
+    {
+      "key": "bean",
+      "name": "Bean",
+      "eyes": {
+        "top": 0.2802973414862325,
+        "bottom": 0.4610566428225523
+      }
+    },
+    {
+      "key": "cube",
+      "name": "Cube",
+      "eyes": {
+        "top": 0.34200150419779357,
+        "bottom": 0.5569604694519402
+      }
+    },
+    {
+      "key": "cloud",
+      "name": "Cloud",
+      "eyes": {
+        "top": 0.4086106351787274,
+        "bottom": 0.6067633224824299
+      }
+    },
+    {
+      "key": "screen",
+      "name": "Screen",
+      "eyes": {
+        "top": 0.2474023237677749,
+        "bottom": 0.4545452580636378
+      }
+    },
+    {
+      "key": "rocket",
+      "name": "Rocket",
+      "eyes": {
+        "top": 0.32151363162223995,
+        "bottom": 0.48605376302505365
+      }
+    },
+    {
+      "key": "note",
+      "name": "Note",
+      "eyes": {
+        "top": 0.37078152232054196,
+        "bottom": 0.5689342096242443
+      }
+    },
+    {
+      "key": "heart",
+      "name": "Heart",
+      "eyes": {
+        "top": 0.29120198005936604,
+        "bottom": 0.4893546673630685
+      }
+    },
+    {
+      "key": "controller",
+      "name": "Controller",
+      "eyes": {
+        "top": 0.3037328140191654,
+        "bottom": 0.4772631924141396
+      }
+    },
+    {
+      "key": "mug",
+      "name": "Mug",
+      "eyes": {
+        "top": 0.3453756112504049,
+        "bottom": 0.5345380515619469
+      }
+    },
+    {
+      "key": "lightbulb",
+      "name": "Lightbulb",
+      "eyes": {
+        "top": 0.2394072384790359,
+        "bottom": 0.43697281776580005
+      }
+    },
+    {
+      "key": "chat",
+      "name": "Chat",
+      "eyes": {
+        "top": 0.28734599215992324,
+        "bottom": 0.49331471042190955
+      }
+    },
+    {
+      "key": "sprout",
+      "name": "Sprout",
+      "eyes": {
+        "top": 0.5691991901298401,
+        "bottom": 0.7427295685248143
+      }
+    },
+    {
+      "key": "watering-can",
+      "name": "Watering can",
+      "eyes": {
+        "top": 0.46321437918778696,
+        "bottom": 0.6523768194993289
+      }
+    }
+  ]
+}

@@ -3,7 +3,6 @@ import { ArrowLeft, Check, LoaderCircle, MessageCircle, Plug, RotateCcw, Square,
 import { type ReactNode, useEffect, useRef, useState } from "react"
 import { CharacterAvatar } from "~/client/components/agent-avatar"
 import { SidekickLookPicker } from "~/client/components/sidekick-look-picker"
-import { lookPng } from "~/client/components/boop-face"
 import { randomLook } from "~/shared/sidekick-look"
 import { InfoTip } from "~/client/components/info-tip"
 import { McpStatusDot } from "~/client/components/mcp-picker"
@@ -113,8 +112,8 @@ function CharacterEditor() {
     setSaving(true)
     setError(null)
     try {
-      // The apps show a picture rather than drawing looks: send one along.
-      const image = draft.look ? await lookPng(draft.look) : draft.image
+      // A look's picture is drawn by the agent.
+      const image = draft.look ? null : draft.image
       // A new one keeps the voice shown here (with none chosen, it would otherwise come from the id they're given).
       const voice = isNew && !draft.voice ? voiceOf({ id: draft.name, voice: null }) : draft.voice
       const result = await stub.saveCharacter({ ...draft, image, voice })

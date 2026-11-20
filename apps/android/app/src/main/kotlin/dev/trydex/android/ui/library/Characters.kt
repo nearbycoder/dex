@@ -104,7 +104,6 @@ import dev.trydex.core.model.DexState
 import dev.trydex.core.model.Format
 import dev.trydex.core.model.SessionMeta
 import dev.trydex.core.model.SidekickLooks
-import dev.trydex.android.ui.components.SidekickArt
 import androidx.compose.foundation.border
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -270,15 +269,12 @@ fun CharacterEditorScreen(id: String, route: Route) {
         saving = true
         error = null
         scope.launch {
-            // The picture and look go only when they changed here: left out, the agent keeps them as they are (a look
-            // with a finish can't be drawn here, so its PNG must stay the web's). A changed look goes with its PNG, for
-            // widgets, notifications, and other apps: a ready-made look's bundled one, or a plain color's drawn here.
+            // The picture and look go only when they changed here: left out, the agent keeps them as they are. A look
+            // goes alone: the agent draws its picture.
             val look = value.look?.let(SidekickLooks::clean)
             val picture = isNew || value.image != base?.image || look != base?.look?.let(SidekickLooks::clean)
             attempt {
-                val sent = if (look == null || !picture) value else withContext(Dispatchers.Default) {
-                    value.copy(look = look, image = value.image?.let(SidekickArt::fit) ?: SidekickArt.png(look))
-                }
+                val sent = if (look == null || !picture) value else value.copy(look = look, image = null)
                 repository.api.saveCharacter(DexApi.characterDraft(sent, picture))
             }
                 .onSuccess { result ->

@@ -59,32 +59,39 @@ import Testing
         // Read back as the agent reads it.
         let read = try sent.decode(CharacterDraft.self)
         #expect(read.pictureChanged && read.look == nil && read.image == "data:image/jpeg;base64,AA")
-        // A color of your own: the plain color, its finish cleared (null, not left out, which would keep it).
-        var parts = try #require(SidekickParts(muse.look))
-        #expect(parts.finish == 605)
-        parts.skin = "teal"
-        parts.finish = nil
-        edit.use(parts: parts, color: "emerald", image: "data:image/png;base64,AA")
+        // A shape and color of your own: the whole look, its finish always (older apps show the picture of a look with
+        // one), and no picture (null, not left out): the agent draws it.
+        edit.use(parts: SidekickParts.make("mug", skin: "teal"), color: "emerald")
         sent = try JSONValue(encoding: edit)
-        #expect(sent["look"]?["skin"] == "teal" && sent["look"]?["finish"] == .null && sent["look"]?["body"] == "blob" && sent["color"] == "emerald")
-        #expect(sent["look"]?.object?.keys.contains("finish") == true && edit.preset == nil)
+        #expect(sent["look"]?["shape"] == "mug" && sent["look"]?["skin"] == "teal" && sent["look"]?["finish"] == 101 && sent["color"] == "emerald")
+        #expect(sent["image"] == .null && edit.preset == nil)
         #expect(try !JSONValue(encoding: CharacterDraft(CharacterProfile(id: "x", name: "X", sessionId: "s"))).decode(CharacterDraft.self).pictureChanged)
     }
 
     @Test func readyMadeLooks() throws {
-        // assets/sidekicks: thirteen, each a small PNG the server keeps: a BoopFace on a clear background.
+        // assets/sidekicks: thirteen, each a small PNG the agent drew: a face on a clear background.
         #expect(SidekickLook.all.count == 13)
         #expect(Set(SidekickLook.all.map(\.id)).count == 13)
         #expect(SidekickLook.all.first?.id == "boop")
         for look in SidekickLook.all {
             #expect(look.image.hasPrefix("data:image/png;base64,") && look.image.count < Characters.maxImageURLLength, "\(look.id)")
             #expect(AgentColorNames.contains(look.color) && look.look["body"]?.string != nil, "\(look.id)")
-            // Each says its finish, even none (Boop's plain slate).
-            #expect(look.look.object?.keys.contains("finish") == true, "\(look.id)")
+            // Each is one of Dex's shapes, which the app draws, and says its finish (for older apps).
+            #expect(SidekickParts(look.look)?.isDrawable == true && look.look["finish"] == 101, "\(look.id)")
             let png = try #require(Data(base64Encoded: String(look.image.dropFirst("data:image/png;base64,".count))))
             #expect(SidekickPicture.isFace(png), "\(look.id)")
         }
-        #expect(SidekickParts(SidekickLook.named("boop")?.look)?.finish == nil && SidekickParts(SidekickLook.named("muse")?.look)?.finish == 605)
+        #expect(SidekickParts(SidekickLook.named("boop")?.look)?.shape == "bot" && SidekickParts(SidekickLook.named("muse")?.look)?.shape == "lightbulb")
+    }
+
+    @Test func shapes() throws {
+        // assets/sidekicks/shapes: seventeen, each a body and eyes the app draws faces from.
+        #expect(SidekickShapes.all.count == 17 && SidekickShapes.all.first?.key == "bot")
+        for shape in SidekickShapes.all {
+            for part in ["body", "eyes"] { #expect(SidekickShapes.layer(shape.key, part)?.prefix(4) == Data([0x89, 0x50, 0x4e, 0x47]), "\(shape.key) \(part)") }
+            #expect(shape.eyesTop < shape.eyesBottom && shape.eyesTop > 0 && shape.eyesBottom < 1, "\(shape.key)")
+        }
+        #expect(SidekickShapes.layer("teapot", "body") == nil)
     }
 
     @Test func templates() throws {
@@ -180,16 +187,20 @@ import Testing
 
 @Suite struct SidekickPartsTests {
     @Test func readsAndWritesLooks() {
-        let look: JSONValue = ["body": "cat", "skin": "pink", "eyes": "wink", "mouth": "purr", "extra": "bow", "blush": true, "finish": 1504]
+        let look: JSONValue = ["shape": "mug", "custom": .null, "skin": "pink", "body": "blob", "eyes": "round", "mouth": "smile", "extra": "none", "blush": false, "finish": 101]
         let parts = SidekickParts(look)
-        #expect(parts == SidekickParts(body: "cat", skin: "pink", eyes: "wink", mouth: "purr", extra: "bow", blush: true, finish: 1504))
+        #expect(parts == SidekickParts.make("mug", skin: "pink"))
         #expect(parts?.json == look)
-        // No finish, or one BoopFace doesn't have: the plain color, written as null.
-        #expect(SidekickParts(["body": "cat"])?.finish == nil && SidekickParts(["body": "cat"])?.json["finish"] == .null)
-        for bad: JSONValue in [99, 1531, 1800, 605.5, "605"] { #expect(SidekickParts(["finish": bad])?.finish == nil, "\(bad)") }
-        #expect(SidekickParts.skinHex("lilac") == "#8b5cf6" && SidekickParts.skins.count == 10)
-        // Unknown parts fall back; not an object, no look.
-        #expect(SidekickParts(["body": "dragon", "skin": 3]) == SidekickParts())
+        // From an older agent: no shape, the one nearest its body; a color it doesn't know, the first.
+        #expect(SidekickParts(["body": "cat", "skin": "mint", "finish": 1504]) == SidekickParts.make("cat", skin: "mint"))
+        #expect(SidekickParts(["body": "dragon", "skin": 3]) == SidekickParts.make("bot", skin: "peach"))
+        // A newer agent's shape this build doesn't have: the nearest it has; its picture shows where there is one.
+        #expect(SidekickParts(["shape": "teapot", "body": "ghost", "skin": "sky"])?.shape == "ghost")
+        // A shape a chat drew: kept as sent, shown as its picture.
+        let drawn = SidekickParts(["shape": "custom", "skin": "teal", "custom": ["name": "Box", "path": "M20 20 H80 V80 H20 Z", "eyes": ["x": 50, "y": 46, "spacing": 15, "scale": 1]]])
+        #expect(drawn?.shape == "custom" && drawn?.shapeName == "Box" && drawn?.isDrawable == false && drawn?.json["custom"]?["path"] == "M20 20 H80 V80 H20 Z")
+        #expect(SidekickParts(["shape": "custom", "skin": "teal"])?.shape == "bot")
+        #expect(SidekickParts.skinHex("lilac") == "#a78bfa" && SidekickParts.skins.count == 10)
         #expect(SidekickParts(.string("x")) == nil)
         // Every preset reads.
         #expect(SidekickLook.all.allSatisfy { SidekickParts($0.look) != nil })
@@ -199,30 +210,7 @@ import Testing
         var generator = SystemRandomNumberGenerator()
         for _ in 0..<50 {
             let parts = SidekickParts.random(using: &generator)
-            #expect(SidekickParts(parts.json) == parts)
-            if parts.eyes == "visor" { #expect(parts.body == "bot") }
+            #expect(SidekickParts(parts.json) == parts && parts.isDrawable)
         }
-    }
-
-    @Test func parsesPathData() {
-        let steps = SVGPathData.parse("M50 24C71 24 80 37 80 56H20V10L5.5 .5ZM1 2Q3 4 5 6")
-        #expect(steps.first == .move(50, 24))
-        #expect(steps[1] == .curve(71, 24, 80, 37, 80, 56))
-        #expect(steps[2] == .line(20, 56))
-        #expect(steps[3] == .line(20, 10))
-        #expect(steps[4] == .line(5.5, 0.5))
-        #expect(steps[5] == .close)
-        #expect(steps[6] == .move(1, 2))
-        #expect(steps[7] == .quad(3, 4, 5, 6))
-        // BoopFace's head: one closed outline on its 240-unit box, from 20 to 220 both ways.
-        let head = SVGPathData.parse(BoopFace.headPath)
-        #expect(head.first == .move(120, 20) && head.last == .close && head.count > 100)
-        let points = head.compactMap { step -> (Double, Double)? in
-            switch step {
-            case .move(let x, let y), .line(let x, let y): (x, y)
-            default: nil
-            }
-        }
-        #expect(points.map(\.0).min() == 20 && points.map(\.0).max() == 220 && points.map(\.1).min() == 20 && points.map(\.1).max() == 220)
     }
 }

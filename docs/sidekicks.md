@@ -10,7 +10,7 @@ In code and on the wire they're `characters` (`CharacterProfile`, `characterId`,
 |---|---|
 | Name | "Muse". Also the title of its conversation. |
 | Tagline | One line under the name in the sidebar ("Your creative sparring partner"). |
-| Look | A little character drawn from parts (`look`: body, body color, eyes, mouth, extra, cheeks) on one of the agent colors: one of 12 ready-made ones, a mix of your own, or Shuffle. A photo can replace it. Apps that don't draw looks show the PNG saved with it (`image`, at most 48 KB); the web app draws one for any look set without one (from a chat or MCP). Sidekicks are round; agents and projects are rounded squares. Ones from before looks had an emoji (`avatar`) and were given a look once. |
+| Look | Their face: an [Open Bot Avatar](https://github.com/DominikScholz/open-bot-avatar), a little object with two dark eyes (`look`: `shape`, one of 17 such as a robot, cloud, mug, or cat, and `skin`, one of 10 colors), on one of the agent colors as its accent: one of 13 ready-made sidekicks, a shape and color of your own, Shuffle, or a shape a chat drew (`shape: "custom"` with `custom`: a silhouette and eye placement, checked by Open Bot Avatar's validator). On the web it's alive (see below). A photo can replace it. The agent draws the look's PNG (`image`, 256 px, for the apps, notifications, and widgets) whenever a look is saved, from anywhere. Sidekicks' photos and emoji are round; agents and projects are rounded squares. Ones from before looks had an emoji (`avatar`) and were given a look once; ones that were BoopFaces became the shape nearest theirs (the ready-made ones, their new selves). |
 | Character profile (`persona`) | Who they are: personality, voice, backstory, how they talk to you. |
 | Prompt (`instructions`) | What they do for you, and their rules. |
 | Greeting | Their first words, shown when the conversation is empty. |
@@ -27,6 +27,7 @@ In code and on the wire they're `characters` (`CharacterProfile`, `characterId`,
 - **Delete.** Removes the sidekick; its conversations become ordinary chats, and its memory file stays in the workspace.
 - **Calls.** The phone button in their chat starts a voice call (see below).
 - **Everything else is a chat.** Notifications, mute, queueing, attachments, VMs, and Files all work as in any chat.
+- **Alive.** On the web their face breathes, blinks, looks around, and follows the pointer; while their conversation is running it bends over the work (a call's thinking turns it into three hopping dots), then celebrates when the work is done, or shows an exclamation mark if it failed. Drag the big face on their page to turn it. Lists of messages and notifications show the still picture.
 
 ## Calls
 
@@ -54,4 +55,8 @@ Operations: `app_list_sidekicks` and `app_read_sidekick_memory` (read), `app_cre
 ## Apps
 
 - **Web:** Sidekicks in the sidebar and under Settings → Sidekicks; the editor at `/sidekicks/<id>` (with templates for a new one); a sidekick's chat shows their avatar and name in the header, their greeting when empty, and "Message <name>…" in the composer.
-- **iOS and Android:** they show `image`; their editors pick from the ready-made looks bundled from `assets/sidekicks` (saving its `look` and PNG). Also a pinned Sidekicks section at the top of the chat list (and the iPad / tablet sidebar), the same chat header, greeting, and placeholder, and an editor (Library → Sidekicks) with templates, Start over, and Delete.
+- **iOS and Android:** they show `image`; their editors pick a ready-made look, or a shape and color, from the pictures bundled from `assets/sidekicks` (each shape's body, tinted, under its eyes, which blink), and save the `look` only: the agent draws its picture. A look a chat drew shows as its picture. Also a pinned Sidekicks section at the top of the chat list (and the iPad / tablet sidebar), the same chat header, greeting, and placeholder, and an editor (Library → Sidekicks) with templates, Start over, and Delete.
+
+## Looks and older apps
+
+`look` keeps the fields of the looks before it (`body`, `eyes`, `mouth`, `extra`, `blush`, `finish`) so apps released before Open Bot Avatar still read it. Those apps draw a BoopFace for a look without a `finish` and show `image` for one with, so the agent always writes `finish: 101` (`LEGACY_FINISH`): they show the new face's picture. When such an app saves a look (no `shape`), its color is kept and its shape stays what it was; the picture it sends is ignored and the agent draws a fresh one. `faceStyle` (stored with the sidekick, not sent) says which way of drawing faces drew the saved picture; bump `FACE_STYLE` in `apps/web/src/agent/sidekick-face.ts` when that changes and every sidekick's picture is redrawn once.

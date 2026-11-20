@@ -16,7 +16,7 @@ struct CharacterHeader: View {
             router.characterSheet = .character(character.id)
         } label: {
             HStack(spacing: 9) {
-                CharacterAvatar(character, size: 32)
+                CharacterAvatar(character, size: 32, live: true)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(character.name).font(.headline).lineLimit(1)
                     if !line.isEmpty {

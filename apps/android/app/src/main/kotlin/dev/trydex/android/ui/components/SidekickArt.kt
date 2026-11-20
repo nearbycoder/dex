@@ -2,11 +2,13 @@ package dev.trydex.android.ui.components
 
 import android.animation.ValueAnimator
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Paint
-import android.graphics.Path
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffColorFilter
+import android.graphics.Rect
 import android.graphics.RectF
-import android.util.Base64
 import android.util.LruCache
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -26,59 +28,58 @@ import androidx.compose.ui.unit.Dp
 import dev.trydex.android.data.Faces
 import dev.trydex.core.model.SidekickLook
 import dev.trydex.core.model.SidekickLooks
-import java.io.ByteArrayOutputStream
 import kotlin.random.Random
 
 /**
- * Sidekick faces on the device: the plain-color BoopFace drawn from its own geometry (SidekickLooks), framed as the web
- * frames the PNG it saves, so the app can draw a color look at any size and save its picture; and the saved pictures
- * (finishes, which only the web draws, and the ready-made looks) decoded once.
+ * Sidekick faces on the device. Dex's own shapes are drawn from the layers bundled with them (SidekickLooks.layer: the
+ * body in white, tinted the look's color, and the eyes over it), which the agent's renderer drew, so they're the
+ * agent's picture to the pixel, at any color, and the eyes can blink. Pictures the agent saved (a shape a chat drew, or
+ * one this build doesn't have) are decoded once.
  */
 object SidekickArt {
     private val cache = object : LruCache<String, Bitmap>(24 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount
     }
 
-    private val head: Path by lazy {
-        Path().apply {
-            SidekickLooks.HEAD.forEachIndexed { i, (x, y) -> if (i == 0) moveTo(x, y) else lineTo(x, y) }
-            close()
-        }
+    private fun layer(shape: String, part: String): Bitmap? {
+        val key = "layer:$shape:$part"
+        cache.get(key)?.let { return it }
+        val bitmap = SidekickLooks.layer(shape, part)?.let { BitmapFactory.decodeByteArray(it, 0, it.size) } ?: return null
+        cache.put(key, bitmap)
+        return bitmap
     }
+
+    /** Whether this app draws [look] itself: one of its own shapes. */
+    fun draws(look: SidekickLook): Boolean = look.shape != "custom" && SidekickLooks.shape(look.shape) != null
 
     /**
-     * The face in [color] (ARGB) on [canvas], filling a square [size] pixels wide with the picture's frame, on a clear
-     * background. [blink] closes the eyes: 0 open, 1 shut.
+     * [look]'s face on [canvas], filling a square [size] pixels wide, on a clear background. [blink] closes the eyes: 0
+     * open, 1 shut. Draws nothing for a shape this app doesn't have ([draws]).
      */
-    fun draw(canvas: Canvas, size: Float, color: Int, blink: Float = 0f) {
-        val (left, top, width, height) = SidekickLooks.VIEW_BOX
-        // As SVG fits a viewBox in a square (xMidYMid meet): the taller side fills it, the other is centered.
-        val scale = size / maxOf(width, height)
-        val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = color }
-        val white = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = android.graphics.Color.WHITE }
+    fun draw(canvas: Canvas, size: Float, look: SidekickLook, blink: Float = 0f) {
+        val shape = SidekickLooks.shape(look.shape) ?: return
+        val body = layer(shape.key, "body") ?: return
+        val eyes = layer(shape.key, "eyes") ?: return
+        val color = android.graphics.Color.parseColor(SidekickLooks.color(look))
+        val target = RectF(0f, 0f, size, size)
+        val source = Rect(0, 0, body.width, body.height)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        canvas.drawBitmap(body, source, target, Paint(paint).apply { colorFilter = PorterDuffColorFilter(color, PorterDuff.Mode.SRC_IN) })
         canvas.save()
-        canvas.translate((size - width * scale) / 2f, (size - height * scale) / 2f)
-        canvas.scale(scale, scale)
-        canvas.translate(-left, -top)
-        canvas.drawPath(head, fill)
-        canvas.drawCircle(SidekickLooks.ANTENNA_X, SidekickLooks.ANTENNA_Y, SidekickLooks.ANTENNA_R, fill)
-        canvas.save()
-        canvas.clipPath(head)
-        val ry = SidekickLooks.EYE_RY * (1f - blink.coerceIn(0f, 1f) * 0.92f)
-        for ((x, y) in SidekickLooks.EYE_CENTERS) {
-            canvas.drawOval(RectF(x - SidekickLooks.EYE_RX, y - ry, x + SidekickLooks.EYE_RX, y + ry), white)
-        }
-        canvas.restore()
+        // Blinking: the eyes close toward their middle.
+        val middle = (shape.eyes.top + shape.eyes.bottom) / 2f * size
+        canvas.scale(1f, 1f - blink.coerceIn(0f, 1f) * 0.9f, 0f, middle)
+        canvas.drawBitmap(eyes, source, target, paint)
         canvas.restore()
     }
 
-    /** [look]'s plain-color face as a square bitmap [size] pixels wide, on a clear background. */
-    fun bitmap(look: SidekickLook, size: Int): Bitmap {
-        val color = SidekickLooks.color(look)
-        val key = "face:$size:$color"
+    /** [look]'s face as a square bitmap [size] pixels wide, on a clear background; null for a shape this app doesn't have. */
+    fun bitmap(look: SidekickLook, size: Int): Bitmap? {
+        if (!draws(look)) return null
+        val key = "face:$size:${look.shape}:${look.skin}"
         cache.get(key)?.let { return it }
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        draw(Canvas(bitmap), size.toFloat(), android.graphics.Color.parseColor(color))
+        draw(Canvas(bitmap), size.toFloat(), look)
         cache.put(key, bitmap)
         return bitmap
     }
@@ -90,44 +91,14 @@ object SidekickArt {
         cache.put(url, bitmap)
         return bitmap
     }
-
-    /**
-     * The PNG saved with a color look as the sidekick's `image` (the web's lookPng), for widgets, notifications, and
-     * apps that show pictures: 256 pixels, smaller if it would pass the agent's 48 KB.
-     */
-    fun png(look: SidekickLook): String = smallest(bitmap(look, 256)) { bitmap(look, it) }
-
-    /**
-     * [url] (a ready-made look's PNG) small enough for the agent's 48 KB: as it is if it fits, else drawn smaller.
-     * BoopFace's finishes are detailed, so some of the bundled 256-pixel pictures don't.
-     */
-    fun fit(url: String): String {
-        if (url.length < LIMIT) return url
-        val picture = picture(url) ?: return url
-        return smallest(null) { Bitmap.createScaledBitmap(picture, it, it, true) }
-    }
-
-    private fun smallest(first: Bitmap?, draw: (Int) -> Bitmap): String {
-        for (size in listOf(256, 192, 160, 128, 96)) {
-            val bitmap = if (size == 256 && first != null) first else draw(size)
-            val bytes = ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
-            val url = "data:image/png;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
-            if (url.length < LIMIT) return url
-        }
-        error("That look didn't fit in a picture.")
-    }
-
-    /** Under the agent's 48,000-byte picture limit, as base64 with its `data:` prefix. */
-    private const val LIMIT = 63_000
 }
 
 /**
- * A sidekick's plain-color BoopFace, drawn at [size]. [live] ones blink now and then, as on the web, unless the system
- * has animations off; faces shown many at once (lists, messages) stay still.
+ * A sidekick's face, drawn at [size]: one of Dex's shapes (SidekickArt.draws). [live] ones blink now and then, as on
+ * the web, unless the system has animations off; faces shown many at once (lists, messages) stay still.
  */
 @Composable
 fun SidekickFace(look: SidekickLook, size: Dp, modifier: Modifier = Modifier, live: Boolean = false) {
-    val color = remember(look.skin) { android.graphics.Color.parseColor(SidekickLooks.color(look)) }
     if (live && ValueAnimator.areAnimatorsEnabled()) {
         // A blink every five seconds or so; each face starts at its own point, so faces don't blink together.
         val offset = remember { Random.nextInt(BLINK_EVERY) }
@@ -146,9 +117,9 @@ fun SidekickFace(look: SidekickLook, size: Dp, modifier: Modifier = Modifier, li
             ),
             label = "blink",
         )
-        Canvas(modifier.size(size)) { drawIntoCanvas { SidekickArt.draw(it.nativeCanvas, this.size.minDimension, color, blink.value) } }
+        Canvas(modifier.size(size)) { drawIntoCanvas { SidekickArt.draw(it.nativeCanvas, this.size.minDimension, look, blink.value) } }
     } else {
-        Canvas(modifier.size(size)) { drawIntoCanvas { SidekickArt.draw(it.nativeCanvas, this.size.minDimension, color) } }
+        Canvas(modifier.size(size)) { drawIntoCanvas { SidekickArt.draw(it.nativeCanvas, this.size.minDimension, look) } }
     }
 }
 

@@ -1,6 +1,7 @@
 import DexCore
 import Foundation
 import Testing
+import SwiftUI
 import UIKit
 @testable import Dex
 
@@ -59,28 +60,26 @@ import UIKit
         #expect(throws: CharacterPicture.Problem.self) { try CharacterPicture.dataURL(from: Data("not an image".utf8)) }
     }
 
-    /// The native face is framed as the web's PNG of a look: a BoopFace in the 0 -8 240 248 view box, on clear.
-    @Test func plainFaceMatchesTheWebsFraming() throws {
-        let url = try #require(SidekickArt.png(SidekickParts(skin: "teal")))
-        #expect(url.count < Characters.maxImageURLLength)
-        let image = try #require(AgentAvatar.decode(url)?.cgImage)
-        #expect(image.width == 256 && image.height == 256 && SidekickPicture.isFace(image))
-        var pixels = [UInt8](repeating: 0, count: 256 * 256 * 4)
-        let context = try #require(CGContext(data: &pixels, width: 256, height: 256, bitsPerComponent: 8, bytesPerRow: 256 * 4,
-                                             space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
-        context.draw(image, in: CGRect(x: 0, y: 0, width: 256, height: 256))
-        // A point in the view box, as RGBA (rows from the top).
-        func pixel(_ x: Double, _ y: Double) -> [UInt8] {
-            let scale = 256.0 / 248
-            let column = Int((256 - 240 * scale) / 2 + x * scale), row = Int((y + 8) * scale)
-            let index = (row * 256 + column) * 4
-            return Array(pixels[index..<index + 4])
+    /// The native face is the agent's picture: each ready-made look drawn by SidekickArt (its shape's body, tinted, under
+    /// its eyes) against the PNG the agent's renderer drew of it.
+    @Test @MainActor func facesMatchTheAgentsPictures() throws {
+        func rgba(_ image: CGImage) throws -> [UInt8] {
+            var pixels = [UInt8](repeating: 0, count: 256 * 256 * 4)
+            let context = try #require(CGContext(data: &pixels, width: 256, height: 256, bitsPerComponent: 8, bytesPerRow: 256 * 4,
+                                                 space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: 256, height: 256))
+            return pixels
         }
-        let teal: [UInt8] = [0x14, 0xb8, 0xa6, 255]
-        func near(_ a: [UInt8], _ b: [UInt8]) -> Bool { zip(a, b).allSatisfy { abs(Int($0) - Int($1)) <= 6 } }
-        #expect(near(pixel(120, 200), teal), "the head")
-        #expect(near(pixel(120, 4), teal), "the antenna")
-        #expect(near(pixel(86, 126), [255, 255, 255, 255]) && near(pixel(154, 126), [255, 255, 255, 255]), "the eyes")
-        #expect(pixel(4, 120)[3] == 0 && pixel(120, 236)[3] == 0, "clear around the head")
+        for look in SidekickLook.all {
+            let parts = try #require(SidekickParts(look.look))
+            let renderer = ImageRenderer(content: SidekickArt(parts: parts).frame(width: 256, height: 256))
+            renderer.scale = 1
+            renderer.isOpaque = false
+            let ours = try rgba(try #require(renderer.cgImage))
+            let agent = try rgba(try #require(AgentAvatar.decode(look.image)?.cgImage))
+            var off = 0
+            for index in stride(from: 0, to: ours.count, by: 4) where (0..<4).contains(where: { abs(Int(ours[index + $0]) - Int(agent[index + $0])) > 48 }) { off += 1 }
+            #expect(Double(off) / (256 * 256) < 0.01, "\(look.id): \(off) pixels differ")
+        }
     }
 }

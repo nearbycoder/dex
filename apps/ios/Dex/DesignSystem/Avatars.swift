@@ -78,32 +78,44 @@ struct AgentAvatar: View {
     }
 }
 
-/// A sidekick's face: their look (its PNG, a BoopFace shown whole), else a photo or their emoji (or initial) on their
-/// color, round, so a sidekick reads as someone rather than something.
+/// A sidekick's face: their look (one of Dex's shapes drawn here, `SidekickArt`, else the agent's PNG of it, a face shown
+/// whole), else a photo or their emoji (or initial) on their color, round, so a sidekick reads as someone rather than
+/// something.
 struct CharacterAvatar: View {
     let glyph: String
     let color: String
     var image: String? = nil
     /// `image` is their look's PNG (a face on a clear background), not a photo.
     var look = false
+    /// Their look, drawn here when it's one of Dex's shapes (a draft's look has no picture until it's saved).
+    var parts: SidekickParts? = nil
     var size: CGFloat = 32
     /// A dot at the bottom right while they're answering.
     var typing = false
+    /// The face blinks now and then (a big one, on its own: not in lists).
+    var live = false
 
-    init(glyph: String, color: String, image: String? = nil, look: Bool = false, size: CGFloat = 32, typing: Bool = false) {
-        self.glyph = glyph; self.color = color; self.image = image; self.look = look; self.size = size; self.typing = typing
+    init(glyph: String, color: String, image: String? = nil, look: Bool = false, parts: SidekickParts? = nil, size: CGFloat = 32, typing: Bool = false,
+         live: Bool = false) {
+        self.glyph = glyph; self.color = color; self.image = image; self.look = look; self.parts = parts; self.size = size; self.typing = typing
+        self.live = live
     }
 
-    init(_ character: CharacterProfile, size: CGFloat = 32, typing: Bool = false) {
-        self.init(glyph: character.glyph, color: character.color, image: character.image, look: character.look != nil, size: size, typing: typing)
+    init(_ character: CharacterProfile, size: CGFloat = 32, typing: Bool = false, live: Bool = false) {
+        self.init(glyph: character.glyph, color: character.color, image: character.image, look: character.look != nil, parts: SidekickParts(character.look),
+                  size: size, typing: typing, live: live)
     }
 
     var body: some View {
         let tint = AgentColors.color(color)
         Group {
-            if let picture = image.flatMap(AgentAvatar.decode) {
+            if look, let parts, parts.isDrawable {
+                // Their face, whole (its corners and tips aren't cropped), drawn here.
+                SidekickArt(parts: parts, live: live)
+                    .frame(width: size, height: size)
+            } else if let picture = image.flatMap(AgentAvatar.decode) {
                 if look {
-                    // Their face, whole: its corners and antenna aren't cropped.
+                    // The agent's picture of their face (a shape a chat drew), whole.
                     Image(uiImage: picture)
                         .resizable()
                         .scaledToFit()

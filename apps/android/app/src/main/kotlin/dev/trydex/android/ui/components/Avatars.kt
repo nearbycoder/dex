@@ -112,16 +112,17 @@ fun AgentAvatar(icon: String, color: String, size: Dp = 32.dp, image: String? = 
 }
 
 /**
- * A character's face: their look, their photo, or their emoji (else their initial) on their color. A look is a BoopFace,
- * shown whole on a clear background (it has its own shape and an antenna): a plain color drawn here ([live] ones blink),
- * a finish as the PNG the web saved. Photos and emoji are round, so a character reads as someone rather than something.
+ * A character's face: their look, their photo, or their emoji (else their initial) on their color. A look is an Open Bot
+ * Avatar, shown whole on a clear background (it has its own shape): one of Dex's shapes drawn here ([live] ones blink),
+ * else the agent's picture of it (a shape a chat drew). Photos and emoji are round, so a character reads as someone
+ * rather than something.
  */
 @Composable
 fun CharacterAvatar(character: CharacterProfile, size: Dp = 32.dp, modifier: Modifier = Modifier, live: Boolean = false) {
     val (background, foreground) = Catalogs.AGENT_COLORS[character.color] ?: Catalogs.agentColor("violet")
     character.look?.let { raw ->
         val look = SidekickLooks.clean(raw)
-        val picture = remember(look.finish, character.image) { character.image?.takeIf { look.finish != null }?.let(SidekickArt::picture)?.asImageBitmap() }
+        val picture = remember(raw, character.image) { character.image?.takeUnless { SidekickArt.draws(raw) }?.let(SidekickArt::picture)?.asImageBitmap() }
         if (picture != null) Image(picture, contentDescription = null, contentScale = ContentScale.Fit, modifier = modifier.size(size))
         else SidekickFace(look, size, modifier, live)
         return

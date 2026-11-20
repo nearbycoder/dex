@@ -62,7 +62,7 @@ object Faces {
 
     /**
      * [picture] whole, fitted and centered on a clear square [size] pixels across, with a little room around it: Android
-     * shows conversation faces in a circle, and this keeps a BoopFace's corners and antenna inside it.
+     * shows conversation faces in a circle, and this keeps a face's corners and tips inside it.
      */
     fun whole(picture: Bitmap, size: Int): Bitmap {
         val out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
@@ -77,7 +77,7 @@ object Faces {
     }
 
     /**
-     * Whether [picture] is a shape on a clear background, like a look's BoopFace, rather than a photo: its four corners
+     * Whether [picture] is a shape on a clear background, like a look's face, rather than a photo: its four corners
      * are see-through. The widgets get pictures without their looks, so they tell by this.
      */
     fun isCutOut(picture: Bitmap): Boolean {

@@ -3,7 +3,7 @@ import type { Static, TSchema } from "typebox"
 import type { AccessRisk } from "~/shared/access"
 import { AGENT_COLORS, AGENT_ICONS, type AgentProfile } from "~/shared/agents"
 import type { CharacterProfile } from "~/shared/characters"
-import { BODIES, EXTRAS, EYES, FINISH_SERIES, LOOK_PRESETS, MOUTHS, type SidekickLook, SKINS } from "~/shared/sidekick-look"
+import { CUSTOM_PATH_LIMIT, LOOK_PRESETS, SHAPES, type SidekickLook, SKINS } from "~/shared/sidekick-look"
 import { MAX_SPACE_GOAL, MAX_SPACE_NAME, type SpaceProfile, spaceThreads, THREAD_STATUS_LABELS, threadStatus } from "~/shared/spaces"
 import { MODEL_PROVIDERS, MODELS, supportedThinkingLevels, THINKING_LEVELS, type ThinkingLevel } from "~/shared/models"
 import type { McpAuth, McpTransport } from "~/shared/mcp"
@@ -208,22 +208,43 @@ const characterFields = {
     Type.Union(
       [
         Type.Object({
-          skin: Type.Union(Object.keys(SKINS).map((value) => Type.Literal(value)), { description: "The face's color, shown when there's no finish." }),
-          finish: Type.Optional(
-            Type.Union([Type.Integer({ minimum: 101, maximum: 1799 }), Type.Null()], {
-              description: `A BoopFace skin number for the face's finish, or null for the plain color; left out keeps the current one. Series: ${FINISH_SERIES}.`
-            })
-          ),
-          body: Type.Optional(Type.Union(BODIES.map((value) => Type.Literal(value)), { description: "Older apps' drawing; not shown on the web." })),
-          eyes: Type.Optional(Type.Union(EYES.map((value) => Type.Literal(value)))),
-          mouth: Type.Optional(Type.Union(MOUTHS.map((value) => Type.Literal(value)))),
-          extra: Type.Optional(Type.Union(EXTRAS.map((value) => Type.Literal(value)))),
-          blush: Type.Optional(Type.Boolean())
+          shape: Type.Union([...SHAPES.map((shape) => Type.Literal(shape.key)), Type.Literal("custom")], {
+            description: `What their face is: ${SHAPES.map((shape) => `${shape.key} (${shape.name.toLowerCase()})`).join(", ")}; or custom, drawn by you in \`custom\`.`
+          }),
+          skin: Type.Union(Object.keys(SKINS).map((value) => Type.Literal(value)), {
+            description: `The face's color: ${Object.entries(SKINS).map(([key, hex]) => `${key} ${hex}`).join(", ")}.`
+          }),
+          custom: Type.Optional(
+            Type.Object(
+              {
+                name: Type.String({ minLength: 1, maxLength: 40, description: "What it is, like Teapot." }),
+                path: Type.String({
+                  minLength: 1,
+                  maxLength: CUSTOM_PATH_LIMIT,
+                  description:
+                    "One filled SVG path (nonzero fill) in a 0 0 100 100 box, front or side view, all geometry within 8–92 and at least 40 units on its long side. Outlines wind clockwise; holes (handles, loops) wind counter-clockwise so they cut out. The part that carries the eyes must be the big, dominant mass (at least 600 units² in all); accessories stay small. Separate subpaths may overlap; keep it simple and recognizable at 24 pixels."
+                }),
+                eyes: Type.Object(
+                  {
+                    x: Type.Number({ description: "The eye pair's center, on the dominant mass." }),
+                    y: Type.Number(),
+                    spacing: Type.Number({ description: "Center-to-center distance, about 14–20." }),
+                    scale: Type.Number({ minimum: 0.6, maximum: 1.8, description: "Eye size: 1 is about 4 × 11 units each; usually 1–1.3." })
+                  },
+                  { description: "Two dark pill eyes; keep them well inside the outline." }
+                )
+              },
+              {
+                description:
+                  "Only with shape custom: an Open Bot Avatar definition you draw, any object as a little character. It's checked; if it can't be drawn you get the reasons, so fix them and try again."
+              }
+            )
+          )
         }),
         Type.Null()
       ],
       {
-        description: `Their face: a BoopFace (a little robot head with big eyes) in a color or a finish. Ready-made ones: ${LOOK_PRESETS.map((preset) => `${preset.key} ${JSON.stringify({ skin: preset.look.skin, finish: preset.look.finish ?? null })}`).join("; ")}.`
+        description: `Their face: an Open Bot Avatar, a little object with two dark eyes that moves (breathes, thinks, works, celebrates), in a color. Ready-made ones: ${LOOK_PRESETS.map((preset) => `${preset.key} ${JSON.stringify({ shape: preset.look.shape, skin: preset.look.skin })}`).join("; ")}. The picture apps show is drawn from it.`
       }
     )
   ),
@@ -321,7 +342,7 @@ const characterDraft = (args: Static<typeof createCharacterParams>, existing?: C
   instructions: args.instructions ?? existing?.instructions ?? "",
   greeting: args.greeting ?? existing?.greeting ?? "",
   avatar: existing?.avatar ?? "",
-  // A new look drops the old one's picture (the app draws a fresh one); left out, both stay.
+  // A new look gets a picture drawn of it; null drops both. Left out, both stay.
   ...(args.look !== undefined ? { look: (args.look ?? null) as SidekickLook | null, image: null } : {}),
   model: args.model ?? existing?.model ?? "",
   thinking: (args.thinking ?? existing?.thinking ?? "medium") as ThinkingLevel,

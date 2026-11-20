@@ -64,7 +64,8 @@ import { CLOUDFLARE_RATES, COMMANDCODE_LIMITS, type CloudflareLine, type OpenCod
 import { AGENT_COLORS, AGENT_ICONS, type AgentDraft, type AgentProfile, STARTER_AGENTS } from "~/shared/agents"
 import { type CharacterDraft, characterMemoryPath, type CharacterProfile, MAX_CHARACTER_MEMORY_CHARS, NOTIFY_LEVELS } from "~/shared/characters"
 import { VOICES } from "~/shared/voice"
-import { cleanLook, LOOK_PRESETS, randomLook } from "~/shared/sidekick-look"
+import { cleanLook, customShapeErrors, LOOK_PRESETS, randomLook, sameLook, type CustomShape, type SidekickLook } from "~/shared/sidekick-look"
+import { FACE_STYLE, facePng } from "./sidekick-face"
 import {
   MAX_SPACE_GOAL,
   MAX_SPACE_NAME,
@@ -660,6 +661,7 @@ export class DexAgent extends Agent<Env, DexState> {
     }
     this.giveSidekicksLooks()
     this.refreshCharacters()
+    this.ctx.waitUntil(this.redrawSidekickFaces().catch((error) => console.warn("Couldn't redraw sidekicks' faces:", error)))
     this.refreshSpaces()
     this.publishHelpers()
     this.skills.refresh()
@@ -2361,8 +2363,14 @@ export class DexAgent extends Agent<Env, DexState> {
   }
 
   private toCharacter(row: CharacterRow): CharacterProfile {
-    const data = JSON.parse(row.data) as Omit<CharacterProfile, "id" | "sessionId" | "createdAt" | "updatedAt">
+    const { faceStyle: _, ...data } = JSON.parse(row.data) as Omit<CharacterProfile, "id" | "sessionId" | "createdAt" | "updatedAt"> & { faceStyle?: number }
     return { ...data, mcpServers: data.mcpServers ?? [], image: data.image ?? null, look: data.look ?? null, id: row.id, sessionId: row.session_id, createdAt: row.created_at, updatedAt: row.updated_at }
+  }
+
+  /** Which way of drawing faces drew a sidekick's saved picture (`FACE_STYLE`); none before Open Bot Avatar. */
+  private characterFaceStyle(id: string): number | undefined {
+    const row = this.ctx.storage.sql.exec<{ data: string }>(`SELECT data FROM dex_characters WHERE id = ?`, id).toArray()[0]
+    return row ? (JSON.parse(row.data) as { faceStyle?: number }).faceStyle : undefined
   }
 
   private characterById(id: string): CharacterProfile | undefined {
@@ -2394,6 +2402,39 @@ export class DexAgent extends Agent<Env, DexState> {
     this.ctx.storage.sql.exec(`INSERT INTO dex_meta (key, value) VALUES ('sidekick_looks', '1')`)
   }
 
+  /**
+   * Draws the saved picture of each sidekick whose look has none in the current style (`FACE_STYLE`): ones from before
+   * Open Bot Avatar, whose picture is a BoopFace (their look becomes the ready-made one it was, or the shape nearest
+   * its body, in its color), and ones drawn before a change to how faces are drawn. In the background, so starting
+   * isn't held up; one changed meanwhile is left to its save, which draws it.
+   */
+  private async redrawSidekickFaces() {
+    // The ready-made BoopFace looks, by their body, extra, and mouth (unique among them), and what each is now.
+    const before: Record<string, string> = {
+      "bot/none/smile": "boop", "blob/beret/grin": "muse", "cube/glasses/smile": "atlas", "ghost/sprout/smile": "sage", "bean/headband/grin": "rex",
+      "bot/headphones/flat": "byte", "cat/bow/purr": "mochi", "bean/wizard/o": "nova", "blob/none/tongue": "pip", "cube/crown/smile": "duke",
+      "cat/sprout/smile": "fern", "ghost/beanie/o": "ziggy", "bot/none/grin": "bolt"
+    }
+    for (const row of this.ctx.storage.sql.exec<CharacterRow>(`SELECT * FROM dex_characters`).toArray()) {
+      const data = JSON.parse(row.data) as Partial<CharacterProfile> & { faceStyle?: number }
+      if (!data.look || data.faceStyle === FACE_STYLE) continue
+      const old = data.look as Partial<SidekickLook>
+      const preset = old.shape ? undefined : LOOK_PRESETS.find((candidate) => candidate.key === before[`${old.body}/${old.extra}/${old.mouth}`])
+      const look = preset?.look ?? cleanLook(old)
+      if (!look) continue
+      try {
+        const image = await facePng(look)
+        this.ctx.storage.sql.exec(
+          `UPDATE dex_characters SET data = ? WHERE id = ? AND updated_at = ?`,
+          JSON.stringify({ ...data, look, image, faceStyle: FACE_STYLE }), row.id, row.updated_at
+        )
+      } catch (error) {
+        console.warn(`Couldn't draw ${row.id}'s face:`, error)
+      }
+    }
+    this.refreshCharacters()
+  }
+
   private refreshCharacters() {
     this.publish({ characters: this.loadCharacters() })
   }
@@ -2415,6 +2456,21 @@ export class DexAgent extends Agent<Env, DexState> {
     const existing = draft.id ? this.characterById(draft.id) : undefined
     if (draft.id && !existing) throw new Error("That sidekick no longer exists.")
     if (draft.image != null && !isProjectImage(draft.image)) throw new Error("Pick a smaller picture (PNG, JPEG, WebP, GIF, or SVG under 48 KB).")
+    const asked = draft.look as (Partial<SidekickLook> & { custom?: CustomShape | null }) | null | undefined
+    if (asked?.shape === "custom" && asked.custom) {
+      const errors = customShapeErrors(asked.custom)
+      if (errors) throw new Error(`That shape can't be drawn: ${errors.join("; ")}.`)
+    }
+    const look = draft.look === undefined ? (existing?.look ?? null) : cleanLook(draft.look, existing?.look)
+    // A look's picture is drawn here, whatever sent it (an app's own picture is ignored): kept while the look and the
+    // way faces are drawn haven't changed.
+    let image = draft.image === undefined ? (existing?.image ?? null) : draft.image
+    let faceStyle: number | undefined
+    if (look) {
+      const kept = existing?.look && existing.image && sameLook(existing.look, look) && this.characterFaceStyle(existing.id) === FACE_STYLE
+      image = kept ? existing.image : await facePng(look)
+      faceStyle = FACE_STYLE
+    }
     const model = findModel(draft.model) ? draft.model : (existing?.model ?? this.state.settings.defaultModel)
     const data: Omit<CharacterProfile, "id" | "sessionId" | "createdAt" | "updatedAt"> = {
       name,
@@ -2423,8 +2479,8 @@ export class DexAgent extends Agent<Env, DexState> {
       instructions: String(draft.instructions ?? "").slice(0, 20_000),
       greeting: String(draft.greeting ?? "").trim().slice(0, 2_000),
       avatar: firstGrapheme(String(draft.avatar ?? "")),
-      image: draft.image === undefined ? (existing?.image ?? null) : draft.image,
-      look: draft.look === undefined ? (existing?.look ?? null) : cleanLook(draft.look, existing?.look),
+      image,
+      look,
       notify: draft.notify === undefined ? (existing?.notify ?? "all") : NOTIFY_LEVELS.includes(draft.notify) ? draft.notify : "all",
       voice: draft.voice === undefined ? (existing?.voice ?? null) : draft.voice && VOICES.includes(draft.voice) ? draft.voice : null,
       color: draft.color in AGENT_COLORS ? draft.color : "violet",
@@ -2444,7 +2500,7 @@ export class DexAgent extends Agent<Env, DexState> {
     this.ctx.storage.sql.exec(
       `INSERT INTO dex_characters (id, data, session_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET data = excluded.data, session_id = excluded.session_id, updated_at = excluded.updated_at`,
-      id, JSON.stringify(data), sessionId, existing?.createdAt ?? now, now
+      id, JSON.stringify({ ...data, faceStyle }), sessionId, existing?.createdAt ?? now, now
     )
     this.refreshCharacters()
     await this.refreshSessions()

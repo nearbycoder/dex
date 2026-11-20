@@ -29,7 +29,6 @@ import { timeAgo } from "~/client/lib/format"
 import { useNav } from "~/client/lib/mobile-nav"
 import { UpdateButton } from "~/client/lib/updates"
 import { findModel } from "~/shared/models"
-import { LOOK_STYLE, lookPng } from "./boop-face"
 import { AGENT_COLORS } from "~/shared/agents"
 import type { CharacterProfile } from "~/shared/characters"
 import { connectedProviders, type SessionMeta } from "~/shared/protocol"
@@ -293,24 +292,6 @@ export function Sidebar() {
   )
 }
 
-/** Sidekicks whose picture this page is drawing, so each is drawn once. */
-const snapshotting = new Set<string>()
-
-/** Which sidekicks' saved pictures this device has redrawn in the current look style (`LOOK_STYLE`). */
-const STYLE_KEY = "dex-look-style"
-const redrawn = (): Record<string, number> => {
-  try {
-    return JSON.parse(localStorage.getItem(STYLE_KEY) ?? "{}") as Record<string, number>
-  } catch {
-    return {}
-  }
-}
-const markRedrawn = (id: string) => {
-  try {
-    localStorage.setItem(STYLE_KEY, JSON.stringify({ ...redrawn(), [id]: LOOK_STYLE }))
-  } catch {}
-}
-
 /**
  * Sidekicks, pinned above the chats: each opens their conversation. Shown once you have one; until then a single
  * quiet row offers to make one.
@@ -326,20 +307,6 @@ function Characters({
   activeId: string | undefined
   onPick: () => void
 }) {
-  const { stub } = useDex()
-  // A look set from a chat or over MCP has no picture yet for the apps, which show pictures rather than draw looks:
-  // the first page that sees one draws and saves it. So does one whose picture is from an older look style.
-  useEffect(() => {
-    const done = redrawn()
-    for (const character of characters) {
-      if (!character.look || (character.image && done[character.id] === LOOK_STYLE) || snapshotting.has(character.id)) continue
-      snapshotting.add(character.id)
-      void lookPng(character.look)
-        .then((image) => stub.saveCharacter({ ...character, image }))
-        .then(() => markRedrawn(character.id))
-        .catch(() => undefined)
-    }
-  }, [characters, stub])
   const header = (
     <div className="flex items-center px-2 pb-1">
       <span className="text-[11px] font-medium tracking-wide text-zinc-600 uppercase">Sidekicks</span>

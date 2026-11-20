@@ -175,7 +175,7 @@ struct CharacterEditor: View {
         Form {
             Section {
                 HStack(spacing: 16) {
-                    CharacterAvatar(glyph: value.glyph, color: value.color, image: value.image, look: value.look != nil, size: 64)
+                    CharacterAvatar(glyph: value.glyph, color: value.color, image: value.image, look: value.look != nil, parts: value.parts, size: 64, live: true)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(value.name.isEmpty ? (isNew ? "New Sidekick" : "Untitled") : value.name).font(.title2.bold()).lineLimit(2)
                         Text(value.tagline.isEmpty ? "Who are they to you?" : value.tagline).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
@@ -225,10 +225,11 @@ struct CharacterEditor: View {
 
             Section {
                 LookGrid(selection: value.preset?.id) { draft.wrappedValue.use($0) }
-                LookMixer(parts: value.parts, isPreset: value.preset != nil, color: value.color) {
+                LookMixer(parts: value.parts, isPreset: value.preset != nil, color: value.color, image: value.image) {
                     draft.wrappedValue.use($0)
                 } change: { parts, color in
-                    if let png = SidekickArt.png(parts) { draft.wrappedValue.use(parts: parts, color: color, image: png) }
+                    // The agent draws its picture on saving.
+                    draft.wrappedValue.use(parts: parts, color: color)
                 } accent: {
                     draft.wrappedValue.color = $0
                 }
@@ -249,7 +250,7 @@ struct CharacterEditor: View {
             } header: {
                 Text("Look")
             } footer: {
-                Text("Pick a ready-made sidekick, a color of your own, or a photo.")
+                Text("Pick a ready-made sidekick, a shape and color of your own, or a photo.")
             }
 
             Section {
@@ -566,7 +567,7 @@ private struct TemplateGrid: View {
     }
 }
 
-/// The ready-made looks (assets/sidekicks), each its BoopFace (with its finish, which only these pictures and the web have).
+/// The ready-made looks (assets/sidekicks), each its face as the agent draws it.
 private struct LookGrid: View {
     let selection: String?
     let pick: (SidekickLook) -> Void

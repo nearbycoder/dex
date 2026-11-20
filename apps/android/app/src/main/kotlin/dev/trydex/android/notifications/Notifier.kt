@@ -285,13 +285,14 @@ class Notifier(private val context: Context, private val graph: AppGraph, privat
         }
 
         /**
-         * A sidekick's face for a notification: their look whole (a plain color drawn here, a finish from its PNG), their
-         * photo round, or their initial.
+         * A sidekick's face for a notification: their look whole (drawn here, or the agent's picture of a shape a chat
+         * drew), their photo round, or their initial.
          */
         fun faceOf(character: CharacterProfile): Bitmap {
-            character.look?.let(SidekickLooks::clean)?.let { look ->
-                val picture = character.image?.takeIf { look.finish != null }?.let { SidekickArt.picture(it) }
-                runCatching { Faces.whole(picture ?: SidekickArt.bitmap(look, FACE_PX), FACE_PX) }.getOrNull()?.let { return it }
+            character.look?.let { raw ->
+                val picture = (if (SidekickArt.draws(raw)) null else character.image?.let { SidekickArt.picture(it) })
+                    ?: SidekickArt.bitmap(SidekickLooks.clean(raw), FACE_PX)
+                picture?.let { runCatching { Faces.whole(it, FACE_PX) }.getOrNull() }?.let { return it }
             }
             return Faces.round(Faces.decode(Faces.dataUrlBytes(character.image)), character.color, character.face, FACE_PX)
         }

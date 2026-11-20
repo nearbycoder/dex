@@ -18,7 +18,9 @@
     "test:transcript": "node --test tests/transcript.test.ts",
     "test:dizione": "node --test tests/dizione.test.ts",
     "test:voice": "node --test tests/voice.test.ts",
-    "test:attachments": "node --test tests/attachments.test.ts"
+    "test:attachments": "node --test tests/attachments.test.ts",
+    "test:sidekick-face": "node --test tests/sidekick-face.test.ts",
+    "sidekicks:assets": "node scripts/sidekick-assets.ts"
   },
   "dependencies": {
     "@block65/webcrypto-web-push": "^2.0.0",
@@ -35,12 +37,12 @@
     "@tanstack/react-router": "^1.170.45",
     "@tanstack/react-start": "^1.169.3",
     "agents": "^0.28.1",
-    "boopface": "^0.8.0",
     "clsx": "^2.1.1",
     "effect": "^4.0.5",
     "just-bash": "^3.6.0",
     "lucide-react": "^1.59.0",
     "onnxruntime-web": "1.31.1",
+    "open-bot-avatar": "^0.3.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-markdown": "^10.1.0",

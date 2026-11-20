@@ -327,7 +327,8 @@ class GoldenTest {
         val golden = golden("sidekicks.json")
         // The face colors, in the picker's order.
         assertThat(SidekickLooks.SKINS.toList()).isEqualTo(golden["skins"]!!.jsonObject.map { (key, hex) -> key to hex.str })
-        // The bundled ready-made looks are the web's, in its order (their PNGs are BoopFace's own).
+        // The bundled shapes and ready-made looks are the web's, in its order (their pictures are the agent's own).
+        assertThat(SidekickLooks.SHAPES.map { it.key }).isEqualTo(golden["shapes"]!!.jsonArray.map { it.str })
         assertThat(Characters.PRESETS.map { it.key }).isEqualTo(golden.items("presets").map { it["key"].str })
         for (case in golden.items("presets")) {
             val preset = Characters.preset(case["key"].str!!)!!

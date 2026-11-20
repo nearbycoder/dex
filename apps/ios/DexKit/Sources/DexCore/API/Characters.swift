@@ -48,9 +48,9 @@ public struct CharacterDraft: Codable, Sendable, Hashable {
         look = preset.look; image = preset.image; color = preset.color; avatar = ""; pictureChanged = true
     }
 
-    /// A look of your own: its parts, its picture (the PNG drawn from them), and its background color.
-    public mutating func use(parts: SidekickParts, color: String, image: String) {
-        look = parts.json; self.image = image; self.color = color; avatar = ""; pictureChanged = true
+    /// A look of your own: its shape and color, and its background color. Its picture is drawn by the agent on saving.
+    public mutating func use(parts: SidekickParts, color: String) {
+        look = parts.json; image = nil; self.color = color; avatar = ""; pictureChanged = true
     }
 
     /// The parts of the look this draft wears (ready-made or mixed), if it wears one.
@@ -161,8 +161,8 @@ public enum SidekickNotify: String, CaseIterable, Sendable, Hashable, Identifiab
     public var toggled: SidekickNotify { self == .off ? .all : .off }
 }
 
-/// One of the ready-made sidekick looks (assets/sidekicks, bundled): its look (a BoopFace's color and finish), its
-/// accent color, and its picture, which is what a sidekick wearing it saves as `image`.
+/// One of the ready-made sidekick looks (assets/sidekicks, bundled): its look (a shape and color), its accent color, and
+/// its picture as the agent draws it.
 public struct SidekickLook: Sendable, Hashable, Identifiable {
     public let id: String
     public let name: String
@@ -183,8 +183,7 @@ public struct SidekickLook: Sendable, Hashable, Identifiable {
         }
     }()
 
-    /// A PNG as a data: URL the server keeps (`Characters.maxImageURLLength`): a finish's detail can make one too big
-    /// at full size, so it's made smaller until it fits.
+    /// A PNG as a data: URL the server keeps (`Characters.maxImageURLLength`), made smaller until it fits.
     static func fitting(_ png: Data) -> String {
         func url(_ data: Data) -> String { "data:image/png;base64," + data.base64EncodedString() }
         var smallest = url(png)

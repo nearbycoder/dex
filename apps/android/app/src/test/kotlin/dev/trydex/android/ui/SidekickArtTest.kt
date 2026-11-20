@@ -31,10 +31,9 @@ import java.io.File
 import kotlin.math.abs
 
 /**
- * Faces drawn here match the web's BoopFace, and no face is cropped: the plain Boop drawn by SidekickArt against the PNG
- * BoopFace made of it (its framing, head, eyes, and antenna), the pictures sent fit the agent's limit, and avatars,
- * notifications, and widgets show a look whole. Anti-aliasing differs a little between renderers, so edges may disagree
- * slightly; shapes, colors, and placement must not.
+ * Faces drawn here are the agent's pictures, and no face is cropped: every ready-made look drawn by SidekickArt (its
+ * shape's body tinted, under its eyes) against the picture the agent's renderer drew of it, and avatars, notifications,
+ * and widgets show a look whole. Scaling may move edges by a hair; shapes, colors, and placement must not.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -43,36 +42,26 @@ class SidekickArtTest {
 
     private val out = File("build/outputs/sidekicks").apply { mkdirs() }
 
-    @Test fun plainFaceMatchesTheWeb() {
-        val boop = Characters.preset("boop")!!
-        assertThat(boop.look.finish).isNull()
-        val web = Characters::class.java.getResourceAsStream("/dev/trydex/core/model/sidekicks/${boop.image}")!!.use { BitmapFactory.decodeStream(it) }
-        val ours = SidekickArt.bitmap(boop.look, web.width)
-        ours.compress(Bitmap.CompressFormat.PNG, 100, File(out, "boop.png").outputStream())
-        var total = 0L
-        var off = 0
-        for (y in 0 until web.height) for (x in 0 until web.width) {
-            val a = web.getPixel(x, y)
-            val b = ours.getPixel(x, y)
-            val channels = intArrayOf(24, 16, 8, 0).map { shift -> abs((a ushr shift and 0xFF) - (b ushr shift and 0xFF)) }
-            total += channels.sum()
-            if (channels.max() > 48) off++
-        }
-        val pixels = web.width * web.height
-        assertWithMessage("mean channel difference").that(total.toDouble() / (pixels * 4)).isLessThan(1.5)
-        assertWithMessage("share of pixels that differ visibly").that(off.toDouble() / pixels).isLessThan(0.01)
-    }
-
-    @Test fun picturesFitTheAgentsLimit() {
+    @Test fun facesMatchTheAgentsPictures() {
         for (preset in Characters.PRESETS) {
-            val url = SidekickArt.fit(preset.dataUrl)
-            assertWithMessage(preset.key).that(url.length).isLessThan(63_000)
-            assertWithMessage(preset.key).that(Faces.isCutOut(SidekickArt.picture(url)!!)).isTrue()
+            val agent = Characters::class.java.getResourceAsStream("/dev/trydex/core/model/sidekicks/${preset.image}")!!.use { BitmapFactory.decodeStream(it) }
+            val ours = SidekickArt.bitmap(preset.look, agent.width)!!
+            ours.compress(Bitmap.CompressFormat.PNG, 100, File(out, "${preset.key}.png").outputStream())
+            var total = 0L
+            var off = 0
+            for (y in 0 until agent.height) for (x in 0 until agent.width) {
+                val a = agent.getPixel(x, y)
+                val b = ours.getPixel(x, y)
+                val channels = intArrayOf(24, 16, 8, 0).map { shift -> abs((a ushr shift and 0xFF) - (b ushr shift and 0xFF)) }
+                total += channels.sum()
+                if (channels.max() > 48) off++
+            }
+            val pixels = agent.width * agent.height
+            assertWithMessage("${preset.key}: mean channel difference").that(total.toDouble() / (pixels * 4)).isLessThan(1.5)
+            assertWithMessage("${preset.key}: share of pixels that differ visibly").that(off.toDouble() / pixels).isLessThan(0.01)
         }
-        for (skin in SidekickLooks.SKINS.keys) {
-            val url = SidekickArt.png(Characters.preset("boop")!!.look.copy(skin = skin))
-            assertWithMessage(skin).that(url.length).isLessThan(63_000)
-        }
+        // A shape a chat drew isn't drawn here: its picture shows instead.
+        assertThat(SidekickArt.bitmap(SidekickLooks.make("custom", "mint", dev.trydex.core.model.CustomShape("Box", "M20 20 H80 V80 H20 Z")), 64)).isNull()
     }
 
     @Test fun avatarsShowTheWholeFace() {
@@ -93,10 +82,12 @@ class SidekickArtTest {
             for ((x, y) in listOf(0 to 0, w - 1 to 0, 0 to h - 1, w - 1 to h - 1)) {
                 assertWithMessage("$tag corner $x,$y").that(image.getPixel(x, y)).isEqualTo(magenta.toArgbInt())
             }
-            // The antenna dot at the top, and the head's sides near the edges, are drawn (a circle crop would cut them).
-            assertWithMessage("$tag antenna").that(image.getPixel(w / 2, (h * 16) / 248)).isNotEqualTo(magenta.toArgbInt())
-            assertWithMessage("$tag left side").that(image.getPixel((w * 34) / 248, (h * 128) / 248)).isNotEqualTo(magenta.toArgbInt())
-            assertWithMessage("$tag lower left").that(image.getPixel((w * 60) / 248, (h * 200) / 248)).isNotEqualTo(magenta.toArgbInt())
+            // The face is drawn, and so are its tips near the edges (a circle crop would cut them): the robot's antenna and
+            // ears, the lightbulb's top and base.
+            val points = if (tag == "boop") listOf(50 to 15, 16 to 58, 50 to 60) else listOf(50 to 12, 50 to 84, 50 to 40)
+            for ((x, y) in points) {
+                assertWithMessage("$tag at $x,$y").that(image.getPixel(w * x / 100, h * y / 100)).isNotEqualTo(magenta.toArgbInt())
+            }
         }
     }
 

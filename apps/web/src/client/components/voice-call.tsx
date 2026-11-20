@@ -66,7 +66,7 @@ export function VoiceCallPanel({ call, character, transcript, onEnd }: { call: V
     <div className="absolute inset-0 z-30 flex flex-col items-center bg-zinc-950/95 px-6 pt-[max(2rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] backdrop-blur-sm">
       <div className="flex min-h-0 w-full max-w-md flex-1 flex-col items-center justify-center gap-6 text-center">
         <div ref={face} className="transition-transform duration-75 will-change-transform">
-          <CharacterAvatar character={character} size={160} mood={phase === "thinking" || phase === "starting" ? "working" : "idle"} failed={phase === "failed"} />
+          <CharacterAvatar character={character} size={160} mood={phase === "thinking" || phase === "starting" ? "thinking" : "idle"} failed={phase === "failed"} />
         </div>
         <div>
           <h2 className="text-xl font-semibold text-zinc-100">{character.name}</h2>

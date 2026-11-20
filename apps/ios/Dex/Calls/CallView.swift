@@ -59,7 +59,7 @@ struct CallView: View {
     private var face: some View {
         TimelineView(.animation(paused: call.phase != .speaking)) { _ in
             let level = call.level
-            CharacterAvatar(character, size: 168)
+            CharacterAvatar(character, size: 168, live: true)
                 .scaleEffect(1 + level * 0.12)
                 .shadow(color: AgentColors.color(character.color).opacity(0.25 + level * 0.5), radius: 24 + level * 30)
                 .animation(.linear(duration: 0.08), value: level)
