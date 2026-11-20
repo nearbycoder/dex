@@ -96,7 +96,7 @@ import Testing
 
     @Test func templates() throws {
         #expect(CharacterTemplate.all.map(\.id) == ["muse", "atlas", "sage", "rex"])
-        #expect(CharacterTemplate.all.allSatisfy { AgentColorNames.contains($0.color) && !$0.greeting.isEmpty && $0.look?.color == $0.color })
+        #expect(CharacterTemplate.all.allSatisfy { AgentColorNames.contains($0.color) && !$0.greeting.isEmpty && $0.look != nil })
         let draft = CharacterDraft(id: "x", name: "Old", avatar: "🦊", image: "data:image/png;base64,AA", model: "m", thinking: "high", mcpServers: ["m1"]).applying(CharacterTemplate.all[3])
         let rex = try #require(SidekickLook.named("rex"))
         #expect(draft.name == "Rex" && draft.avatar.isEmpty && draft.color == "orange" && draft.image == rex.image && draft.look == rex.look && draft.pictureChanged)

@@ -74,7 +74,9 @@ public struct CharacterDraft: Codable, Sendable, Hashable {
         var draft = self
         draft.name = template.name; draft.tagline = template.tagline
         draft.persona = template.persona; draft.instructions = template.instructions; draft.greeting = template.greeting
-        if let preset = template.look { draft.use(preset) } else { draft.removePicture(); draft.color = template.color }
+        if let preset = template.look { draft.use(preset) } else { draft.removePicture() }
+        // The template's color, as on the web: its look's own can differ (Rex is orange, the Rex look rose).
+        draft.color = template.color
         return draft
     }
 
