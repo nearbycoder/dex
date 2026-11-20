@@ -8,6 +8,13 @@ import { SkillMenu, type SkillMenuHandle } from "./skill-menu"
 /** Files attached in the composer: each uploads (to be prepared for the model) as soon as it's added. */
 function useDraftAttachments() {
   const [drafts, setDrafts] = useState<DraftAttachment[]>([])
+  /** Files past the per-message limit that weren't added, said once and gone after a few seconds. */
+  const [skipped, setSkipped] = useState(0)
+  useEffect(() => {
+    if (!skipped) return
+    const timer = setTimeout(() => setSkipped(0), 6000)
+    return () => clearTimeout(timer)
+  }, [skipped])
   const live = useRef(drafts)
   live.current = drafts
   // Object URLs for thumbnails, freed when they're no longer shown.
@@ -17,8 +24,10 @@ function useDraftAttachments() {
     setDrafts((list) => list.map((draft) => (draft.id === id ? { ...draft, ...patch } : draft)))
 
   const add = (files: Iterable<File>) => {
-    const room = ATTACHMENT_LIMITS.files - live.current.length
-    const added = [...files].slice(0, Math.max(0, room)).map((file): DraftAttachment & { file: File } => ({
+    const room = Math.max(0, ATTACHMENT_LIMITS.files - live.current.length)
+    const all = [...files]
+    setSkipped(Math.max(0, all.length - room))
+    const added = all.slice(0, room).map((file): DraftAttachment & { file: File } => ({
       id: crypto.randomUUID(),
       name: file.name || "pasted",
       mimeType: file.type,
@@ -49,7 +58,7 @@ function useDraftAttachments() {
       return []
     })
 
-  return { drafts, add, remove, clear }
+  return { drafts, add, remove, clear, skipped }
 }
 
 function AttachmentChip({ draft, onRemove }: { draft: DraftAttachment; onRemove: () => void }) {
@@ -109,7 +118,7 @@ export function Composer(props: {
     setText(value)
   }
   const picker = useRef<HTMLInputElement>(null)
-  const { drafts, add, remove, clear } = useDraftAttachments()
+  const { drafts, add, remove, clear, skipped } = useDraftAttachments()
   const [dragging, setDragging] = useState(false)
   const uploading = drafts.some((draft) => draft.status === "uploading")
   const failed = drafts.filter((draft) => draft.status === "error")
@@ -187,13 +196,18 @@ export function Composer(props: {
         />
       )}
       {props.header}
-      {drafts.length > 0 && (
+      {(drafts.length > 0 || skipped > 0) && (
         <div className="space-y-1.5 px-3 pt-3">
           <div className="scrollbar-none flex gap-2 overflow-x-auto">
             {drafts.map((draft) => (
               <AttachmentChip key={draft.id} draft={draft} onRemove={() => remove(draft.id)} />
             ))}
           </div>
+          {skipped > 0 && (
+            <p className="text-xs text-amber-300">
+              A message takes up to {ATTACHMENT_LIMITS.files} files, so {skipped === 1 ? "1 wasn't" : `${skipped} weren't`} added. Send these, then attach the rest.
+            </p>
+          )}
           {failed.length > 0 && <p className="text-xs text-red-400">{failed[0]!.error}{failed.length > 1 ? ` (and ${failed.length - 1} more)` : ""}</p>}
         </div>
       )}
