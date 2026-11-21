@@ -55,6 +55,8 @@ interface DevModel {
   readonly provider?: { readonly npm?: string }
   readonly status?: string
   readonly release_date?: string
+  /** Its line ("gpt-sol", "gpt-astra"): each release of a line has the same family. */
+  readonly family?: string
 }
 
 type DevProvider = { readonly models?: Readonly<Record<string, DevModel>> }
@@ -344,6 +346,27 @@ const commandCodeList = (listed: ReadonlyArray<CommandCodeListed>, covered: Read
 const CHATGPT_CHAT_MODEL = /^(gpt-\d|o\d)/
 const CHATGPT_NOT_CHAT = /(realtime|audio|tts|transcribe|image|search|embedding|moderation|instruct|chat-latest|-\d{4}-\d{2}-\d{2}$)/
 
+/**
+ * ChatGPT's list when the account's can't be read (signed out, or OpenAI didn't answer): what was listed before, plus
+ * the catalog's releases since in the same lines (a new Sol or Astra). Without them a launch would never show up
+ * until the account's list could be read again; a model the plan turns out not to offer fails like a retired one.
+ */
+const chatgptWithoutAccount = (current: ReadonlyArray<DexModel>, entries: Readonly<Record<string, DevModel>>): DexModel[] => {
+  // Without the catalog either, nothing can be added or described: the list stays as it was.
+  if (Object.keys(entries).length === 0) return [...current]
+  const listed = new Set(current.map((model) => model.apiId))
+  const families = new Set(current.flatMap((model) => entries[model.apiId]?.family ?? []))
+  const newest = current.reduce((latest, model) => {
+    const date = entries[model.apiId]?.release_date ?? ""
+    return date > latest ? date : latest
+  }, "")
+  const launched = Object.entries(entries)
+    .filter(([id, entry]) => !listed.has(id) && CHATGPT_CHAT_MODEL.test(id) && !CHATGPT_NOT_CHAT.test(id) && entry.status !== "deprecated")
+    .filter(([, entry]) => entry.family !== undefined && families.has(entry.family) && newest !== "" && (entry.release_date ?? "") > newest)
+    .map(([id]) => id)
+  return providerList("chatgpt", new Set([...listed, ...launched]), entries, newChatGPTModel, { newestFirst: true })
+}
+
 /** A ChatGPT model Dex hasn't seen, from its catalog entry. */
 const newChatGPTModel = (apiId: string, entry: DevModel): DexModel => {
   const thinkingLevelMap = thinkingMap(entry, "openai-responses")
@@ -366,25 +389,37 @@ const newChatGPTModel = (apiId: string, entry: DevModel): DexModel => {
 
 /**
  * One provider's list of what it serves: known models in the built-in order with fresh details, and each new one
- * after the last of its maker's (so the menu stays grouped by maker).
+ * after the last of its maker's (so the menu stays grouped by maker), or with `newestFirst` at the top of its maker's,
+ * newest first: ChatGPT's lines (Sol, Astra…) each get a new release that's better than every one before, so a launch
+ * shows above what it replaces instead of under GPT-5.5.
  */
 const providerList = (
   provider: ModelProvider,
   served: ReadonlySet<string>,
   entries: Readonly<Record<string, DevModel>>,
-  create: (apiId: string, entry: DevModel) => DexModel
+  create: (apiId: string, entry: DevModel) => DexModel,
+  { newestFirst = false } = {}
 ): DexModel[] => {
   const known = BUILT_IN_MODELS.filter((model) => model.provider === provider)
   const list = known
     .filter((model) => served.has(model.apiId))
     .map((model) => refreshed(model, entries[model.apiId]))
   const knownIds = new Set(known.map((model) => model.apiId))
-  for (const apiId of [...served].filter((id) => !knownIds.has(id)).sort()) {
-    const entry = entries[apiId]
-    if (!entry) continue // Served but not catalogued yet: its API style and limits are unknown, so it waits.
-    const model = { ...create(apiId, entry), ...released(entry.release_date) }
-    const after = list.findLastIndex((other) => other.maker === model.maker)
-    list.splice(after === -1 ? list.length : after + 1, 0, model)
+  const added = [...served]
+    .filter((id) => !knownIds.has(id))
+    .sort()
+    // Served but not catalogued yet: its API style and limits are unknown, so it waits.
+    .flatMap((apiId) => (entries[apiId] ? [{ ...create(apiId, entries[apiId]), ...released(entries[apiId].release_date) }] : []))
+  if (newestFirst) added.sort((a, b) => (a.releasedAt ?? "").localeCompare(b.releasedAt ?? ""))
+  for (const model of added) {
+    if (newestFirst) {
+      // Oldest first, each going in at the top of its maker's: the newest ends up first.
+      const first = list.findIndex((other) => other.maker === model.maker)
+      list.splice(first === -1 ? list.length : first, 0, model)
+    } else {
+      const after = list.findLastIndex((other) => other.maker === model.maker)
+      list.splice(after === -1 ? list.length : after + 1, 0, model)
+    }
   }
   return list
 }
@@ -461,7 +496,9 @@ export async function fetchModelCatalog(
   // ChatGPT: the chat models the account lists that the catalog describes (and the built-in ones it lists).
   const openAIEntries = catalog["openai"]?.models ?? {}
   const chatgptChat = new Set([...(chatgptServed ?? [])].filter((id) => CHATGPT_CHAT_MODEL.test(id) && !CHATGPT_NOT_CHAT.test(id)))
-  const chatgpt = chatgptChat.size > 0 ? providerList("chatgpt", chatgptChat, openAIEntries, newChatGPTModel) : keep("chatgpt")
+  const chatgptBefore = keep("chatgpt").length > 0 ? keep("chatgpt") : BUILT_IN_MODELS.filter((model) => model.provider === "chatgpt")
+  const chatgpt =
+    chatgptChat.size > 0 ? providerList("chatgpt", chatgptChat, openAIEntries, newChatGPTModel, { newestFirst: true }) : chatgptWithoutAccount(chatgptBefore, openAIEntries)
 
   const openRouter = openRouterListed.status === "fulfilled" ? openRouterFreeModels(openRouterListed.value) : []
 

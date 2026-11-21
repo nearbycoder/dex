@@ -1778,7 +1778,12 @@ export class DexAgent extends Agent<Env, DexState> {
   private async chatGPTModelIds(): Promise<ReadonlySet<string> | undefined> {
     const token = await this.resolveChatGPTToken().catch(() => undefined)
     if (!token) return undefined
-    return this.runtime.runPromise(ChatGPTClient.use((client) => client.models(token.key)).pipe(Effect.option)).then(Option.getOrUndefined)
+    // Said in the log: without the account's list, ChatGPT's comes from the catalog alone (model-catalog.ts).
+    const logged = ChatGPTClient.use((client) => client.models(token.key)).pipe(
+      Effect.tapError((error) => Effect.sync(() => console.warn(`Couldn't read the ChatGPT plan's models (${error.reason}): ${error.message}`))),
+      Effect.option
+    )
+    return this.runtime.runPromise(logged).then(Option.getOrUndefined)
   }
 
   /** What a chat on a retired model continues with: your default model, on a subscription you've connected. */
