@@ -37,28 +37,56 @@ class WidgetStore(private val dir: File) {
         for (sidekick in snapshot.sidekicks) {
             if (!imagesIncluded) continue
             val image = sidekick.image
-            val bytes = Faces.dataUrlBytes(image)
-            if (bytes == null) {
+            if (image == null) {
                 if (pictureFile(sidekick.id).delete()) changed = true
                 hashFile(sidekick.id).delete()
                 continue
             }
-            val hash = sha(image!!)
-            if (hashFile(sidekick.id).takeIf { it.exists() }?.readText() == hash) continue
-            pictureFile(sidekick.id).writeBytes(bytes)
-            hashFile(sidekick.id).writeText(hash)
+            // Hash the raw data URL before Base64-decoding so unchanged pictures skip decoding.
+            val hash = sha(image)
+            val pic = pictureFile(sidekick.id)
+            val hFile = hashFile(sidekick.id)
+            if (pic.exists() && hFile.exists() && hFile.readText() == hash) continue
+            val bytes = Faces.dataUrlBytes(image)
+            if (bytes == null) {
+                if (pic.delete()) changed = true
+                hFile.delete()
+                continue
+            }
+            writeBytesAtomic(pic, bytes)
+            writeTextAtomic(hFile, hash)
             changed = true
         }
         // Pictures of sidekicks that are gone.
         val ids = snapshot.sidekicks.map { safe(it.id) }.toSet()
-        File(dir, "pictures").listFiles()?.forEach { file -> if (file.name.removeSuffix(".sha") !in ids) file.delete() }
+        File(dir, "pictures").listFiles()?.forEach { file ->
+            if (!file.name.endsWith(".tmp") && file.name.removeSuffix(".sha") !in ids) file.delete()
+        }
         val stripped = snapshot.copy(sidekicks = snapshot.sidekicks.map { it.copy(image = null) })
         if (stripped != load()) {
-            snapshotFile.writeText(DexJson.encodeToString(WidgetSnapshot.serializer(), stripped))
+            writeTextAtomic(snapshotFile, DexJson.encodeToString(WidgetSnapshot.serializer(), stripped))
             changed = true
         }
-        if (imagesIncluded) File(dir, "full-at").writeText(System.currentTimeMillis().toString())
+        if (imagesIncluded) writeTextAtomic(File(dir, "full-at"), System.currentTimeMillis().toString())
         return changed
+    }
+
+    private fun writeTextAtomic(file: File, text: String) {
+        val temp = File(file.parentFile, file.name + ".tmp")
+        temp.writeText(text)
+        if (!temp.renameTo(file)) {
+            file.delete()
+            if (!temp.renameTo(file)) temp.delete()
+        }
+    }
+
+    private fun writeBytesAtomic(file: File, bytes: ByteArray) {
+        val temp = File(file.parentFile, file.name + ".tmp")
+        temp.writeBytes(bytes)
+        if (!temp.renameTo(file)) {
+            file.delete()
+            if (!temp.renameTo(file)) temp.delete()
+        }
     }
 
     fun hasPicture(id: String) = pictureFile(id).exists()
@@ -71,13 +99,18 @@ class WidgetStore(private val dir: File) {
     /** Their face, round on their color, [size] pixels across. */
     fun face(sidekick: WidgetSidekick, size: Int): Bitmap = Faces.round(picture(sidekick.id), sidekick.color, sidekick.face, size)
 
+    @Synchronized
     fun clear() {
         dir.deleteRecursively()
     }
 
-    private fun safe(id: String) = id.replace(Regex("[^A-Za-z0-9_-]"), "_").take(80)
+    private fun safe(id: String) = id.replace(SAFE_CHARS, "_").take(80)
 
     private fun sha(text: String) = MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
+
+    companion object {
+        private val SAFE_CHARS = Regex("[^A-Za-z0-9_-]")
+    }
 }
 
 /** Which sidekick each "Sidekick" widget shows (picked in its configuration). */

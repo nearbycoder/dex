@@ -8,18 +8,22 @@ import dev.trydex.android.data.DexRepository
 import dev.trydex.core.model.Pending
 import dev.trydex.core.model.PendingMessage
 import dev.trydex.core.model.TranscriptState
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
  * One open chat: its live transcript, the messages you just sent (shown at once, before the agent records them), and
  * what you can do to its run and queue. Lives as long as the chat's place in the back stack.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class ChatViewModel(val sessionId: String, private val repository: DexRepository) : ViewModel() {
     val transcript: StateFlow<TranscriptState> = repository.openChat(sessionId)
 
@@ -34,17 +38,24 @@ class ChatViewModel(val sessionId: String, private val repository: DexRepository
         viewModelScope.launch {
             transcript.collect { state -> reconcile(state) }
         }
-        // Old pending items expire even when nothing else changes.
+        // Old pending items expire even when nothing else changes; idle when nothing is pending.
         viewModelScope.launch {
-            while (true) {
-                delay(Pending.TTL_MS + 500)
+            _pending.collectLatest { list ->
+                if (list.isEmpty()) return@collectLatest
+                val oldest = list.minOf { it.at }
+                val wait = (oldest + Pending.TTL_MS + 100 - System.currentTimeMillis()).coerceAtLeast(100)
+                delay(wait)
                 reconcile(transcript.value)
             }
         }
     }
 
     private fun reconcile(state: TranscriptState) {
-        _pending.value = Pending.reconcile(_pending.value, state.userCount, state.queue.size, System.currentTimeMillis())
+        if (_pending.value.isEmpty()) return
+        val now = System.currentTimeMillis()
+        _pending.update { current ->
+            if (current.isEmpty()) current else Pending.reconcile(current, state.userCount, state.queue.size, now)
+        }
     }
 
     /** Sends a message: it shows at once unless it will queue (the queue panel shows it then). */
@@ -55,11 +66,18 @@ class ChatViewModel(val sessionId: String, private val repository: DexRepository
         val label = trimmed.ifEmpty { "Attached: ${attachmentSummary(attachments.map { it.name })}" }
         val state = transcript.value
         val willQueue = state.running || state.queue.isNotEmpty()
-        if (!willQueue) _pending.value = Pending.add(_pending.value, label, state.userCount, System.currentTimeMillis())
+        var pendingId: Long? = null
+        if (!willQueue) {
+            _pending.update { current ->
+                val next = Pending.add(current, label, state.userCount, System.currentTimeMillis())
+                pendingId = next.last().id
+                next
+            }
+        }
         repository.noteSent(sessionId)
         viewModelScope.launch {
             runCatching { repository.api.sendMessage(sessionId, trimmed, attachments) }.onFailure { error ->
-                _pending.value = _pending.value.filter { it.text != label }
+                pendingId?.let { id -> _pending.update { list -> list.filter { it.id != id } } }
                 _errors.tryEmit(error.message ?: "Couldn't send that.")
             }
         }

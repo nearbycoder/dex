@@ -56,7 +56,8 @@ class BackgroundCheckWorker(context: Context, params: WorkerParameters) : Corout
         val graph = (applicationContext as DexApplication).graph
         val repository = graph.repository
         val user = repository.userId ?: return Result.success()
-        val prefs = graph.preferences.prefs.value
+        // Wait for DataStore to finish loading on a cold start; defaults have notifications off.
+        val prefs = graph.preferences.prefs.first { it.loaded }
         if (!prefs.notifications) return Result.success()
         // The app is open: its own socket notifies.
         if (repository.connected.value) return Result.success()

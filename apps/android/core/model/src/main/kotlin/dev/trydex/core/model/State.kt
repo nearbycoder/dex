@@ -68,7 +68,14 @@ data class DexState(
      * Chats with something you haven't seen (muted ones too: muting is about notifications), for the app's badge. A
      * space counts once, by its coordinator; its threads report back there.
      */
-    val unreadCount: Int get() = sessions.count { it.unread && !isThread(it) }
+    val unreadCount: Int
+        get() {
+            if (spaces.isEmpty()) return sessions.count { it.unread && it.spaceId == null }
+            val coordinators = spaces.associate { it.id to it.sessionId }
+            return sessions.count { s ->
+                s.unread && (s.spaceId == null || coordinators[s.spaceId] == s.id)
+            }
+        }
     fun vm(key: String): VmInfo? = vms.firstOrNull { it.key == key }
     fun mcpServer(id: String): McpServerInfo? = mcp.firstOrNull { it.id == id }
 }

@@ -46,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.ClipEntry
@@ -73,6 +74,7 @@ import dev.trydex.openui.OpenUIRuntime
 import dev.trydex.openui.ParseResult
 import dev.trydex.openui.ToolError
 import dev.trydex.openui.ToolProvider
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -82,6 +84,7 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonElement
 
 private const val CANCELLED = "You cancelled it."
+private val TOOL_ERROR_PREFIX = Regex("^(Query|Mutation) \"([^\"]+)\" (returned an error|failed): ")
 
 /** Each chat's saved card states (DexAgent.uiStates), loaded once per chat and kept current by this app's saves. */
 internal object UiStateCache {
@@ -92,8 +95,14 @@ internal object UiStateCache {
         if (existing != null) return existing.await()
         val deferred = CompletableDeferred<MutableMap<String, Any?>>()
         states[sessionId] = deferred
-        val loaded = runCatching { api.uiStates(sessionId) }.getOrElse {
-            states.remove(sessionId)
+        val loaded = try {
+            api.uiStates(sessionId)
+        } catch (error: CancellationException) {
+            if (states[sessionId] === deferred) states.remove(sessionId)
+            deferred.cancel(error)
+            throw error
+        } catch (_: Throwable) {
+            if (states[sessionId] === deferred) states.remove(sessionId)
             emptyMap<String, JsonElement>()
         }
         deferred.complete(loaded.mapValues { Js.fromJson(it.value) }.toMutableMap())
@@ -102,7 +111,11 @@ internal object UiStateCache {
 
     fun saved(sessionId: String, card: String, state: Any?) {
         val deferred = states[sessionId] ?: return
-        if (deferred.isCompleted) deferred.getCompleted()[card] = state
+        if (deferred.isCompleted && !deferred.isCancelled) deferred.getCompleted()[card] = state
+    }
+
+    fun clear() {
+        states.clear()
     }
 }
 
@@ -188,7 +201,7 @@ fun programProblems(errors: List<OpenUIError>): List<String> = errors
 /** Failed live data and buttons, as `tool: message`. */
 fun toolErrors(errors: List<OpenUIError>): List<String> = errors
     .filter { (it.source == "query" || it.source == "mutation") && !it.message.endsWith(CANCELLED) }
-    .map { it.message.replace(Regex("^(Query|Mutation) \"([^\"]+)\" (returned an error|failed): "), "$2: ") }
+    .map { it.message.replace(TOOL_ERROR_PREFIX, "$2: ") }
     .distinct()
 
 fun fixItMessage(problems: List<String>) =
@@ -333,7 +346,7 @@ fun OpenUICard(sessionId: String, code: String, streaming: Boolean, card: String
     ) {
         if (saved == null) {
             val pulse by rememberInfiniteTransition(label = "card").animateFloat(0.4f, 1f, infiniteRepeatable(tween(800), RepeatMode.Reverse), label = "pulse")
-            Box(Modifier.fillMaxWidth().height(96.dp).alpha(pulse).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh))
+            Box(Modifier.fillMaxWidth().height(96.dp).graphicsLayer { alpha = pulse }.clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh))
             return@Column
         }
         Surface(

@@ -6,6 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
@@ -21,7 +22,7 @@ class ChatDrafts(context: Context, private val scope: CoroutineScope) {
         scope.launch(Dispatchers.IO) {
             val saved = store.all.mapNotNull { (id, text) -> (text as? String)?.takeIf { it.isNotBlank() }?.let { id to it } }.toMap()
             // Anything typed before the file was read wins.
-            _drafts.value = saved + _drafts.value
+            if (saved.isNotEmpty()) _drafts.update { saved + it }
         }
     }
 
@@ -29,9 +30,19 @@ class ChatDrafts(context: Context, private val scope: CoroutineScope) {
 
     fun set(sessionId: String, text: String) {
         val keep = text.isNotBlank()
-        if (keep && _drafts.value[sessionId] == text || !keep && sessionId !in _drafts.value) return
-        _drafts.value = if (keep) _drafts.value + (sessionId to text) else _drafts.value - sessionId
-        store.edit().apply { if (keep) putString(sessionId, text) else remove(sessionId) }.apply()
+        var changed = false
+        _drafts.update { current ->
+            if (keep && current[sessionId] == text || !keep && sessionId !in current) {
+                changed = false
+                current
+            } else {
+                changed = true
+                if (keep) current + (sessionId to text) else current - sessionId
+            }
+        }
+        if (changed) {
+            store.edit().apply { if (keep) putString(sessionId, text) else remove(sessionId) }.apply()
+        }
     }
 
     /** On sign-out: drafts belong to the account. */
@@ -42,6 +53,14 @@ class ChatDrafts(context: Context, private val scope: CoroutineScope) {
 
     /** Drops drafts of chats that no longer exist. */
     fun retain(sessionIds: Set<String>) {
-        _drafts.value.keys.filter { it !in sessionIds }.forEach { set(it, "") }
+        var dropped = emptyList<String>()
+        _drafts.update { current ->
+            val stale = current.keys.filter { it !in sessionIds }
+            dropped = stale
+            if (stale.isEmpty()) current else current - stale.toSet()
+        }
+        if (dropped.isNotEmpty()) {
+            store.edit().apply { dropped.forEach(::remove) }.apply()
+        }
     }
 }

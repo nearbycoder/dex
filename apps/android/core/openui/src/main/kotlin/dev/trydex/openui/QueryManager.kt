@@ -193,11 +193,16 @@ class QueryManager(private val provider: ToolProvider?, private val scope: Corou
             val key = cacheKey(node.toolName, node.args, node.deps)
             val existing = queries[node.statementId]
             if (existing != null) {
-                if (existing.cacheKey != key) existing.prevCacheKey = existing.cacheKey
+                var stalePrev: String? = null
+                if (existing.cacheKey != key) {
+                    stalePrev = existing.prevCacheKey?.takeIf { it != existing.cacheKey && it != key }
+                    existing.prevCacheKey = existing.cacheKey
+                }
                 existing.toolName = node.toolName
                 existing.args = node.args
                 existing.defaults = node.defaults
                 existing.cacheKey = key
+                stalePrev?.let(::cleanup)
             } else {
                 queries[node.statementId] = QueryEntry(node.toolName, node.args, node.defaults, key)
             }

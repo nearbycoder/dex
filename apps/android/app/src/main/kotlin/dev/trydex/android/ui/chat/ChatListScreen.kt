@@ -224,25 +224,30 @@ fun ChatListScreen() {
             } else {
                 val needle = query.text.toString().trim().lowercase()
                 // A character's conversations live under them, not in the inbox.
-                val chats = current.chats
-                val sessions = if (needle.isEmpty()) chats else chats.filter { needle in it.title.lowercase() }
-                val characters = if (needle.isEmpty()) current.characters else current.characters.filter { needle in it.name.lowercase() }
+                val chats = remember(current) { current.chats }
+                val agentsById = remember(current.agents) { current.agents.associateBy { it.id } }
+                val projectsById = remember(current.projects) { current.projects.associateBy { it.id } }
+                val sessions = remember(chats, needle) { if (needle.isEmpty()) chats else chats.filter { needle in it.title.lowercase() } }
+                val characters = remember(current.characters, needle) { if (needle.isEmpty()) current.characters else current.characters.filter { needle in it.name.lowercase() } }
                 // And a space's chats under it.
-                val spaces = if (needle.isEmpty()) current.spaces else current.spaces.filter { needle in it.name.lowercase() }
-                val groups = inboxGroups(sessions, now)
-                val working = chats.count { it.busy }
-                val unread = chats.count { it.unread && !it.busy && it.id != selected }
+                val spaces = remember(current.spaces, needle) { if (needle.isEmpty()) current.spaces else current.spaces.filter { needle in it.name.lowercase() } }
+                val groups = remember(sessions, now) { inboxGroups(sessions, now) }
+                val working = remember(chats) { chats.count { it.busy } }
+                val unread = remember(chats, selected) { chats.count { it.unread && !it.busy && it.id != selected } }
+                val picked = remember(sessions, filter) {
+                    if (filter == ChatFilter.All) emptyList()
+                    else sessions.filter { if (filter == ChatFilter.Working) it.busy else it.unread && !it.busy }.sortedByDescending { it.updatedAt }
+                }
                 LazyColumn(state = listState, modifier = Modifier.fillMaxSize().testTag("chat-list")) {
                     // Once there's more than one to keep track of (a small screen keeps its room otherwise).
                     if (working + unread > 1 || filter != ChatFilter.All) {
                         item(key = "filters", contentType = "filters") { FilterRow(filter, working, unread, Modifier.animateItem()) { filter = it } }
                     }
                     if (filter != ChatFilter.All) {
-                        val picked = sessions.filter { if (filter == ChatFilter.Working) it.busy else it.unread && !it.busy }.sortedByDescending { it.updatedAt }
                         if (picked.isEmpty()) item(key = "filter-empty") {
                             EmptyState(if (filter == ChatFilter.Working) "Nothing is working right now." else "Nothing new. You've seen it all.", Icons.Rounded.DoneAll, Modifier.animateItem())
                         }
-                        rows(picked, current, now, selected, actions, drafts) { menu = it }
+                        rows(picked, agentsById, projectsById, now, selected, actions, drafts) { menu = it }
                         item(key = "end") { Spacer(Modifier.size(96.dp)) }
                         return@LazyColumn
                     }
@@ -254,15 +259,15 @@ fun ChatListScreen() {
                         groups.inbox.isEmpty() && needle.isEmpty() -> item(key = "empty") { EmptyState("All caught up", Icons.Rounded.DoneAll) }
                         groups.isEmpty -> item(key = "empty") { EmptyState("No chats match “$needle”.") }
                     }
-                    rows(groups.inbox, current, now, selected, actions, drafts) { menu = it }
+                    rows(groups.inbox, agentsById, projectsById, now, selected, actions, drafts) { menu = it }
                     group(
                         "Snoozed", Icons.Rounded.Snooze, groups.snoozed, open = prefs.snoozedOpen || groups.snoozed.any { it.id == selected } || needle.isNotEmpty(),
                         onToggle = { app.graph.preferences.setSnoozedOpen(!prefs.snoozedOpen) },
-                    ) { rows(groups.snoozed, current, now, selected, actions, drafts, snoozed = true) { menu = it } }
+                    ) { rows(groups.snoozed, agentsById, projectsById, now, selected, actions, drafts, snoozed = true) { menu = it } }
                     group(
                         "Settled", Icons.Rounded.DoneAll, groups.settled, open = prefs.settledOpen || groups.settled.any { it.id == selected } || needle.isNotEmpty(),
                         onToggle = { app.graph.preferences.setSettledOpen(!prefs.settledOpen) },
-                    ) { rows(groups.settled, current, now, selected, actions, drafts, settled = true) { menu = it } }
+                    ) { rows(groups.settled, agentsById, projectsById, now, selected, actions, drafts, settled = true) { menu = it } }
                     item(key = "end") { Spacer(Modifier.size(96.dp)) }
                 }
             }
@@ -300,7 +305,8 @@ private fun LazyListScope.group(
 
 private fun LazyListScope.rows(
     sessions: List<SessionMeta>,
-    state: DexState,
+    agentsById: Map<String, AgentProfile>,
+    projectsById: Map<String, ProjectProfile>,
     now: Long,
     selected: String?,
     actions: ChatActions,
@@ -311,7 +317,7 @@ private fun LazyListScope.rows(
 ) {
     items(sessions, key = { it.id }, contentType = { "chat" }) { session ->
         // Only what the row shows, so a synced-state update re-runs just the rows it changed.
-        SwipeableChatRow(session, state.agent(session.agentId), state.project(session.projectId), now, session.id == selected, drafts[session.id], actions, snoozed, settled, onMenu, Modifier.animateItem())
+        SwipeableChatRow(session, session.agentId?.let(agentsById::get), session.projectId?.let(projectsById::get), now, session.id == selected, drafts[session.id], actions, snoozed, settled, onMenu, Modifier.animateItem())
     }
 }
 

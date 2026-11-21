@@ -2,6 +2,7 @@ package dev.trydex.android.ui.chat
 
 import android.graphics.BitmapFactory
 import android.util.Base64
+import android.util.LruCache
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -90,7 +91,9 @@ import dev.trydex.core.model.ThinkingBlock
 import dev.trydex.core.model.ToolCallBlock
 import dev.trydex.core.model.ToolResultMessage
 import dev.trydex.core.model.Tools
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 
@@ -293,9 +296,10 @@ fun ToolCard(sessionId: String, call: ToolCallBlock, result: ToolResultMessage?,
             // A VM command's output streams in while it runs.
             if (onVm && pending && output.isNotEmpty() && !open) Output(output.takeLast(4_000), maxHeight = 192, error = false)
             AnimatedVisibility(open) {
+                val formattedArgs = remember(call.arguments) { pretty.encodeToString(JsonElement.serializer(), call.arguments) }
                 Column(Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        pretty.encodeToString(JsonElement.serializer(), call.arguments),
+                        formattedArgs,
                         style = Mono.copy(fontSize = 12.sp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.heightIn(max = 192.dp).verticalScroll(rememberScrollState()),
@@ -323,13 +327,15 @@ private fun Output(text: String, maxHeight: Int, error: Boolean) {
     }
 }
 
-/** Screenshots seen this session, so reopening a step doesn't fetch again. */
-private object ScreenshotCache {
-    private val cache = object : LinkedHashMap<String, ImageBitmap>(40, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ImageBitmap>?) = size > 40
+/** Screenshots seen this session, bounded by pixel bytes so reopening a step doesn't fetch again. */
+internal object ScreenshotCache {
+    private const val MAX_BYTES = 32 * 1024 * 1024
+    private val cache = object : LruCache<String, ImageBitmap>(MAX_BYTES) {
+        override fun sizeOf(key: String, value: ImageBitmap) = (value.width * value.height * 4).coerceAtLeast(1)
     }
-    @Synchronized fun get(key: String) = cache[key]
-    @Synchronized fun put(key: String, image: ImageBitmap) { cache[key] = image }
+    fun get(key: String): ImageBitmap? = cache.get(key)
+    fun put(key: String, image: ImageBitmap) { cache.put(key, image) }
+    fun clear() { cache.evictAll() }
 }
 
 /**
@@ -344,8 +350,10 @@ internal fun rememberTranscriptBitmap(sessionId: String, image: ImageBlock): Res
         if (value != null) return@produceState
         value = runCatching {
             val data = image.data.ifEmpty { image.ref?.let { app.graph.repository.api.transcriptImage(sessionId, it)?.data } ?: return@runCatching null }
-            val bytes = Base64.decode(data, Base64.DEFAULT)
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()?.also { ScreenshotCache.put(key, it) }
+            withContext(Dispatchers.Default) {
+                val bytes = Base64.decode(data, Base64.DEFAULT)
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+            }?.also { ScreenshotCache.put(key, it) }
         }
     }
     return bitmap

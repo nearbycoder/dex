@@ -19,12 +19,15 @@ import dev.trydex.android.notifications.Notifier
 import dev.trydex.android.notifications.PushRegistrar
 import dev.trydex.android.notifications.PushStore
 import dev.trydex.android.notifications.PushTokens
+import dev.trydex.android.ui.chat.ScreenshotCache
+import dev.trydex.android.ui.openui.UiStateCache
 import dev.trydex.core.client.DexCookieInterceptor
 import dev.trydex.core.model.ModelRegistry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -58,7 +61,15 @@ class AppGraph(
 
     /** Unsent text in each chat, kept per chat; forgotten on sign-out and when its chat is deleted. */
     val drafts = ChatDrafts(context, scope).also { drafts ->
-        scope.launch { repository.signedOutReason.collect { if (it != SignedOutReason.None) drafts.clear() } }
+        scope.launch {
+            repository.signedOutReason.collect {
+                if (it != SignedOutReason.None) {
+                    drafts.clear()
+                    UiStateCache.clear()
+                    ScreenshotCache.clear()
+                }
+            }
+        }
         scope.launch {
             repository.state.filterNotNull().map { state -> state.sessions.mapTo(HashSet()) { it.id } }.distinctUntilChanged().collect(drafts::retain)
         }
@@ -69,7 +80,8 @@ class AppGraph(
         PushRegistrar(
             scope, repository, pushTokens, PushStore(app),
             wanted = { preferences.prefs.value.notifications && Notifier.canPost(app) },
-            wantedChanges = preferences.prefs.map { it.notifications },
+            // Wait until DataStore loads so cold start never unsubscribes on the default false.
+            wantedChanges = preferences.prefs.filter { it.loaded }.map { it.notifications },
         )
     }
 

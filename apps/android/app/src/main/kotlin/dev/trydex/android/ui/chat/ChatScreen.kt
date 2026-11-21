@@ -59,8 +59,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -356,7 +356,9 @@ private fun ChatTopBar(
                 } else if (space != null) {
                     SpaceChatTitle(space, running)
                 } else {
-                    val pulse by rememberInfiniteTransition(label = "naming").animateFloat(1f, 0.4f, infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "pulse")
+                    val pulse = if (naming) {
+                        rememberInfiniteTransition(label = "naming").animateFloat(1f, 0.4f, infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "pulse").value
+                    } else 1f
                     TextButton(onClick = onRename, modifier = Modifier.testTag("chat-title"), contentPadding = PaddingValues(horizontal = 4.dp)) {
                         Text(
                             session.title,
@@ -364,7 +366,7 @@ private fun ChatTopBar(
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.alpha(if (naming) pulse else 1f).semantics { if (naming) contentDescription = "Writing a new title…" },
+                            modifier = Modifier.graphicsLayer { alpha = pulse }.semantics { if (naming) contentDescription = "Writing a new title…" },
                         )
                     }
                 }

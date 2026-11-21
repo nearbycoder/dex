@@ -111,6 +111,7 @@ import dev.trydex.core.model.UiAction
 import dev.trydex.core.model.UiNotes
 import dev.trydex.core.model.displayItems
 import dev.trydex.core.model.obj
+import dev.trydex.core.model.recordedDisplayItems
 import dev.trydex.core.model.str
 import dev.trydex.core.model.toolResults
 import kotlinx.coroutines.launch
@@ -129,7 +130,8 @@ fun MessageList(
     /** What an empty chat says (a new space's: what to do first). */
     emptyHint: String? = null,
 ) {
-    val items = remember(transcript.entries, transcript.streaming) { displayItems(transcript) }
+    val recorded = remember(transcript.entries) { recordedDisplayItems(transcript.entries) }
+    val items = remember(recorded, transcript.streaming) { displayItems(recorded, transcript.streaming) }
     val results = remember(transcript.entries) { toolResults(transcript.entries) }
     val newestFirst = remember(items) { items.asReversed() }
     val pendingNewestFirst = remember(pending) { pending.asReversed() }
@@ -138,7 +140,7 @@ fun MessageList(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val atBottom by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset < 80 } }
-    val lastUser = items.lastOrNull { it is DisplayItem.User }?.id to pending.size
+    val lastUser = remember(items, pending.size) { items.lastOrNull { it is DisplayItem.User }?.id to pending.size }
     // Sending something always brings you to the bottom (it opens there already). A frame later, so it never lands
     // in the middle of a layout pass.
     var seen by remember { mutableStateOf(lastUser) }
@@ -157,10 +159,10 @@ fun MessageList(
             modifier = Modifier.fillMaxSize().testTag("messages"),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            transcript.error?.let { error -> item(key = "error") { Centered { ErrorCard(error) } } }
-            transcript.retry?.let { retry -> item(key = "retry") { Centered { Text("Retrying after an error: ${retry.error}", style = MaterialTheme.typography.bodySmall, color = DexTheme.colors.warning, modifier = Modifier.padding(start = 40.dp, top = 4.dp)) } } }
+            transcript.error?.let { error -> item(key = "error", contentType = "error") { Centered { ErrorCard(error) } } }
+            transcript.retry?.let { retry -> item(key = "retry", contentType = "retry") { Centered { Text("Retrying after an error: ${retry.error}", style = MaterialTheme.typography.bodySmall, color = DexTheme.colors.warning, modifier = Modifier.padding(start = 40.dp, top = 4.dp)) } } }
             if (transcript.running && items.lastOrNull() !is DisplayItem.Assistant) {
-                item(key = "working") {
+                item(key = "working", contentType = "working") {
                     Centered {
                         Row(Modifier.padding(start = 40.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             LoadingIndicator(Modifier.size(24.dp))
@@ -169,7 +171,7 @@ fun MessageList(
                     }
                 }
             }
-            items(pendingNewestFirst, key = { "pending-${it.at}" }, contentType = { "pending" }) { message -> Centered { UserBubble(message.text, 0, sending = true) } }
+            items(pendingNewestFirst, key = { "pending-${it.id}" }, contentType = { "pending" }) { message -> Centered { UserBubble(message.text, 0, sending = true) } }
             items(newestFirst, key = { it.id }, contentType = { it::class }) { item ->
                 Centered {
                     when (item) {
@@ -180,15 +182,15 @@ fun MessageList(
                             ?: UserBubble(item.text, item.images, files = item.files, imageParts = item.imageParts, sessionId = sessionId)
                         is DisplayItem.Assistant -> AssistantTurn(
                             sessionId, item.messages, item.streaming, active = transcript.running && item === last,
-                            endedAt = item.endedAt, results = results, tools = transcript.tools, onSend = onSend, character = character,
+                            endedAt = item.endedAt, results = results, tools = if (item === last) transcript.tools else emptyMap(), onSend = onSend, character = character,
                         )
                         is DisplayItem.Divider -> ContextDivider(item)
                     }
                 }
             }
-            character?.greeting?.takeIf { it.isNotBlank() }?.let { item(key = "greeting") { Centered { CharacterGreeting(character) } } }
+            character?.greeting?.takeIf { it.isNotBlank() }?.let { item(key = "greeting", contentType = "greeting") { Centered { CharacterGreeting(character) } } }
             if (emptyHint != null && items.isEmpty() && pending.isEmpty() && !transcript.running) {
-                item(key = "empty-hint") { Centered { EmptyState(emptyHint, Icons.Outlined.Workspaces, Modifier.testTag("empty-hint")) } }
+                item(key = "empty-hint", contentType = "empty-hint") { Centered { EmptyState(emptyHint, Icons.Outlined.Workspaces, Modifier.testTag("empty-hint")) } }
             }
         }
         AnimatedVisibility(!atBottom, enter = scaleIn() + fadeIn(), exit = scaleOut() + fadeOut(), modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp)) {
@@ -277,10 +279,10 @@ fun UserBubble(
     imageParts: List<ImageBlock> = emptyList(),
     sessionId: String? = null,
 ) {
-    val split = UiNotes.split(raw)
+    val split = remember(raw) { UiNotes.split(raw) }
     // A button pressed in the chat's UI: its words and what it carried, not the lines the model reads.
     val action = remember(split.text) { UiAction.parse(split.text) }
-    val skill = if (action == null) Skills.invoked(split.text) else null
+    val skill = remember(split.text, action) { if (action == null) Skills.invoked(split.text) else null }
     val accent = MaterialTheme.colorScheme.primary
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
         androidx.compose.foundation.layout.Spacer(Modifier.weight(0.12f))
@@ -583,8 +585,9 @@ private data class TurnParts(
             // Notes the model wrote between steps stay with the work; UI cards and the final answer stay in view.
             val steps = blocks.take(lastWork + 1).filter { !Tools.isUi(it.block) }
             val shown = blocks.take(lastWork + 1).filter { Tools.isUi(it.block) } + blocks.drop(lastWork + 1)
-            val shownText = shown.joinToString("\n") { (it.block as? TextBlock)?.text ?: "" }
-            val sharedMedia = blocks.mapNotNull { step ->
+            val hasShareMedia = blocks.any { (it.block as? ToolCallBlock)?.name == "share_media" }
+            val shownText = if (hasShareMedia) shown.joinToString("\n") { (it.block as? TextBlock)?.text ?: "" } else ""
+            val sharedMedia = if (!hasShareMedia) emptyList() else blocks.mapNotNull { step ->
                 val call = step.block as? ToolCallBlock ?: return@mapNotNull null
                 if (call.name != "share_media") return@mapNotNull null
                 val media = results[call.id]?.details?.obj?.get("media")?.obj ?: return@mapNotNull null

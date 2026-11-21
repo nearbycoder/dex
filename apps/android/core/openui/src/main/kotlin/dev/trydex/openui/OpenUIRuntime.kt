@@ -69,6 +69,8 @@ class OpenUIRuntime(
     private var parseException: OpenUIError? = null
     private var initialState: Map<String, Any?>? = null
     private var initKey: String? = null
+    private var lastDeclarations: Map<String, Any?>? = null
+    private var lastInitialState: Map<String, Any?>? = null
     private var initializing = false
     private var refreshing = false
     private var dirty = false
@@ -131,6 +133,9 @@ class OpenUIRuntime(
     private fun initializeStore() {
         val declarations = result?.stateDeclarations
         if (declarations == null && initialState == null) return
+        if (initKey != null && declarations === lastDeclarations && initialState === lastInitialState) return
+        lastDeclarations = declarations
+        lastInitialState = initialState
         val key = Js.json(declarations ?: emptyMap<String, Any?>()) + "::" + Js.json(initialState ?: emptyMap<String, Any?>())
         if (key == initKey) return
         initKey = key

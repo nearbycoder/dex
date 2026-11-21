@@ -57,7 +57,7 @@ object TranscriptReducer {
     }
 
     fun apply(state: TranscriptState, event: AgentEvent): TranscriptState = when (event) {
-        is AgentEvent.Snapshot -> fromSnapshot(event.snapshot)
+        is AgentEvent.Snapshot -> fromSnapshot(event.snapshot, state)
         AgentEvent.RunStart -> state.copy(running = true, error = null)
         AgentEvent.RunEnd -> state.copy(running = false, streaming = null, tools = emptyMap(), retry = null)
         is AgentEvent.MessageStart -> (event.message as? AssistantMessage)?.let { state.copy(streaming = it) } ?: state
@@ -175,21 +175,14 @@ private fun summaryText(entry: EntryRecord): String {
     return (summaryWrapper.find(text)?.groupValues?.get(1) ?: text).trim()
 }
 
-/** The transcript as rows: user messages, replies (consecutive assistant messages), and context dividers. */
-fun displayItems(state: TranscriptState): List<DisplayItem> {
-    val items = mutableListOf<DisplayItem>()
-    fun addAssistant(id: String, message: AssistantMessage, streaming: Boolean) {
-        val last = items.lastOrNull()
-        val ended = if (streaming) null else message.timestamp + (message.durationMs ?: 0)
-        if (last is DisplayItem.Assistant) {
-            items[items.lastIndex] = last.copy(messages = last.messages + message, streaming = streaming, endedAt = ended ?: last.endedAt)
-        } else {
-            items += DisplayItem.Assistant(id, listOf(message), streaming, ended)
-        }
-    }
-    for (entry in state.entries) {
+/** Rows built from recorded entries only, so streaming tokens don't re-walk the whole chat. */
+fun recordedDisplayItems(entries: List<EntryRecord>): List<DisplayItem> {
+    val items = ArrayList<DisplayItem>()
+    var assistantMessages: MutableList<AssistantMessage>? = null
+    for (entry in entries) {
         // A summary's text (and a reset's handoff) is a user message for the model, not something you said.
         if (entry.kind == "pi.reset" || entry.kind == "pi.compaction") {
+            assistantMessages = null
             val label = if (entry.kind == "pi.reset") "Context reset" else "Earlier messages summarized"
             items += DisplayItem.Divider(entry.id.toString(), label, summaryText(entry).ifEmpty { null })
             continue
@@ -198,10 +191,22 @@ fun displayItems(state: TranscriptState): List<DisplayItem> {
             val id = "${entry.id}:$index"
             when (message) {
                 is UserMessage -> {
+                    assistantMessages = null
                     val (text, files) = splitAttachments(message.text)
                     items += DisplayItem.User(id, text, message.imageCount, files, message.content.filterIsInstance<ImageBlock>())
                 }
-                is AssistantMessage -> addAssistant(id, message, false)
+                is AssistantMessage -> {
+                    val ended = message.timestamp + (message.durationMs ?: 0)
+                    val last = items.lastOrNull()
+                    if (last is DisplayItem.Assistant && assistantMessages != null) {
+                        assistantMessages!!.add(message)
+                        items[items.lastIndex] = last.copy(endedAt = ended)
+                    } else {
+                        val list = ArrayList<AssistantMessage>(2).apply { add(message) }
+                        assistantMessages = list
+                        items += DisplayItem.Assistant(id, list, streaming = false, endedAt = ended)
+                    }
+                }
                 is ToolResultMessage -> {
                     val last = items.lastOrNull()
                     if (last is DisplayItem.Assistant) items[items.lastIndex] = last.copy(endedAt = maxOf(last.endedAt ?: 0, message.timestamp))
@@ -210,6 +215,26 @@ fun displayItems(state: TranscriptState): List<DisplayItem> {
             }
         }
     }
-    state.streaming?.let { addAssistant("streaming", it, true) }
     return items
 }
+
+/** Appends the currently streaming message onto already-built [recorded] rows without rebuilding prior rows. */
+fun displayItems(recorded: List<DisplayItem>, streaming: AssistantMessage?): List<DisplayItem> {
+    if (streaming == null) return recorded
+    val last = recorded.lastOrNull()
+    return if (last is DisplayItem.Assistant) {
+        ArrayList<DisplayItem>(recorded.size).apply {
+            for (i in 0 until recorded.lastIndex) add(recorded[i])
+            add(last.copy(messages = last.messages + streaming, streaming = true, endedAt = last.endedAt))
+        }
+    } else {
+        ArrayList<DisplayItem>(recorded.size + 1).apply {
+            addAll(recorded)
+            add(DisplayItem.Assistant("streaming", listOf(streaming), streaming = true, endedAt = null))
+        }
+    }
+}
+
+/** The transcript as rows: user messages, replies (consecutive assistant messages), and context dividers. */
+fun displayItems(state: TranscriptState): List<DisplayItem> =
+    displayItems(recordedDisplayItems(state.entries), state.streaming)

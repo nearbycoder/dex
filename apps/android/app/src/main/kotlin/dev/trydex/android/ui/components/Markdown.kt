@@ -37,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -142,7 +143,11 @@ fun Markdown(
     val document = remember(text, options.gfm) { parseMarkdown(text, options.gfm) }
     val footnotes = remember(document) { Footnotes.of(document) }
     val style = options.textStyle ?: MaterialTheme.typography.bodyLarge
-    val context = MarkdownContext(options, style, onLink, media, footnotes.numbers)
+    val latestOnLink = rememberUpdatedState(onLink)
+    val stableOnLink = remember { { url: String -> latestOnLink.value(url) } }
+    val context = remember(options, style, stableOnLink, media, footnotes.numbers) {
+        MarkdownContext(options, style, stableOnLink, media, footnotes.numbers)
+    }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         var child = document.firstChild
         while (child != null) {
@@ -153,7 +158,8 @@ fun Markdown(
     }
 }
 
-private class MarkdownContext(
+@Immutable
+private data class MarkdownContext(
     val options: MarkdownOptions,
     val style: TextStyle,
     val onLink: (String) -> Unit,
@@ -161,13 +167,15 @@ private class MarkdownContext(
     /** Each footnote's number, by its normalized label, in the order the text first refers to it (as remark-gfm). */
     val footnotes: Map<String, Int> = emptyMap(),
 ) {
-    fun with(style: TextStyle) = MarkdownContext(options, style, onLink, media, footnotes)
+    fun with(style: TextStyle) = copy(style = style)
 }
 
 /** The footnotes a document refers to, numbered as the web numbers them; definitions nothing refers to are dropped. */
 internal class Footnotes(val numbers: Map<String, Int>, val definitions: List<FootnoteDefinition>) {
     companion object {
-        fun label(label: String) = label.trim().replace(Regex("\\s+"), " ").lowercase()
+        private val WHITESPACE = Regex("\\s+")
+
+        fun label(label: String) = label.trim().replace(WHITESPACE, " ").lowercase()
 
         fun of(document: Node): Footnotes {
             val defined = LinkedHashMap<String, FootnoteDefinition>()
@@ -248,32 +256,41 @@ private fun Block(node: Node, context: MarkdownContext) {
     }
 }
 
+private data class ParagraphParts(
+    val players: List<Pair<Media.Source, String?>>,
+    val images: List<Pair<String, String>>,
+    val hasOther: Boolean,
+)
+
 /** A paragraph, with any playable links or images rendered as players after it (alone, if that's all it holds). */
 @Composable
 private fun Paragraph(node: Paragraph, context: MarkdownContext) {
-    val players = mutableListOf<Pair<Media.Source, String?>>()
-    val images = mutableListOf<Pair<String, String>>()
-    var other = false
-    var child = node.firstChild
-    while (child != null) {
-        when {
-            child is Link && Media.source(child.destination) != null -> {
-                val label = plainText(child)
-                players += Media.source(child.destination)!! to label.takeIf { it != child.destination }
+    val parts = remember(node) {
+        val players = mutableListOf<Pair<Media.Source, String?>>()
+        val images = mutableListOf<Pair<String, String>>()
+        var other = false
+        var child = node.firstChild
+        while (child != null) {
+            when {
+                child is Link && Media.source(child.destination) != null -> {
+                    val label = plainText(child)
+                    players += Media.source(child.destination)!! to label.takeIf { it != child.destination }
+                }
+                child is Image && Media.source(child.destination) != null -> players += Media.source(child.destination)!! to plainText(child)
+                child is Image && Media.isInlineImage(child.destination) -> images += child.destination to plainText(child)
+                child is TextNode && child.literal.isBlank() -> Unit
+                child is SoftLineBreak || child is HardLineBreak -> Unit
+                else -> other = true
             }
-            child is Image && Media.source(child.destination) != null -> players += Media.source(child.destination)!! to plainText(child)
-            child is Image && Media.isInlineImage(child.destination) -> images += child.destination to plainText(child)
-            child is TextNode && child.literal.isBlank() -> Unit
-            child is SoftLineBreak || child is HardLineBreak -> Unit
-            else -> other = true
+            child = child.next
         }
-        child = child.next
+        ParagraphParts(players, images, other)
     }
-    if (other) InlineText(node, context, context.style, skipMedia = true)
-    images.forEach { (src, alt) ->
+    if (parts.hasOther) InlineText(node, context, context.style, skipMedia = true)
+    parts.images.forEach { (src, alt) ->
         AsyncImage(model = src, contentDescription = alt, modifier = Modifier.fillMaxWidth().heightIn(max = 480.dp).clip(RoundedCornerShape(12.dp)))
     }
-    players.forEach { (source, title) -> context.media(source, title) }
+    parts.players.forEach { (source, title) -> context.media(source, title) }
 }
 
 @Composable
@@ -281,7 +298,7 @@ private fun InlineText(node: Node, context: MarkdownContext, style: TextStyle, m
     val colors = MaterialTheme.colorScheme
     val linkColor = colors.primary
     val codeBackground = colors.surfaceContainerHighest
-    val text = remember(node, style, skipMedia, linkColor) {
+    val text = remember(node, style, skipMedia, linkColor, codeBackground, context.options.breaks, context.footnotes, context.onLink) {
         buildAnnotatedString { appendInlines(node, context, linkColor, codeBackground, skipMedia) }
     }
     SelectionContainer(modifier) {
@@ -389,7 +406,7 @@ private fun plainText(node: Node): String {
 private fun ListBlock(node: Node, context: MarkdownContext) {
     val ordered = node is OrderedList
     val first = (node as? OrderedList)?.markerStartNumber ?: 1
-    val items = generateSequence(node.firstChild) { it.next }.filterIsInstance<ListItem>().toList()
+    val items = remember(node) { generateSequence(node.firstChild) { it.next }.filterIsInstance<ListItem>().toList() }
     // Every marker as wide as the widest, so items line up past 9.
     val widest = if (ordered) "${first + items.size - 1}." else "•"
     // A loose list (items apart by blank lines) is spaced as paragraphs are.
@@ -463,26 +480,29 @@ private fun FootnoteList(definitions: List<FootnoteDefinition>, context: Markdow
 
 @Composable
 private fun TableView(node: TableBlock, context: MarkdownContext) {
-    val rows = mutableListOf<Pair<Boolean, List<TableCell>>>()
-    var section = node.firstChild
-    while (section != null) {
-        var row = section.firstChild
-        while (row != null) {
-            if (row is TableRow) {
-                val cells = mutableListOf<TableCell>()
-                var cell = row.firstChild
-                while (cell != null) {
-                    if (cell is TableCell) cells += cell
-                    cell = cell.next
+    val rows = remember(node) {
+        val built = mutableListOf<Pair<Boolean, List<TableCell>>>()
+        var section = node.firstChild
+        while (section != null) {
+            var row = section.firstChild
+            while (row != null) {
+                if (row is TableRow) {
+                    val cells = mutableListOf<TableCell>()
+                    var cell = row.firstChild
+                    while (cell != null) {
+                        if (cell is TableCell) cells += cell
+                        cell = cell.next
+                    }
+                    built += (section is TableHead) to cells
                 }
-                rows += (section is TableHead) to cells
+                row = row.next
             }
-            row = row.next
+            section = section.next
         }
-        section = section.next
+        built
     }
     if (rows.isEmpty()) return
-    val columns = rows.maxOf { it.second.size }
+    val columns = remember(rows) { rows.maxOf { it.second.size } }
     val shape = RoundedCornerShape(16.dp)
     val line = MaterialTheme.colorScheme.outlineVariant
     val head = MaterialTheme.colorScheme.surfaceContainerHigh

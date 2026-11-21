@@ -6,6 +6,7 @@ import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.TextStyle
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.ceil
 
 /** The chat list works like an inbox: chats you settle or snooze move out of it until something new happens. */
@@ -119,10 +120,12 @@ object Vms {
  * Messages just sent that the agent hasn't recorded yet, shown at once. They're matched to the user entries the agent
  * records by count (skills and secrets rewrite the text), dropped when anything queues, and dropped after 20 s.
  */
-data class PendingMessage(val text: String, val after: Int, val at: Long)
+data class PendingMessage(val text: String, val after: Int, val at: Long, val id: Long = Pending.nextId())
 
 object Pending {
     const val TTL_MS = 20_000L
+    private val ids = AtomicLong(0)
+    fun nextId(): Long = ids.incrementAndGet()
 
     fun reconcile(list: List<PendingMessage>, userCount: Int, queueLength: Int, now: Long): List<PendingMessage> {
         val recorded = maxOf(0, userCount - (list.firstOrNull()?.after ?: userCount))

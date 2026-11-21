@@ -37,6 +37,7 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.random.Random
 
 /** Where the socket to the user's agent is. */
@@ -90,23 +91,23 @@ class AgentConnection(
 
     /** Messages in the order they arrived (a snapshot must reach listeners before the events after it). */
     private val inbox = Channel<ServerMessage>(Channel.UNLIMITED)
+    private var inboxJob: Job? = null
 
-    init {
-        scope.launch { for (message in inbox) _messages.emit(message) }
+    private class Pending(val method: String, val reply: CompletableDeferred<JsonElement?>) {
+        val sent = AtomicBoolean(false)
     }
 
-    private class Pending(val method: String, val reply: CompletableDeferred<JsonElement?>, @Volatile var sent: Boolean)
-
     private val pending = ConcurrentHashMap<String, Pending>()
+    private val lock = Any()
 
     @Volatile private var socket: WebSocket? = null
     @Volatile private var open = false
     @Volatile private var running = false
-    private var attempts = 0
+    @Volatile private var attempts = 0
     private var reconnect: Job? = null
-    private var identityPending = false
-    private var stateSeen = false
-    private var openedAt = 0L
+    @Volatile private var identityPending = false
+    @Volatile private var stateSeen = false
+    @Volatile private var openedAt = 0L
 
     private val opened = MutableStateFlow(false)
 
@@ -117,39 +118,61 @@ class AgentConnection(
             .addQueryParameter("_pk", connectionId)
             .build()
 
+    private fun ensureInboxLocked() {
+        if (inboxJob?.isActive == true) return
+        inboxJob = scope.launch { for (message in inbox) _messages.emit(message) }
+    }
+
     fun start() {
-        if (running) return
-        running = true
-        attempts = 0
-        connect()
+        synchronized(lock) {
+            if (running) return
+            running = true
+            attempts = 0
+            ensureInboxLocked()
+            connectLocked()
+        }
     }
 
     /** Closes the socket and stops reconnecting; pending calls fail. */
     fun stop() {
-        running = false
-        reconnect?.cancel()
-        socket?.close(1000, "Closed by the app")
-        socket = null
-        markClosed("Connection closed")
-        _status.value = ConnectionStatus.Stopped
+        val old = synchronized(lock) {
+            running = false
+            reconnect?.cancel()
+            reconnect = null
+            inboxJob?.cancel()
+            inboxJob = null
+            while (inbox.tryReceive().isSuccess) {}
+            val current = socket
+            socket = null
+            markClosed("Connection closed")
+            _status.value = ConnectionStatus.Stopped
+            current
+        }
+        old?.close(1000, "Closed by the app")
     }
 
     /** Reconnects at once if the socket is down (the app came back to the foreground, or the network returned). */
     fun reconnectNow() {
-        if (!running || open) return
-        if (_status.value is ConnectionStatus.SignedOut) return
-        reconnect?.cancel()
-        attempts = 0
-        connect()
+        synchronized(lock) {
+            if (!running || open || socket != null) return
+            if (_status.value is ConnectionStatus.SignedOut) return
+            reconnect?.cancel()
+            reconnect = null
+            attempts = 0
+            ensureInboxLocked()
+            connectLocked()
+        }
     }
 
-    private fun connect() {
+    private fun connectLocked() {
         val token = token()
         if (token == null) {
             _status.value = ConnectionStatus.SignedOut(everywhere = false)
             running = false
             return
         }
+        socket?.cancel()
+        socket = null
         _status.value = ConnectionStatus.Connecting
         identityPending = false
         stateSeen = false
@@ -168,7 +191,7 @@ class AgentConnection(
             openedAt = clock()
             opened.value = true
             // Calls made while the socket was down go now.
-            for ((id, call) in pending) if (!call.sent) transmit(id, call)
+            for ((id, call) in pending) if (!call.sent.get()) transmit(id, call)
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
@@ -244,27 +267,37 @@ class AgentConnection(
     }
 
     private fun closed(code: Int?, reason: String?) {
-        socket = null
-        markClosed("Connection closed")
-        if (code == 4001) {
-            signedOut(everywhere = true)
-            return
-        }
-        if (!running) return
-        // A connection that lasted a while starts the backoff over.
-        if (openedAt != 0L && clock() - openedAt > 5_000) attempts = 0
-        openedAt = 0
-        val delayMs = backoff(attempts++)
-        _status.value = ConnectionStatus.Waiting(clock() + delayMs, reason)
-        reconnect?.cancel()
-        reconnect = scope.launch {
-            delay(delayMs)
-            if (running && socket == null) connect()
+        synchronized(lock) {
+            socket = null
+            markClosed("Connection closed")
+            if (code == 4001) {
+                signedOutLocked(everywhere = true)
+                return
+            }
+            if (!running) return
+            // A connection that lasted a while starts the backoff over.
+            if (openedAt != 0L && clock() - openedAt > 5_000) attempts = 0
+            openedAt = 0
+            val delayMs = backoff(attempts++)
+            _status.value = ConnectionStatus.Waiting(clock() + delayMs, reason)
+            reconnect?.cancel()
+            reconnect = scope.launch {
+                delay(delayMs)
+                synchronized(lock) {
+                    if (running && socket == null) connectLocked()
+                }
+            }
         }
     }
 
     private fun signedOut(everywhere: Boolean) {
+        synchronized(lock) { signedOutLocked(everywhere) }
+    }
+
+    private fun signedOutLocked(everywhere: Boolean) {
         running = false
+        reconnect?.cancel()
+        reconnect = null
         socket = null
         markClosed("Signed out")
         _status.value = ConnectionStatus.SignedOut(everywhere)
@@ -275,8 +308,9 @@ class AgentConnection(
         opened.value = false
         // Calls already sent can't be answered any more; ones still waiting to go keep waiting for the next socket.
         for ((id, call) in pending) {
-            if (call.sent || !running) {
+            if (call.sent.get() || !running) {
                 pending.remove(id)
+                callArgs.remove(id)
                 call.reply.completeExceptionally(RpcException(reason, call.method))
             }
         }
@@ -290,15 +324,17 @@ class AgentConnection(
     }
 
     private fun transmit(id: String, call: Pending, args: JsonArray? = callArgs[id]) {
+        if (!call.sent.compareAndSet(false, true)) return
         val frame = buildJsonObject {
             put("type", "rpc")
             put("id", id)
             put("method", call.method)
-            put("args", args ?: JsonArray(emptyList()))
+            put("args", args ?: callArgs[id] ?: JsonArray(emptyList()))
         }
         if (socket?.send(frame.toString()) == true) {
-            call.sent = true
             callArgs.remove(id)
+        } else {
+            call.sent.set(false)
         }
     }
 
@@ -310,13 +346,14 @@ class AgentConnection(
      */
     suspend fun call(method: String, args: List<JsonElement>, timeoutMs: Long = DEFAULT_TIMEOUT_MS): JsonElement? {
         val id = UUID.randomUUID().toString()
-        val call = Pending(method, CompletableDeferred(), sent = false)
-        pending[id] = call
+        val call = Pending(method, CompletableDeferred())
+        // Args go in before pending so an onOpen flush on another thread always sees them.
         callArgs[id] = JsonArray(args)
+        pending[id] = call
         try {
             return withTimeout(timeoutMs) {
                 if (!open) opened.first { it }
-                if (!call.sent) transmit(id, call)
+                if (!call.sent.get()) transmit(id, call)
                 call.reply.await()
             }
         } catch (error: CancellationException) {

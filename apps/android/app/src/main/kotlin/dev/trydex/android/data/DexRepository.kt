@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -123,6 +124,7 @@ class DexRepository(
         val oldSession = _session.value
         val oldApi = if (this::api.isInitialized) api else null
         connectionJobs.forEach { it.cancel() }
+        connectionJobs = emptyList()
         connection = null
         if (oldApi != null && oldSession != null && signOutHooks.isNotEmpty()) {
             scope.launch {
@@ -134,7 +136,12 @@ class DexRepository(
         }
         sessions.clear()
         cache.clear()
+        transcripts.values.forEach { it.job?.cancel() }
         transcripts.clear()
+        subscribed.value = null
+        openChat.value = null
+        onScreen.value = null
+        sent.clear()
         _state.value = null
         _session.value = null
         _status.value = ConnectionStatus.Stopped
@@ -142,6 +149,9 @@ class DexRepository(
     }
 
     private fun activate(session: DexSession) {
+        connectionJobs.forEach { it.cancel() }
+        connectionJobs = emptyList()
+        connection?.stop()
         _session.value = session
         _state.value = cache.loadState(session.user.id)
         val agent = AgentConnection(http, session.serverUrl, session.user.id, { _session.value?.token }, scope)
@@ -281,13 +291,13 @@ class DexRepository(
             val user = userId
             scope.launch(Dispatchers.IO) {
                 val kept = user?.let { cache.loadChat(it, sessionId) } ?: return@launch
-                if (!live.state.value.loaded) {
-                    live.state.value = live.state.value.copy(entries = kept.entries, artifacts = kept.artifacts, loaded = true)
+                live.state.update { current ->
+                    if (current.loaded) current else current.copy(entries = kept.entries, artifacts = kept.artifacts, loaded = true)
                 }
             }
         }
         // Listening before the subscribe goes out, so the snapshot it answers with isn't missed.
-        if (live.job == null) live.job = scope.launch(start = CoroutineStart.UNDISPATCHED) { follow(sessionId, live) }
+        if (live.job?.isActive != true) live.job = scope.launch(start = CoroutineStart.UNDISPATCHED) { follow(sessionId, live) }
         openChat.value = sessionId
         subscribed.value = sessionId
         if (connected.value) connection?.send(ClientMessages.subscribe(sessionId))
@@ -299,6 +309,9 @@ class DexRepository(
         val live = transcripts[sessionId] ?: return
         live.users = (live.users - 1).coerceAtLeast(0)
         if (live.users > 0) return
+        // Stop collecting and pinging once nobody is watching; the cached transcript stays in memory.
+        live.job?.cancel()
+        live.job = null
         if (subscribed.value == sessionId) {
             subscribed.value = null
             connection?.send(ClientMessages.unsubscribe())
@@ -324,7 +337,7 @@ class DexRepository(
         try {
             messages.collect { message ->
                 if (message.sessionId != sessionId) return@collect
-                live.state.value = reduce(live.state.value, message)
+                live.state.update { reduce(it, message) }
             }
         } finally {
             pinger.cancel()

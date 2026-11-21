@@ -9,6 +9,7 @@ import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.abs
 import kotlin.math.roundToLong
 
@@ -103,6 +104,7 @@ val DEFAULT_THINKING = ThinkingLevel.Low
 class ModelRegistry(initial: List<DexModel> = BuiltInModels.list) {
     @Volatile var models: List<DexModel> = initial
         private set
+    @Volatile private var byId: Map<String, DexModel> = initial.associateBy { it.id }
     @Volatile var updatedAt: Long = 0
         private set
     @Volatile var version: String? = null
@@ -116,12 +118,13 @@ class ModelRegistry(initial: List<DexModel> = BuiltInModels.list) {
         val known = catalog.models.filter { ModelMaker.fromId(it.maker) != null && ModelProvider.fromId(it.provider) != null }
         if (catalog.updatedAt < updatedAt || known.isEmpty()) return false
         models = known
+        byId = known.associateBy { it.id }
         updatedAt = catalog.updatedAt
         version = catalog.version
         return true
     }
 
-    fun find(id: String): DexModel? = models.firstOrNull { it.id == id }
+    fun find(id: String): DexModel? = byId[id]
 
     fun of(provider: ModelProvider): List<DexModel> = models.filter { it.modelProvider == provider }
 
@@ -183,13 +186,18 @@ fun formatTokens(tokens: Long): String =
 /** How long a model counts as new (a badge in the menus). */
 const val NEW_MODEL_DAYS = 14
 
+private val RELEASE_DATE_PATTERN = Regex("""(\d{4})-(\d{2})-(\d{2})""")
+private val releaseFormatters = ConcurrentHashMap<Pair<Boolean, Locale>, DateTimeFormatter>()
+
 /**
  * The UTC midnight a release date starts at, read as JavaScript's `Date.parse("YYYY-MM-DDT00:00:00Z")` does: only that
  * shape counts, and a day past the month's end rolls into the next month ("2026-02-30" is Mar 2).
  */
 private fun releaseStart(releasedAt: String?): Long? {
-    val match = Regex("""(\d{4})-(\d{2})-(\d{2})""").matchEntire(releasedAt?.take(10) ?: return null) ?: return null
-    val (year, month, day) = match.destructured.toList().map { it.toInt() }
+    val match = RELEASE_DATE_PATTERN.matchEntire(releasedAt?.take(10) ?: return null) ?: return null
+    val year = match.groupValues[1].toInt()
+    val month = match.groupValues[2].toInt()
+    val day = match.groupValues[3].toInt()
     if (month !in 1..12 || day !in 1..31) return null
     return LocalDate.of(year, month, 1).plusDays(day - 1L).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
 }
@@ -207,7 +215,10 @@ fun releaseLabel(model: DexModel, now: Long = System.currentTimeMillis(), locale
     val released = releaseStart(model.releasedAt) ?: return null
     val date = Instant.ofEpochMilli(released).atZone(ZoneOffset.UTC).toLocalDate()
     val thisYear = date.year == Instant.ofEpochMilli(now).atZone(ZoneOffset.UTC).year
-    return date.format(DateTimeFormatter.ofPattern(if (thisYear) "MMM d" else "MMM yyyy", locale))
+    val formatter = releaseFormatters.getOrPut(thisYear to locale) {
+        DateTimeFormatter.ofPattern(if (thisYear) "MMM d" else "MMM yyyy", locale)
+    }
+    return date.format(formatter)
 }
 
 /** The newest-first list's sections, by how long ago a model came out; the last holds models without a date. */
@@ -245,7 +256,8 @@ fun newestFirst(models: List<DexModel>, connected: Map<ModelProvider, Boolean>, 
     val sorted = models.sortedWith(
         compareByDescending<DexModel> { it.releasedAt.orEmpty() }.thenByDescending { connected[it.modelProvider] == true },
     )
-    return ReleasePeriod.entries.map { period -> period to sorted.filter { ReleasePeriod.of(it, now) == period } }.filter { it.second.isNotEmpty() }
+    val byPeriod = sorted.groupBy { ReleasePeriod.of(it, now) }
+    return ReleasePeriod.entries.mapNotNull { period -> byPeriod[period]?.takeIf { it.isNotEmpty() }?.let { period to it } }
 }
 
 /** JavaScript's Math.round: halves round up (towards +∞). */

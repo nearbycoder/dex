@@ -9,6 +9,7 @@ import dev.trydex.core.model.Utterance
 import dev.trydex.core.model.Voice
 import dev.trydex.core.model.Voices
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -17,6 +18,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
 /** A call's turn-taking, talking over them, and the order of what they say, with a scripted recognizer, voice, and speaker. */
+@OptIn(ExperimentalCoroutinesApi::class)
 class VoiceCallTest {
     private class FakeRecognition : Recognition {
         var listener: ((RecognitionEvent) -> Unit)? = null

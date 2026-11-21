@@ -282,7 +282,7 @@ class OpenUIParser(private val catalog: Catalog) {
                 pendingStatements += statement
             }
             // A `$name` ending the text may still be growing (`$d` of `$dishes`).
-            val tail = if (complete) null else Regex("\\$\\w+$").find(buffer)?.value
+            val tail = if (complete) null else TAIL_STATE_REF.find(buffer)?.value
             val tailName = tail?.takeIf {
                 pending.endsWith(it) && !Regex(Regex.escape(it) + "(?!\\w)").containsMatchIn(pending.dropLast(it.length))
             }
@@ -313,6 +313,9 @@ class OpenUIParser(private val catalog: Catalog) {
     fun stream() = Stream()
 
     companion object {
+        private val TAIL_STATE_REF = Regex("\\$\\w+$")
+        private val FIRST_LINE = Regex("^[^\\n]*\\n?")
+
         private fun skipString(input: String, start: Int): Int {
             if (input.getOrNull(start) != '"') return start
             var i = start + 1
@@ -350,7 +353,7 @@ class OpenUIParser(private val catalog: Catalog) {
                 var j = fenceStart + 3
                 while (j < input.length && input[j] != '\n') j++
                 if (j >= input.length) {
-                    blocks += input.substring(fenceStart + 3).replaceFirst(Regex("^[^\\n]*\\n?"), "")
+                    blocks += input.substring(fenceStart + 3).replaceFirst(FIRST_LINE, "")
                     i = input.length
                     break
                 }

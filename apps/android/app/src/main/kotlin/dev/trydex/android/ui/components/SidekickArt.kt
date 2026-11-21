@@ -10,16 +10,13 @@ import android.graphics.PorterDuffColorFilter
 import android.graphics.Rect
 import android.graphics.RectF
 import android.util.LruCache
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.StartOffset
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.keyframes
-import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -28,6 +25,8 @@ import androidx.compose.ui.unit.Dp
 import dev.trydex.android.data.Faces
 import dev.trydex.core.model.SidekickLook
 import dev.trydex.core.model.SidekickLooks
+import kotlinx.coroutines.delay
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.random.Random
 
 /**
@@ -37,9 +36,21 @@ import kotlin.random.Random
  * one this build doesn't have) are decoded once.
  */
 object SidekickArt {
+    private class Scratch {
+        val eyesPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        val source = Rect()
+        val target = RectF()
+    }
+
+    private val scratch = ThreadLocal.withInitial { Scratch() }
+    private val colorFilters = ConcurrentHashMap<String, PorterDuffColorFilter>()
     private val cache = object : LruCache<String, Bitmap>(24 * 1024 * 1024) {
         override fun sizeOf(key: String, value: Bitmap) = value.byteCount
     }
+
+    private fun colorFilter(hex: String): PorterDuffColorFilter =
+        colorFilters.getOrPut(hex) { PorterDuffColorFilter(android.graphics.Color.parseColor(hex), PorterDuff.Mode.SRC_IN) }
 
     private fun layer(shape: String, part: String): Bitmap? {
         val key = "layer:$shape:$part"
@@ -60,16 +71,16 @@ object SidekickArt {
         val shape = SidekickLooks.shape(look.shape) ?: return
         val body = layer(shape.key, "body") ?: return
         val eyes = layer(shape.key, "eyes") ?: return
-        val color = android.graphics.Color.parseColor(SidekickLooks.color(look))
-        val target = RectF(0f, 0f, size, size)
-        val source = Rect(0, 0, body.width, body.height)
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-        canvas.drawBitmap(body, source, target, Paint(paint).apply { colorFilter = PorterDuffColorFilter(color, PorterDuff.Mode.SRC_IN) })
+        val s = scratch.get()!!
+        s.source.set(0, 0, body.width, body.height)
+        s.target.set(0f, 0f, size, size)
+        s.bodyPaint.colorFilter = colorFilter(SidekickLooks.color(look))
+        canvas.drawBitmap(body, s.source, s.target, s.bodyPaint)
         canvas.save()
         // Blinking: the eyes close toward their middle.
         val middle = (shape.eyes.top + shape.eyes.bottom) / 2f * size
         canvas.scale(1f, 1f - blink.coerceIn(0f, 1f) * 0.9f, 0f, middle)
-        canvas.drawBitmap(eyes, source, target, paint)
+        canvas.drawBitmap(eyes, s.source, s.target, s.eyesPaint)
         canvas.restore()
     }
 
@@ -100,23 +111,16 @@ object SidekickArt {
 @Composable
 fun SidekickFace(look: SidekickLook, size: Dp, modifier: Modifier = Modifier, live: Boolean = false) {
     if (live && ValueAnimator.areAnimatorsEnabled()) {
-        // A blink every five seconds or so; each face starts at its own point, so faces don't blink together.
-        val offset = remember { Random.nextInt(BLINK_EVERY) }
-        val blink = rememberInfiniteTransition(label = "blink").animateFloat(
-            initialValue = 0f,
-            targetValue = 0f,
-            animationSpec = infiniteRepeatable(
-                keyframes {
-                    durationMillis = BLINK_EVERY
-                    0f at BLINK_EVERY - 200 using LinearEasing
-                    1f at BLINK_EVERY - 120 using LinearEasing
-                    0f at BLINK_EVERY
-                },
-                RepeatMode.Restart,
-                StartOffset(offset),
-            ),
-            label = "blink",
-        )
+        // Sleep between blinks instead of running a continuous transition, so idle faces draw nothing for ~5 s.
+        val blink = remember { Animatable(0f) }
+        LaunchedEffect(Unit) {
+            delay(Random.nextLong(BLINK_EVERY.toLong()))
+            while (true) {
+                blink.animateTo(1f, tween(80, easing = LinearEasing))
+                blink.animateTo(0f, tween(120, easing = LinearEasing))
+                delay((BLINK_EVERY - 200).toLong())
+            }
+        }
         Canvas(modifier.size(size)) { drawIntoCanvas { SidekickArt.draw(it.nativeCanvas, this.size.minDimension, look, blink.value) } }
     } else {
         Canvas(modifier.size(size)) { drawIntoCanvas { SidekickArt.draw(it.nativeCanvas, this.size.minDimension, look) } }

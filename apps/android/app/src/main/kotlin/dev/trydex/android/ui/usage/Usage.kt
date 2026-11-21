@@ -751,7 +751,7 @@ private fun Models(report: UsageReport, visible: List<Subscription>, provider: S
     val choices = listOf<Subscription?>(null) + visible
     val chips = rememberLazyListState()
     LaunchedEffect(chosen?.id) { chips.animateScrollToItem(maxOf(0, choices.indexOf(chosen))) }
-    LazyRow(state = chips, modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    LazyRow(state = chips, modifier = Modifier.fillMaxWidth().testTag("usage-providers"), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         items(choices, key = { it?.id ?: "all" }) { s ->
             val tokens = if (s == null) sum { it.totalTokens } else report.tokens(s)?.totalTokens ?: 0
             FilterChip(

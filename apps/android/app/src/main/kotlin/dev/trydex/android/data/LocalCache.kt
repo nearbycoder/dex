@@ -15,6 +15,7 @@ import java.io.File
  */
 class LocalCache(private val dir: File) {
     private val chats = File(dir, "chats")
+    private val ioLock = Any()
 
     init {
         dir.mkdirs()
@@ -23,12 +24,18 @@ class LocalCache(private val dir: File) {
     private fun stateFile(userId: String) = File(dir, "state-${safe(userId)}.json")
     private val modelsFile = File(dir, "models.json")
 
-    private fun safe(name: String) = name.replace(Regex("[^A-Za-z0-9_-]"), "_")
+    private fun safe(name: String) = name.replace(SAFE_CHARS, "_")
 
     private fun write(file: File, text: String) {
-        val temp = File(file.parentFile, file.name + ".tmp")
-        temp.writeText(text)
-        temp.renameTo(file)
+        synchronized(ioLock) {
+            file.parentFile?.mkdirs()
+            val temp = File(file.parentFile, file.name + ".tmp")
+            temp.writeText(text)
+            if (!temp.renameTo(file)) {
+                file.delete()
+                if (!temp.renameTo(file)) temp.delete()
+            }
+        }
     }
 
     fun loadState(userId: String): DexState? = runCatching {
@@ -58,18 +65,26 @@ class LocalCache(private val dir: File) {
     fun saveChat(userId: String, sessionId: String, chat: SavedChat) = runCatching {
         val text = DexJson.encodeToString(SavedChat.serializer(), chat)
         if (text.length > MAX_CHAT_CHARS) return@runCatching
-        chats.mkdirs()
-        write(chatFile(userId, sessionId), text)
-        chats.listFiles()?.sortedByDescending { it.lastModified() }?.drop(MAX_CHATS)?.forEach { it.delete() }
+        synchronized(ioLock) {
+            chats.mkdirs()
+            write(chatFile(userId, sessionId), text)
+            chats.listFiles { file -> file.isFile && file.name.endsWith(".json") }
+                ?.sortedByDescending { it.lastModified() }
+                ?.drop(MAX_CHATS)
+                ?.forEach { it.delete() }
+        }
     }
 
     /** Signing out: everything but the model list (the same for everyone). */
     fun clear() {
-        dir.listFiles()?.forEach { if (it != modelsFile) it.deleteRecursively() }
+        synchronized(ioLock) {
+            dir.listFiles()?.forEach { if (it != modelsFile) it.deleteRecursively() }
+        }
     }
 
     companion object {
         const val MAX_CHATS = 8
         const val MAX_CHAT_CHARS = 1_500_000
+        private val SAFE_CHARS = Regex("[^A-Za-z0-9_-]")
     }
 }

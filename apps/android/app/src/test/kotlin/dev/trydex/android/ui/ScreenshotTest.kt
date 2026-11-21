@@ -1,6 +1,7 @@
 package dev.trydex.android.ui
 
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performScrollToNode
@@ -85,7 +86,7 @@ class ScreenshotTest(private val device: String, private val qualifiers: String)
         org.robolectric.RuntimeEnvironment.setQualifiers(qualifiers)
         if (device.endsWith("large-font")) org.robolectric.RuntimeEnvironment.setFontScale(1.3f)
         harness.setContent(rule)
-        rule.awaitText("Weekly metrics dashboard")
+        rule.awaitTag("chat-list")
     }
 
     @Test fun chats() {
@@ -93,7 +94,8 @@ class ScreenshotTest(private val device: String, private val qualifiers: String)
         shot("1-chats")
         // On a flip phone's cover screen the sidekicks push the first chat under the navigation bar: a tap at its
         // center would land on the bar, so bring it into view first.
-        rule.awaitText("Weekly metrics dashboard").performScrollTo().performClick()
+        rule.onNodeWithTag("chat-list").performScrollToNode(hasText("Weekly metrics dashboard"))
+        rule.awaitText("Weekly metrics dashboard").performClick()
         rule.awaitTag("openui-card-host")
         shot("2-chat-generated-ui")
         open(ChatList, Chat("chat-tests"))
@@ -197,7 +199,7 @@ class ScreenshotTest(private val device: String, private val qualifiers: String)
         rule.awaitTag("character-editor")
         rule.onNodeWithTag("character-look-muse").performScrollTo()
         shot("7g2-sidekick-looks")
-        rule.onNodeWithTag("look-cheeks-plain").performScrollTo()
+        rule.onNodeWithTag("look-color-peach").performScrollTo()
         shot("7g3-sidekick-parts")
         open(LibraryHome, Workspace, WorkspaceFile("/workspace/MEMORY.md"))
         rule.awaitTag("file-screen")
@@ -216,6 +218,8 @@ class ScreenshotTest(private val device: String, private val qualifiers: String)
         rule.awaitTag("service-commandcode").performScrollTo().performClick()
         rule.awaitTag("allowance-commandcode")
         shot("9b-usage-command-code")
+        // On short screens the chip row can sit above the visible part of the page.
+        rule.awaitTag("usage-providers").performScrollTo().performScrollToNode(hasTestTag("provider-openrouter"))
         rule.awaitTag("provider-openrouter").performClick()
         rule.awaitTag("account-openrouter").performScrollTo()
         shot("9c-usage-openrouter")
