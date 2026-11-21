@@ -24,7 +24,9 @@ export default defineConfig({
       {
         find: /^react-syntax-highlighter\/dist\/cjs\/styles\/prism(\/index\.js)?$/,
         replacement: fileURLToPath(new URL("./src/client/openui/shims/syntax-styles.ts", import.meta.url))
-      }
+      },
+      // react-day-picker only reads `enUS` from the barrel; aliasing avoids pulling all ~90 date-fns locales.
+      { find: /^date-fns\/locale$/, replacement: "date-fns/locale/en-US" }
     ]
   },
   plugins: [

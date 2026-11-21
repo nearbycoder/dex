@@ -85,7 +85,12 @@ export function DexProvider({ viewer, children }: { viewer: Viewer; children: Re
     },
     onMessage: (event) => {
       if (typeof event.data !== "string" || !event.data.startsWith('{"type":"dex.')) return
-      const message: unknown = JSON.parse(event.data)
+      let message: unknown
+      try {
+        message = JSON.parse(event.data)
+      } catch {
+        return
+      }
       if (isServerMessage(message)) for (const listener of listeners.current) listener(message)
     }
   })
@@ -178,7 +183,6 @@ const remember = (sessionId: string, transcript: TranscriptState) => {
   if (!transcript.loaded) return
   transcripts.delete(sessionId)
   transcripts.set(sessionId, transcript)
-  saveTranscript(sessionId, transcript)
   for (const oldest of transcripts.keys()) {
     if (transcripts.size <= MAX_CACHED_TRANSCRIPTS) break
     transcripts.delete(oldest)
@@ -256,7 +260,15 @@ export function useTranscript(sessionId: string) {
     if (tagged.id === sessionId) remember(sessionId, tagged.transcript)
   }, [sessionId, tagged])
 
-  const oldest = state.entries.reduce((min, entry) => Math.min(min, entry.id), Number.POSITIVE_INFINITY)
+  // IndexedDB only stores committed entries and artifacts; skip scheduling writes on every streamed token.
+  useEffect(() => {
+    if (tagged.id === sessionId && tagged.transcript.loaded) saveTranscript(sessionId, tagged.transcript)
+  }, [sessionId, tagged.id, tagged.transcript.loaded, tagged.transcript.entries, tagged.transcript.artifacts])
+
+  const oldest = useMemo(
+    () => state.entries.reduce((min, entry) => Math.min(min, entry.id), Number.POSITIVE_INFINITY),
+    [state.entries]
+  )
   const loadEarlier = useCallback(async () => {
     if (!Number.isFinite(oldest)) return
     const { entries, more } = await stub.chatHistory(sessionId, oldest)

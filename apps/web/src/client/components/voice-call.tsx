@@ -1,7 +1,7 @@
 import { Mic, MicOff, PhoneOff } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { CharacterAvatar } from "~/client/components/agent-avatar"
-import { type TranscriptState, displayItems } from "~/client/lib/transcript"
+import { type DisplayItem, displayItemsWithStreaming, recordedDisplayItems, type TranscriptState } from "~/client/lib/transcript"
 import { type CallReply, type CallSnapshot, VoiceCall } from "~/client/voice/call"
 import type { CharacterProfile } from "~/shared/characters"
 import { voiceOf } from "~/shared/voice"
@@ -16,8 +16,8 @@ export function startCall(character: CharacterProfile, send: (text: string) => P
 }
 
 /** The reply after your latest message, as the call reads it: its text so far, and whether it's over. */
-const latestReply = (transcript: TranscriptState): CallReply | null => {
-  const items = displayItems(transcript)
+const latestReply = (recorded: ReadonlyArray<DisplayItem>, transcript: TranscriptState): CallReply | null => {
+  const items = displayItemsWithStreaming(recorded, transcript.streaming)
   const lastUser = items.findLastIndex((item) => item.kind === "user")
   const reply = items.slice(lastUser + 1).find((item) => item.kind === "assistant")
   if (!reply || reply.kind !== "assistant") return null
@@ -42,12 +42,19 @@ export function VoiceCallPanel({ call, character, transcript, onEnd }: { call: V
   const [snapshot, setSnapshot] = useState(call.state)
   useEffect(() => call.subscribe(setSnapshot), [call])
 
-  const reply = useMemo(() => latestReply(transcript), [transcript])
+  const recorded = useMemo(() => recordedDisplayItems(transcript.entries), [transcript.entries])
+  const reply = useMemo(() => latestReply(recorded, transcript), [recorded, transcript.streaming, transcript.running])
   useEffect(() => call.reply(reply), [call, reply])
 
-  // Their face grows a little with their voice.
+  const { phase } = snapshot
+
+  // Their face grows a little with their voice; only run the animation loop while they're speaking.
   const face = useRef<HTMLDivElement>(null)
   useEffect(() => {
+    if (phase !== "speaking") {
+      if (face.current) face.current.style.transform = ""
+      return
+    }
     let frame = 0
     const tick = () => {
       if (face.current) face.current.style.transform = `scale(${1 + call.level() * 0.12})`
@@ -55,12 +62,11 @@ export function VoiceCallPanel({ call, character, transcript, onEnd }: { call: V
     }
     frame = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(frame)
-  }, [call])
+  }, [call, phase])
 
   // Leaving the chat ends the call.
   useEffect(() => () => call.end(), [call])
 
-  const { phase } = snapshot
   const over = phase === "ended" || phase === "failed"
   return (
     <div className="absolute inset-0 z-30 flex flex-col items-center bg-zinc-950/95 px-6 pt-[max(2rem,env(safe-area-inset-top))] pb-[max(1.5rem,env(safe-area-inset-bottom))] backdrop-blur-sm">

@@ -399,13 +399,13 @@ function McpEditor() {
           <div className="sticky bottom-0 z-10 -mx-4 flex flex-wrap items-center gap-2 border-t border-zinc-900 bg-zinc-950/90 px-4 py-3 backdrop-blur">
             <button
               type="submit"
-              disabled={saving || !draft.name.trim() || !draft.url.trim()}
+              disabled={saving || !draft.name.trim() || (draft.kind === "local" ? !draft.command.trim() : !draft.url.trim())}
               className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:bg-zinc-800 disabled:text-zinc-500"
             >
               {saving && <LoaderCircle className="size-4 animate-spin" />}
               {saving
                 ? "Connecting…"
-                : draft.auth === "oauth" && (isNew || existing?.status !== "ready")
+                : draft.kind === "remote" && draft.auth === "oauth" && (isNew || existing?.status !== "ready")
                   ? "Save and sign in"
                   : isNew
                     ? "Add and connect"

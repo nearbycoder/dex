@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router"
 import { BarChart3, ChevronRight, RefreshCw, Table2 } from "lucide-react"
-import { type ReactNode, useCallback, useLayoutEffect, useRef, useState } from "react"
+import { type ReactNode, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { InfoTip } from "~/client/components/info-tip"
 import { ModelLogo } from "~/client/components/model-logo"
 import { UsageSkeleton } from "~/client/components/skeleton"
@@ -118,13 +118,15 @@ type Subscription = (typeof SUBSCRIPTIONS)[number]
 
 const tokensOf = (report: UsageReport, subscription: Subscription): ClineUsage | undefined => report[subscription.key]
 
+const compactIntFmt = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 0 })
+const compactDecFmt = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 })
+const shortDateUtcFmt = new Intl.DateTimeFormat("en", { month: "short", day: "numeric", timeZone: "UTC" })
+const shortDateLocalFmt = new Intl.DateTimeFormat("en", { month: "short", day: "numeric" })
+const runDateFmt = new Intl.DateTimeFormat("en", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
+
 const usd = (value: number) => (value === 0 ? "$0.00" : value < 0.01 ? "<$0.01" : value < 100 ? `$${value.toFixed(2)}` : `$${Math.round(value).toLocaleString()}`)
 
-const compact = (value: number) =>
-  Intl.NumberFormat("en", {
-    notation: "compact",
-    maximumFractionDigits: value < 1000 ? 0 : 1
-  }).format(value)
+const compact = (value: number) => (value < 1000 ? compactIntFmt : compactDecFmt).format(value)
 
 /** How a subscription's price reads: its monthly fee, or what pays for it. */
 const planOf = (subscription: Subscription) =>
@@ -133,12 +135,7 @@ const planOf = (subscription: Subscription) =>
 /** A model's name, or its id without the subscription and maker prefixes if this app's list doesn't have it (yet). */
 const modelName = (id: string) => findModel(id)?.name ?? id.split("/").pop()!
 
-const shortDate = (date: string) =>
-  new Date(`${date}T00:00:00Z`).toLocaleDateString("en", {
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC"
-  })
+const shortDate = (date: string) => shortDateUtcFmt.format(new Date(`${date}T00:00:00Z`))
 
 const Swatch = ({ color, className = "size-2.5" }: { color: string; className?: string }) => (
   <span className={`shrink-0 rounded-sm ${className}`} style={{ background: color }} />
@@ -238,24 +235,45 @@ function DailyChart({ daily, shown, through }: { daily: ReadonlyArray<DailySpend
   const pad = { top: 8, right: 4, bottom: 22, left: 44 }
   const plotW = Math.max(1, width - pad.left - pad.right)
   const plotH = height - pad.top - pad.bottom
-  const totals = daily.map((day) => shown.reduce((sum, item) => sum + (day[item.key] ?? 0), 0))
-  const max = Math.max(...totals, 0)
-  // With nothing to draw, a $0–$1 axis instead of ticks too small to tell apart.
-  const niceMax =
-    max === 0
-      ? 1
-      : (() => {
-          const step = 10 ** Math.floor(Math.log10(max))
-          return Math.ceil(max / step) * step
-        })()
-  const ticks = [0, niceMax / 2, niceMax]
-  // Days still to come in the period (the rest of this month) keep their place on the axis.
-  const last = daily.at(-1)?.date
-  const ahead = last
-    ? Array.from({ length: Math.max(0, (through ?? daily.length) - daily.length) }, (_, index) =>
-        new Date(Date.parse(`${last}T00:00:00Z`) + (index + 1) * 86_400_000).toISOString().slice(0, 10)
-      )
-    : []
+
+  // Precompute bars and axis independently of pointer hover so scrubbing across columns stays cheap.
+  const layout = useMemo(() => {
+    const totals: number[] = []
+    const bars = daily.map((day) => {
+      let base = 0
+      const segments: Array<{ series: Series; value: number; from: number }> = []
+      for (const item of shown) {
+        const value = day[item.key] ?? 0
+        if (value > 0) {
+          segments.push({ series: item, value, from: base })
+          base += value
+        }
+      }
+      totals.push(base)
+      return { date: day.date, label: shortDate(day.date), segments }
+    })
+    const max = Math.max(...totals, 0)
+    // With nothing to draw, a $0–$1 axis instead of ticks too small to tell apart.
+    const niceMax =
+      max === 0
+        ? 1
+        : (() => {
+            const step = 10 ** Math.floor(Math.log10(max))
+            return Math.ceil(max / step) * step
+          })()
+    const ticks = [0, niceMax / 2, niceMax]
+    // Days still to come in the period (the rest of this month) keep their place on the axis.
+    const last = daily.at(-1)?.date
+    const ahead = last
+      ? Array.from({ length: Math.max(0, (through ?? daily.length) - daily.length) }, (_, index) => {
+          const date = new Date(Date.parse(`${last}T00:00:00Z`) + (index + 1) * 86_400_000).toISOString().slice(0, 10)
+          return { date, label: shortDate(date) }
+        })
+      : []
+    return { totals, bars, niceMax, ticks, ahead }
+  }, [daily, shown, through])
+
+  const { totals, bars, niceMax, ticks, ahead } = layout
   const columns = daily.length + ahead.length
   const slot = plotW / Math.max(1, columns)
   const barW = Math.max(2, Math.min(22, slot * 0.6))
@@ -273,25 +291,16 @@ function DailyChart({ daily, shown, through }: { daily: ReadonlyArray<DailySpend
             </text>
           </g>
         ))}
-        {daily.map((day, index) => {
+        {bars.map((bar, index) => {
           const x = pad.left + index * slot + (slot - barW) / 2
-          let base = 0
-          const segments = shown
-            .map((item) => {
-              const value = day[item.key] ?? 0
-              const segment = { series: item, value, from: base }
-              base += value
-              return segment
-            })
-            .filter((segment) => segment.value > 0)
           return (
-            <g key={day.date} onMouseEnter={() => setHover(index)} onMouseLeave={() => setHover(null)}>
+            <g key={bar.date} onMouseEnter={() => setHover(index)} onMouseLeave={() => setHover(null)}>
               {/* Hit target: the whole column, bigger than the mark. */}
               <rect x={pad.left + index * slot} y={pad.top} width={slot} height={plotH} fill="transparent" />
-              {segments.map((segment, segmentIndex) => {
+              {bar.segments.map((segment, segmentIndex) => {
                 const top = y(segment.from + segment.value)
                 const bottom = y(segment.from)
-                const isTop = segmentIndex === segments.length - 1
+                const isTop = segmentIndex === bar.segments.length - 1
                 // 2px surface gap between stacked fills.
                 const h = Math.max(1, bottom - top - (segmentIndex > 0 ? 2 : 0))
                 return (
@@ -309,18 +318,18 @@ function DailyChart({ daily, shown, through }: { daily: ReadonlyArray<DailySpend
               })}
               {index % labelEvery === 0 && (
                 <text x={x + barW / 2} y={height - 6} textAnchor="middle" className="fill-zinc-500 text-[10px]">
-                  {shortDate(day.date)}
+                  {bar.label}
                 </text>
               )}
             </g>
           )
         })}
-        {ahead.map((date, offset) => {
+        {ahead.map((day, offset) => {
           const index = daily.length + offset
           return (
             index % labelEvery === 0 && (
-              <text key={date} x={pad.left + index * slot + slot / 2} y={height - 6} textAnchor="middle" className="fill-zinc-700 text-[10px]">
-                {shortDate(date)}
+              <text key={day.date} x={pad.left + index * slot + slot / 2} y={height - 6} textAnchor="middle" className="fill-zinc-700 text-[10px]">
+                {day.label}
               </text>
             )
           )
@@ -333,7 +342,7 @@ function DailyChart({ daily, shown, through }: { daily: ReadonlyArray<DailySpend
             left: Math.min(Math.max(0, pad.left + hover * slot - 70), width - 196)
           }}
         >
-          <div className="mb-1.5 font-medium text-zinc-200">{shortDate(daily[hover].date)}</div>
+          <div className="mb-1.5 font-medium text-zinc-200">{bars[hover]!.label}</div>
           {shown.map((item) => (
             <div key={item.key} className="flex items-center gap-2 py-0.5 text-zinc-400">
               <Swatch color={item.color} className="size-2" />
@@ -506,7 +515,7 @@ const resetsIn = (iso: string) => {
   const hours = ms / 3_600_000
   if (hours < 1) return `resets in ${Math.max(1, Math.round(ms / 60_000))} min`
   if (hours < 48) return `resets in ${Math.round(hours)} h`
-  return `resets ${new Date(iso).toLocaleDateString("en", { month: "short", day: "numeric" })}`
+  return `resets ${shortDateLocalFmt.format(new Date(iso))}`
 }
 
 function OpenCodeWindowMeter({ label, window: value }: { label: string; window: OpenCodeWindow }) {
@@ -885,12 +894,7 @@ function MachinesTab({ report }: { report: UsageReport }) {
                 {boat.runs.map((run) => (
                   <tr key={run.startedAt} className="border-t border-zinc-800/70">
                     <td className="px-4 py-2 whitespace-nowrap">
-                      {new Date(run.startedAt).toLocaleString("en", {
-                        month: "short",
-                        day: "numeric",
-                        hour: "numeric",
-                        minute: "2-digit"
-                      })}
+                      {runDateFmt.format(new Date(run.startedAt))}
                       {run.endedAt === null && <span className="ml-1.5 text-xs text-emerald-400">running</span>}
                     </td>
                     <td className="py-2 pl-4 text-zinc-400">{run.size}</td>

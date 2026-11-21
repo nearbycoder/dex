@@ -20,9 +20,13 @@ export function useCachedFetch<T>(key: string | null, load: () => Promise<T>, en
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const current = useRef(key)
+  // Monotonic sequence so an older overlapping fetch never overwrites a newer response or optimistic update.
+  const seq = useRef(0)
 
   useEffect(() => {
     current.current = key
+    seq.current++
+    setLoading(false)
     setState(key ? (cache.get(key) as T | undefined) : undefined)
     setError(null)
   }, [key])
@@ -32,23 +36,29 @@ export function useCachedFetch<T>(key: string | null, load: () => Promise<T>, en
       if (!key) return
       const value = typeof next === "function" ? (next as (current: T | undefined) => T)(cache.get(key) as T | undefined) : next
       cache.set(key, value)
-      if (current.current === key) setState(value)
+      if (current.current === key) {
+        seq.current++
+        setLoading(false)
+        setState(value)
+      }
     },
     [key]
   )
 
   const refresh = useCallback(async () => {
-    if (!key) return
+    if (!key || current.current !== key) return
+    const id = ++seq.current
     setLoading(true)
     setError(null)
     try {
       const value = await load()
+      if (id !== seq.current) return
       cache.set(key, value)
       if (current.current === key) setState(value)
     } catch (cause) {
-      if (current.current === key) setError(cause instanceof Error ? cause.message : String(cause))
+      if (id === seq.current && current.current === key) setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
-      if (current.current === key) setLoading(false)
+      if (id === seq.current && current.current === key) setLoading(false)
     }
   }, [key, load])
 

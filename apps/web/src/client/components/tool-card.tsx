@@ -1,5 +1,4 @@
 import type { ToolCall, ToolResultMessage } from "@earendil-works/pi-ai"
-import { Predicate } from "effect"
 import { Link, useParams } from "@tanstack/react-router"
 import {
   BookOpen,
@@ -48,11 +47,11 @@ const icons: Record<string, LucideIcon> = {
 const summaryKeys = ["command", "path", "query", "url", "prompt", "name", "id", "operation"]
 
 export const summarize = (args: unknown) => {
-  if (!Predicate.isObject(args)) return ""
+  if (typeof args !== "object" || args === null) return ""
   const record = args as Record<string, unknown>
   for (const key of summaryKeys) {
     const value = record[key]
-    if (Predicate.isString(value) && value) return value.split("\n")[0] ?? ""
+    if (typeof value === "string" && value) return value.split("\n")[0] ?? ""
   }
   return JSON.stringify(args).slice(0, 120)
 }
@@ -194,18 +193,20 @@ export function ToolCard({ call, result, live }: { call: ToolCall; result?: Tool
         </pre>
       )}
       <Collapse open={open}>
-        <div className="space-y-2 border-t border-zinc-800 px-3 py-2">
-          <pre className="scrollbar-thin max-h-48 overflow-auto font-mono whitespace-pre-wrap text-zinc-400">
-            {JSON.stringify(call.arguments, null, 2)}
-          </pre>
-          {output && (
-            <pre
-              className={`scrollbar-thin max-h-96 overflow-auto rounded bg-zinc-950 p-2 font-mono whitespace-pre-wrap ${failed ? "text-red-300" : "text-zinc-300"}`}
-            >
-              {output}
+        {() => (
+          <div className="space-y-2 border-t border-zinc-800 px-3 py-2">
+            <pre className="scrollbar-thin max-h-48 overflow-auto font-mono whitespace-pre-wrap text-zinc-400">
+              {JSON.stringify(call.arguments, null, 2)}
             </pre>
-          )}
-        </div>
+            {output && (
+              <pre
+                className={`scrollbar-thin max-h-96 overflow-auto rounded bg-zinc-950 p-2 font-mono whitespace-pre-wrap ${failed ? "text-red-300" : "text-zinc-300"}`}
+              >
+                {output}
+              </pre>
+            )}
+          </div>
+        )}
       </Collapse>
     </div>
   )

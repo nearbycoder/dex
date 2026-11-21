@@ -17,8 +17,16 @@ function useDraftAttachments() {
   }, [skipped])
   const live = useRef(drafts)
   live.current = drafts
-  // Object URLs for thumbnails, freed when they're no longer shown.
-  useEffect(() => () => live.current.forEach((draft) => draft.preview && URL.revokeObjectURL(draft.preview)), [])
+  const uploads = useRef(new Map<string, AbortController>())
+  // Object URLs for thumbnails and in-flight uploads, freed when they're no longer shown.
+  useEffect(
+    () => () => {
+      for (const controller of uploads.current.values()) controller.abort()
+      uploads.current.clear()
+      live.current.forEach((draft) => draft.preview && URL.revokeObjectURL(draft.preview))
+    },
+    []
+  )
 
   const update = (id: string, patch: Partial<DraftAttachment>) =>
     setDrafts((list) => list.map((draft) => (draft.id === id ? { ...draft, ...patch } : draft)))
@@ -38,25 +46,39 @@ function useDraftAttachments() {
     if (added.length === 0) return
     setDrafts((list) => [...list, ...added.map(({ file: _file, ...draft }) => draft)])
     for (const draft of added) {
-      uploadAttachment(draft.file).then(
-        (attachment) => update(draft.id, { status: "ready", attachment }),
-        (error: unknown) => update(draft.id, { status: "error", error: error instanceof Error ? error.message : String(error) })
+      const controller = new AbortController()
+      uploads.current.set(draft.id, controller)
+      uploadAttachment(draft.file, controller.signal).then(
+        (attachment) => {
+          uploads.current.delete(draft.id)
+          if (!controller.signal.aborted) update(draft.id, { status: "ready", attachment })
+        },
+        (error: unknown) => {
+          uploads.current.delete(draft.id)
+          if (!controller.signal.aborted) update(draft.id, { status: "error", error: error instanceof Error ? error.message : String(error) })
+        }
       )
     }
   }
 
-  const remove = (id: string) =>
+  const remove = (id: string) => {
+    uploads.current.get(id)?.abort()
+    uploads.current.delete(id)
     setDrafts((list) => {
       const draft = list.find((each) => each.id === id)
       if (draft?.preview) URL.revokeObjectURL(draft.preview)
       return list.filter((each) => each.id !== id)
     })
+  }
 
-  const clear = () =>
+  const clear = () => {
+    for (const controller of uploads.current.values()) controller.abort()
+    uploads.current.clear()
     setDrafts((list) => {
       list.forEach((draft) => draft.preview && URL.revokeObjectURL(draft.preview))
       return []
     })
+  }
 
   return { drafts, add, remove, clear, skipped }
 }

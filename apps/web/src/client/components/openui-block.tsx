@@ -1,5 +1,5 @@
 import { type ActionEvent, BuiltinActionType, type McpClientLike, type OpenUIError, type ParseResult, Renderer } from "@openuidev/react-lang"
-import { ThemeProvider } from "@openuidev/react-ui"
+import { ThemeProvider } from "@openuidev/react-ui/ThemeProvider"
 import { useNavigate } from "@tanstack/react-router"
 import { Check, ShieldAlert, Wrench, X } from "lucide-react"
 import { useContext, useEffect, useMemo, useRef, useState } from "react"
@@ -95,6 +95,9 @@ const programProblems = (errors: ReadonlyArray<OpenUIError>) =>
   errors
     .filter((item) => (item.source === "parser" || item.source === "runtime") && (item as { severity?: string }).severity !== "warning")
     .map((item) => [item.statementId && `${item.statementId}:`, item.component && `${item.component}`, item.message, item.hint && `(${item.hint})`].filter(Boolean).join(" "))
+
+// Stable empty theme objects: ThemeProvider allocates a fresh `{}` per render when omitted, rewriting `<style>` on every streamed token.
+const EMPTY_THEME = {}
 
 /**
  * Renders a chat's render_ui program, live while its arguments stream in. Its
@@ -257,7 +260,7 @@ export default function OpenUIBlock(props: {
   const showProblems = !props.streaming && problems.length > 0
 
   return (
-    <ThemeProvider mode="dark">
+    <ThemeProvider mode="dark" lightTheme={EMPTY_THEME} darkTheme={EMPTY_THEME}>
       <div ref={root} className="dex-openui my-3 w-full max-w-full overflow-hidden rounded-xl [contain:inline-size_paint]">
         {!ready ? (
           <div className="h-24 animate-pulse rounded-xl bg-zinc-900" />

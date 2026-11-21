@@ -87,30 +87,43 @@ async function synthesize(model: ort.InferenceSession, utterance: Utterance, voi
   const count = utterance.ids.length
   const integers = (values: readonly number[]) => new ort.Tensor("int64", BigInt64Array.from(values, BigInt), [1, count])
   const scalar = (value: number) => new ort.Tensor("float32", Float32Array.of(value), [1])
-  const output = await model.run({
+  const inputs = {
     tokens: integers(utterance.ids),
     stress: integers(utterance.stress),
     voice: new ort.Tensor("int64", BigInt64Array.of(BigInt(Math.max(0, VOICES.indexOf(voice)))), [1]),
     speed: scalar(speed),
     pitch_shift: scalar(0),
     pitch_range: scalar(1)
-  })
-  const samples = new Float32Array(output.audio!.data as Float32Array)
-  limitPeak(samples)
-  return samples
+  }
+  let output: ort.InferenceSession.OnnxValueMapType | undefined
+  try {
+    output = await model.run(inputs)
+    const samples = new Float32Array(output.audio!.data as Float32Array)
+    limitPeak(samples)
+    return samples
+  } finally {
+    // Free WASM-backed tensors after every utterance so long calls don't accumulate memory.
+    for (const tensor of Object.values(inputs)) tensor.dispose()
+    if (output) for (const tensor of Object.values(output)) tensor.dispose()
+  }
 }
 
-self.onmessage = async ({ data }: MessageEvent<TtsRequest>) => {
-  const id = data.type === "speak" ? data.id : undefined
-  try {
-    const model = await load()
-    if (data.type === "load") return post({ type: "ready" })
-    for (const utterance of data.utterances) {
-      const samples = await synthesize(model, utterance, data.voice, data.speed ?? 1)
-      post({ type: "audio", id: data.id, samples }, [samples.buffer])
+// ONNX Runtime's WASM session rejects concurrent `run()` calls ("Session already started"), so serialize work.
+let queue: Promise<void> = Promise.resolve()
+
+self.onmessage = ({ data }: MessageEvent<TtsRequest>) => {
+  queue = queue.then(async () => {
+    const id = data.type === "speak" ? data.id : undefined
+    try {
+      const model = await load()
+      if (data.type === "load") return post({ type: "ready" })
+      for (const utterance of data.utterances) {
+        const samples = await synthesize(model, utterance, data.voice, data.speed ?? 1)
+        post({ type: "audio", id: data.id, samples }, [samples.buffer])
+      }
+      post({ type: "done", id: data.id })
+    } catch (error) {
+      post({ type: "error", id, message: error instanceof Error ? error.message : String(error) })
     }
-    post({ type: "done", id: data.id })
-  } catch (error) {
-    post({ type: "error", id, message: error instanceof Error ? error.message : String(error) })
-  }
+  })
 }

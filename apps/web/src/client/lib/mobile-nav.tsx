@@ -1,5 +1,5 @@
 import { Menu } from "lucide-react"
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
 import { haptic } from "./haptics"
 import { useUpdateAvailable } from "./updates"
 
@@ -39,18 +39,28 @@ export const useNav = () => useContext(NavContext)
  */
 export function useNavState(): Nav {
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [collapsed, setCollapsed] = useState(() => typeof localStorage !== "undefined" && localStorage.getItem(COLLAPSED_KEY) === "1")
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return typeof localStorage !== "undefined" && localStorage.getItem(COLLAPSED_KEY) === "1"
+    } catch {
+      return false
+    }
+  })
 
   const toggleCollapsed = useCallback(() => {
     setCollapsed((value) => {
-      localStorage.setItem(COLLAPSED_KEY, value ? "0" : "1")
+      try {
+        localStorage.setItem(COLLAPSED_KEY, value ? "0" : "1")
+      } catch {}
       return !value
     })
   }, [])
 
   const show = useCallback(() => {
     if (matchMedia(WIDE).matches) {
-      localStorage.setItem(COLLAPSED_KEY, "0")
+      try {
+        localStorage.setItem(COLLAPSED_KEY, "0")
+      } catch {}
       setCollapsed(false)
     } else {
       setDrawerOpen(true)
@@ -147,7 +157,10 @@ export function useNavState(): Nav {
     }
   }, [])
 
-  return { drawerOpen, collapsed, show, closeDrawer, toggleCollapsed, holdOpen, takeHold }
+  return useMemo(
+    () => ({ drawerOpen, collapsed, show, closeDrawer, toggleCollapsed, holdOpen, takeHold }),
+    [drawerOpen, collapsed, show, closeDrawer, toggleCollapsed, holdOpen, takeHold]
+  )
 }
 
 /**

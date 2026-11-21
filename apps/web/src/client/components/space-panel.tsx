@@ -108,9 +108,9 @@ export function SpaceUpdates({ updates }: { updates: ReadonlyArray<ParsedSpaceUp
   const [expanded, setExpanded] = useState<string | null>(null)
   return (
     <div className="space-y-1">
-      {updates.map((update) => {
+      {updates.map((update, index) => {
         const outcome = OUTCOME[update.outcome]
-        const key = `${update.threadId}:${update.outcome}`
+        const key = `${update.threadId}:${update.outcome}:${index}`
         return (
           <div key={key} className="animate-fade">
             <div className="flex items-center gap-2 text-xs text-zinc-500">
@@ -252,7 +252,7 @@ export function SpacePanel({
       </div>
       <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
         {picked ? (
-          <ThreadPeek thread={picked.thread} status={picked.status} onBack={() => onSelect(null)} />
+          <ThreadPeek key={picked.thread.id} thread={picked.thread} status={picked.status} onBack={() => onSelect(null)} />
         ) : tab === "threads" ? (
           <ThreadList threads={threads} onSelect={onSelect} />
         ) : (
@@ -307,13 +307,17 @@ function ThreadPeek({ thread, status, onBack }: { thread: SessionMeta; status: T
   const { stub } = useDex()
   const [message, setMessage] = useState("")
   const [sending, setSending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const send = async () => {
     const text = message.trim()
     if (!text) return
     setSending(true)
+    setError(null)
     try {
       await stub.sendMessage(thread.id, text)
       setMessage("")
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
       setSending(false)
     }
@@ -381,6 +385,7 @@ function ThreadPeek({ thread, status, onBack }: { thread: SessionMeta; status: T
           <Send className="size-4" />
         </button>
       </form>
+      {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
     </div>
   )
 }

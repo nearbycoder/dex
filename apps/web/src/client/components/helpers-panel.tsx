@@ -39,7 +39,8 @@ export function HelpersPanel({ sessionId }: { sessionId: string }) {
   const helpers = (state?.vmHelpers ?? []).filter((helper) => helper.chatId === sessionId).sort((a, b) => a.vm - b.vm)
   const working = helpers.filter((helper) => helper.status === "working")
   const latest = useLatestActivity(working.map((helper) => vmKeyFor(sessionId, helper.vm)))
-  useTick(working.length > 0)
+  // Elapsed durations only appear inside the expanded list.
+  useTick(open && working.length > 0)
   // Shown while helpers work; once they're all done their reports are in the chat.
   if (!working.length) return null
 

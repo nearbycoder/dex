@@ -10,7 +10,6 @@ import { ModelPicker } from "~/client/components/model-picker"
 import { EditorSkeleton } from "~/client/components/skeleton"
 import { useDex } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
-import { AGENT_COLORS } from "~/shared/agents"
 import { CHARACTER_TEMPLATES, type CharacterDraft, characterMemoryPath, NOTIFY_LABELS, NOTIFY_LEVELS } from "~/shared/characters"
 import { DEFAULT_MODEL_ID, DEFAULT_THINKING } from "~/shared/models"
 import { ask } from "~/client/components/confirm-dialog"
@@ -53,16 +52,20 @@ function Field({ label, hint, children, as = "label" }: { label: string; hint?: 
 /** A picture as a small square data: URL (center-cropped), under the 48 KB a character's picture may be. */
 async function avatarDataUrl(file: File): Promise<string> {
   const bitmap = await createImageBitmap(file)
-  const side = Math.min(bitmap.width, bitmap.height)
-  for (const [size, quality] of [[256, 0.85], [192, 0.8], [160, 0.7], [128, 0.6]] as const) {
-    const canvas = document.createElement("canvas")
-    canvas.width = canvas.height = size
-    canvas.getContext("2d")!.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, size, size)
-    const url = canvas.toDataURL("image/webp", quality)
-    const data = url.startsWith("data:image/webp") ? url : canvas.toDataURL("image/jpeg", quality)
-    if (data.length < 63_000) return data
+  try {
+    const side = Math.min(bitmap.width, bitmap.height)
+    for (const [size, quality] of [[256, 0.85], [192, 0.8], [160, 0.7], [128, 0.6]] as const) {
+      const canvas = document.createElement("canvas")
+      canvas.width = canvas.height = size
+      canvas.getContext("2d")!.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, size, size)
+      const url = canvas.toDataURL("image/webp", quality)
+      const data = url.startsWith("data:image/webp") ? url : canvas.toDataURL("image/jpeg", quality)
+      if (data.length < 63_000) return data
+    }
+    throw new Error("That picture is too detailed to keep small. Try another.")
+  } finally {
+    bitmap.close()
   }
-  throw new Error("That picture is too detailed to keep small. Try another.")
 }
 
 /** Keyed by id: moving from one character (or “new”) to another starts a fresh draft instead of keeping the last one. */
@@ -178,7 +181,7 @@ function CharacterEditor() {
                       template === key ? "border-emerald-600/70 bg-emerald-950/40 text-emerald-100" : "border-zinc-800 text-zinc-300 hover:border-zinc-700 hover:text-zinc-100"
                     }`}
                   >
-                    <CharacterAvatar character={{ ...preset, image: null }} size={24} />
+                    <CharacterAvatar character={{ ...preset, image: null }} size={24} mood="still" />
                     {preset.name}
                   </button>
                 ))}

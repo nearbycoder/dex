@@ -31,15 +31,29 @@ const FRAME = { width: 960, height: 540 }
 type Point = { x: number; y: number }
 
 /** The status bar's height on an edge-to-edge phone (the app pads its top by it). */
-const safeTop = () => Number.parseFloat(getComputedStyle(document.querySelector(".dex-app") ?? document.body).paddingTop) || 0
+const measureSafeTop = () => Number.parseFloat(getComputedStyle(document.querySelector(".dex-app") ?? document.body).paddingTop) || 0
 
 const viewport = () => ({ width: window.innerWidth, height: window.visualViewport?.height ?? window.innerHeight })
 
-const clamp = (point: Point, width: number, height: number): Point => {
+const clamp = (point: Point, width: number, height: number, topInset: number): Point => {
   const { width: vw, height: vh } = viewport()
   return {
     x: Math.min(Math.max(MARGIN, point.x), Math.max(MARGIN, vw - width - MARGIN)),
-    y: Math.min(Math.max(TOP + safeTop(), point.y), Math.max(TOP, vh - height - MARGIN))
+    y: Math.min(Math.max(TOP + topInset, point.y), Math.max(TOP, vh - height - MARGIN))
+  }
+}
+
+const saveStorage = (key: string, value: string) => {
+  try {
+    localStorage.setItem(key, value)
+  } catch {}
+}
+
+const readStorage = (key: string) => {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
   }
 }
 
@@ -57,12 +71,19 @@ const savedPoint = (key: string): Point | null => {
  * that didn't move (so the same element can be dragged and tapped).
  */
 function useDrag(key: string, width: number, height: number, fallback: () => Point, onTap?: () => void) {
-  const [point, setPoint] = useState<Point>(() => clamp(savedPoint(key) ?? fallback(), width, height))
+  // Cached across pointermove events so dragging never triggers forced style recalculations.
+  const topInset = useRef<number | null>(null)
+  const safeTop = () => (topInset.current ??= measureSafeTop())
+  const [point, setPoint] = useState<Point>(() => clamp(savedPoint(key) ?? fallback(), width, height, safeTop()))
   const drag = useRef<{ id: number; start: Point; origin: Point; moved: boolean } | null>(null)
 
   // Stay on screen when the box grows, the phone rotates, or the keyboard opens.
   useEffect(() => {
-    const fit = () => setPoint((current) => clamp(current, width, height))
+    const fit = () => {
+      const inset = measureSafeTop()
+      topInset.current = inset
+      setPoint((current) => clamp(current, width, height, inset))
+    }
     fit()
     addEventListener("resize", fit)
     window.visualViewport?.addEventListener("resize", fit)
@@ -91,7 +112,7 @@ function useDrag(key: string, width: number, height: number, fallback: () => Poi
       const dy = event.clientY - current.start.y
       if (!current.moved && Math.hypot(dx, dy) < 6) return
       current.moved = true
-      setPoint(clamp({ x: current.origin.x + dx, y: current.origin.y + dy }, width, height))
+      setPoint(clamp({ x: current.origin.x + dx, y: current.origin.y + dy }, width, height, safeTop()))
     },
     [width, height]
   )
@@ -101,7 +122,7 @@ function useDrag(key: string, width: number, height: number, fallback: () => Poi
       const current = drag.current
       if (!current || current.id !== event.pointerId) return
       drag.current = null
-      if (current.moved) setPoint((final) => (localStorage.setItem(key, JSON.stringify(final)), final))
+      if (current.moved) setPoint((final) => (saveStorage(key, JSON.stringify(final)), final))
       else onTap?.()
     },
     [key, onTap]
@@ -113,7 +134,7 @@ function useDrag(key: string, width: number, height: number, fallback: () => Poi
       const current = drag.current
       if (!current || current.id !== event.pointerId) return
       drag.current = null
-      if (current.moved) setPoint((final) => (localStorage.setItem(key, JSON.stringify(final)), final))
+      if (current.moved) setPoint((final) => (saveStorage(key, JSON.stringify(final)), final))
     },
     [key]
   )
@@ -121,9 +142,9 @@ function useDrag(key: string, width: number, height: number, fallback: () => Poi
   /** Moves the box; `size` when it's changing size in the same step (the render hasn't caught up yet). */
   const place = useCallback(
     (next: Point, save = false, size?: { width: number; height: number }) => {
-      const fitted = clamp(next, size?.width ?? width, size?.height ?? height)
+      const fitted = clamp(next, size?.width ?? width, size?.height ?? height, safeTop())
       setPoint(fitted)
-      if (save) localStorage.setItem(key, JSON.stringify(fitted))
+      if (save) saveStorage(key, JSON.stringify(fitted))
     },
     [key, width, height]
   )
@@ -138,10 +159,10 @@ function useDrag(key: string, width: number, height: number, fallback: () => Poi
 }
 
 export function VmPreview({ vm }: { vm: VmInfo }) {
-  const [open, setOpen] = useState(() => localStorage.getItem(OPEN_KEY) === "1")
+  const [open, setOpen] = useState(() => readStorage(OPEN_KEY) === "1")
   const toggle = (next: boolean) => {
     haptic()
-    localStorage.setItem(OPEN_KEY, next ? "1" : "0")
+    saveStorage(OPEN_KEY, next ? "1" : "0")
     setOpen(next)
   }
   return open ? <PreviewWindow vm={vm} onClose={() => toggle(false)} /> : <PreviewButton vm={vm} onOpen={() => toggle(true)} />
@@ -178,7 +199,8 @@ function PreviewButton({ vm, onOpen }: { vm: VmInfo; onOpen: () => void }) {
 }
 
 function PreviewWindow({ vm, onClose }: { vm: VmInfo; onClose: () => void }) {
-  const [chosenWidth, setChosenWidth] = useState(() => Number(localStorage.getItem(WIDTH_KEY)) || WIDTH.small)
+  const [chosenWidth, setChosenWidth] = useState(() => Number(readStorage(WIDTH_KEY)) || WIDTH.small)
+  const [desktopMode] = useState(savedDesktopMode)
   const maxWidth = () => viewport().width - 2 * MARGIN
   const width = Math.round(Math.min(Math.max(chosenWidth, WIDTH.min), maxWidth()))
   const height = Math.round((width * 9) / 16) + TITLE_BAR
@@ -189,7 +211,7 @@ function PreviewWindow({ vm, onClose }: { vm: VmInfo; onClose: () => void }) {
   }))
   const setWidth = (next: number) => {
     setChosenWidth(next)
-    localStorage.setItem(WIDTH_KEY, String(Math.round(next)))
+    saveStorage(WIDTH_KEY, String(Math.round(next)))
   }
 
   // Resizing from the bottom corner that faces the middle of the screen, so a window parked at an edge grows inward.
@@ -225,12 +247,12 @@ function PreviewWindow({ vm, onClose }: { vm: VmInfo; onClose: () => void }) {
       const current = resize.current
       if (current?.id !== event.pointerId) return
       resize.current = null
-      localStorage.setItem(WIDTH_KEY, String(Math.round(current.next)))
-      localStorage.setItem(POSITION_KEY("window"), JSON.stringify(current.at))
+      saveStorage(WIDTH_KEY, String(Math.round(current.next)))
+      saveStorage(POSITION_KEY("window"), JSON.stringify(current.at))
     }
   }
   const running = vm.status === "running"
-  const { url, loading, error } = useDesktopUrl(vm.key, savedDesktopMode(), running)
+  const { url, loading, error } = useDesktopUrl(vm.key, desktopMode, running)
 
   const iconButton = "rounded p-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
   return (

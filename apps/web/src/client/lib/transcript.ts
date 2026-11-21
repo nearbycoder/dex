@@ -2,9 +2,10 @@ import type { AssistantMessage, ToolCall, ToolResultMessage, UserMessage } from 
 // Relative, with .ts: the Android goldens (apps/android/tools/goldens) run this file in Node, which has no ~ alias.
 import { type AttachedFile, splitAttachments } from "../../shared/attachments.ts"
 import type { AgentEvent, EntryRecord, SnapshotEvent } from "@earendil-works/pi-durable"
-import { Predicate } from "effect"
 import type { ChatArtifact } from "~/shared/media"
 import type { QueuedMessage } from "~/shared/protocol"
+
+const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null
 
 export interface LiveTool {
   readonly callId: string
@@ -96,44 +97,65 @@ export const withEarlier = (state: TranscriptState, older: ReadonlyArray<EntryRe
 const appendEntry = (entries: ReadonlyArray<EntryRecord>, entry: EntryRecord) =>
   entries.some((existing) => existing.id === entry.id) ? entries : [...entries, entry]
 
-/** Appends `delta` to the string at `path` inside `target`, creating objects on the way. */
-const appendAtPath = (target: Record<string, unknown>, path: ReadonlyArray<string | number>, delta: string) => {
-  let node: Record<string | number, unknown> = target
-  for (const key of path.slice(0, -1)) {
+/** Returns a shallow path-cloned copy of `target` with `delta` appended at `path`, creating objects on the way. */
+const appendAtPath = (target: ToolCall["arguments"], path: ReadonlyArray<string | number>, delta: string): ToolCall["arguments"] => {
+  if (path.length === 0) return target
+  const root: Record<string | number, unknown> = { ...target }
+  let node: Record<string | number, unknown> = root
+  for (let i = 0; i < path.length - 1; i++) {
+    const key = path[i]!
     const next = node[key]
-    node = (Predicate.isObject(next) ? next : (node[key] = {})) as Record<string | number, unknown>
+    const copy = (Array.isArray(next) ? [...next] : isObject(next) ? { ...next } : {}) as Record<string | number, unknown>
+    node[key] = copy
+    node = copy
   }
-  const last = path[path.length - 1]
-  if (last === undefined) return
+  const last = path[path.length - 1]!
   const current = node[last]
-  node[last] = (Predicate.isString(current) ? current : "") + delta
+  node[last] = (typeof current === "string" ? current : "") + delta
+  return root as ToolCall["arguments"]
 }
 
 const applyMessageUpdate = (message: AssistantMessage, changes: Extract<AgentEvent, { type: "message_update" }>["changes"]) => {
-  const next = structuredClone(message)
+  // Shallow-copy only the message shell and the blocks touched by this batch instead of deep-cloning the whole message on every token.
+  let next: AssistantMessage = { ...message, content: [...message.content] }
+  const owned = new Set<number>()
+  const ownBlock = (index: number) => {
+    if (owned.has(index)) return next.content[index]
+    const block = next.content[index]
+    if (!block) return undefined
+    const copy = { ...block }
+    next.content[index] = copy
+    owned.add(index)
+    return copy
+  }
   for (const change of changes) {
     switch (change.type) {
       case "message":
-        return structuredClone(change.message)
+        next = structuredClone(change.message)
+        owned.clear()
+        break
       case "text_start":
       case "thinking_start":
       case "toolcall_start":
       case "block":
         next.content[change.contentIndex] = structuredClone(change.block)
+        owned.add(change.contentIndex)
         break
       case "text_delta": {
-        const block = next.content[change.contentIndex]
+        const block = ownBlock(change.contentIndex)
         if (block?.type === "text") block.text += change.delta
         break
       }
       case "thinking_delta": {
-        const block = next.content[change.contentIndex]
+        const block = ownBlock(change.contentIndex)
         if (block?.type === "thinking") block.thinking += change.delta
         break
       }
       case "toolcall_delta": {
-        const block = next.content[change.contentIndex]
-        if (block?.type === "toolCall") appendAtPath(block.arguments as Record<string, unknown>, change.path, change.delta)
+        const block = ownBlock(change.contentIndex)
+        if (block?.type === "toolCall") {
+          block.arguments = appendAtPath(block.arguments, change.path, change.delta)
+        }
         break
       }
     }
@@ -238,38 +260,58 @@ const summaryText = (entry: EntryRecord) => {
   return (/<summary>\n?([\s\S]*?)\n?<\/summary>\s*$/.exec(text)?.[1] ?? text).trim()
 }
 
-export const displayItems = (state: TranscriptState): DisplayItem[] => {
+/** Display items for recorded entries only; memoize on `entries` so streaming deltas don't rebuild the whole chat. */
+export const recordedDisplayItems = (entries: ReadonlyArray<EntryRecord>): DisplayItem[] => {
   const items: DisplayItem[] = []
   // Consecutive assistant messages (tool results don't interrupt them) are one reply.
-  const addAssistant = (id: string, message: AssistantMessage, streaming: boolean) => {
+  let currentMessages: AssistantMessage[] | null = null
+  const addAssistant = (id: string, message: AssistantMessage) => {
     const last = items.at(-1)
-    const ended = streaming ? null : message.timestamp + (message.durationMs ?? 0)
-    if (last?.kind === "assistant") {
-      items[items.length - 1] = { ...last, messages: [...last.messages, message], streaming, endedAt: ended ?? last.endedAt }
+    const ended = message.timestamp + (message.durationMs ?? 0)
+    if (last?.kind === "assistant" && currentMessages) {
+      currentMessages.push(message)
+      items[items.length - 1] = { ...last, messages: currentMessages, endedAt: ended }
     } else {
-      items.push({ kind: "assistant", id, messages: [message], streaming, endedAt: ended })
+      currentMessages = [message]
+      items.push({ kind: "assistant", id, messages: currentMessages, streaming: false, endedAt: ended })
     }
   }
-  for (const entry of state.entries) {
+  for (const entry of entries) {
     // A summary's text (and a reset's handoff) is a user message for the model, not something you said.
     if (entry.kind === "pi.reset" || entry.kind === "pi.compaction") {
       const summary = summaryText(entry)
       const label = entry.kind === "pi.reset" ? "Context reset" : "Earlier messages summarized"
+      currentMessages = null
       items.push({ kind: "divider", id: String(entry.id), label, ...(summary && { summary }) })
       continue
     }
     for (const [index, message] of (entry.model ?? []).entries()) {
       const id = `${entry.id}:${index}`
-      if (message.role === "user") items.push({ kind: "user", id, ...userText(message) })
-      else if (message.role === "assistant") addAssistant(id, message, false)
-      else if (message.role === "toolResult") {
+      if (message.role === "user") {
+        currentMessages = null
+        items.push({ kind: "user", id, ...userText(message) })
+      } else if (message.role === "assistant") {
+        addAssistant(id, message)
+      } else if (message.role === "toolResult") {
         const last = items.at(-1)
         if (last?.kind === "assistant") items[items.length - 1] = { ...last, endedAt: Math.max(last.endedAt ?? 0, message.timestamp) }
       }
     }
   }
-  if (state.streaming) addAssistant("streaming", state.streaming, true)
   return items
 }
+
+/** Appends the live streaming message onto precomputed `recordedDisplayItems` without re-scanning older entries. */
+export const displayItemsWithStreaming = (recorded: ReadonlyArray<DisplayItem>, streaming: AssistantMessage | null): DisplayItem[] => {
+  if (!streaming) return recorded as DisplayItem[]
+  const last = recorded.at(-1)
+  if (last?.kind === "assistant") {
+    return [...recorded.slice(0, -1), { ...last, messages: [...last.messages, streaming], streaming: true, endedAt: last.endedAt }]
+  }
+  return [...recorded, { kind: "assistant", id: "streaming", messages: [streaming], streaming: true, endedAt: null }]
+}
+
+export const displayItems = (state: TranscriptState): DisplayItem[] =>
+  displayItemsWithStreaming(recordedDisplayItems(state.entries), state.streaming)
 
 export const isToolCall = (block: AssistantMessage["content"][number]): block is ToolCall => block.type === "toolCall"

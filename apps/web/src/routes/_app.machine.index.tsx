@@ -14,10 +14,9 @@ import { ask } from "~/client/components/confirm-dialog"
 /** Every chat's VM at a glance; each opens its desktop, activity, and terminal. */
 export const Route = createFileRoute("/_app/machine/")({ component: MachinesPage })
 
-function MachineCard({ vm, index }: { vm: VmInfo; index: number }) {
+function MachineCard({ vm, index, now }: { vm: VmInfo; index: number; now: number }) {
   const { state, stub } = useDex()
   const label = useVmLabel()
-  const now = useNow(15_000)
   const [busy, setBusy] = useState<"start" | "stop" | "delete" | null>(null)
   const [error, setError] = useState<string | null>(null)
   const { title, subtitle, agent, project } = label(vm.key)
@@ -136,6 +135,7 @@ function MachinesPage() {
   const [refreshing, setRefreshing] = useState(false)
   const vms = [...(state?.vms ?? [])].sort(byRecentUse)
   const running = vms.filter((vm) => vm.status === "running").length
+  const now = useNow(running > 0 ? 15_000 : 0)
 
   const refresh = async () => {
     setRefreshing(true)
@@ -188,7 +188,7 @@ function MachinesPage() {
               ) : (
                 <ul className="grid gap-3 md:grid-cols-2">
                   {vms.map((vm, index) => (
-                    <MachineCard key={vm.key} vm={vm} index={index} />
+                    <MachineCard key={vm.key} vm={vm} index={index} now={now} />
                   ))}
                 </ul>
               )}

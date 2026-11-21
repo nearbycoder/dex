@@ -1,12 +1,11 @@
 import type { AssistantMessage, ToolResultMessage } from "@earendil-works/pi-ai"
-import { Predicate } from "effect"
 import { Link } from "@tanstack/react-router"
 import { AlarmClock, AlertTriangle, ArrowDown, Brain, ChevronRight, Clock, ListChecks, LoaderCircle, MousePointerClick } from "lucide-react"
 import { useParams } from "@tanstack/react-router"
 import type { AttachedFile } from "~/shared/attachments"
 import { FileIcon } from "~/client/components/file-icon"
 import { lazy, memo, type ReactNode, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
-import { displayItems, type LiveTool, toolResults, type TranscriptState } from "~/client/lib/transcript"
+import { type DisplayItem, displayItemsWithStreaming, type LiveTool, recordedDisplayItems, toolResults, type TranscriptState } from "~/client/lib/transcript"
 import { invokedSkill } from "~/shared/skills"
 import { parseUiAction } from "~/shared/ui-action"
 import { splitUiNotes } from "~/shared/ui-notes"
@@ -19,7 +18,13 @@ import { Markdown } from "./markdown"
 import { summarize, ToolCard, toolActivity, TranscriptImage } from "./tool-card"
 import { useNow } from "./vm-status"
 
-const OpenUIBlock = lazy(() => import("./openui-block"))
+// Keep the generative UI renderer out of the Worker SSR bundle; chats are client-rendered anyway.
+const OpenUIBlock = lazy(() =>
+  import.meta.env.SSR
+    ? Promise.resolve({ default: (() => null) as unknown as typeof import("./openui-block")["default"] })
+    : import("./openui-block")
+)
+const EMPTY_TOOLS: Readonly<Record<string, LiveTool>> = {}
 
 function Thinking({ text, streaming }: { text: string; streaming: boolean }) {
   const [open, setOpen] = useState(false)
@@ -46,20 +51,21 @@ interface Step {
   readonly live: boolean
 }
 
-const isUi = (block: Block) => block.type === "toolCall" && block.name === "render_ui" && Predicate.isString(block.arguments.code)
+const isUi = (block: Block) => block.type === "toolCall" && block.name === "render_ui" && typeof block.arguments.code === "string"
 /** Thinking and tool calls: the work behind a reply, folded into its activity row. */
 const isWork = (block: Block) => (block.type === "thinking" && block.thinking.trim() !== "") || (block.type === "toolCall" && !isUi(block))
 
-/** While the model is thinking or between steps, the status line cycles through these. */
-/** The latest line of some thinking or notes, as plain text, for the activity row. */
-const latestLine = (text: string) =>
-  (
-    text
-      .split("\n")
-      .map((line) => line.replace(/[*_`#>]+/g, "").replace(/\s+/g, " ").trim())
-      .filter(Boolean)
-      .at(-1) ?? ""
-  ).slice(-200)
+/** The latest non-empty line of some thinking or notes, scanned from the end so streaming stays O(line). */
+const latestLine = (text: string) => {
+  let end = text.length
+  while (end > 0) {
+    const start = text.lastIndexOf("\n", end - 1) + 1
+    const line = text.slice(start, end).replace(/[*_`#>]+/g, "").replace(/\s+/g, " ").trim()
+    if (line) return line.slice(-200)
+    end = start - 1
+  }
+  return ""
+}
 
 const duration = (ms: number) => {
   const seconds = Math.max(0, Math.round(ms / 1000))
@@ -140,23 +146,25 @@ function Activity(props: {
         <span className="min-w-0 truncate text-zinc-500 tabular-nums">{counts.join(" · ")}</span>
       </button>
       <Collapse open={open}>
-        <div className="border-t border-zinc-800 px-3 py-1">
-          {steps.map((step) => {
-            const { block } = step
-            switch (block.type) {
-              case "thinking":
-                return <Thinking key={step.key} text={block.thinking} streaming={step.live} />
-              case "text":
-                return block.text.trim() ? (
-                  <div key={step.key} className="my-2 text-zinc-400 [&_p]:text-xs">
-                    <Markdown>{block.text}</Markdown>
-                  </div>
-                ) : null
-              case "toolCall":
-                return <ToolCard key={step.key} call={block} result={results.get(block.id)} live={tools[block.id]} />
-            }
-          })}
-        </div>
+        {() => (
+          <div className="border-t border-zinc-800 px-3 py-1">
+            {steps.map((step) => {
+              const { block } = step
+              switch (block.type) {
+                case "thinking":
+                  return <Thinking key={step.key} text={block.thinking} streaming={step.live} />
+                case "text":
+                  return block.text.trim() ? (
+                    <div key={step.key} className="my-2 text-zinc-400 [&_p]:text-xs">
+                      <Markdown>{block.text}</Markdown>
+                    </div>
+                  ) : null
+                case "toolCall":
+                  return <ToolCard key={step.key} call={block} result={results.get(block.id)} live={tools[block.id]} />
+              }
+            })}
+          </div>
+        )}
       </Collapse>
     </div>
   )
@@ -209,9 +217,10 @@ function AssistantTurnView(props: {
     return false
   })
   // Media the chat shared shows in the reply even if the model forgot to put its Markdown in the text.
-  const shownText = shown.map(({ block }) => (block.type === "text" ? block.text : "")).join("\n")
-  const sharedMedia = blocks.flatMap((step) => {
-    if (step.block.type !== "toolCall" || step.block.name !== "share_media") return []
+  const shareCalls = blocks.filter((step) => step.block.type === "toolCall" && step.block.name === "share_media")
+  const shownText = shareCalls.length > 0 ? shown.map(({ block }) => (block.type === "text" ? block.text : "")).join("\n") : ""
+  const sharedMedia = shareCalls.flatMap((step) => {
+    if (step.block.type !== "toolCall") return []
     const details = props.results.get(step.block.id)?.details as { media?: { url: string; name: string } } | undefined
     return details?.media && !shownText.includes(details.media.url) ? [details.media] : []
   })
@@ -407,7 +416,7 @@ export interface Speaker {
  * Where the model's context starts again: a summary of what came before (or a reset). The summary is what the model
  * was given in place of the messages above it; it opens from the divider.
  */
-function ContextDivider({ label, summary }: { label: string; summary?: string }) {
+const ContextDivider = memo(function ContextDivider({ label, summary }: { label: string; summary?: string }) {
   const [open, setOpen] = useState(false)
   return (
     <div>
@@ -431,15 +440,45 @@ function ContextDivider({ label, summary }: { label: string; summary?: string })
       </div>
       {summary && (
         <Collapse open={open}>
-          <div className="mt-3 rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3 text-sm text-zinc-300">
-            <p className="mb-2 text-xs text-zinc-500">What the model was given in place of the messages above</p>
-            <Markdown>{summary}</Markdown>
-          </div>
+          {() => (
+            <div className="mt-3 rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3 text-sm text-zinc-300">
+              <p className="mb-2 text-xs text-zinc-500">What the model was given in place of the messages above</p>
+              <Markdown>{summary}</Markdown>
+            </div>
+          )}
         </Collapse>
       )}
     </div>
   )
-}
+})
+
+const UserRow = memo(function UserRow({ item }: { item: Extract<DisplayItem, { kind: "user" }> }) {
+  // Threads reporting back to a space's coordinator: event rows, not something you said.
+  const updates = item.text ? parseSpaceUpdates(item.text) : null
+  if (updates?.length) return <SpaceUpdates updates={updates} />
+  // A prompt that ran on a schedule: the chat reaching out on its own, not something you said.
+  if (item.text?.startsWith(SCHEDULED_PREFIX)) {
+    return (
+      <div className="flex animate-fade items-center justify-center gap-1.5 text-xs text-zinc-500">
+        <AlarmClock className="size-3.5 shrink-0" />
+        <span className="truncate" title={item.text.slice(SCHEDULED_PREFIX.length)}>
+          Scheduled: {item.text.slice(SCHEDULED_PREFIX.length)}
+        </span>
+      </div>
+    )
+  }
+  return (
+    <div className="flex animate-rise justify-end">
+      <div className="max-w-[85%] rounded-2xl rounded-br-md bg-zinc-800 px-4 py-2.5 text-sm whitespace-pre-wrap text-zinc-100 [overflow-wrap:anywhere]">
+        {(item.imageParts || item.files) && <UserAttachments images={item.imageParts ?? []} files={item.files ?? []} spaced={Boolean(item.text)} />}
+        {item.text && <UserText text={item.text} />}
+      </div>
+    </div>
+  )
+})
+
+const hasUiTool = (message: AssistantMessage) =>
+  message.content.some((block) => block.type === "toolCall" && (block.name === "load_ui_guide" || block.name === "render_ui"))
 
 export const MessageList = memo(function MessageList({
   transcript,
@@ -457,7 +496,8 @@ export const MessageList = memo(function MessageList({
   /** Who answers, when it isn't Dex (a character): their face beside replies, and their greeting first. */
   speaker?: Speaker
 }) {
-  const items = useMemo(() => displayItems(transcript), [transcript])
+  const recorded = useMemo(() => recordedDisplayItems(transcript.entries), [transcript.entries])
+  const items = useMemo(() => displayItemsWithStreaming(recorded, transcript.streaming), [recorded, transcript.streaming])
   const results = useMemo(() => toolResults(transcript.entries), [transcript.entries])
   const scroller = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
@@ -533,19 +573,13 @@ export const MessageList = memo(function MessageList({
   }, [lastUser, toBottom])
 
   // load_ui_guide comes right before render_ui: start fetching the UI renderer then, so the card doesn't wait on it.
-  const wantsUi = useMemo(
-    () =>
-      items.some(
-        (item) =>
-          item.kind === "assistant" &&
-          item.messages.some((message) =>
-            message.content.some((block) => block.type === "toolCall" && (block.name === "load_ui_guide" || block.name === "render_ui"))
-          )
-      ),
-    [items]
+  const recordedHasUi = useMemo(
+    () => recorded.some((item) => item.kind === "assistant" && item.messages.some(hasUiTool)),
+    [recorded]
   )
+  const wantsUi = recordedHasUi || (transcript.streaming ? hasUiTool(transcript.streaming) : false)
   useEffect(() => {
-    if (wantsUi) void import("./openui-block")
+    if (wantsUi && !import.meta.env.SSR) void import("./openui-block")
   }, [wantsUi])
 
   return (
@@ -586,36 +620,14 @@ export const MessageList = memo(function MessageList({
           {items.map((item, index) => {
             switch (item.kind) {
               case "user":
-                // A prompt that ran on a schedule: the chat reaching out on its own, not something you said.
-                // Threads reporting back to a space's coordinator: event rows, not something you said.
-                {
-                  const updates = item.text ? parseSpaceUpdates(item.text) : null
-                  if (updates?.length) return <SpaceUpdates key={item.id} updates={updates} />
-                }
-                if (item.text?.startsWith(SCHEDULED_PREFIX)) {
-                  return (
-                    <div key={item.id} className="flex animate-fade items-center justify-center gap-1.5 text-xs text-zinc-500">
-                      <AlarmClock className="size-3.5 shrink-0" />
-                      <span className="truncate" title={item.text.slice(SCHEDULED_PREFIX.length)}>
-                        Scheduled: {item.text.slice(SCHEDULED_PREFIX.length)}
-                      </span>
-                    </div>
-                  )
-                }
-                return (
-                  <div key={item.id} className="flex animate-rise justify-end">
-                    <div className="max-w-[85%] rounded-2xl rounded-br-md bg-zinc-800 px-4 py-2.5 text-sm whitespace-pre-wrap text-zinc-100 [overflow-wrap:anywhere]">
-                      {(item.imageParts || item.files) && <UserAttachments images={item.imageParts ?? []} files={item.files ?? []} spaced={Boolean(item.text)} />}
-                      {item.text && <UserText text={item.text} />}
-                    </div>
-                  </div>
-                )
-              case "assistant":
+                return <UserRow key={item.id} item={item} />
+              case "assistant": {
+                const isLast = index === items.length - 1
                 return (
                   <div key={item.id} className="flex animate-rise gap-3">
                     {speaker ? (
                       <span className="mt-0.5 shrink-0" title={speaker.name}>
-                        {transcript.running && index === items.length - 1 ? (speaker.working ?? speaker.avatar) : speaker.avatar}
+                        {transcript.running && isLast ? (speaker.working ?? speaker.avatar) : speaker.avatar}
                       </span>
                     ) : (
                       <img src="/favicon.svg" alt="Dex" className="mt-0.5 size-6 shrink-0" />
@@ -623,14 +635,15 @@ export const MessageList = memo(function MessageList({
                     <AssistantTurn
                       messages={item.messages}
                       streaming={item.streaming}
-                      active={transcript.running && index === items.length - 1}
+                      active={transcript.running && isLast}
                       endedAt={item.endedAt}
                       results={results}
-                      tools={transcript.tools}
+                      tools={isLast ? transcript.tools : EMPTY_TOOLS}
                       onSend={onSend}
                     />
                   </div>
                 )
+              }
               case "divider":
                 return <ContextDivider key={item.id} label={item.label} summary={item.summary} />
             }

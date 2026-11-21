@@ -22,7 +22,7 @@ import {
   SlidersHorizontal,
   X
 } from "lucide-react"
-import { type MouseEvent, type ReactNode, type RefObject, type TouchEvent, useEffect, useRef, useState } from "react"
+import { type MouseEvent, type ReactNode, type RefObject, type TouchEvent, useEffect, useMemo, useRef, useState } from "react"
 import { forgetSavedState, useDex } from "~/client/lib/dex"
 import { haptic } from "~/client/lib/haptics"
 import { timeAgo } from "~/client/lib/format"
@@ -42,6 +42,9 @@ import { SpaceGlyph } from "./space-panel"
 import { type SpaceProfile, spaceThreads, threadStatus } from "~/shared/spaces"
 import { UsageGlanceLink, UsageSettingsIcon } from "./usage-glance"
 import { useNow } from "./vm-status"
+
+const tooltipTimeFmt = new Intl.DateTimeFormat(undefined, { dateStyle: "short", timeStyle: "short" })
+const formatTooltipTime = (ms: number) => tooltipTimeFmt.format(ms)
 
 /** Configuration pages: on these the sidebar shows the settings links instead of the chats. */
 const SETTINGS_AREA = ["/settings", "/notifications", "/machine", "/projects", "/agents", "/sidekicks", "/skills", "/secrets", "/mcp", "/files", "/usage", "/access"]
@@ -82,11 +85,10 @@ export function Sidebar() {
   const params = useParams({ strict: false })
   const activeId = "sessionId" in params ? params.sessionId : undefined
   const settingsMode = inSettingsArea(pathname)
-  const [, setTick] = useState(0)
-  useEffect(() => {
-    const timer = setInterval(() => setTick((tick) => tick + 1), 30_000)
-    return () => clearInterval(timer)
-  }, [])
+  const now = useNow(30_000)
+
+  const agentsById = useMemo(() => new Map(state?.agents.map((agent) => [agent.id, agent])), [state?.agents])
+  const projectsById = useMemo(() => new Map(state?.projects.map((project) => [project.id, project])), [state?.projects])
 
   // Where "Chats" goes back to: the chat you were last in.
   const lastChat = useRef<string | null>(null)
@@ -235,6 +237,7 @@ export function Sidebar() {
                 <ChatGroups
                   // A character's conversations live under them, and a space's chats under the space, not in the inbox.
                   sessions={state.sessions.filter((session) => !session.characterId && !session.spaceId)}
+                  now={now}
                   activeId={activeId}
                   onPick={onClose}
                   renderRow={(session, group) => (
@@ -242,6 +245,8 @@ export function Sidebar() {
                       key={session.id}
                       session={session}
                       group={group}
+                      agent={session.agentId ? agentsById.get(session.agentId) : undefined}
+                      project={session.projectId ? projectsById.get(session.projectId) : undefined}
                       active={session.id === activeId}
                       selected={selection.ids.has(session.id)}
                       onSelect={selection.click}
@@ -365,7 +370,7 @@ function Characters({
               <span className="flex items-baseline gap-2">
                 <span className={`truncate text-sm ${unread ? "font-semibold text-zinc-50" : ""}`}>{character.name}</span>
                 {session && !session.busy && (
-                  <span className={`ml-auto shrink-0 text-[11px] ${unread ? "text-sky-300" : "text-zinc-600"}`} title={new Date(session.updatedAt).toLocaleString()}>
+                  <span className={`ml-auto shrink-0 text-[11px] ${unread ? "text-sky-300" : "text-zinc-600"}`} title={formatTooltipTime(session.updatedAt)}>
                     {session.updatedAt > session.createdAt + 1_000 ? timeAgo(session.updatedAt) : ""}
                   </span>
                 )}
@@ -474,6 +479,8 @@ function Spaces({
 function ChatRow({
   session,
   group,
+  agent,
+  project,
   active,
   selected,
   onSelect,
@@ -481,16 +488,16 @@ function ChatRow({
 }: {
   session: SessionMeta
   group: ChatGroup
+  agent: NonNullable<ReturnType<typeof useDex>["state"]>["agents"][number] | undefined
+  project: NonNullable<ReturnType<typeof useDex>["state"]>["projects"][number] | undefined
   active: boolean
   selected: boolean
   onSelect: (event: MouseEvent, sessionId: string) => boolean
   onPick: () => void
 }) {
-  const { state } = useDex()
   const naming = useNaming(session.id)
   const menu = useRef<SessionMenuHandle>(null)
   const press = useLongPress((x, y) => menu.current?.openAt(x, y))
-  if (!state) return null
   return (
     <div className="group relative animate-fade">
       <Link
@@ -529,40 +536,36 @@ function ChatRow({
           {session.unread && !active && <span className="ml-auto size-2 shrink-0 rounded-full bg-sky-400" aria-label="Unread" />}
         </div>
         <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-zinc-500">
-          {(() => {
-            const agent = session.agentId ? state.agents.find((candidate) => candidate.id === session.agentId) : undefined
-            const project = session.projectId ? state.projects.find((candidate) => candidate.id === session.projectId) : undefined
-            return project ? (
-              <>
-                <AgentAvatar icon={project.icon} color={project.color} image={project.image} size={14} />
-                <span className="max-w-24 shrink-0 truncate text-zinc-400">{project.name}</span>
-                {agent && <span className="truncate text-zinc-500">· {agent.name}</span>}
-              </>
-            ) : agent ? (
-              <>
-                <AgentAvatar icon={agent.icon} color={agent.color} size={14} />
-                <span className="shrink-0 text-zinc-400">{agent.name}</span>
-                <span className="text-zinc-700">·</span>
-                <span className="truncate">{findModel(session.model)?.name ?? session.model}</span>
-              </>
-            ) : (
-              <>
-                <ModelLogo modelId={session.model} className="size-3.5" />
-                <span className="truncate">{findModel(session.model)?.name ?? session.model}</span>
-              </>
-            )
-          })()}
+          {project ? (
+            <>
+              <AgentAvatar icon={project.icon} color={project.color} image={project.image} size={14} />
+              <span className="max-w-24 shrink-0 truncate text-zinc-400">{project.name}</span>
+              {agent && <span className="truncate text-zinc-500">· {agent.name}</span>}
+            </>
+          ) : agent ? (
+            <>
+              <AgentAvatar icon={agent.icon} color={agent.color} size={14} />
+              <span className="shrink-0 text-zinc-400">{agent.name}</span>
+              <span className="text-zinc-700">·</span>
+              <span className="truncate">{findModel(session.model)?.name ?? session.model}</span>
+            </>
+          ) : (
+            <>
+              <ModelLogo modelId={session.model} className="size-3.5" />
+              <span className="truncate">{findModel(session.model)?.name ?? session.model}</span>
+            </>
+          )}
           <span className="text-zinc-700">·</span>
           {session.busy ? (
             <span className="flex shrink-0 items-center gap-1 text-emerald-400">
               <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" /> working
             </span>
           ) : group === "snoozed" && session.snoozedUntil ? (
-            <span className="flex shrink-0 items-center gap-1 text-sky-300/80" title={new Date(session.snoozedUntil).toLocaleString()}>
+            <span className="flex shrink-0 items-center gap-1 text-sky-300/80" title={formatTooltipTime(session.snoozedUntil)}>
               <AlarmClock className="size-3" /> {snoozedLabel(session.snoozedUntil)}
             </span>
           ) : (
-            <span className="shrink-0" title={new Date(session.updatedAt).toLocaleString()}>
+            <span className="shrink-0" title={formatTooltipTime(session.updatedAt)}>
               {timeAgo(session.updatedAt)}
             </span>
           )}
@@ -679,8 +682,20 @@ type ChatGroup = "inbox" | "snoozed" | "settled"
 /** Remembers whether a group is open, per device. */
 function useGroupOpen(name: string) {
   const key = `dex.sidebar.${name}`
-  const [open, setOpen] = useState(() => typeof localStorage !== "undefined" && localStorage.getItem(key) === "1")
-  return [open, (value: boolean) => (setOpen(value), localStorage.setItem(key, value ? "1" : "0"))] as const
+  const [open, setOpen] = useState(() => {
+    try {
+      return typeof localStorage !== "undefined" && localStorage.getItem(key) === "1"
+    } catch {
+      return false
+    }
+  })
+  const toggle = (value: boolean) => {
+    setOpen(value)
+    try {
+      localStorage.setItem(key, value ? "1" : "0")
+    } catch {}
+  }
+  return [open, toggle] as const
 }
 
 function GroupHeader({ label, count, open, onToggle, icon }: { label: string; count: number; open: boolean; onToggle: () => void; icon: ReactNode }) {
@@ -705,15 +720,16 @@ function GroupHeader({ label, count, open, onToggle, icon }: { label: string; co
  */
 function ChatGroups({
   sessions,
+  now,
   activeId,
   renderRow
 }: {
   sessions: ReadonlyArray<SessionMeta>
+  now: number
   activeId: string | undefined
   onPick: () => void
   renderRow: (session: SessionMeta, group: ChatGroup) => ReactNode
 }) {
-  const now = useNow(30_000)
   const [snoozedOpen, setSnoozedOpen] = useGroupOpen("snoozed")
   const [settledOpen, setSettledOpen] = useGroupOpen("settled")
   const inbox = sessions.filter((session) => inboxState(session, now) === "inbox")

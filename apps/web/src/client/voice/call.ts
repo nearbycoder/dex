@@ -62,10 +62,20 @@ const listeners = new Set<(reply: TtsReply) => void>()
 /** The speech worker, shared by every call on the page and kept between calls (the model stays loaded). */
 const speechWorker = (onProgress: (fraction: number) => void) => {
   if (!worker) {
-    worker = new Worker(new URL("./tts.worker.ts", import.meta.url), { type: "module" })
-    worker.onmessage = ({ data }: MessageEvent<TtsReply>) => {
+    const next = new Worker(new URL("./tts.worker.ts", import.meta.url), { type: "module" })
+    next.onmessage = ({ data }: MessageEvent<TtsReply>) => {
       for (const listener of listeners) listener(data)
     }
+    next.onerror = (event) => {
+      const message = event.message || "The speech engine crashed."
+      for (const listener of [...listeners]) listener({ type: "error", message })
+      next.terminate()
+      if (worker === next) {
+        worker = undefined
+        ready = undefined
+      }
+    }
+    worker = next
   }
   ready ??= new Promise<void>((resolve, reject) => {
     const listener = (reply: TtsReply) => {
@@ -89,6 +99,7 @@ export class VoiceCall {
   private snapshot: CallSnapshot = { phase: "starting", heard: "", saying: "", muted: false, downloading: null, error: null }
   private readonly audio = new AudioContext({ sampleRate: VOICE_SAMPLE_RATE })
   private readonly output: AnalyserNode
+  private readonly levelBuffer = new Uint8Array(512)
   private readonly playing = new Set<AudioBufferSourceNode>()
   private playAt = 0
   private recognition: Recognition | null = null
@@ -131,6 +142,10 @@ export class VoiceCall {
     return () => void this.listeners.delete(listener)
   }
 
+  private isOver() {
+    return this.snapshot.phase === "ended" || this.snapshot.phase === "failed"
+  }
+
   /** Starts the call. Call it from a tap or click: browsers allow sound and the microphone only then. */
   async start() {
     void this.audio.resume()
@@ -138,7 +153,7 @@ export class VoiceCall {
     try {
       const { ready } = speechWorker((fraction) => this.update({ downloading: fraction }))
       await ready
-      if (this.snapshot.phase === "ended") return
+      if (this.isOver()) return
       // A reply may have started speaking while the voice downloaded.
       this.update({ downloading: null, phase: this.speaking() ? "speaking" : this.waitingForReply ? "thinking" : "listening" })
     } catch (error) {
@@ -148,7 +163,7 @@ export class VoiceCall {
 
   /** The reply after your latest words; call it whenever the chat changes. */
   reply(reply: CallReply | null) {
-    if (this.snapshot.phase === "ended" || this.snapshot.phase === "failed") return
+    if (this.isOver()) return
     const first = !this.seenChat
     this.seenChat = true
     if (!reply) return
@@ -190,11 +205,10 @@ export class VoiceCall {
   /** How loud they are right now, 0 to 1, for the face. */
   level() {
     if (!this.playing.size) return 0
-    const data = new Uint8Array(this.output.fftSize)
-    this.output.getByteTimeDomainData(data)
+    this.output.getByteTimeDomainData(this.levelBuffer)
     let sum = 0
-    for (const value of data) sum += ((value - 128) / 128) ** 2
-    return Math.min(1, Math.sqrt(sum / data.length) * 4)
+    for (const value of this.levelBuffer) sum += ((value - 128) / 128) ** 2
+    return Math.min(1, Math.sqrt(sum / this.levelBuffer.length) * 4)
   }
 
   private update(patch: Partial<CallSnapshot>) {
@@ -212,7 +226,7 @@ export class VoiceCall {
   // ── Hearing you ─────────────────────────────────────────────────────────────
 
   private listen() {
-    if (this.recognition || this.snapshot.muted || this.snapshot.phase === "ended") return
+    if (this.recognition || this.snapshot.muted || this.isOver()) return
     const Recognition = recognitionClass()
     if (!Recognition) return this.fail("This browser can't do speech recognition. Calls work in Chrome, Edge, and Safari.")
     const recognition = new Recognition()
@@ -275,7 +289,7 @@ export class VoiceCall {
     const text = `${this.finalText} ${this.interim}`.trim()
     this.finalText = ""
     this.interim = ""
-    if (!text || this.snapshot.phase === "ended") return
+    if (!text || this.isOver()) return
     // Recognition may still deliver these words as a final result; a fresh session keeps them from being sent twice.
     const recognition = this.recognition
     this.recognition = null
@@ -334,6 +348,12 @@ export class VoiceCall {
     const id = nextRequest++
     return new Promise<void>((resolve) => {
       const listener = (reply: TtsReply) => {
+        if (reply.type === "error" && reply.id === undefined) {
+          listeners.delete(listener)
+          this.update({ error: reply.message })
+          resolve()
+          return
+        }
         if (!("id" in reply) || reply.id !== id) return
         if (reply.type === "audio" && generation === this.generation) {
           this.recentlySaid.push({ words: words(text), at: Date.now() })
@@ -354,7 +374,7 @@ export class VoiceCall {
 
   /** Plays a piece right where the one before it ends, so sentences run on without gaps. */
   private play(samples: Float32Array): number {
-    if (!samples.length || this.snapshot.phase === "ended") return 0
+    if (!samples.length || this.isOver()) return 0
     const buffer = this.audio.createBuffer(1, samples.length, VOICE_SAMPLE_RATE)
     buffer.getChannelData(0).set(samples)
     const source = this.audio.createBufferSource()
@@ -414,20 +434,46 @@ export function sayOnce(text: string, voice: Voice, onProgress: (fraction: numbe
   const audio = new AudioContext({ sampleRate: VOICE_SAMPLE_RATE })
   void audio.resume()
   let stopped = false
+  const abort = new AbortController()
   const sources: AudioBufferSourceNode[] = []
+  let activeListener: ((reply: TtsReply) => void) | null = null
+  let resolveWait: (() => void) | null = null
+  let waitTimer: ReturnType<typeof setTimeout> | undefined
+
   const done = (async () => {
     const { worker, ready } = speechWorker(onProgress)
-    const [response] = await Promise.all([
-      fetch("/api/voice/phonemes", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) }),
-      ready
-    ])
+    let response: Response
+    try {
+      ;[response] = await Promise.all([
+        fetch("/api/voice/phonemes", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ text }),
+          signal: abort.signal
+        }),
+        ready
+      ])
+    } catch (error) {
+      if (stopped) return
+      throw error
+    }
+    if (stopped) return
     if (!response.ok) throw new Error("Their voice isn't available right now.")
     const utterances = ((await response.json()) as PhonemesResponse).sentences.flatMap((sentence) => sentence.utterances)
     if (stopped || !utterances.length) return
     const id = nextRequest++
     let at = audio.currentTime + 0.05
     await new Promise<void>((resolve, reject) => {
+      resolveWait = resolve
       const listener = (reply: TtsReply) => {
+        if (reply.type === "error" && reply.id === undefined) {
+          listeners.delete(listener)
+          activeListener = null
+          resolveWait = null
+          reject(new Error(reply.message))
+          return
+        }
         if (!("id" in reply) || reply.id !== id) return
         if (reply.type === "audio" && !stopped) {
           const buffer = audio.createBuffer(1, reply.samples.length, VOICE_SAMPLE_RATE)
@@ -441,25 +487,47 @@ export function sayOnce(text: string, voice: Voice, onProgress: (fraction: numbe
         }
         if (reply.type === "done" || reply.type === "error") {
           listeners.delete(listener)
+          activeListener = null
+          resolveWait = null
           if (reply.type === "error") reject(new Error(reply.message))
           else resolve()
         }
       }
+      activeListener = listener
       listeners.add(listener)
       worker.postMessage({ type: "speak", id, utterances, voice } satisfies TtsRequest)
     })
+    if (stopped) return
     // Until the last piece has played.
-    await new Promise((resolve) => setTimeout(resolve, Math.max(0, (at - audio.currentTime) * 1000)))
+    await new Promise<void>((resolve) => {
+      resolveWait = resolve
+      waitTimer = setTimeout(() => {
+        waitTimer = undefined
+        resolveWait = null
+        resolve()
+      }, Math.max(0, (at - audio.currentTime) * 1000))
+    })
   })().finally(() => void audio.close().catch(() => undefined))
   return {
     done,
     stop() {
+      if (stopped) return
       stopped = true
+      abort.abort()
+      clearTimeout(waitTimer)
+      waitTimer = undefined
+      if (activeListener) {
+        listeners.delete(activeListener)
+        activeListener = null
+      }
       for (const source of sources) {
         try {
           source.stop()
         } catch {}
       }
+      resolveWait?.()
+      resolveWait = null
+      void audio.close().catch(() => undefined)
     }
   }
 }

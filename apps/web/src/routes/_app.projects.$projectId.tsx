@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
-import { ArrowLeft, Ban, Check, LoaderCircle, MessageSquarePlus, Plus, Search, Trash2, X } from "lucide-react"
+import { ArrowLeft, Ban, Check, LoaderCircle, MessageSquarePlus, Plus, Search, Trash2 } from "lucide-react"
 import { type ReactNode, useEffect, useState } from "react"
 import { AGENT_ICON_COMPONENTS, AgentAvatar } from "~/client/components/agent-avatar"
 import { RepoCard, RepoSheet } from "~/client/components/repo-picker"
@@ -198,8 +198,6 @@ function ProjectEditor() {
     setDraft({ ...draft, ...patch })
     setSaved(false)
   }
-  const setRepo = (index: number, patch: Partial<ProjectDraft["repos"][number]>) =>
-    update({ repos: draft.repos.map((repo, i) => (i === index ? { ...repo, ...patch } : repo)) })
 
   const save = async () => {
     setSaving(true)
@@ -257,14 +255,17 @@ function ProjectEditor() {
 
           <Field label="Repositories" hint="Cloned into ~/work/<folder> on each chat's VM. Add your GitHub repos (private and org ones included), any public repo, or a git URL.">
             <div className="space-y-2">
-              {draft.repos.filter((repo) => repo.url.trim()).map((repo, index) => (
-                <RepoCard
-                  key={`${repo.url}:${index}`}
-                  repo={repo}
-                  onEdit={() => setSheet({ index })}
-                  onRemove={() => update({ repos: draft.repos.filter((_, i) => i !== index) })}
-                />
-              ))}
+              {draft.repos
+                .map((repo, index) => ({ repo, index }))
+                .filter(({ repo }) => repo.url.trim())
+                .map(({ repo, index }) => (
+                  <RepoCard
+                    key={`${repo.url}:${index}`}
+                    repo={repo}
+                    onEdit={() => setSheet({ index })}
+                    onRemove={() => update({ repos: draft.repos.filter((_, i) => i !== index) })}
+                  />
+                ))}
               <button
                 type="button"
                 onClick={() => setSheet({ index: null })}
