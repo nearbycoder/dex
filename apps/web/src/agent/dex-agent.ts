@@ -599,8 +599,14 @@ export class DexAgent extends Agent<Env, DexState> {
     // Spaces: a coordinator chat and its threads (chats that point back at the space).
     if (!sessionColumns.includes("space_id")) ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN space_id TEXT`)
     if (!sessionColumns.includes("last_failed")) ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN last_failed INTEGER`)
+    ctx.storage.sql.exec(`CREATE INDEX IF NOT EXISTS dex_sessions_updated ON dex_sessions (updated_at DESC)`)
+    ctx.storage.sql.exec(`CREATE INDEX IF NOT EXISTS dex_sessions_space ON dex_sessions (space_id)`)
+    ctx.storage.sql.exec(`CREATE INDEX IF NOT EXISTS dex_sessions_character ON dex_sessions (character_id)`)
+    ctx.storage.sql.exec(`CREATE INDEX IF NOT EXISTS dex_sessions_agent ON dex_sessions (agent_id)`)
+    ctx.storage.sql.exec(`CREATE INDEX IF NOT EXISTS dex_sessions_project ON dex_sessions (project_id)`)
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_spaces (
       id TEXT PRIMARY KEY, data TEXT NOT NULL, session_id TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
+    ctx.storage.sql.exec(`CREATE INDEX IF NOT EXISTS dex_spaces_session ON dex_spaces (session_id)`)
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_characters (
       id TEXT PRIMARY KEY, data TEXT NOT NULL, session_id TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_projects (
@@ -609,6 +615,8 @@ export class DexAgent extends Agent<Env, DexState> {
     // vm_agents' helpers (hidden conversations, each working on one VM of a chat) and vm_start's saved copies.
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_vm_agents (
       conversation_id TEXT PRIMARY KEY, chat_id TEXT NOT NULL, vm INTEGER NOT NULL, created_at INTEGER NOT NULL)`)
+    ctx.storage.sql.exec(`CREATE INDEX IF NOT EXISTS dex_vm_agents_chat ON dex_vm_agents (chat_id, vm, created_at DESC)`)
+    ctx.storage.sql.exec(`CREATE INDEX IF NOT EXISTS dex_vm_agents_created ON dex_vm_agents (created_at DESC)`)
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_vm_copies (snapshot TEXT PRIMARY KEY, made_at INTEGER NOT NULL)`)
     const helperColumns = ctx.storage.sql.exec<{ name: string }>(`PRAGMA table_info(dex_vm_agents)`).toArray().map((column) => column.name)
     if (!helperColumns.includes("status")) {
@@ -625,6 +633,7 @@ export class DexAgent extends Agent<Env, DexState> {
     // The model list this agent last looked up, if it was made by this build (a new build's built-in list wins
     // until the next lookup, which onStart starts at once).
     const catalog = this.storedCatalog()
+    if (catalog) this.catalogMeta = { build: catalog.build, updatedAt: catalog.updatedAt }
     if (catalog?.build === __DEX_BUILD__) setModelCatalog(catalog)
     this.lifecycle.use(this.harness)
   }
@@ -643,36 +652,38 @@ export class DexAgent extends Agent<Env, DexState> {
       this.ctx.storage.sql.exec(`INSERT INTO dex_meta (key, value) VALUES ('vm_idle_default_5', '1')`)
     }
     this.publish({ settings })
-    this.refreshBoatStatus()
-    this.publishVms()
-    this.refreshProjects()
-    this.refreshGitHubStatus()
-    this.publish({ push: this.push.status(), access: this.access.status(), build: __DEX_BUILD__ })
+    this.batchPublish(() => {
+      this.refreshBoatStatus()
+      this.publishVms()
+      this.refreshProjects()
+      this.refreshGitHubStatus()
+      this.publish({ push: this.push.status(), access: this.access.status(), build: __DEX_BUILD__ })
+      this.seedAgents()
+      this.refreshAgents()
+      // One-time: sidekicks' memory moved from /workspace/characters (their first name) to /workspace/sidekicks.
+      if (!this.ctx.storage.sql.exec(`SELECT 1 FROM dex_meta WHERE key = 'sidekick_memory_moved'`).toArray().length) {
+        this.ctx.storage.sql.exec(
+          `UPDATE OR IGNORE dex_files SET path = '/workspace/sidekicks/' || substr(path, 23) WHERE path LIKE '/workspace/characters/%'`
+        )
+        this.ctx.storage.sql.exec(`INSERT INTO dex_meta (key, value) VALUES ('sidekick_memory_moved', '1')`)
+      }
+      this.giveSidekicksLooks()
+      this.refreshCharacters()
+      this.refreshSpaces()
+      this.publishHelpers()
+      this.skills.refresh()
+      this.accountSecrets.refresh()
+      this.startMcp()
+      this.refreshOpenCodeStatus()
+      this.refreshChatGPTStatus()
+      this.refreshCommandCodeStatus()
+      this.refreshOpenRouterStatus()
+    })
+    await this.refreshClineStatus()
+    await this.refreshSessions()
     this.ctx.waitUntil(this.refreshModels().catch(() => undefined))
     void this.backfillUsage()
-    this.seedAgents()
-    this.refreshAgents()
-    // One-time: sidekicks' memory moved from /workspace/characters (their first name) to /workspace/sidekicks.
-    if (!this.ctx.storage.sql.exec(`SELECT 1 FROM dex_meta WHERE key = 'sidekick_memory_moved'`).toArray().length) {
-      this.ctx.storage.sql.exec(
-        `UPDATE OR IGNORE dex_files SET path = '/workspace/sidekicks/' || substr(path, 23) WHERE path LIKE '/workspace/characters/%'`
-      )
-      this.ctx.storage.sql.exec(`INSERT INTO dex_meta (key, value) VALUES ('sidekick_memory_moved', '1')`)
-    }
-    this.giveSidekicksLooks()
-    this.refreshCharacters()
     this.ctx.waitUntil(this.redrawSidekickFaces().catch((error) => console.warn("Couldn't redraw sidekicks' faces:", error)))
-    this.refreshSpaces()
-    this.publishHelpers()
-    this.skills.refresh()
-    this.accountSecrets.refresh()
-    this.startMcp()
-    await this.refreshClineStatus()
-    this.refreshOpenCodeStatus()
-    this.refreshChatGPTStatus()
-    this.refreshCommandCodeStatus()
-    this.refreshOpenRouterStatus()
-    await this.refreshSessions()
     // Runs going when the object restarted (a deploy) resume on their own, but what waited for their end didn't
     // survive: without this they'd read "working" after they finish, with no notification and the queue held.
     const helpersWatched = new Set<string>()
@@ -691,7 +702,19 @@ export class DexAgent extends Agent<Env, DexState> {
       const sessionId = watching(connection)
       if (sessionId) void this.subscribe(connection, sessionId, { force: true })
     }
-    for (const vm of this.vms.values()) void vm.refresh()
+    // Refresh stored VMs with bounded concurrency (most recently active first) instead of flooding boat.dev at once.
+    const vmsToRefresh = [...this.vms.values()]
+      .filter((vm) => vm.current.id !== null)
+      .sort((a, b) => (b.current.lastActiveAt ?? 0) - (a.current.lastActiveAt ?? 0))
+    if (vmsToRefresh.length) {
+      this.ctx.waitUntil(
+        (async () => {
+          for (let index = 0; index < vmsToRefresh.length; index += 4) {
+            await Promise.allSettled(vmsToRefresh.slice(index, index + 4).map((vm) => vm.refresh()))
+          }
+        })()
+      )
+    }
     this.ctx.waitUntil(this.reapOrphanVms())
     this.ctx.waitUntil(this.discardVmCopies())
     this.ctx.waitUntil(this.drainQueues().catch(() => undefined))
@@ -790,16 +813,20 @@ export class DexAgent extends Agent<Env, DexState> {
           // dearer than the last. The model sees the newest few; older ones become a note (the transcript keeps them).
           beforeRequest: (request) => ({ messages: withRecentScreenshots(request.messages) }),
           afterResponse: (message, api) => {
-            this.ledger.recordResponse(this.chatOf(String(api.conversationId)), message)
+            const conversationId = String(api.conversationId)
+            const worker = this.vmWorker(conversationId)
+            this.ledger.recordResponse(worker?.chatId ?? conversationId, message)
             this.glanceCache = undefined
+            // VM helpers report through watchHelper rather than notifyRunEnd; skip storing so maps don't leak.
+            if (worker) return
             // Remembered for the notification when the run ends.
             const text = message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("\n")
-            this.lastResponses.set(String(api.conversationId), { text, stopReason: message.stopReason, error: message.errorMessage ?? null })
+            this.lastResponses.set(conversationId, { text, stopReason: message.stopReason, error: message.errorMessage ?? null })
             const links = vmMediaLinks(text)
             if (links.length) {
-              const seen = this.runVmLinks.get(String(api.conversationId)) ?? new Set<string>()
+              const seen = this.runVmLinks.get(conversationId) ?? new Set<string>()
               for (const link of links) seen.add(link)
-              this.runVmLinks.set(String(api.conversationId), seen)
+              this.runVmLinks.set(conversationId, seen)
             }
           }
         })
@@ -837,7 +864,11 @@ export class DexAgent extends Agent<Env, DexState> {
             )
           : []),
         ...vmAgentTools(this.vmAgentsHost())
-      ].map((tool) => (tool.name.startsWith("vm_") || tool.name === "share_media" ? forWorkers({ worker: (id) => this.vmWorker(id) }, tool) : tool))
+      ].map((tool) =>
+        tool.name.startsWith("vm_") || tool.name === "share_media" || tool.name === "get_attachment"
+          ? forWorkers({ worker: (id) => this.vmWorker(id) }, tool)
+          : tool
+      )
     })
   }
 
@@ -941,8 +972,26 @@ export class DexAgent extends Agent<Env, DexState> {
     return this.ctx.storage.sql.exec<{ value: string }>(`SELECT value FROM dex_secrets WHERE name = ?`, name).toArray()[0]?.value
   }
 
+  private pendingPatch: Partial<DexState> | null = null
+
+  /** Finish before yielding so another request always reads its own state changes. */
+  private batchPublish(work: () => undefined) {
+    this.pendingPatch = {}
+    try {
+      work()
+    } finally {
+      const patch = this.pendingPatch
+      this.pendingPatch = null
+      this.publish(patch)
+    }
+  }
+
   /** Every publish sends the whole state to every open app (and stores it), so ones that change nothing are skipped. */
   private publish(patch: Partial<DexState>) {
+    if (this.pendingPatch) {
+      Object.assign(this.pendingPatch, patch)
+      return
+    }
     const current = this.state as unknown as Record<string, unknown>
     if (Object.entries(patch).every(([key, value]) => JSON.stringify(value) === JSON.stringify(current[key]))) return
     this.setState({ ...this.state, ...patch })
@@ -959,33 +1008,49 @@ export class DexAgent extends Agent<Env, DexState> {
     this.publish({ cline: { connected: shared, source: shared ? "server" : null, keyHint: null, verifiedAt: null } })
   }
 
-  private async refreshSessions() {
-    const busy = new Map((await this.harness.sessions.list()).map((info) => [info.id, info.busy]))
-    const sessions: SessionMeta[] = this.ctx.storage.sql
-      .exec<SessionRow>(`SELECT * FROM dex_sessions ORDER BY updated_at DESC`)
-      .toArray()
-      .map((row) => ({
-        id: row.id,
-        title: row.title,
-        model: row.model,
-        thinking: row.thinking as ThinkingLevel,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-        busy: busy.get(row.id) ?? false,
-        agentId: row.agent_id ?? null,
-        mcpServers: parseIds(row.mcp_servers),
-        projectId: row.project_id ?? null,
-        characterId: row.character_id ?? null,
-        spaceId: row.space_id ?? null,
-        failed: row.last_failed === 1,
-        unread: isUnread(row),
-        lastReply: row.last_reply ?? null,
-        repliedAt: row.reply_at ?? null,
-        muted: row.muted === 1,
-        settledAt: row.settled_at ?? null,
-        snoozedUntil: row.snoozed_until ?? null
-      }))
-    this.publish({ sessions })
+  private sessionsRefreshing: Promise<void> | null = null
+  private sessionsRefreshQueued = false
+
+  /** Rebuilds and publishes the session list, coalescing concurrent callers (e.g. multiple tabs on run_end). */
+  private refreshSessions(): Promise<void> {
+    if (this.sessionsRefreshing) {
+      this.sessionsRefreshQueued = true
+      return this.sessionsRefreshing
+    }
+    this.sessionsRefreshing = (async () => {
+      do {
+        this.sessionsRefreshQueued = false
+        const busy = new Map((await this.harness.sessions.list()).map((info) => [info.id, info.busy]))
+        const sessions: SessionMeta[] = this.ctx.storage.sql
+          .exec<SessionRow>(`SELECT * FROM dex_sessions ORDER BY updated_at DESC`)
+          .toArray()
+          .map((row) => ({
+            id: row.id,
+            title: row.title,
+            model: row.model,
+            thinking: row.thinking as ThinkingLevel,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
+            busy: busy.get(row.id) ?? false,
+            agentId: row.agent_id ?? null,
+            mcpServers: parseIds(row.mcp_servers),
+            projectId: row.project_id ?? null,
+            characterId: row.character_id ?? null,
+            spaceId: row.space_id ?? null,
+            failed: row.last_failed === 1,
+            unread: isUnread(row),
+            lastReply: row.last_reply ?? null,
+            repliedAt: row.reply_at ?? null,
+            muted: row.muted === 1,
+            settledAt: row.settled_at ?? null,
+            snoozedUntil: row.snoozed_until ?? null
+          }))
+        this.publish({ sessions })
+      } while (this.sessionsRefreshQueued)
+    })().finally(() => {
+      this.sessionsRefreshing = null
+    })
+    return this.sessionsRefreshing
   }
 
   private hasSession(id: string) {
@@ -1543,8 +1608,8 @@ export class DexAgent extends Agent<Env, DexState> {
   private afterRun(sessionId: string, operationId: string, kind: "reply" | "scheduled", prompt?: string) {
     const finished = async () => {
       this.ctx.storage.sql.exec(`UPDATE dex_sessions SET updated_at = ? WHERE id = ?`, Date.now(), sessionId)
-      await this.refreshSessions()
-      await this.notifyRunEnd(sessionId, kind, prompt)
+      const refreshed = await this.notifyRunEnd(sessionId, kind, prompt)
+      if (!refreshed) await this.refreshSessions()
       await this.drainQueue(sessionId)
     }
     this.ctx.waitUntil(this.harness.session(sessionId).wait(operationId).then(finished, finished))
@@ -1560,7 +1625,7 @@ export class DexAgent extends Agent<Env, DexState> {
     try {
       if (await this.isBusy(sessionId)) {
         const delay = [250, 1_000, 3_000][attempt]
-        if (delay !== undefined && this.messageQueue.list(sessionId).length) {
+        if (delay !== undefined && this.messageQueue.has(sessionId)) {
           this.ctx.waitUntil(new Promise((resolve) => setTimeout(resolve, delay)).then(() => this.drainQueue(sessionId, attempt + 1)))
         }
         return
@@ -1620,7 +1685,7 @@ export class DexAgent extends Agent<Env, DexState> {
   @callable()
   removeQueued(sessionId: string, id: string) {
     this.messageQueue.take(sessionId, id)
-    if (!this.messageQueue.list(sessionId).length) this.messageQueue.release(sessionId)
+    if (!this.messageQueue.has(sessionId)) this.messageQueue.release(sessionId)
     this.publishQueue(sessionId)
   }
 
@@ -1646,7 +1711,7 @@ export class DexAgent extends Agent<Env, DexState> {
   @callable()
   async abort(sessionId: string) {
     // Stopping holds what's queued: nothing more goes until you send something or pick a message to send.
-    if (this.messageQueue.list(sessionId).length) this.messageQueue.hold(sessionId)
+    if (this.messageQueue.has(sessionId)) this.messageQueue.hold(sessionId)
     await this.stopHelpers(sessionId)
     await this.harness.session(sessionId).abort()
     await this.refreshSessions()
@@ -1700,6 +1765,8 @@ export class DexAgent extends Agent<Env, DexState> {
 
   private modelsRefresh?: Promise<{ added: string[]; retired: string[] }>
   private modelsAttemptedAt = 0
+  /** Cached build & freshness timestamp of `model_catalog` so 20s pings don't JSON.parse it from SQLite. */
+  private catalogMeta: { build?: string; updatedAt: number } | null = null
 
   /**
    * Looks up what models ClinePass, OpenCode Go, and the signed-in ChatGPT plan offer now (src/agent/model-catalog.ts),
@@ -1709,13 +1776,13 @@ export class DexAgent extends Agent<Env, DexState> {
    */
   private async refreshModels({ force = false } = {}): Promise<{ added: string[]; retired: string[] }> {
     if (this.modelsRefresh) return this.modelsRefresh
-    const stored = this.storedCatalog()
-    const fresh = stored?.build === __DEX_BUILD__ && Date.now() - stored.updatedAt < 60 * 60_000
+    const fresh = this.catalogMeta?.build === __DEX_BUILD__ && Date.now() - this.catalogMeta.updatedAt < 60 * 60_000
     if (!force && (fresh || Date.now() - this.modelsAttemptedAt < 10 * 60_000)) return { added: [], retired: [] }
     this.modelsAttemptedAt = Date.now()
     this.modelsRefresh = (async () => {
       const before = [...MODELS]
-      const models = await fetchModelCatalog(before, await this.chatGPTModelIds(), await this.commandCodeCatalog(force), (service, candidates) =>
+      const [chatgptIds, commandCode] = await Promise.all([this.chatGPTModelIds(), this.commandCodeCatalog(force)])
+      const models = await fetchModelCatalog(before, chatgptIds, commandCode, (service, candidates) =>
         this.freeModelsAnswering(service, candidates)
       )
       const catalog = { version: catalogVersion(models), updatedAt: Date.now(), models }
@@ -1723,6 +1790,7 @@ export class DexAgent extends Agent<Env, DexState> {
         `INSERT OR REPLACE INTO dex_meta (key, value) VALUES ('model_catalog', ?)`,
         JSON.stringify({ ...catalog, build: __DEX_BUILD__ })
       )
+      this.catalogMeta = { build: __DEX_BUILD__, updatedAt: catalog.updatedAt }
       setModelCatalog(catalog)
       if (this.chatModels) this.installProviders(this.chatModels)
       if (this.oneOffModels) this.installProviders(this.oneOffModels)
@@ -1872,8 +1940,15 @@ export class DexAgent extends Agent<Env, DexState> {
     await this.harness.session(sessionId).abort().catch(() => false)
     this.ctx.storage.sql.exec(`DELETE FROM dex_sessions WHERE id = ?`, sessionId)
     await this.stopHelpers(sessionId).catch(() => [])
+    for (const helper of this.ctx.storage.sql.exec<{ conversation_id: string }>(`SELECT conversation_id FROM dex_vm_agents WHERE chat_id = ?`, sessionId).toArray()) {
+      this.silencedHelpers.delete(helper.conversation_id)
+    }
     this.ctx.storage.sql.exec(`DELETE FROM dex_vm_agents WHERE chat_id = ?`, sessionId)
     this.publishHelpers()
+    this.lastResponses.delete(sessionId)
+    this.runVmLinks.delete(sessionId)
+    this.voiceCalls.delete(sessionId)
+    this.access.forgetSession(sessionId)
     this.skills.forgetSession(sessionId)
     this.messageQueue.clear(sessionId)
     this.secrets.forget(sessionId)
@@ -1906,6 +1981,7 @@ export class DexAgent extends Agent<Env, DexState> {
       try {
         await vm.destroy("system", { forget: true })
         this.vms.delete(key)
+        this.forgetVmMeta(key)
       } catch (error) {
         failed = true
         console.warn(`Could not delete the VM of deleted chat ${chatOfVm(key)} (${key}): ${errorText(error)}`)
@@ -1943,6 +2019,7 @@ export class DexAgent extends Agent<Env, DexState> {
 
   override async onClose(connection: Connection) {
     this.presence.delete(connection.id)
+    this.subscribing.delete(connection.id)
     await this.unsubscribe(connection.id)
   }
 
@@ -1990,9 +2067,13 @@ export class DexAgent extends Agent<Env, DexState> {
         if (this.subscriptions.get(connection.id)?.stream === stream) this.subscriptions.delete(connection.id)
       })
     })
-    const settled = next.catch((error: unknown) => {
-      this.send(connection, { type: "dex.error", sessionId, message: error instanceof Error ? error.message : String(error) })
-    })
+    const settled = next
+      .catch((error: unknown) => {
+        this.send(connection, { type: "dex.error", sessionId, message: error instanceof Error ? error.message : String(error) })
+      })
+      .finally(() => {
+        if (this.subscribing.get(connection.id) === settled) this.subscribing.delete(connection.id)
+      })
     this.subscribing.set(connection.id, settled)
     return settled
   }
@@ -2420,6 +2501,7 @@ export class DexAgent extends Agent<Env, DexState> {
       "bot/headphones/flat": "byte", "cat/bow/purr": "mochi", "bean/wizard/o": "nova", "blob/none/tongue": "pip", "cube/crown/smile": "duke",
       "cat/sprout/smile": "fern", "ghost/beanie/o": "ziggy", "bot/none/grin": "bolt"
     }
+    let changed = false
     for (const row of this.ctx.storage.sql.exec<CharacterRow>(`SELECT * FROM dex_characters`).toArray()) {
       const data = JSON.parse(row.data) as Partial<CharacterProfile> & { faceStyle?: number }
       if (!data.look || data.faceStyle === FACE_STYLE) continue
@@ -2433,11 +2515,12 @@ export class DexAgent extends Agent<Env, DexState> {
           `UPDATE dex_characters SET data = ? WHERE id = ? AND updated_at = ?`,
           JSON.stringify({ ...data, look, image, faceStyle: FACE_STYLE }), row.id, row.updated_at
         )
+        changed = true
       } catch (error) {
         console.warn(`Couldn't draw ${row.id}'s face:`, error)
       }
     }
-    this.refreshCharacters()
+    if (changed) this.refreshCharacters()
   }
 
   private refreshCharacters() {
@@ -2561,29 +2644,40 @@ export class DexAgent extends Agent<Env, DexState> {
 
   // ── MCP servers ───────────────────────────────────────────────────────────
 
+  private toMcpRow(row: { id: string; data: string; headers: string | null; tools: string; created_at: number; updated_at: number }): McpRow {
+    return {
+      ...(JSON.parse(row.data) as McpRowData),
+      id: row.id,
+      sealedHeaders: row.headers,
+      tools: JSON.parse(row.tools) as McpToolSpec[],
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    }
+  }
+
   private mcpRows(): McpRow[] {
     return this.ctx.storage.sql
       .exec<{ id: string; data: string; headers: string | null; tools: string; created_at: number; updated_at: number }>(
         `SELECT * FROM dex_mcp ORDER BY created_at, id`
       )
       .toArray()
-      .map((row) => ({
-        ...(JSON.parse(row.data) as McpRowData),
-        id: row.id,
-        sealedHeaders: row.headers,
-        tools: JSON.parse(row.tools) as McpToolSpec[],
-        createdAt: row.created_at,
-        updatedAt: row.updated_at
-      }))
+      .map((row) => this.toMcpRow(row))
   }
 
   private mcpRow(id: string): McpRow | undefined {
-    return this.mcpRows().find((row) => row.id === id)
+    const row = this.ctx.storage.sql
+      .exec<{ id: string; data: string; headers: string | null; tools: string; created_at: number; updated_at: number }>(
+        `SELECT * FROM dex_mcp WHERE id = ?`,
+        id
+      )
+      .toArray()[0]
+    return row && this.toMcpRow(row)
   }
 
   /** Drops ids of servers that no longer exist, keeping order and removing repeats. */
   private knownMcpIds(ids: readonly string[]): string[] {
-    const known = new Set(this.mcpRows().map((row) => row.id))
+    if (!ids.length) return []
+    const known = new Set(this.ctx.storage.sql.exec<{ id: string }>(`SELECT id FROM dex_mcp`).toArray().map((row) => row.id))
     return [...new Set(ids)].filter((id) => known.has(id))
   }
 
@@ -2592,6 +2686,9 @@ export class DexAgent extends Agent<Env, DexState> {
     const sealed = row.sealedHeaders
     return JSON.parse(await this.runtime.runPromise(Keys.use((keys) => keys.decrypt(sealed)))) as Record<string, string>
   }
+
+  /** Cached origin written to `dex_meta` so repeated calls don't issue redundant SQLite writes. */
+  private cachedCallbackHost: string | undefined
 
   /** OAuth sends the user back to the host they connected from; remembered for reconnects started by the agent. */
   /** Dex's own https origin, learned from the app's connections; push and OAuth need it outside a request. */
@@ -2603,10 +2700,14 @@ export class DexAgent extends Agent<Env, DexState> {
     const { connection } = getCurrentAgent()
     if (connection?.uri) {
       const host = new URL(connection.uri).origin
-      this.ctx.storage.sql.exec(`INSERT OR REPLACE INTO dex_meta (key, value) VALUES ('mcp_callback_host', ?)`, host)
+      if (this.cachedCallbackHost !== host) {
+        this.cachedCallbackHost = host
+        this.ctx.storage.sql.exec(`INSERT OR REPLACE INTO dex_meta (key, value) VALUES ('mcp_callback_host', ?)`, host)
+      }
       return host
     }
-    return this.ctx.storage.sql.exec<{ value: string }>(`SELECT value FROM dex_meta WHERE key = 'mcp_callback_host'`).toArray()[0]?.value
+    this.cachedCallbackHost ??= this.ctx.storage.sql.exec<{ value: string }>(`SELECT value FROM dex_meta WHERE key = 'mcp_callback_host'`).toArray()[0]?.value
+    return this.cachedCallbackHost
   }
 
   private startMcp() {
@@ -2741,8 +2842,9 @@ export class DexAgent extends Agent<Env, DexState> {
       if (rows.some((row) => row.id === id)) continue
       this.registry.uninstall({ name: mcpExtensionName(id) })
       this.mcpInstalled.delete(id)
+      this.mcpLastStatus.delete(id)
     }
-    if (JSON.stringify(servers) !== JSON.stringify(this.state.mcp)) this.publish({ mcp: servers })
+    this.publish({ mcp: servers })
   }
 
   /** Null once the server is ready, else why its tools can't run. Reconnects a dropped or failed server once. */
@@ -3002,6 +3104,7 @@ export class DexAgent extends Agent<Env, DexState> {
     if (row?.local) await this.stopLocalMcp(row)
     this.ctx.storage.sql.exec(`DELETE FROM dex_mcp WHERE id = ?`, id)
     this.mcpErrors.delete(id)
+    this.mcpLastStatus.delete(id)
     for (const row of this.ctx.storage.sql.exec<SessionRow>(`SELECT * FROM dex_sessions WHERE mcp_servers LIKE ?`, `%"${id}"%`).toArray()) {
       this.ctx.storage.sql.exec(`UPDATE dex_sessions SET mcp_servers = ? WHERE id = ?`, JSON.stringify(parseIds(row.mcp_servers).filter((other) => other !== id)), row.id)
     }
@@ -3059,6 +3162,7 @@ export class DexAgent extends Agent<Env, DexState> {
     // If a refresh fails (e.g. GraphQL rate limits), keep showing the last good numbers.
     if (entry.error && cached?.days) return cached
     this.cloudflareCache.set(key, entry)
+    if (this.cloudflareCache.size > 20) this.cloudflareCache.delete(this.cloudflareCache.keys().next().value!)
     return entry
   }
 
@@ -3076,30 +3180,33 @@ export class DexAgent extends Agent<Env, DexState> {
           : Math.min(this.ledger.earliest() ?? until, until - DAY)
 
     const titles = new Map(this.state.sessions.map((session) => [session.id, session.title]))
-    const cline = this.ledger.modelUsage("clinepass", since, until, titles)
-    const clineDaily = this.ledger.modelDaily("clinepass", since, until)
-    const opencodeTokens = this.ledger.modelUsage("opencode-go", since, until, titles)
-    const opencodeDaily = this.ledger.modelDaily("opencode-go", since, until)
-    const opencodeLimits = await this.openCodeLimits()
-    const chatgptTokens = this.ledger.modelUsage("chatgpt", since, until, titles)
-    const chatgptDaily = this.ledger.modelDaily("chatgpt", since, until)
-    const commandcodeTokens = this.ledger.modelUsage("commandcode", since, until, titles)
-    const commandcodeDaily = this.ledger.modelDaily("commandcode", since, until)
-    const commandcodeSpent = {
-      fiveHours: this.ledger.modelSpend("commandcode", until - 5 * 3_600_000, until),
-      week: this.ledger.modelSpend("commandcode", until - 7 * DAY, until),
-      month: this.ledger.modelSpend("commandcode", until - 30 * DAY, until)
-    }
-    const openrouterTokens = this.ledger.modelUsage("openrouter", since, until, titles)
-    const openrouterDaily = this.ledger.modelDaily("openrouter", since, until)
-    const openrouterAccount = await this.openRouterAccount()
-    const tokensDaily = this.ledger.tokensDaily(since, until)
+    const { byProvider, dailyByProvider, tokensDaily } = this.ledger.allModelUsage(since, until, titles)
+    const cline = byProvider.clinepass
+    const clineDaily = dailyByProvider.clinepass
+    const opencodeTokens = byProvider["opencode-go"]
+    const opencodeDaily = dailyByProvider["opencode-go"]
+    const chatgptTokens = byProvider.chatgpt
+    const chatgptDaily = dailyByProvider.chatgpt
+    const commandcodeTokens = byProvider.commandcode
+    const commandcodeDaily = dailyByProvider.commandcode
+    const [cc5h = 0, ccWeek = 0, ccMonth = 0] = this.ledger.modelSpends(
+      "commandcode",
+      [until - 5 * 3_600_000, until - 7 * DAY, until - 30 * DAY],
+      until
+    )
+    const commandcodeSpent = { fiveHours: cc5h, week: ccWeek, month: ccMonth }
+    const openrouterTokens = byProvider.openrouter
+    const openrouterDaily = dailyByProvider.openrouter
     const { usage: boat, daily: boatDaily } = this.ledger.boatUsage(since, until)
 
     // Cloudflare keeps these analytics for about a month.
     const configured = await this.runtime.runPromise(CloudflareAnalytics.use((analytics) => Effect.succeed(analytics.configured)))
     const cloudflareSince = Math.max(since, until - 30 * DAY)
-    const cloudflare = configured ? await this.cloudflareDays(utcDate(cloudflareSince), utcDate(until)) : null
+    const [opencodeLimits, openrouterAccount, cloudflare] = await Promise.all([
+      this.openCodeLimits(),
+      this.openRouterAccount(),
+      configured ? this.cloudflareDays(utcDate(cloudflareSince), utcDate(until)) : Promise.resolve(null)
+    ])
     const total = emptyDay()
     for (const day of cloudflare?.days?.values() ?? []) {
       for (const field of Object.keys(total) as Array<keyof CloudflareDay>) total[field] += day[field]
@@ -3476,9 +3583,16 @@ export class DexAgent extends Agent<Env, DexState> {
     await vm.destroy("user", { forget: key === SHARED_VM })
     if (key === SHARED_VM) {
       this.vms.delete(key)
+      this.forgetVmMeta(key)
       this.publishVms()
     }
     return vm.current
+  }
+
+  private forgetVmMeta(key: string) {
+    this.vmSecretsVersion.delete(key)
+    this.vmGitHubTried.delete(key)
+    this.ctx.storage.sql.exec(`DELETE FROM dex_meta WHERE key = ?`, `vm_github:${key}`)
   }
 
   /** Runs the VM's setup again (GitHub sign-in, project repos, setup script). */
@@ -3691,6 +3805,7 @@ export class DexAgent extends Agent<Env, DexState> {
       headers: { authorization: `Bearer ${credentials.token}`, accept: "application/vnd.github+json", "user-agent": "dex" },
       signal: AbortSignal.timeout(10_000)
     }).catch(() => null)
+    void response?.body?.cancel()
     if (response?.status === 401) await this.githubRejected(credentials.token, "checking it")
     else if (response?.ok && this.secret("github_expired") === "1") {
       this.ctx.storage.sql.exec(`DELETE FROM dex_secrets WHERE name IN ('github_expired', 'github_expired_at', 'github_expired_reason')`)
@@ -3860,7 +3975,8 @@ export class DexAgent extends Agent<Env, DexState> {
   }
 
   private projectById(id: string): ProjectProfile | undefined {
-    return this.loadProjects().find((project) => project.id === id)
+    const row = this.ctx.storage.sql.exec<AgentRow>(`SELECT * FROM dex_projects WHERE id = ?`, id).toArray()[0]
+    return row && { ...(JSON.parse(row.data) as ProjectDraft), id: row.id, createdAt: row.created_at, updatedAt: row.updated_at }
   }
 
   private projectForSession(sessionId: string): ProjectProfile | undefined {
@@ -3953,8 +4069,8 @@ export class DexAgent extends Agent<Env, DexState> {
 
   // ── Push notifications ────────────────────────────────────────────────────
 
-  /** Tells your devices how a chat's run ended: its reply, or what went wrong. Stopped runs stay quiet. */
-  private async notifyRunEnd(sessionId: string, kind: "reply" | "scheduled", prompt?: string) {
+  /** Tells your devices how a chat's run ended: its reply, or what went wrong. Stopped runs stay quiet. Returns whether sessions were refreshed. */
+  private async notifyRunEnd(sessionId: string, kind: "reply" | "scheduled", prompt?: string): Promise<boolean> {
     // Files the reply linked on the VM go into the chat now, while the VM is still up to serve them.
     const links = this.runVmLinks.get(sessionId)
     this.runVmLinks.delete(sessionId)
@@ -3962,7 +4078,7 @@ export class DexAgent extends Agent<Env, DexState> {
     const row = this.ctx.storage.sql.exec<SessionRow>(`SELECT * FROM dex_sessions WHERE id = ?`, sessionId).toArray()[0]
     const last = this.lastResponses.get(sessionId)
     this.lastResponses.delete(sessionId)
-    if (!row || !last || last.stopReason === "aborted") return
+    if (!row || !last || last.stopReason === "aborted") return false
     // Unread until someone looks, unless someone is looking now.
     const now = Date.now()
     const failed = last.stopReason === "error"
@@ -3977,13 +4093,16 @@ export class DexAgent extends Agent<Env, DexState> {
     if (threadOf && threadOf.sessionId !== sessionId) {
       const body = failed ? (last.error ?? "The model request failed.") : last.text.length > 6_000 ? `${last.text.slice(0, 6_000)}\n… (cut; space_read_thread has the rest)` : last.text
       await this.tellCoordinator(threadOf, spaceUpdate({ id: sessionId, title: row.title }, failed ? "failed" : "finished", body))
-      return
+      return true
     }
-    if (row.muted === 1) return
+    if (row.muted === 1) return true
     const character = this.characterForSession(sessionId)
-    if (character) return this.notifySidekick(character, sessionId, kind, last, preview)
+    if (character) {
+      await this.notifySidekick(character, sessionId, kind, last, preview)
+      return true
+    }
     // More is queued: tell your devices when the last of it is done.
-    if (!this.messageQueue.held(sessionId) && this.messageQueue.list(sessionId).length > 0 && last.stopReason !== "error") return
+    if (!this.messageQueue.held(sessionId) && this.messageQueue.has(sessionId) && last.stopReason !== "error") return true
     const url = `/chat/${sessionId}`
     const title = (kind === "scheduled" ? `⏰ ${prompt ?? row.title}` : row.title).slice(0, 80)
     const payload: PushPayload = {
@@ -3996,6 +4115,7 @@ export class DexAgent extends Agent<Env, DexState> {
       actions: failed ? [{ action: "open", title: "Open chat" }] : [{ action: "open", title: "Open chat" }, { action: "mute", title: "Mute this chat" }]
     }
     await this.push.notify(failed ? "error" : kind, { ...payload, badge: this.unreadCount() })
+    return true
   }
 
   /**
@@ -4165,19 +4285,20 @@ export class DexAgent extends Agent<Env, DexState> {
   @callable()
   async transcriptImage(sessionId: string, ref: string): Promise<{ data: string; mimeType: string } | null> {
     if (!this.hasSession(sessionId) || typeof ref !== "string") return null
+    // Look up the single entry directly first so fetching one screenshot doesn't open the whole transcript.
+    const id = Number(ref.split(":")[0])
+    if (Number.isSafeInteger(id) && id >= 1) {
+      const conversation = await this.harness.conversation(sessionId)
+      const page = await conversation.entries({ minEntryId: id as never, maxEntryId: id as never }, 1, undefined, BACKGROUND_CONTEXT)
+      const direct = findImage({ entries: page.items }, ref)
+      if (direct) return direct
+    }
     const stream = await this.harness.session(sessionId).events()
     try {
-      const found = findImage(stream.snapshot, ref)
-      if (found) return found
+      return findImage(stream.snapshot, ref)
     } finally {
       await stream.stop().catch(() => undefined)
     }
-    // An older message's, from before the chat's latest summary (see withHistory).
-    const id = Number(ref.split(":")[0])
-    if (!Number.isSafeInteger(id) || id < 1) return null
-    const conversation = await this.harness.conversation(sessionId)
-    const page = await conversation.entries({ minEntryId: id as never, maxEntryId: id as never }, 1, undefined, BACKGROUND_CONTEXT)
-    return findImage({ entries: page.items }, ref)
   }
 
   /** A chat's latest messages as text, for operations that read chats. */

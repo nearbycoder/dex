@@ -59,12 +59,10 @@ export class SecretVault {
   async prepare(sessionId: string): Promise<ReadonlyMap<string, string>> {
     const cached = this.loaded.get(sessionId)
     if (cached) return cached
-    const values = new Map<string, string>()
     const rows = this.host.sql.exec<{ name: string; sealed: string }>(`SELECT name, sealed FROM dex_chat_secrets WHERE session_id = ?`, sessionId).toArray()
-    for (const row of rows) {
-      const value = await this.host.decrypt(row.sealed)
-      if (value) values.set(row.name, value)
-    }
+    const decrypted = await Promise.all(rows.map(async (row) => [row.name, await this.host.decrypt(row.sealed)] as const))
+    const values = new Map<string, string>()
+    for (const [name, value] of decrypted) if (value) values.set(name, value)
     this.loaded.set(sessionId, values)
     return values
   }
@@ -80,7 +78,7 @@ export class SecretVault {
 
   /** File content with its placeholders replaced by the values (for vm_write_file). */
   async fill(sessionId: string, content: string) {
-    if (!content.match(PLACEHOLDER)) return content
+    if (!content.includes("{{") || !content.match(PLACEHOLDER)) return content
     const values = await this.prepare(sessionId)
     return content.replace(PLACEHOLDER, (_match, name: string) => this.lookup(values, name))
   }
@@ -90,6 +88,7 @@ export class SecretVault {
    * sources from a file and deletes, so values never appear in the command, the activity log, or `ps`.
    */
   async command(sessionId: string, command: string): Promise<{ command: string; env: string | null }> {
+    if (!command.includes("{{")) return { command, env: null }
     const used = new Set<string>()
     for (const match of command.matchAll(PLACEHOLDER)) used.add(match[1]!.toLowerCase())
     if (!used.size) return { command, env: null }
@@ -181,11 +180,10 @@ export class AccountSecrets {
   /** Decrypted values, for the VM env file and for masking. */
   async load(): Promise<ReadonlyMap<string, string>> {
     if (this.cache) return this.cache
+    const rows = this.host.sql.exec<{ name: string; sealed: string }>(`SELECT name, sealed FROM dex_account_secrets`).toArray()
+    const decrypted = await Promise.all(rows.map(async (row) => [row.name, await this.host.decrypt(row.sealed)] as const))
     const values = new Map<string, string>()
-    for (const row of this.host.sql.exec<{ name: string; sealed: string }>(`SELECT name, sealed FROM dex_account_secrets`).toArray()) {
-      const value = await this.host.decrypt(row.sealed)
-      if (value) values.set(row.name, value)
-    }
+    for (const [name, value] of decrypted) if (value) values.set(name, value)
     this.cache = values
     return values
   }

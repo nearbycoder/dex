@@ -1,10 +1,9 @@
 import { getAgentByName } from "agents"
 import { Option } from "effect"
 import type { DexAgent } from "~/agent/dex-agent"
-import { viewerFromRequest } from "./auth"
-import { readCookie } from "./cookies"
+import { viewerSessionFromRequest } from "./auth"
 import { serverRuntime } from "./runtime"
-import { SESSION_COOKIE, type SessionUser, tokenIssuedAt } from "./session"
+import { type SessionUser } from "./session"
 
 /**
  * The session couldn't be checked right now (the agent was restarting onto a new deploy, or unreachable). Not the
@@ -25,17 +24,17 @@ const RETRY_DELAYS_MS = [300, 900]
  * agent can't answer even after a couple of tries, throws SessionCheckUnavailable (no access either way).
  */
 export async function checkViewer(request: Request, env: Env): Promise<SessionUser | null> {
-  const viewer = await serverRuntime(env).runPromise(viewerFromRequest(request))
-  if (Option.isNone(viewer)) return null
-  const issuedAt = tokenIssuedAt(readCookie(request.headers.get("cookie"), SESSION_COOKIE) ?? "")
+  const session = await serverRuntime(env).runPromise(viewerSessionFromRequest(request))
+  if (Option.isNone(session)) return null
+  const { user, issuedAt } = session.value
   let lastError: unknown
   for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
     if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt - 1]))
     try {
       // A fresh stub each try: one whose instance reset can't be used again.
-      const agent = await getAgentByName(env.DexAgent as unknown as DurableObjectNamespace<DexAgent>, viewer.value.id)
+      const agent = await getAgentByName(env.DexAgent as unknown as DurableObjectNamespace<DexAgent>, user.id)
       // With this Worker's build: an agent left running older code since a deploy restarts onto this one.
-      return (await agent.isSessionCurrent(issuedAt, __DEX_BUILD__)) ? viewer.value : null
+      return (await agent.isSessionCurrent(issuedAt, __DEX_BUILD__)) ? user : null
     } catch (error) {
       lastError = error
     }

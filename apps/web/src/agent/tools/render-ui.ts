@@ -75,52 +75,55 @@ const forPrompt = (input: unknown): JsonSchema => {
 /** A UI reads a list as `{ rows: [...] }` (the OpenUI block wraps it), the shape OpenUI's guide uses throughout. */
 const asRows = (schema: JsonSchema): JsonSchema => (schema.type === "array" ? { type: "object", properties: { rows: schema }, required: ["rows"] } : schema)
 
-/**
- * The tools a UI's Query() and Mutation() can call: the app operations, with what the read ones return (OUTPUTS).
- * Descriptions lead with what running one takes.
- */
-const uiTools: ToolSpec[] = OPERATIONS.filter(inUi).map((operation) => {
-  const risk = typeof operation.risk === "function" ? "varies" : operation.risk
-  const label = risk === "read" ? "read: Query or Mutation" : risk === "admin" ? "admin: Mutation only; the user confirms it on click" : "changes things: Mutation only"
-  return {
-    name: operation.name,
-    description: `[${label}] ${(operation.description.split(/(?<!e\.g|i\.e)\.\s/)[0] ?? "").replace(/\.$/, "")}.`,
-    inputSchema: forPrompt(JSON.parse(JSON.stringify(operation.parameters))),
-    // Untyped results get none: the guide would list `null` defaults; app_call shows the real shape.
-    ...(OUTPUTS[operation.name] && { outputSchema: asRows(forPrompt(JSON.parse(JSON.stringify(OUTPUTS[operation.name])))) }),
-    annotations: { readOnlyHint: risk === "read", destructiveHint: risk === "admin" }
-  } as ToolSpec
-})
+let cachedReference: string | undefined
 
-const reference = generateSystemPrompt({
-  library: spec as unknown as LibrarySpec,
-  promptOptions: {
-    // The CLI serializes the library's own prompt options (examples, rules) next to the spec.
-    ...(spec as { promptOptions?: object }).promptOptions,
-    tools: uiTools,
-    toolCalls: true,
-    bindings: true,
-    inlineMode: false,
-    editMode: false,
-    preamble:
-      `You show UI by calling the ${RENDER_UI_TOOL} tool with an OpenUI Lang program in its \`code\` argument. ` +
-      "Write ordinary prose in your normal reply and put only OpenUI Lang in `code` (no markdown fences). " +
-      "@ToAssistant actions arrive back to you as user messages; Query() and Mutation() run in the user's browser " +
-      "without you, and you don't see their results.",
-    additionalRules: [
-      ...((spec as { promptOptions?: { additionalRules?: string[] } }).promptOptions?.additionalRules ?? []),
-      "The tools below are Dex's app operations. Most read tools show what they return (after →); build on those fields. " +
-        "Every list comes wrapped as {rows: [...]}, so read `q.rows` (app_call shows it unwrapped). " +
-        "For a tool without one, run it once with app_call before writing the UI. Use real values (condensed) as Query defaults. " +
-        "Fields that can be empty come back as null. Times are milliseconds since 1970 when they're numbers, ISO 8601 when " +
-        "strings: show them with @Ago or @DateTime, and sizes in bytes with @Bytes, never raw.",
-      "Query() may only use [read] tools: it runs on its own whenever the UI shows. Anything else goes in a Mutation() " +
-        "run by a button, with a label that says exactly what it does.",
-      "Admin tools ask the user to confirm Dex's own description of the action when they click; don't add a confirmation step of your own.",
-      "Use @ToAssistant only when you need to think about the answer or do work your tools can't do from the UI."
-    ]
-  }
-})
+/** Built on first load_ui_guide call instead of module load, keeping cold Worker starts fast. */
+const getReference = (): string => {
+  if (cachedReference !== undefined) return cachedReference
+  const uiTools: ToolSpec[] = OPERATIONS.filter(inUi).map((operation) => {
+    const risk = typeof operation.risk === "function" ? "varies" : operation.risk
+    const label = risk === "read" ? "read: Query or Mutation" : risk === "admin" ? "admin: Mutation only; the user confirms it on click" : "changes things: Mutation only"
+    return {
+      name: operation.name,
+      description: `[${label}] ${(operation.description.split(/(?<!e\.g|i\.e)\.\s/)[0] ?? "").replace(/\.$/, "")}.`,
+      inputSchema: forPrompt(JSON.parse(JSON.stringify(operation.parameters))),
+      // Untyped results get none: the guide would list `null` defaults; app_call shows the real shape.
+      ...(OUTPUTS[operation.name] && { outputSchema: asRows(forPrompt(JSON.parse(JSON.stringify(OUTPUTS[operation.name])))) }),
+      annotations: { readOnlyHint: risk === "read", destructiveHint: risk === "admin" }
+    } as ToolSpec
+  })
+
+  cachedReference = generateSystemPrompt({
+    library: spec as unknown as LibrarySpec,
+    promptOptions: {
+      // The CLI serializes the library's own prompt options (examples, rules) next to the spec.
+      ...(spec as { promptOptions?: object }).promptOptions,
+      tools: uiTools,
+      toolCalls: true,
+      bindings: true,
+      inlineMode: false,
+      editMode: false,
+      preamble:
+        `You show UI by calling the ${RENDER_UI_TOOL} tool with an OpenUI Lang program in its \`code\` argument. ` +
+        "Write ordinary prose in your normal reply and put only OpenUI Lang in `code` (no markdown fences). " +
+        "@ToAssistant actions arrive back to you as user messages; Query() and Mutation() run in the user's browser " +
+        "without you, and you don't see their results.",
+      additionalRules: [
+        ...((spec as { promptOptions?: { additionalRules?: string[] } }).promptOptions?.additionalRules ?? []),
+        "The tools below are Dex's app operations. Most read tools show what they return (after →); build on those fields. " +
+          "Every list comes wrapped as {rows: [...]}, so read `q.rows` (app_call shows it unwrapped). " +
+          "For a tool without one, run it once with app_call before writing the UI. Use real values (condensed) as Query defaults. " +
+          "Fields that can be empty come back as null. Times are milliseconds since 1970 when they're numbers, ISO 8601 when " +
+          "strings: show them with @Ago or @DateTime, and sizes in bytes with @Bytes, never raw.",
+        "Query() may only use [read] tools: it runs on its own whenever the UI shows. Anything else goes in a Mutation() " +
+          "run by a button, with a label that says exactly what it does.",
+        "Admin tools ask the user to confirm Dex's own description of the action when they click; don't add a confirmation step of your own.",
+        "Use @ToAssistant only when you need to think about the answer or do work your tools can't do from the UI."
+      ]
+    }
+  })
+  return cachedReference
+}
 
 /** The OpenUI Lang reference (~13k tokens), returned on demand instead of sitting in every system prompt. */
 export const loadUiGuideTool = defineTool({
@@ -128,5 +131,5 @@ export const loadUiGuideTool = defineTool({
   description: `Load the OpenUI Lang reference for the ${RENDER_UI_TOOL} tool: components, charts, forms, actions, and examples.`,
   parameters: Type.Object({}),
   replay: "safe",
-  execute: async () => ({ output: [{ type: "text", text: reference }] })
+  execute: async () => ({ output: [{ type: "text", text: getReference() }] })
 })

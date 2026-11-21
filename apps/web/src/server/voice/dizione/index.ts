@@ -8,7 +8,7 @@ import { Phonemizer } from "./engine.ts"
 import { Model, readNpz } from "./g2p.ts"
 import { Homographs, readRules } from "./homographs.ts"
 import { asPythonSees, strip, ValueError } from "./py.ts"
-import { tokenize, tokensText } from "./symbols.ts"
+import { tokenize, tokensText, type Piece } from "./symbols.ts"
 
 export { DIZIONE_COMMIT }
 export { SYMBOLS } from "./symbols.ts"
@@ -30,28 +30,38 @@ export interface Dizione {
 /** The files of tiny-voca's `phonemizer/` folder the phonemizer reads. */
 export const DIZIONE_FILES: readonly string[] = ["lexicon.tsv", "align.json", "g2p.json", "g2p.npz", "homographs.json"]
 
+// As Python reads them: UTF-8, a byte order mark kept.
+const UTF8_KEEP_BOM = new TextDecoder("utf-8", { ignoreBOM: true })
+
 /** The phonemizer over the built files ``read`` returns by name (from `DIZIONE_FILES`). Load it once and keep it. */
 export async function loadDizione(read: (name: string) => Promise<Uint8Array>): Promise<Dizione> {
   const [lexicon, align, settings, weights, homographs] = await Promise.all(DIZIONE_FILES.map(read))
-  // As Python reads them: UTF-8, a byte order mark kept.
-  const text = (bytes: Uint8Array) => new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes)
+  // Inflate the g2p zip while parsing the text/JSON tables so decompression overlaps with JS work.
+  const weightsPromise = readNpz(weights!)
+  const text = (bytes: Uint8Array) => UTF8_KEEP_BOM.decode(bytes)
+  const lexiconText = text(lexicon!)
+  const alignData = JSON.parse(text(align!))
+  const settingsData = JSON.parse(text(settings!))
+  const homographsData = JSON.parse(text(homographs!))
   const phonemizer = new Phonemizer({
-    lexicon: text(lexicon!),
-    align: JSON.parse(text(align!)),
-    model: new Model(JSON.parse(text(settings!)), await readNpz(weights!)),
-    homographs: new Homographs(JSON.parse(text(homographs!)), readRules(TABLES["homograph_rules.txt"]))
+    lexicon: lexiconText,
+    align: alignData,
+    model: new Model(settingsData, await weightsPromise),
+    homographs: new Homographs(homographsData, readRules(TABLES["homograph_rules.txt"]))
   })
   return {
     phonemize(original) {
       const input = asPythonSees(original)
+      let pieces: Piece[] | null = null
       try {
         if (!strip(input)) throw new ValueError("text must not be empty")
-        const tokens = tokenize(phonemizer.pieces(input))
+        pieces = phonemizer.pieces(input)
+        const tokens = tokenize(pieces)
         return { ids: tokens.ids, stress: tokens.stress, text: tokensText(tokens) }
       } catch (error) {
         // As tiny-voca's web demo does: nothing to pronounce is no failure, anything else is.
         if (!(error instanceof ValueError)) throw error
-        if (phonemizer.pieces(input).some((piece) => !piece[0] && piece[1].length > 0)) throw error
+        if ((pieces ?? phonemizer.pieces(input)).some((piece) => !piece[0] && piece[1].length > 0)) throw error
         return null
       }
     }

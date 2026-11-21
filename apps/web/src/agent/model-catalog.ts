@@ -478,8 +478,11 @@ export async function fetchModelCatalog(
     served.status === "fulfilled" && served.value.size > 0
       ? providerList("opencode-go", served.value, openCodeEntries, newOpenCodeModel)
       : keep("opencode-go").filter((model) => !isZenModel(model))
-  const zenListed =
-    zen.status === "fulfilled" ? await answered("zen", zenFreeModels(zen.value, new Set(go.map((model) => model.apiId)))) : keep("opencode-go").filter(isZenModel)
+  // Probe Zen and Cline free models in parallel instead of waiting for one before starting the other.
+  const [zenListed, clineFree] = await Promise.all([
+    zen.status === "fulfilled" ? answered("zen", zenFreeModels(zen.value, new Set(go.map((model) => model.apiId)))) : Promise.resolve(keep("opencode-go").filter(isZenModel)),
+    clineListed.status === "fulfilled" ? answered("cline", clineFreeModels(clineListed.value)) : Promise.resolve(keep("clinepass").filter(isClineFreeModel))
+  ])
   const openCode = go.length > 0 ? [...go, ...zenListed] : []
 
   // ClinePass: the catalog's list, minus what it marks retired.
@@ -490,7 +493,6 @@ export async function fetchModelCatalog(
     clineServed.size > 0
       ? providerList("clinepass", clineServed, clineEntries, (apiId, entry) => newClinePassModel(apiId, entry, names))
       : keep("clinepass").filter((model) => !isClineFreeModel(model))
-  const clineFree = clineListed.status === "fulfilled" ? await answered("cline", clineFreeModels(clineListed.value)) : keep("clinepass").filter(isClineFreeModel)
   const cline = clinePass.length > 0 ? [...clinePass, ...clineFree] : []
 
   // ChatGPT: the chat models the account lists that the catalog describes (and the built-in ones it lists).

@@ -23,11 +23,18 @@ const ClaimsJson = Schema.fromJsonString(Claims)
 const decodeClaims = Schema.decodeUnknownOption(ClaimsJson)
 const encodeClaims = Schema.encodeSync(ClaimsJson)
 
+export interface VerifiedSession {
+  readonly user: SessionUser
+  readonly issuedAt: number
+}
+
 /** Signed, stateless session tokens: `base64url(claims).signature`. */
 export class Sessions extends Context.Service<Sessions, {
   issue(user: SessionUser): Effect.Effect<string>
   /** The user, or none when the token is missing, forged, malformed, or expired. */
   verify(token: string | undefined): Effect.Effect<Option.Option<SessionUser>>
+  /** The user and token issue time (seconds) in one decode. */
+  verifyWithIssuedAt(token: string | undefined): Effect.Effect<Option.Option<VerifiedSession>>
 }>()("dex/server/Sessions") {
   static readonly layer = Layer.effect(
     Sessions,
@@ -42,20 +49,24 @@ export class Sessions extends Context.Service<Sessions, {
         return `${payload}.${signature}`
       })
 
-      const verify = Effect.fn("Sessions.verify")(function*(token: string | undefined) {
+      const verifyWithIssuedAt = Effect.fn("Sessions.verifyWithIssuedAt")(function*(token: string | undefined) {
         const [payload, signature] = token?.split(".") ?? []
-        if (!payload || !signature) return Option.none()
-        if (!(yield* keys.verify(payload, signature))) return Option.none()
+        if (!payload || !signature) return Option.none<VerifiedSession>()
+        if (!(yield* keys.verify(payload, signature))) return Option.none<VerifiedSession>()
         const json = Base64Url.decodeString(payload)
-        if (Result.isFailure(json)) return Option.none()
+        if (Result.isFailure(json)) return Option.none<VerifiedSession>()
         const now = yield* Clock.currentTimeMillis
         return decodeClaims(json.success).pipe(
           Option.filter((claims) => claims.exp * 1000 > now),
-          Option.map((claims) => claims.user)
+          Option.map((claims) => ({ user: claims.user, issuedAt: claims.iat ?? claims.exp - SESSION_TTL_SECONDS }))
         )
       })
 
-      return Sessions.of({ issue, verify })
+      const verify = Effect.fn("Sessions.verify")(function*(token: string | undefined) {
+        return Option.map(yield* verifyWithIssuedAt(token), (session) => session.user)
+      })
+
+      return Sessions.of({ issue, verify, verifyWithIssuedAt })
     })
   )
 }

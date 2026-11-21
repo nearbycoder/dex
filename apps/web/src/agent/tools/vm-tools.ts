@@ -413,8 +413,10 @@ export const vmTools = (vms: ChatVms, secrets: VmSecrets) => {
           tag(vmArg(args.vm)) + clip(body || "(no result)")
         )
         // The newest few: the model sees only the latest screenshots anyway.
-        for (const file of files.slice(-MAX_BROWSE_IMAGES)) {
-          const image = await vm.readFile(file, "agent", "base64", signal).catch(() => null)
+        const imagesRead = await Promise.all(
+          files.slice(-MAX_BROWSE_IMAGES).map((file) => vm.readFile(file, "agent", "base64", signal).catch(() => null))
+        )
+        for (const image of imagesRead) {
           if (image) output.push({ type: "image", data: image.content, mimeType: imageType(image.content) })
         }
         return { output, isError: status.trim() !== "0" }
@@ -428,7 +430,7 @@ export const vmTools = (vms: ChatVms, secrets: VmSecrets) => {
       replay: "safe",
       execute: async ({ path, vm: n }, api, context) => {
         const vm = vmFor(String(api.conversationId), n)
-        await secrets.prepare(String(api.conversationId))
+        await secrets.prepare(String(api.conversationId), vm.key)
         const file = await vm.readFile(path, "agent", "utf8", context.abortSignal)
         return { output: text(clip(file.content)) }
       }

@@ -38,7 +38,8 @@ export const Route = createFileRoute("/api/mcp")({
         const valid = parsed ? await serverRuntime(env).runPromise(Keys.use((keys) => keys.verify(parsed.signed, parsed.tag))) : false
         if (!secret || !parsed || !valid) {
           // Shared with password sign-in: guessing tokens is as slow as guessing passwords.
-          await env.LOGIN_LIMITER.limit({ key: request.headers.get("cf-connecting-ip") ?? "unknown" })
+          const { success } = await env.LOGIN_LIMITER.limit({ key: request.headers.get("cf-connecting-ip") ?? "unknown" })
+          if (!success) return json(429, { jsonrpc: "2.0", id: null, error: { code: -32001, message: "Too many failed authentication attempts. Wait a minute and try again." } }, { "retry-after": "60" })
           return unauthorized()
         }
 

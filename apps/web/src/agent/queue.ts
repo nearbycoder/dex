@@ -71,15 +71,26 @@ export class MessageQueue {
     return { text: row.text, attachments: parseAttachments(row.attachments) }
   }
 
+  has(sessionId: string): boolean {
+    return this.sql.exec(`SELECT 1 FROM dex_queue WHERE session_id = ? LIMIT 1`, sessionId).toArray().length > 0
+  }
+
   /** Takes the next message in line, if any. */
   next(sessionId: string): { text: string; attachments: ChatAttachment[] } | null {
-    const first = this.list(sessionId)[0]
-    return first ? this.take(sessionId, first.id) : null
+    const row = this.sql
+      .exec<Row>(`SELECT * FROM dex_queue WHERE session_id = ? ORDER BY position, created_at LIMIT 1`, sessionId)
+      .toArray()[0]
+    if (!row) return null
+    this.sql.exec(`DELETE FROM dex_queue WHERE id = ?`, row.id)
+    return { text: row.text, attachments: parseAttachments(row.attachments) }
   }
 
   /** Moves a message to `index` in the line (0 is next). */
   move(sessionId: string, id: string, index: number) {
-    const ids = this.list(sessionId).map((item) => item.id)
+    const ids = this.sql
+      .exec<{ id: string }>(`SELECT id FROM dex_queue WHERE session_id = ? ORDER BY position, created_at`, sessionId)
+      .toArray()
+      .map((row) => row.id)
     const from = ids.indexOf(id)
     if (from === -1) throw new Error("That message was already sent or removed.")
     ids.splice(from, 1)

@@ -72,10 +72,15 @@ const agentFor = (env: Env, userId: string) => getAgentByName(env.DexAgent as un
 export async function handleVmDesktop(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url)
   const [rawKey, ...rest] = url.pathname.slice(VM_DESKTOP_PREFIX.length).split("/")
-  const key = decodeURIComponent(rawKey ?? "")
+  let key: string
+  try {
+    key = decodeURIComponent(rawKey ?? "")
+  } catch {
+    return new Response("Bad request", { status: 400 })
+  }
   if (!key || key.length > 128) return new Response("Not found", { status: 404 })
   // /vm-desktop/<key> → /vm-desktop/<key>/, so the client's relative paths resolve under it.
-  if (rest.length === 0) return Response.redirect(`${url.origin}${VM_DESKTOP_PREFIX}${rawKey}/`, 302)
+  if (rest.length === 0) return Response.redirect(`${url.origin}${VM_DESKTOP_PREFIX}${rawKey}/${url.search}`, 302)
 
   const origin = request.headers.get("origin")
   if (origin && origin !== url.origin) return new Response("Cross-origin requests are not allowed", { status: 403 })
@@ -114,13 +119,21 @@ export async function handleVmDesktop(request: Request, env: Env): Promise<Respo
     let response = await relay(upstream)
     // Selkies stopped answering, or boat's cookie lapsed: set up again once. (A request body can't be sent twice.)
     if ([401, 403, 502, 503].includes(response.status) && !request.body) {
+      void response.body?.cancel()
       upstream = await agent.vmDesktopUpstream(key, true)
       if (!upstream) return new Response("The VM isn't running", { status: 503 })
       response = await relay(upstream)
     }
-    if (response.status === 101 || response.webSocket) return upgrade ? response : new Response("Not found", { status: 404 })
+    if (response.status === 101 || response.webSocket) {
+      if (upgrade) return response
+      void response.body?.cancel()
+      return new Response("Not found", { status: 404 })
+    }
     // No redirects from the VM: they'd make Dex's origin bounce you anywhere.
-    if (response.status >= 300 && response.status < 400) return new Response("The desktop stream sent a redirect", { status: 502 })
+    if (response.status >= 300 && response.status < 400) {
+      void response.body?.cancel()
+      return new Response("The desktop stream sent a redirect", { status: 502 })
+    }
     const relayed = new Response(response.body, response)
     for (const name of UPSTREAM_DROPPED) relayed.headers.delete(name)
     for (const [name, value] of Object.entries(INERT)) relayed.headers.set(name, value)

@@ -185,10 +185,13 @@ export const LEGACY_FINISH = 101
 export const CUSTOM_PATH_LIMIT = 4000
 
 const shapeKeys = SHAPES.map((shape) => shape.key) as ReadonlyArray<ShapeKey>
+const SHAPE_BY_KEY = new Map<string, (typeof SHAPES)[number]>(SHAPES.map((shape) => [shape.key, shape]))
+const SKIN_KEYS = Object.keys(SKINS) as ReadonlyArray<Skin>
+const SKIN_SET = new Set<string>(SKIN_KEYS)
 
 /** The older apps' body nearest a shape, and the shape for an older app's body. */
 const BODY_OF: Partial<Record<ShapeKey, Body>> = { bot: "bot", blob: "blob", ghost: "ghost", cat: "cat", bean: "bean", cube: "cube" }
-const shapeOfBody = (body: unknown): ShapeKey => (shapeKeys.includes(body as ShapeKey) && BODY_OF[body as ShapeKey] ? (body as ShapeKey) : "bot")
+const shapeOfBody = (body: unknown): ShapeKey => (typeof body === "string" && SHAPE_BY_KEY.has(body) && BODY_OF[body as ShapeKey] ? (body as ShapeKey) : "bot")
 
 /** A custom shape checked by Open Bot Avatar's validator, or null. */
 export const cleanCustom = (value: unknown): CustomShape | null => {
@@ -219,12 +222,12 @@ export function definitionOf(shape: CustomShape | (typeof SHAPES)[number], id = 
 /** The definition a look draws: its custom shape, or one of Dex's (the first, for one this build doesn't know). */
 export const lookDefinition = (look: Pick<SidekickLook, "shape" | "custom">): AvatarDefinition => {
   if (look.shape === "custom" && look.custom) return definitionOf(look.custom)
-  return definitionOf(SHAPES.find((shape) => shape.key === look.shape) ?? SHAPES[0])
+  return definitionOf(SHAPE_BY_KEY.get(look.shape) ?? SHAPES[0])
 }
 
 /** A look's shape name, for people and models. */
 export const shapeName = (look: Pick<SidekickLook, "shape" | "custom">) =>
-  look.shape === "custom" ? (look.custom?.name ?? "Custom") : (SHAPES.find((shape) => shape.key === look.shape)?.name ?? SHAPES[0].name)
+  look.shape === "custom" ? (look.custom?.name ?? "Custom") : (SHAPE_BY_KEY.get(look.shape)?.name ?? SHAPES[0].name)
 
 /** A look of `shape` in `skin`, with the older apps' parts filled in. */
 export const makeLook = (shape: ShapeKey | "custom", skin: Skin, custom: CustomShape | null = null): SidekickLook => ({
@@ -247,13 +250,12 @@ export const makeLook = (shape: ShapeKey | "custom", skin: Skin, custom: CustomS
 export const cleanLook = (value: unknown, previous?: SidekickLook | null): SidekickLook | null => {
   if (!value || typeof value !== "object") return null
   const look = value as Record<string, unknown>
-  const skins = Object.keys(SKINS) as Skin[]
-  const skin = skins.includes(look.skin as Skin) ? (look.skin as Skin) : "peach"
+  const skin = typeof look.skin === "string" && SKIN_SET.has(look.skin) ? (look.skin as Skin) : "peach"
   if (look.shape === "custom") {
     const custom = cleanCustom(look.custom) ?? (previous?.shape === "custom" ? (previous.custom ?? null) : null)
     return custom ? makeLook("custom", skin, custom) : makeLook("bot", skin)
   }
-  if (shapeKeys.includes(look.shape as ShapeKey)) return makeLook(look.shape as ShapeKey, skin)
+  if (typeof look.shape === "string" && SHAPE_BY_KEY.has(look.shape)) return makeLook(look.shape as ShapeKey, skin)
   if (previous) return makeLook(previous.shape, skin, previous.custom ?? null)
   return makeLook(shapeOfBody(look.body), skin)
 }
@@ -264,7 +266,7 @@ export const sameLook = (a: SidekickLook | null | undefined, b: SidekickLook | n
 
 export const randomLook = (random = Math.random): SidekickLook => {
   const any = <T>(options: ReadonlyArray<T>) => options[Math.floor(random() * options.length)]!
-  return makeLook(any(shapeKeys), any(Object.keys(SKINS) as Skin[]))
+  return makeLook(any(shapeKeys), any(SKIN_KEYS))
 }
 
 /** Ready-made sidekicks to pick from, each with an accent color (an agent color key). Keys are stored; keep them. */

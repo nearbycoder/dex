@@ -205,26 +205,31 @@ export class GitHubRepos {
         headers: { accept, "user-agent": "Dex (repos)", ...(auth && token ? { authorization: `Bearer ${token}` } : {}) },
         signal: AbortSignal.timeout(TIMEOUT_MS)
       })
-      if (!response.ok) return null
+      if (!response.ok) {
+        void response.body?.cancel()
+        return null
+      }
       const bytes = new Uint8Array(await response.arrayBuffer())
       const mime = type ?? response.headers.get("content-type")?.split(";")[0]?.trim() ?? ""
       if (bytes.length === 0 || bytes.length > PROJECT_IMAGE_MAX_BYTES || !Object.values(IMAGE_TYPES).includes(mime)) return null
       return `data:${mime};base64,${toBase64(bytes)}`
     }
-    const found = await Promise.all(
-      files.map(async (file) => {
-        const extension = file.path.split(".").pop()!.toLowerCase()
-        const path = file.path.split("/").map(encodeURIComponent).join("/")
-        const dataUrl = await download(
-          `${API}/repos/${fullName}/contents/${path}?ref=${encodeURIComponent(repo.default_branch)}`,
-          "application/vnd.github.raw",
-          IMAGE_TYPES[extension] ?? null,
-          true
-        ).catch(() => null)
-        return dataUrl ? { path: file.path, dataUrl } : null
-      })
-    )
-    const avatar = await download(`https://avatars.githubusercontent.com/${encodeURIComponent(repo.owner.login)}?s=96`, "image/*", null, false).catch(() => null)
+    const [found, avatar] = await Promise.all([
+      Promise.all(
+        files.map(async (file) => {
+          const extension = file.path.split(".").pop()!.toLowerCase()
+          const path = file.path.split("/").map(encodeURIComponent).join("/")
+          const dataUrl = await download(
+            `${API}/repos/${fullName}/contents/${path}?ref=${encodeURIComponent(repo.default_branch)}`,
+            "application/vnd.github.raw",
+            IMAGE_TYPES[extension] ?? null,
+            true
+          ).catch(() => null)
+          return dataUrl ? { path: file.path, dataUrl } : null
+        })
+      ),
+      download(`https://avatars.githubusercontent.com/${encodeURIComponent(repo.owner.login)}?s=96`, "image/*", null, false).catch(() => null)
+    ])
     // The same picture in several places (assets/icon.svg copied to public/favicon.svg) is offered once.
     const unique = found.filter((entry, index): entry is ProjectImageCandidate => entry !== null && found.findIndex((other) => other?.dataUrl === entry.dataUrl) === index)
     return [...unique, ...(avatar ? [{ path: "avatar", dataUrl: avatar }] : [])]
@@ -234,8 +239,10 @@ export class GitHubRepos {
   async access(): Promise<GitHubAccess> {
     const auth = await this.auth()
     if (!auth) return { connected: false, login: null, via: null, orgs: [], manageUrl: null }
-    const orgs = await this.get<Array<{ login: string; avatar_url: string }>>("/user/orgs?per_page=100", auth.token).catch(() => [])
-    const clientId = auth.via === "oauth" ? await this.clientId() : null
+    const [orgs, clientId] = await Promise.all([
+      this.get<Array<{ login: string; avatar_url: string }>>("/user/orgs?per_page=100", auth.token).catch(() => []),
+      auth.via === "oauth" ? this.clientId() : Promise.resolve(null)
+    ])
     return {
       connected: true,
       login: auth.login,

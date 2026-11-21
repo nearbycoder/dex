@@ -111,8 +111,18 @@ export function speakable(markdown: string): string {
  */
 export function sentenceStream() {
   let said = ""
+  let saidList: string[] = []
   let last = ""
   const fresh = (list: string[]) => {
+    if (list.length === 0) return []
+    // Fast path when already-emitted sentences didn't change shape: avoid joining and re-splitting.
+    if (saidList.length > 0 && list.length >= saidList.length && saidList.every((sentence, index) => list[index] === sentence)) {
+      if (list.length === saidList.length) return []
+      const next = list.slice(saidList.length)
+      saidList = list
+      said = list.join(" ")
+      return next
+    }
     const joined = list.join(" ")
     if (joined.length <= said.length) return []
     let start = 0
@@ -121,10 +131,12 @@ export function sentenceStream() {
       : // What was said changed shape: the sentences that begin after it.
         list.filter((sentence) => (start += sentence.length + 1) - sentence.length - 1 >= said.length)
     said = joined
+    saidList = list
     return next
   }
   return {
     take(text: string): string[] {
+      if (text === last) return []
       last = text
       // The last sentence may still be growing.
       return fresh(sentences(speakable(text)).slice(0, -1))

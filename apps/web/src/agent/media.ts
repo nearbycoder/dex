@@ -35,16 +35,18 @@ export interface MediaHost {
   sign(payload: string): Promise<string>
 }
 
+const UTF8_ENC = new TextEncoder()
+const UTF8_DEC = new TextDecoder()
 const toHex = (bytes: ArrayBuffer) => [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
-const sha256 = async (text: string) => toHex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)))
+const sha256 = async (text: string) => toHex(await crypto.subtle.digest("SHA-256", UTF8_ENC.encode(text)))
 const base64url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
-export const encodeUserId = (userId: string) => base64url(new TextEncoder().encode(userId))
+export const encodeUserId = (userId: string) => base64url(UTF8_ENC.encode(userId))
 
 const parseToken = (token: string, expected: string) => {
   const [prefix, user, random, tag, ...rest] = token.split(".")
   if (prefix !== expected || !user || !random || !tag || rest.length) return null
   try {
-    const userId = new TextDecoder().decode(Uint8Array.from(atob(user.replace(/-/g, "+").replace(/_/g, "/")), (char) => char.charCodeAt(0)))
+    const userId = UTF8_DEC.decode(Uint8Array.from(atob(user.replace(/-/g, "+").replace(/_/g, "/")), (char) => char.charCodeAt(0)))
     return { userId, signed: `${expected}.${user}.${random}`, tag }
   } catch {
     return null
@@ -82,6 +84,7 @@ export class MediaCenter {
     host.sql.exec(`CREATE TABLE IF NOT EXISTS dex_media (
       key TEXT PRIMARY KEY, session_id TEXT NOT NULL, name TEXT NOT NULL, content_type TEXT NOT NULL, size INTEGER NOT NULL,
       created_at INTEGER NOT NULL)`)
+    host.sql.exec(`CREATE INDEX IF NOT EXISTS dex_media_session ON dex_media (session_id, created_at)`)
     host.sql.exec(`CREATE TABLE IF NOT EXISTS dex_media_uploads (
       token_hash TEXT PRIMARY KEY, session_id TEXT NOT NULL, key TEXT NOT NULL, name TEXT NOT NULL, content_type TEXT NOT NULL,
       expires_at INTEGER NOT NULL, used INTEGER NOT NULL DEFAULT 0)`)
@@ -243,11 +246,15 @@ export class MediaCenter {
   async reap(alive: (sessionId: string) => boolean) {
     const rows = this.host.sql.exec<{ key: string; session_id: string; created_at: number }>(`SELECT key, session_id, created_at FROM dex_media`).toArray()
     // Attachments never sent belong to no chat: they go after a day.
+    const cutoff = Date.now() - UNSENT_TTL_MS
     const dead = rows
-      .filter((row) => (row.session_id === "" ? row.created_at < Date.now() - UNSENT_TTL_MS : !alive(row.session_id)))
+      .filter((row) => (row.session_id === "" ? row.created_at < cutoff : !alive(row.session_id)))
       .map((row) => row.key)
     if (!dead.length || !this.host.bucket) return
     for (let index = 0; index < dead.length; index += 500) await this.host.bucket.delete(dead.slice(index, index + 500))
-    for (const key of dead) this.host.sql.exec(`DELETE FROM dex_media WHERE key = ?`, key)
+    for (let index = 0; index < dead.length; index += 100) {
+      const batch = dead.slice(index, index + 100)
+      this.host.sql.exec(`DELETE FROM dex_media WHERE key IN (${batch.map(() => "?").join(",")})`, ...batch)
+    }
   }
 }

@@ -28,16 +28,18 @@ export class Keys extends Context.Service<Keys, {
       const hmacKey = yield* Effect.promise(() =>
         crypto.subtle.importKey("raw", secret, { name: "HMAC", hash: "SHA-256" }, false, ["sign", "verify"])
       )
-      const aesKey = yield* Effect.promise(async () => {
-        const base = await crypto.subtle.importKey("raw", secret, "HKDF", false, ["deriveKey"])
-        return crypto.subtle.deriveKey(
-          { name: "HKDF", hash: "SHA-256", salt: encoder.encode("dex"), info: encoder.encode("dex/secrets/v1") },
-          base,
-          { name: "AES-GCM", length: 256 },
-          false,
-          ["encrypt", "decrypt"]
-        )
-      })
+      // Derive the AES-GCM key on first encrypt/decrypt so cookie-only Worker isolates skip HKDF work.
+      let aesKeyPromise: Promise<CryptoKey> | undefined
+      const getAesKey = () =>
+        (aesKeyPromise ??= crypto.subtle.importKey("raw", secret, "HKDF", false, ["deriveKey"]).then((base) =>
+          crypto.subtle.deriveKey(
+            { name: "HKDF", hash: "SHA-256", salt: encoder.encode("dex"), info: encoder.encode("dex/secrets/v1") },
+            base,
+            { name: "AES-GCM", length: 256 },
+            false,
+            ["encrypt", "decrypt"]
+          )
+        ))
 
       const sign = Effect.fnUntraced(function*(payload: string) {
         const signature = yield* Effect.promise(() => crypto.subtle.sign("HMAC", hmacKey, encoder.encode(payload)))
@@ -51,6 +53,7 @@ export class Keys extends Context.Service<Keys, {
       })
 
       const encrypt = Effect.fnUntraced(function*(plaintext: string) {
+        const aesKey = yield* Effect.promise(getAesKey)
         const iv = crypto.getRandomValues(new Uint8Array(12))
         const sealed = yield* Effect.promise(() =>
           crypto.subtle.encrypt({ name: "AES-GCM", iv }, aesKey, encoder.encode(plaintext))
@@ -65,6 +68,7 @@ export class Keys extends Context.Service<Keys, {
         if (Result.isFailure(iv) || Result.isFailure(sealed)) {
           return yield* new CryptoError({ message: "Malformed ciphertext" })
         }
+        const aesKey = yield* Effect.promise(getAesKey)
         const plain = yield* Effect.tryPromise({
           try: () => crypto.subtle.decrypt({ name: "AES-GCM", iv: new Uint8Array(iv.success) }, aesKey, new Uint8Array(sealed.success)),
           catch: () => new CryptoError({ message: "Could not decrypt; was AUTH_SECRET rotated?" })

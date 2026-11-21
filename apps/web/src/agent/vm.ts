@@ -137,14 +137,20 @@ const toActivity = (row: ActivityRow): VmActivity => ({
   output: row.output
 })
 
-const sleep = (ms: number, signal?: AbortSignal) =>
-  new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(resolve, ms)
-    signal?.addEventListener("abort", () => {
+const sleep = (ms: number, signal?: AbortSignal) => {
+  if (signal?.aborted) return Promise.reject(signal.reason)
+  return new Promise<void>((resolve, reject) => {
+    const onAbort = () => {
       clearTimeout(timer)
-      reject(signal.reason)
-    }, { once: true })
+      reject(signal!.reason)
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort)
+      resolve()
+    }, ms)
+    signal?.addEventListener("abort", onAbort, { once: true })
   })
+}
 
 const tail = (text: string, max = MAX_ACTIVITY_OUTPUT) => (text.length > max ? `…${text.slice(-max)}` : text)
 
@@ -266,7 +272,7 @@ export class VmManager {
   touch() {
     this.stopEarlyAt = null
     const now = Date.now()
-    if (this.row()) this.host.sql.exec(`UPDATE dex_vms SET last_active = ? WHERE vm_key = ?`, now, this.key)
+    this.host.sql.exec(`UPDATE dex_vms SET last_active = ? WHERE vm_key = ?`, now, this.key)
     this.update({ lastActiveAt: now })
     if (this.info.status === "running") {
       this.host.scheduleIdleCheck()
@@ -293,14 +299,16 @@ export class VmManager {
    * used it for the idle timeout; returns whether to check again.
    */
   async idleCheck(): Promise<boolean> {
-    if (!this.sandboxId() || this.info.status !== "running") return false
+    const row = this.row()
+    if (!row?.sandbox_id || this.info.status !== "running") return false
     if (this.inFlight > 0) {
       await this.extendSafetyDeadline()
       return true
     }
+    const now = Date.now()
     const minutes = this.host.settings(this.key).minutes
-    const idleFor = Date.now() - (this.row()?.last_active ?? 0)
-    if (this.stopEarlyAt !== null && Date.now() >= this.stopEarlyAt) {
+    const idleFor = now - (row.last_active ?? 0)
+    if (this.stopEarlyAt !== null && now >= this.stopEarlyAt) {
       this.stopEarlyAt = null
       await this.stop("system", "Stop VM: its helper finished (disk is kept)").catch(() => undefined)
       return this.info.status === "running"
@@ -577,7 +585,8 @@ export class VmManager {
         let output = ""
         try {
           const result = await runOn(command, options, (data) => {
-            output = (output + data).slice(-MAX_ACTIVITY_OUTPUT * 2)
+            output += data
+            if (output.length > MAX_ACTIVITY_OUTPUT * 4) output = output.slice(-MAX_ACTIVITY_OUTPUT * 2)
             this.appendActivity(activity.id, data)
           })
           const exitCode = result.exitCode ?? -1
@@ -599,7 +608,8 @@ export class VmManager {
         let output = ""
         return {
           append: (text) => {
-            output = (output + text).slice(-MAX_ACTIVITY_OUTPUT * 2)
+            output += text
+            if (output.length > MAX_ACTIVITY_OUTPUT * 4) output = output.slice(-MAX_ACTIVITY_OUTPUT * 2)
             this.appendActivity(activity.id, text)
           },
           finish: (ok, exitCode = null) => this.finishActivity(activity.id, ok ? "done" : "error", output, exitCode)

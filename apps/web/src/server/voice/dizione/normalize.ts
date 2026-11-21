@@ -240,6 +240,95 @@ function withDotlessI(source: string) {
   return out
 }
 
+const PUNCT_NORM_MAP: Readonly<Record<string, string>> = {
+  "‘": "'", "’": "'", "‚": "'", "‛": "'", "`": "'", "´": "'",
+  "“": '"', "”": '"', "„": '"', "‟": '"', "«": '"', "»": '"',
+  "–": "—", "―": "—", "[": "(", "]": ")"
+}
+const PUNCT_NORM = /[‘’‚‛`´“”„‟«»–―[\]]/g
+const HAS_DIGIT = re(d)
+const HAS_COMPARISON = re("[<>≥≤≠]|!=")
+const EN_DASH_NUM = re(String.raw`(?<=${d})–(?=${d})`)
+const INLINE_RE = re("([A-Za-z']+)?\\{([^{}]*)\\}")
+const ELLIPSIS_RE = re("\\.{3,}")
+const NUM_SPACED_MINUS = re(String.raw`(?<=${d})${s}-${s}(?=${d}[${D}.,]*${s}?=)`)
+const NUM_MINUS = re(String.raw`(?<![${D}.,\/\-])(${d}[${D}.,]*)-(?=${d}[${D}.,]*=)`)
+const DASH_RE = re(String.raw`-{2,}|${s}-${s}`)
+const WITHOUT_RE = ignorecase(String.raw`${b}w\/o${b}`)
+const WITH_RE = ignorecase(String.raw`${b}w\/(?=${s}|${end})`)
+const NA_RE = ignorecase(String.raw`${b}n\/a${b}`)
+
+const CENTS_RE = re(String.raw`(?<![${W}.])(${d}[${D},]*(?:\.${d}+)?)${s}?¢`)
+const CLOCK_EXPR = String.raw`${d}{1,2}:[0-5]${d}(?:${s}?[AaPp]\.?[Mm]\.?)?|${b}${d}{1,2}${s}?[AaPp]\.?[Mm]\.?`
+const CLOCK_ZONE_RE = re(String.raw`(${CLOCK_EXPR})${s}(${ZONES})${b}`)
+const DOT_CLOCK_RE = re(String.raw`(?<![${D}.,:])(${d}{1,2})\.([0-5]${d})(?=${s}?[AaPp]\.?[Mm]${b})`)
+const DOT_TIMES_RE = re(String.raw`(?<![${D}.,:])(${d}{1,2})\.(00|15|30|45)(${s}?(?:to|until|till|and|[\-—])${s}?)(${d}{1,2})\.(00|15|30|45)(?!${d}|\.${d})`)
+const CLOCK_RANGE_RE = re(String.raw`(${CLOCK_EXPR})${s}?[\-—]${s}?(?=${d}{1,2}(?::[0-5]${d}|${s}?[AaPp]\.?[Mm]${b}))`)
+const TIME_RE = re(String.raw`(?<![${D}:])(${d}{1,2}):([0-5]${d})(?::([0-5]${d}))?${HALF_DAY}?(?![${D}:])`)
+const HALF_DAY_RE = re(String.raw`(?<![${D}.:,])(${d}{1,2})${HALF_DAY}(?![A-Za-z])`)
+
+const SLASH_PAIR_RE = re(String.raw`(?<![${D}\/.])(${d}{1,2})\/(${d}{1,2})(?:\/(?:${d}{4}|${d}{2}))?(?![${D}\/])`)
+const SLASH_DATED_RE = re(String.raw`(?<![${D}\/])${d}{1,2}\/${d}{1,2}\/(?:${d}{4}|${d}{2})(?![${D}\/])`)
+const ISO_DASH_DATE_RE = re(String.raw`(?<![${D}\-])(${d}{4})-(${d}{1,2})-(${d}{1,2})(?![${D}\-])`)
+const ISO_SLASH_DATE_RE = re(String.raw`(?<![${D}\/])(${d}{4})\/(${d}{1,2})\/(${d}{1,2})(?![${D}\/])`)
+const DOT_DATE_RE = re(String.raw`(?<![${D}.])(${d}{1,2})\.(${d}{1,2})\.(${d}{4})(?!${d}|\.${d})`)
+const SLASH_DATE_RE = re(String.raw`(?<![${D}\/])(${d}{1,2})\/(${d}{1,2})\/(${d}{4}|${d}{2})(?![${D}\/])`)
+const MONTH_RANGE_RE = re(String.raw`${b}(${MONTH_PATTERN})\.?${s}+(${d}{1,2})(?:st|nd|rd|th)?${s}?[\-—]${s}?(${d}{1,2})(?:st|nd|rd|th)?(?:,?${s}+(${d}{4}))?(?![${D}:])`)
+const RANGE_MONTH_RE = re(String.raw`(?<![${D}.,\/:\-])(${d}{1,2})(?:st|nd|rd|th)?${s}?[\-—]${s}?(${d}{1,2})(?:st|nd|rd|th)?${s}+(${MONTH_PATTERN})${b}(?:,?${s}+(${d}{4}))?`)
+const MONTH_DAY_RE = re(String.raw`${b}(${MONTH_PATTERN})\.?${s}+(${d}{1,2})(?:st|nd|rd|th)?(?:,?${s}+(${d}{4}))?(?![${D}:])`)
+const DAY_MONTH_RE = re(String.raw`(?<![${D}.,\/:\-])(${d}{1,2})(?:st|nd|rd|th)?${s}+(${MONTH_PATTERN})${b}(\.(?=${s}+[a-z${D}]))?(?:,?${s}+(${d}{4}))?`)
+
+const PHONE_FULL_RE = re(String.raw`(?<![${D}\-])(?:\+?(1)[\-.${S}])?\(?(${d}{3})\)?[\-.${S}](${d}{3})[\-.${S}](${d}{4})(?![${D}\-])`)
+const PHONE_LOCAL_RE = re(String.raw`(?<![${W}.,\-])(${d}{3})-(${d}{4})(?![${W}\-])`)
+const VERSION_LONG_RE = re(String.raw`(?<![${W}.])([vV])?(${d}+(?:\.${d}+){2,})(?:-(${d}+)(?![${W}\-]|\.${d}))?(?![${W}])`)
+const VERSION_SHORT_RE = re(String.raw`(?<![${W}.])([vV])(${d}+)\.(${d}{2,3})(?!${d}|\.${d}|${w})`)
+const VERSIONED_RE = ignorecase(String.raw`${b}(${VERSIONED})(\.?${s}(?:(?:from|to)${s})?)(${d}+)\.(${d}{2,3})(?:(${s}(?:to|or|and)${s})(${d}+)\.(${d}{2,3}))?(?!${d}|\.${d}|${s}?%|${s}(?:percent|million|billion)${b})`)
+
+const NEGATIVE_RE = re(String.raw`(?<![${W}.])-(?=${d})`)
+const DIM_BY_RE = re(String.raw`(?:(?<=${d})${s}?[xX×]|×)${s}?(?=${d}[${D}.,]*${s}?(?:${LENGTHS})${b})`)
+const TIMES_RE = re(String.raw`(?<=${d})${s}[xX×]${s}(?=${d})`)
+const CHAT_DIGIT_RE = re(String.raw`(?<![${W}\/'])[A-Za-z0-9\/]*[0-9\/][A-Za-z0-9\/]*(?![${W}\/'])`)
+const DECADE_RE = re(String.raw`(?<![${W}.])'?(${d}{2}|${d}{4})'?s${b}`)
+const ORDINAL_RE = re(String.raw`(?<![${W}.])(${d}+)(?:st|nd|rd|th)${b}`)
+const VIDEO_RES_RE = re(String.raw`(?<![${W}.])(144|240|360|480|540|576|720|900|1080|1440|2160|4320)([pi])${b}`)
+const PERCENT_RE = re(String.raw`(${d}[${D},]*(?:\.${d}+)?)${s}?%`)
+const MIXED_FRAC_RE = re(String.raw`(?<![${D}\/.,\-])(${d}+) (${d})\/(2|3|4|5|6|8|10|16)(?![${D}\/]|\.${d})`)
+const FRAC_RE = re(String.raw`(?<![${D}\/.])(${d}+)\/(${d}+)(?![${D}\/]|\.${d})`)
+const YEAR_RANGE_RE = re(String.raw`(?<![${W}.,\-])(${d}{4})[\-–](${d}{4})(?![${W}.,\-])`)
+const NUM_RANGE_RE = re(String.raw`(?<![${W}.,\-])(${d}+)[\-–](${d}+)(?![${W}\-]|[.,]${d})`)
+const NUM_TIMES_RE = re(String.raw`(?<![${W}.])(${d}+)x${b}`)
+const POWER_RE = re(String.raw`(?<=${d})\^(?=${d})`)
+
+const CLAUSE_WORD_RE = re(String.raw`[A-Za-z']+${end}`)
+const SIZE_RANGE_RE = re(String.raw`(?<![${W}\-])(${SIZES})-(${SIZES})(?![${W}\-])`)
+const HASH_NUM_RE = re(String.raw`#(?=${d})`)
+const HASH_CODE_RE = re(String.raw`#(?=[A-Z]{1,4}-?${d})`)
+const HASH_TAG_RE = re("#(?=[A-Za-z])")
+const TILDE_ABOUT_RE = re(String.raw`~(?=${s}?${d})`)
+const MULTI_COMP_RE = re(String.raw`(?<=[${W}${S}${END}${IS}])(>=|<=|!=)(?=[${W}${S}${SPELL}])`)
+const GPU_TI_RE = re(String.raw`(?<=${d}) Ti${b}`)
+const REF_NO_RE = re(String.raw`${b}([Rr])ef\.${s}?[Nn]o\.(?=${s})`)
+const DOTTED_RE = re(String.raw`${b}((?:[A-Za-z]\.){2,})`)
+const ABBR_RE = re(String.raw`${b}([A-Za-z]{1,6})${b}(\.?)(?![A-Za-z'’])`)
+const ABBR_NEXT_WORD = re(String.raw`${s}*([A-Za-z]+|${d})`)
+const ABBR_CAP_BEFORE = re(String.raw`[A-Z][a-z]+${s}+${end}`)
+const ABBR_PREV_WORD = re(String.raw`([A-Za-z]+)\.?${s}+${end}`)
+const NUMBER_RE = re(String.raw`(?<![${W}.])${d}{1,3}(?:,${d}{3})+(?:\.${d}+)?|${d}+(?:\.${d}+)?|(?<![${W}.])\.${d}+`)
+const SLASH_WORD_RE = re("(?<=[A-Za-z])/(?=[A-Za-z])")
+const COMP_ANGLE_RE = re(String.raw`(?<=${d})${IS}?${s}?[<>]${s}?(?=${d})|(?<=${s})[<>](?=${s})`)
+const SYMBOL_WORDS_RE = re("[" + Object.keys(SYMBOL_WORDS).join("") + "]")
+
+const STRETCH_3_RE = re(String.raw`([^\n])\1\1`)
+const STRETCH_RUN_RE = re(String.raw`([^\n])\1{2,}`)
+const STRETCH_LIKED_RE = re(String.raw`([lfsz])\1\1+${end}`)
+const STRETCH_END_RE = re(String.raw`([^\n])\1{2,}${end}`)
+const CAPITALS_RE = re("[a-z]+(?:[A-Z][a-z]+)*[A-Z]{2,}(?:'s)?")
+const CAMEL_PARTS_RE = re("[A-Z]?[a-z']+|[A-Z]+(?![a-z])")
+const ALPHA_RUNS_RE = re("[A-Za-z]{2,}")
+const AFTER_LETTER_RE = re(String.raw`${s}*[A-Za-z]`)
+const SHORT_FOLLOW_RE = re(String.raw`[.!?…,;:—"')]*(?:${s}|${end})`)
+const REPLY_FOLLOW_RE = re(String.raw`(?:[.?…,;—]*["']?(?:${s}|${end})|!+["']?${s}*${end})`)
+
 const ACCENTED = ignorecase(String.raw`${b}(${Object.keys(ACCENT_DECIDES).join("|")})(s?)${b}`)
 
 /** An accented Latin letter without its accent ("café" is in the dictionary as "cafe"). */
@@ -426,6 +515,7 @@ export class Normalizer {
   private readonly endings: Map<string, string>
   private readonly unitNames: string
   private readonly unit: ReturnType<typeof re>
+  private readonly unitFollow: ReturnType<typeof re>
   private readonly area = re(String.raw`(?<![${W}.])(${d}[${D},]*(?:\.${d}+)?)${s}?(km|cm|mm|m|ft|mi|yd|in)([²³])`)
   private readonly areaPlain = re(String.raw`(?<![${W}.])(${d}[${D},]*(?:\.${d}+)?)${s}?(km|cm|mm|m|ft)([23])(?![${W}])`)
   private inline: (readonly [string, Phones])[] = []
@@ -453,6 +543,7 @@ export class Normalizer {
       .sort(([x], [y]) => len(y) - len(x) || (x < y ? -1 : x > y ? 1 : 0))
     this.unitNames = names.map(([, name]) => escapeRegExp(name)).join("|")
     this.unit = ignorecase(String.raw`(?<![${W}.])(${d}[${D},]*(?:\.${d}+)?)(?:[\-–](${d}[${D},]*(?:\.${d}+)?))?${s}?(${this.unitNames})(?![A-Za-z])(\.(?=${s}+[a-z]))?`, true)
+    this.unitFollow = ignorecase(String.raw`${s}?(?:%|percent|million|billion|${this.unitNames})(?![A-Za-z])`)
   }
 
   // -- pieces of the text that are not words --
@@ -522,9 +613,8 @@ export class Normalizer {
 
   /** "9.30 to 11.30" where the words before say it is a time of day. */
   private dotTimes(m: Match): string {
-    const following = m.string.slice(m.end())
     if (int(m.group(1)!) > 23 || int(m.group(4)!) > 23 || !before(m.string, m.start()).some((w) => CLOCK_WORDS.has(w))
-        || ignorecase(String.raw`${s}?(?:%|percent|million|billion|${this.unitNames})(?![A-Za-z])`).match(following)) return m.text
+        || this.unitFollow.matchAt(m.string, m.end())) return m.text
     return `${m.group(1)}:${m.group(2)}${m.group(3)}${m.group(4)}:${m.group(5)}`
   }
 
@@ -903,27 +993,29 @@ export class Normalizer {
 
   private abbreviation(m: Match, text: string): string {
     const token = m.group(1)!
-    const stop = m.group(2)!
     const key = token.toLowerCase()
-    const following = text.slice(m.end())
-    const nextWord = re(String.raw`${s}*([A-Za-z]+|${d})`).match(following)
+    const stOrDr = (key === "st" || key === "dr") && isupper(token[0]!)
+    const entry = stOrDr ? undefined : this.abbreviations.get(key)
+    // Almost every 1–6 letter word is not an abbreviation; bail out before slicing or running lookaround patterns.
+    if (!stOrDr && !entry) return m.text
+    const stop = m.group(2)!
+    const nextWord = ABBR_NEXT_WORD.matchAt(text, m.end())
     const next = nextWord ? nextWord.group(1)! : ""
     const capitalNext = Boolean(nextWord) && isupper(charAt(next, 0))
-    const capitalBefore = re(String.raw`[A-Z][a-z]+${s}+${end}`).search(text.slice(0, m.start())) !== null
-    if ((key === "st" || key === "dr") && isupper(token[0]!)) {
+    if (stOrDr) {
       if (capitalNext && (stop || key === "dr")) return key === "st" ? " saint " : " doctor "
-      if (capitalBefore && stop) return (key === "st" ? " street" : " drive") + (!strip(following) ? " ." : " ")
+      if (stop && ABBR_CAP_BEFORE.search(text.slice(0, m.start())) !== null) {
+        return (key === "st" ? " street" : " drive") + (!strip(text.slice(m.end())) ? " ." : " ")
+      }
       return m.text
     }
-    const entry = this.abbreviations.get(key)
-    if (!entry) return m.text
-    const when = entry[0]
-    let words = entry[1]
+    const when = entry![0]
+    let words = entry![1]
     const numberNext = Boolean(nextWord) && isdigit(next)
     if (when === "title") {
       if (!(isupper(token[0]!) && (capitalNext || stop))) return m.text
     } else if (when === "number") {
-      const previous = re(String.raw`([A-Za-z]+)\.?${s}+${end}`).search(text.slice(0, m.start()))
+      const previous = stop && !numberNext && key === "no" ? ABBR_PREV_WORD.search(text.slice(0, m.start())) : null
       if (!(stop && (numberNext || (key === "no" && previous && NUMBERED.has(previous.group(1)!.toLowerCase()))))) return m.text
     } else if (!stop || (when === "small" && isupper(token))) {
       return m.text
@@ -931,7 +1023,7 @@ export class Normalizer {
       if (!(["max", "min", "est"].includes(key) && nextWord && islower(charAt(next, 0)))) return m.text
     }
     if (key === "est" && !numberNext) words = "estimated"
-    const endsSentence = when !== "title" && (!strip(following) || (capitalNext && SENTENCE_STARTERS.has(next.toLowerCase())))
+    const endsSentence = when !== "title" && (!strip(text.slice(m.end())) || (capitalNext && SENTENCE_STARTERS.has(next.toLowerCase())))
     return ` ${words}${endsSentence ? " ." : ""} `
   }
 
@@ -945,29 +1037,26 @@ export class Normalizer {
       text = ACCENTED.sub(text, (m) => "{" + ACCENT_DECIDES[m.group(1)!.toLowerCase()]! + (m.group(2) ? " Z" : "") + "}")
       text = chars(text).map(plainLetter).join("")
     }
-    text = re(String.raw`(?<=${d})–(?=${d})`).sub(text, "-")
+    text = EN_DASH_NUM.sub(text, "-")
     text = DAY_RANGE.sub(text, (m) => this.dayRange(m))
-    for (const [old, replacement] of [["‘", "'"], ["’", "'"], ["‚", "'"], ["‛", "'"], ["`", "'"], ["´", "'"], ["“", '"'], ["”", '"'],
-      ["„", '"'], ["‟", '"'], ["«", '"'], ["»", '"'], ["–", "—"], ["―", "—"], ["[", "("], ["]", ")"]]) {
-      text = text.replaceAll(old!, replacement!)
-    }
+    text = text.replace(PUNCT_NORM, (ch) => PUNCT_NORM_MAP[ch]!)
     this.inline = []
-    text = re("([A-Za-z']+)?\\{([^{}]*)\\}").sub(text, (m) => this.inlinePronunciation(m))
+    text = INLINE_RE.sub(text, (m) => this.inlinePronunciation(m))
     text = text.replaceAll("{", "(").replaceAll("}", ")")
     text = ADDRESS.sub(text, (m) => this.address(m))
     text = text.replaceAll("→", " to ")
     text = EMOJI.sub(text, " ")
     text = EMOTICON.sub(text, " ")
-    text = re("\\.{3,}").sub(text, "…")
-    text = re(String.raw`(?<=${d})${s}-${s}(?=${d}[${D}.,]*${s}?=)`).sub(text, " minus ")
-    text = re(String.raw`(?<![${D}.,\/\-])(${d}[${D}.,]*)-(?=${d}[${D}.,]*=)`).sub(text, (m) => m.group(1)! + " minus ")
-    text = re(String.raw`-{2,}|${s}-${s}`).sub(text, "—")
-    text = ignorecase(String.raw`${b}w\/o${b}`).sub(text, " without ")
-    text = ignorecase(String.raw`${b}w\/(?=${s}|${end})`).sub(text, " with ")
-    text = ignorecase(String.raw`${b}n\/a${b}`).sub(text, " not applicable ")
+    text = ELLIPSIS_RE.sub(text, "…")
+    text = NUM_SPACED_MINUS.sub(text, " minus ")
+    text = NUM_MINUS.sub(text, (m) => m.group(1)! + " minus ")
+    text = DASH_RE.sub(text, "—")
+    text = WITHOUT_RE.sub(text, " without ")
+    text = WITH_RE.sub(text, " with ")
+    text = NA_RE.sub(text, " not applicable ")
     text = text.replaceAll("'n'", " 'n ")
-    if (re("[<>≥≤≠]|!=").search(text)) text = Normalizer.markComparisons(text)
-    if (re(d).search(text)) text = this.figures(text)
+    if (HAS_COMPARISON.search(text)) text = Normalizer.markComparisons(text)
+    if (HAS_DIGIT.search(text)) text = this.figures(text)
     return this.signs(text)
   }
 
@@ -980,76 +1069,70 @@ export class Normalizer {
     text = MONEY.sub(text, (m) => this.money(m))
     text = RANGE_BEFORE_SIGN.sub(text, (m) => `${m.group(1)} to `)
     text = MONEY_AFTER.sub(text, (m) => this.money(m))
-    text = re(String.raw`(?<![${W}.])(${d}[${D},]*(?:\.${d}+)?)${s}?¢`).sub(text,
+    text = CENTS_RE.sub(text,
       (m) => ` ${numberWords(m.group(1)!)} ${m.group(1) === "1" ? "cent" : "cents"} `)
 
     // times of day, lengths of time, ratios
-    const clock = String.raw`${d}{1,2}:[0-5]${d}(?:${s}?[AaPp]\.?[Mm]\.?)?|${b}${d}{1,2}${s}?[AaPp]\.?[Mm]\.?`
-    text = re(String.raw`(${clock})${s}(${ZONES})${b}`).sub(text, (m) => `${m.group(1)} ${spelled(m.group(2)!)}`)
-    text = re(String.raw`(?<![${D}.,:])(${d}{1,2})\.([0-5]${d})(?=${s}?[AaPp]\.?[Mm]${b})`).sub(text, (m) => `${m.group(1)}:${m.group(2)}`)
-    text = re(String.raw`(?<![${D}.,:])(${d}{1,2})\.(00|15|30|45)(${s}?(?:to|until|till|and|[\-—])${s}?)(${d}{1,2})\.(00|15|30|45)(?!${d}|\.${d})`)
-      .sub(text, (m) => this.dotTimes(m))
-    text = re(String.raw`(${clock})${s}?[\-—]${s}?(?=${d}{1,2}(?::[0-5]${d}|${s}?[AaPp]\.?[Mm]${b}))`).sub(text, (m) => `${m.group(1)} to `)
+    text = CLOCK_ZONE_RE.sub(text, (m) => `${m.group(1)} ${spelled(m.group(2)!)}`)
+    text = DOT_CLOCK_RE.sub(text, (m) => `${m.group(1)}:${m.group(2)}`)
+    text = DOT_TIMES_RE.sub(text, (m) => this.dotTimes(m))
+    text = CLOCK_RANGE_RE.sub(text, (m) => `${m.group(1)} to `)
     text = RATIO.sub(text, (m) => this.ratio(m))
-    text = re(String.raw`(?<![${D}:])(${d}{1,2}):([0-5]${d})(?::([0-5]${d}))?${HALF_DAY}?(?![${D}:])`).sub(text, (m) => this.time(m))
-    text = re(String.raw`(?<![${D}.:,])(${d}{1,2})${HALF_DAY}(?![A-Za-z])`).sub(text,
+    text = TIME_RE.sub(text, (m) => this.time(m))
+    text = HALF_DAY_RE.sub(text,
       (m) => ` ${cardinal(int(m.group(1)!))} ` + Normalizer.halfDay(m, m.group(2), m.group(3)))
 
     // dates
-    const seen = re(String.raw`(?<![${D}\/.])(${d}{1,2})\/(${d}{1,2})(?:\/(?:${d}{4}|${d}{2}))?(?![${D}\/])`).findallGroups(text)
+    const seen = SLASH_PAIR_RE.findallGroups(text)
       .map(([a, b]) => [int(a!), int(b!)] as const).filter(([a, b]) => !(a === 24 && b === 7))
     this.dayFirst = seen.some(([a, b]) => a > 12 && 12 >= b) && !seen.some(([a, b]) => b > 12 && 12 >= a)
-    this.dated = re(String.raw`(?<![${D}\/])${d}{1,2}\/${d}{1,2}\/(?:${d}{4}|${d}{2})(?![${D}\/])`).search(text) !== null
-    text = re(String.raw`(?<![${D}\-])(${d}{4})-(${d}{1,2})-(${d}{1,2})(?![${D}\-])`).sub(text,
+    this.dated = SLASH_DATED_RE.search(text) !== null
+    text = ISO_DASH_DATE_RE.sub(text,
       (m) => this.date(int(m.group(2)!), int(m.group(3)!), m.group(1)) ?? m.text)
-    text = re(String.raw`(?<![${D}\/])(${d}{4})\/(${d}{1,2})\/(${d}{1,2})(?![${D}\/])`).sub(text,
+    text = ISO_SLASH_DATE_RE.sub(text,
       (m) => this.date(int(m.group(2)!), int(m.group(3)!), m.group(1)) ?? m.text)
-    text = re(String.raw`(?<![${D}.])(${d}{1,2})\.(${d}{1,2})\.(${d}{4})(?!${d}|\.${d})`).sub(text, (m) => this.dotDate(m))
-    text = re(String.raw`(?<![${D}\/])(${d}{1,2})\/(${d}{1,2})\/(${d}{4}|${d}{2})(?![${D}\/])`).sub(text, (m) => this.slashDate(m))
-    text = re(String.raw`${b}(${MONTH_PATTERN})\.?${s}+(${d}{1,2})(?:st|nd|rd|th)?${s}?[\-—]${s}?(${d}{1,2})(?:st|nd|rd|th)?(?:,?${s}+(${d}{4}))?(?![${D}:])`)
-      .sub(text, (m) => this.daysOfMonth(m))
-    text = re(String.raw`(?<![${D}.,\/:\-])(${d}{1,2})(?:st|nd|rd|th)?${s}?[\-—]${s}?(${d}{1,2})(?:st|nd|rd|th)?${s}+(${MONTH_PATTERN})${b}(?:,?${s}+(${d}{4}))?`)
-      .sub(text, (m) => this.daysOfMonth(m))
-    text = re(String.raw`${b}(${MONTH_PATTERN})\.?${s}+(${d}{1,2})(?:st|nd|rd|th)?(?:,?${s}+(${d}{4}))?(?![${D}:])`).sub(text,
+    text = DOT_DATE_RE.sub(text, (m) => this.dotDate(m))
+    text = SLASH_DATE_RE.sub(text, (m) => this.slashDate(m))
+    text = MONTH_RANGE_RE.sub(text, (m) => this.daysOfMonth(m))
+    text = RANGE_MONTH_RE.sub(text, (m) => this.daysOfMonth(m))
+    text = MONTH_DAY_RE.sub(text,
       (m) => this.date(MONTH_NUMBER.get(m.group(1)!.toLowerCase().slice(0, 3))!, int(m.group(2)!), m.group(3)) ?? m.text)
-    text = re(String.raw`(?<![${D}.,\/:\-])(${d}{1,2})(?:st|nd|rd|th)?${s}+(${MONTH_PATTERN})${b}(\.(?=${s}+[a-z${D}]))?(?:,?${s}+(${d}{4}))?`)
-      .sub(text, (m) => this.dayMonth(m))
+    text = DAY_MONTH_RE.sub(text, (m) => this.dayMonth(m))
 
     // telephone numbers, versions, codes
-    text = re(String.raw`(?<![${D}\-])(?:\+?(1)[\-.${S}])?\(?(${d}{3})\)?[\-.${S}](${d}{3})[\-.${S}](${d}{4})(?![${D}\-])`).sub(text, Normalizer.phone)
-    text = re(String.raw`(?<![${W}.,\-])(${d}{3})-(${d}{4})(?![${W}\-])`).sub(text, Normalizer.phone)
-    text = re(String.raw`(?<![${W}.])([vV])?(${d}+(?:\.${d}+){2,})(?:-(${d}+)(?![${W}\-]|\.${d}))?(?![${W}])`).sub(text,
+    text = PHONE_FULL_RE.sub(text, Normalizer.phone)
+    text = PHONE_LOCAL_RE.sub(text, Normalizer.phone)
+    text = VERSION_LONG_RE.sub(text,
       (m) => " " + (m.group(1) ? spelled(m.group(1)!) + " " : "") + m.group(2)!.split(".").map(versionPart).join(" point ")
         + (m.group(3) ? " dash " + numberWords(m.group(3)!) : "") + " ")
-    text = re(String.raw`(?<![${W}.])([vV])(${d}+)\.(${d}{2,3})(?!${d}|\.${d}|${w})`).sub(text,
+    text = VERSION_SHORT_RE.sub(text,
       (m) => ` ${spelled(m.group(1)!)} ${cardinal(bigint(m.group(2)!))} point ${minor(m.group(3)!)} `)
-    text = ignorecase(String.raw`${b}(${VERSIONED})(\.?${s}(?:(?:from|to)${s})?)(${d}+)\.(${d}{2,3})(?:(${s}(?:to|or|and)${s})(${d}+)\.(${d}{2,3}))?(?!${d}|\.${d}|${s}?%|${s}(?:percent|million|billion)${b})`)
-      .sub(text, (m) => `${m.group(1)}${m.group(2)}${cardinal(bigint(m.group(3)!))} point ${minor(m.group(4)!)}`
-        + (m.group(5) ? `${m.group(5)}${cardinal(bigint(m.group(6)!))} point ${minor(m.group(7)!)}` : "") + " ")
+    text = VERSIONED_RE.sub(text, (m) => `${m.group(1)}${m.group(2)}${cardinal(bigint(m.group(3)!))} point ${minor(m.group(4)!)}`
+      + (m.group(5) ? `${m.group(5)}${cardinal(bigint(m.group(6)!))} point ${minor(m.group(7)!)}` : "") + " ")
     text = CODE.sub(text, (m) => this.code(m))
     text = SLASHED.sub(text, (m) => " " + Normalizer.digitGroups(m.group(1)!.split("/")) + " ")
     text = GROUPED.sub(text, (m) => this.grouped(m))
 
-    text = re(String.raw`(?<![${W}.])-(?=${d})`).sub(text, " minus ")
-    text = re(String.raw`(?:(?<=${d})${s}?[xX×]|×)${s}?(?=${d}[${D}.,]*${s}?(?:${LENGTHS})${b})`).sub(text, " by ")
-    text = re(String.raw`(?<=${d})${s}[xX×]${s}(?=${d})`).sub(text, " times ")
-    text = re(String.raw`(?<![${W}\/'])[A-Za-z0-9\/]*[0-9\/][A-Za-z0-9\/]*(?![${W}\/'])`).sub(text, (m) => this.chatForm(m))
-    text = re(String.raw`(?<![${W}.])'?(${d}{2}|${d}{4})'?s${b}`).sub(text,
+    text = NEGATIVE_RE.sub(text, " minus ")
+    text = DIM_BY_RE.sub(text, " by ")
+    text = TIMES_RE.sub(text, " times ")
+    text = CHAT_DIGIT_RE.sub(text, (m) => this.chatForm(m))
+    text = DECADE_RE.sub(text,
       (m) => " " + pluralOf(len(m.group(1)!) === 4 ? year(int(m.group(1)!)) : cardinal(int(m.group(1)!))) + " ")
-    text = re(String.raw`(?<![${W}.])(${d}+)(?:st|nd|rd|th)${b}`).sub(text, (m) => ` ${ordinal(bigint(m.group(1)!))} `)
-    text = re(String.raw`(?<![${W}.])(144|240|360|480|540|576|720|900|1080|1440|2160|4320)([pi])${b}`).sub(text,
+    text = ORDINAL_RE.sub(text, (m) => ` ${ordinal(bigint(m.group(1)!))} `)
+    text = VIDEO_RES_RE.sub(text,
       (m) => ` ${pairs(int(m.group(1)!))} ${spelled(m.group(2)!)} `)
-    text = re(String.raw`(${d}[${D},]*(?:\.${d}+)?)${s}?%`).sub(text, (m) => ` ${numberWords(m.group(1)!)} percent `)
+    text = PERCENT_RE.sub(text, (m) => ` ${numberWords(m.group(1)!)} percent `)
     text = this.areaPlain.sub(text, (m) => this.square(m))
     text = this.unit.sub(text, (m) => this.measure(m))
-    text = re(String.raw`(?<![${D}\/.,\-])(${d}+) (${d})\/(2|3|4|5|6|8|10|16)(?![${D}\/]|\.${d})`).sub(text, (m) => this.mixedFraction(m))
-    text = re(String.raw`(?<![${D}\/.])(${d}+)\/(${d}+)(?![${D}\/]|\.${d})`).sub(text, (m) => this.fraction(m))
-    text = re(String.raw`(?<![${W}.,\-])(${d}{4})[\-–](${d}{4})(?![${W}.,\-])`).sub(text,
+    text = MIXED_FRAC_RE.sub(text, (m) => this.mixedFraction(m))
+    text = FRAC_RE.sub(text, (m) => this.fraction(m))
+    text = YEAR_RANGE_RE.sub(text,
       (m) => ` ${year(int(m.group(1)!))} to ${year(int(m.group(2)!))} `)
-    text = re(String.raw`(?<![${W}.,\-])(${d}+)[\-–](${d}+)(?![${W}\-]|[.,]${d})`).sub(text,
+    text = NUM_RANGE_RE.sub(text,
       (m) => ` ${numberWords(m.group(1)!)} to ${numberWords(m.group(2)!)} `)
-    text = re(String.raw`(?<![${W}.])(${d}+)x${b}`).sub(text, (m) => ` ${numberWords(m.group(1)!)} times `)
-    text = re(String.raw`(?<=${d})\^(?=${d})`).sub(text, " to the power of ")
+    text = NUM_TIMES_RE.sub(text, (m) => ` ${numberWords(m.group(1)!)} times `)
+    text = POWER_RE.sub(text, " to the power of ")
     return text
   }
 
@@ -1085,7 +1168,7 @@ export class Normalizer {
         }
         while (start > 0 && (isalnum(charBefore(head, start)) || "_.".includes(head[start - 1]!))) start -= charBefore(head, start).length
       }
-      const word = re(String.raw`[A-Za-z']+${end}`).search(rstrip(head.slice(0, Math.max(start, 0))))
+      const word = CLAUSE_WORD_RE.search(rstrip(head.slice(0, Math.max(start, 0))))
       if (word && !CLAUSE_OPENERS.has(word.text.toLowerCase())) return m.text
       return IS + m.text
     })
@@ -1113,31 +1196,31 @@ export class Normalizer {
   private signs(text: string): string {
     text = Normalizer.namedLetters(text)
     if (text.includes("<") || text.includes(">")) text = Normalizer.joinedComparisons(text)
-    text = re(String.raw`(?<![${W}\-])(${SIZES})-(${SIZES})(?![${W}\-])`).sub(text, (m) => ` ${spelled(m.group(1)!)} to ${spelled(m.group(2)!)} `)
-    text = re(String.raw`#(?=${d})`).sub(text, " number ")
-    text = re(String.raw`#(?=[A-Z]{1,4}-?${d})`).sub(text, " number ")
-    text = re("#(?=[A-Za-z])").sub(text, " hashtag ")
-    text = re(String.raw`~(?=${s}?${d})`).sub(text, " about ")
-    text = re(String.raw`(?<=[${W}${S}${END}${IS}])(>=|<=|!=)(?=[${W}${S}${SPELL}])`).sub(text, (m) => Normalizer.compared(m, COMPARISONS[m.group(1)!]!))
-    text = re(String.raw`(?<=${d}) Ti${b}`).sub(text, ` ${spelled("TI")}`)
-    text = re(String.raw`${b}([Rr])ef\.${s}?[Nn]o\.(?=${s})`).sub(text, (m) => `${m.group(1)}eference number`)
+    text = SIZE_RANGE_RE.sub(text, (m) => ` ${spelled(m.group(1)!)} to ${spelled(m.group(2)!)} `)
+    text = HASH_NUM_RE.sub(text, " number ")
+    text = HASH_CODE_RE.sub(text, " number ")
+    text = HASH_TAG_RE.sub(text, " hashtag ")
+    text = TILDE_ABOUT_RE.sub(text, " about ")
+    text = MULTI_COMP_RE.sub(text, (m) => Normalizer.compared(m, COMPARISONS[m.group(1)!]!))
+    text = GPU_TI_RE.sub(text, ` ${spelled("TI")}`)
+    text = REF_NO_RE.sub(text, (m) => `${m.group(1)}eference number`)
     if (text.includes(".")) {
       const original = text
-      text = re(String.raw`${b}((?:[A-Za-z]\.){2,})`).sub(text, (m) => this.dotted(m, original))
+      text = DOTTED_RE.sub(text, (m) => this.dotted(m, original))
     }
     {
       const original = text
-      text = re(String.raw`${b}([A-Za-z]{1,6})${b}(\.?)(?![A-Za-z'’])`).sub(text, (m) => this.abbreviation(m, original))
+      text = ABBR_RE.sub(text, (m) => this.abbreviation(m, original))
     }
-    if (re(d).search(text)) {
+    if (HAS_DIGIT.search(text)) {
       text = GLUED.sub(text, (m) => this.glued(m))
       const original = text
-      text = re(String.raw`(?<![${W}.])${d}{1,3}(?:,${d}{3})+(?:\.${d}+)?|${d}+(?:\.${d}+)?|(?<![${W}.])\.${d}+`).sub(text, (m) => this.number(m, original))
+      text = NUMBER_RE.sub(text, (m) => this.number(m, original))
     }
-    text = re("(?<=[A-Za-z])/(?=[A-Za-z])").sub(text, " ")
-    text = re(String.raw`(?<=${d})${IS}?${s}?[<>]${s}?(?=${d})|(?<=${s})[<>](?=${s})`).sub(text,
+    text = SLASH_WORD_RE.sub(text, " ")
+    text = COMP_ANGLE_RE.sub(text,
       (m) => Normalizer.compared(m, m.text.includes("<") ? "less than" : "greater than"))
-    text = re("[" + Object.keys(SYMBOL_WORDS).join("") + "]").sub(text,
+    text = SYMBOL_WORDS_RE.sub(text,
       (m) => ("≥≤≠".includes(m.text) ? Normalizer.compared(m, SYMBOL_WORDS[m.text]!) : ` ${SYMBOL_WORDS[m.text]} `))
     return text.replaceAll(IS, "")
   }
@@ -1146,14 +1229,14 @@ export class Normalizer {
 
   /** Spellings a word stretched for emphasis may stand for: "sooo" so, "goood" good, "mmm" mm. */
   private static unstretched(word: string): string[] {
-    if (!re(String.raw`([^\n])\1\1`).search(word)) return []
+    if (!STRETCH_3_RE.search(word)) return []
     const cut = (doubleInside: boolean, doubleFinal: boolean) =>
-      re(String.raw`([^\n])\1{2,}`).sub(word, (m) => {
+      STRETCH_RUN_RE.sub(word, (m) => {
         const final = m.end() === word.length
         return m.group(1)!.repeat((final ? doubleFinal : doubleInside) ? 2 : 1)
       })
-    const liked = re(String.raw`([lfsz])\1\1+${end}`).search(word) !== null || (word.length > 0 && [...word].every((c) => c === "m"))
-      || re(String.raw`([^\n])\1{2,}${end}`).sub(word, (m) => m.group(1)!) === "to"
+    const liked = STRETCH_LIKED_RE.search(word) !== null || (word.length > 0 && [...word].every((c) => c === "m"))
+      || STRETCH_END_RE.sub(word, (m) => m.group(1)!) === "to"
     return [...new Set([cut(true, liked), cut(true, !liked), cut(false, liked), cut(false, !liked)])]
   }
 
@@ -1208,12 +1291,12 @@ export class Normalizer {
       if (INITIALISMS.has(stem) || !this.isWord(stem.toLowerCase())) return [word(lower, { raw, spell: true })]
     }
     if (!isalpha(letters)) return []
-    const capitals = re("[a-z]+(?:[A-Z][a-z]+)*[A-Z]{2,}(?:'s)?").fullmatch(raw) !== null
+    const capitals = CAPITALS_RE.fullmatch(raw) !== null
     if (capitals || !this.isWord(lower)) {
       for (const candidate of capitals ? [] : Normalizer.unstretched(lower)) {
         if (this.isWord(candidate)) return [word(candidate, { raw })]
       }
-      const parts = re("[A-Z]?[a-z']+|[A-Z]+(?![a-z])").findall(raw)
+      const parts = CAMEL_PARTS_RE.findall(raw)
       if (parts.length > 1 && parts.join("") === raw) {
         const out: Word[] = []
         for (const part of parts) {
@@ -1235,7 +1318,7 @@ export class Normalizer {
   /** Words and punctuation marks of ``text``. */
   tokens(input: string): Token[] {
     const text = this.rewrite(input)
-    const runs = re("[A-Za-z]{2,}").findall(text)
+    const runs = ALPHA_RUNS_RE.findall(text)
     const allCaps = runs.length >= 3 && runs.filter((run) => isupper(run)).length >= 0.6 * runs.length
     const out: Token[] = []
     let attach = false
@@ -1264,14 +1347,14 @@ export class Normalizer {
         } else if (spelling.startsWith("'") && !this.isWord(spelling.toLowerCase())) {
           spelling = spelling.slice(1)
         }
-        const after = text.slice(m.end())
-        fresh_ = this.wordTokens(spelling, allCaps, previous, re(String.raw`${s}*[A-Za-z]`).match(after) !== null, fresh)
+        const afterIndex = m.end()
+        fresh_ = this.wordTokens(spelling, allCaps, previous, AFTER_LETTER_RE.matchAt(text, afterIndex) !== null, fresh)
         previous = spelling
         if (["Ss", "ss", "Zz", "zz"].includes(spelling) && fresh_.length === 1 && (isspace(before_) || "\"'(".includes(before_))
-            && re(String.raw`[.!?…,;:—"')]*(?:${s}|${end})`).match(after)) short.push(out.length)
+            && SHORT_FOLLOW_RE.matchAt(text, afterIndex)) short.push(out.length)
         if (this.replies.has(spelling.toLowerCase()) && (spelling.length > 1 || islower(spelling)) && fresh_.length === 1
             && (isspace(before_) || "\"'".includes(before_))
-            && re(String.raw`(?:[.?…,;—]*["']?(?:${s}|${end})|!+["']?${s}*${end})`).match(after)) replies.push(out.length)
+            && REPLY_FOLLOW_RE.matchAt(text, afterIndex)) replies.push(out.length)
       } else if (number !== undefined) {
         fresh_ = numberWords(number).split(" ").map((part) => word(part, { raw: number }))
       } else if ((PUNCTUATION as readonly string[]).includes(other!)) {

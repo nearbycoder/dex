@@ -233,6 +233,7 @@ export async function searchSmithery(query: string): Promise<RegistryServer[]> {
     })
     .slice(0, RESULTS)
   searches.set(key, { at: Date.now(), results })
+  if (searches.size > 200) searches.delete(searches.keys().next().value!)
   return results
 }
 
@@ -289,7 +290,11 @@ async function oauthMetadata(url: URL, challenge: string | null): Promise<string
   ].filter((candidate): candidate is string => Boolean(candidate?.startsWith("https://")))
   for (const candidate of candidates) {
     const response = await fetch(candidate, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(TIMEOUT_MS) }).catch(() => null)
-    if (!response?.ok) continue
+    if (!response) continue
+    if (!response.ok) {
+      void response.body?.cancel()
+      continue
+    }
     const body = (await response.json().catch(() => null)) as { authorization_servers?: string[]; issuer?: string } | null
     if (body?.authorization_servers?.length) return new URL(body.authorization_servers[0]!).host
     if (body?.issuer) return new URL(body.issuer).host
@@ -374,6 +379,10 @@ export async function checkServer(listed: RegistryServer, githubToken: string | 
     add("fresh", "Registry entry", stale ? "warn" : "pass", `${server.status === "active" ? "Active" : server.status}, updated ${new Date(updated).toISOString().slice(0, 10)}${stale ? " (over a year ago)" : ""}.`)
   }
 
+  // Run GitHub repo checks alongside the endpoint handshake, then append in the original order.
+  const repoResults: McpCheck[] = []
+  const repoPromise = repoChecks(server.repository, githubToken, (id, label, status, detail) => repoResults.push({ id, label, status, detail }))
+
   // The handshake: what a client actually gets from the endpoint.
   if (server.templated) {
     add("reachable", "Responds", "info", "Its URL has placeholders to fill in first, so it wasn't contacted.")
@@ -395,6 +404,7 @@ export async function checkServer(listed: RegistryServer, githubToken: string | 
     if (response instanceof Error) {
       add("reachable", "Responds", "fail", `Couldn't connect: ${response.name === "TimeoutError" ? "no answer in 8 seconds" : response.message}`)
     } else if (response.status === 401 || response.status === 403) {
+      void response.body?.cancel()
       const issuer = await oauthMetadata(url, response.headers.get("www-authenticate"))
       if (issuer) auth = "oauth"
       add(
@@ -405,6 +415,7 @@ export async function checkServer(listed: RegistryServer, githubToken: string | 
       )
       if (!issuer && auth === "none") auth = "headers"
     } else if (!response.ok) {
+      void response.body?.cancel()
       add("reachable", "Responds", "fail", `Answered ${response.status} to an MCP handshake.`)
     } else {
       const reply = await readRpc(response)
@@ -424,7 +435,8 @@ export async function checkServer(listed: RegistryServer, githubToken: string | 
   }
   if (auth === "headers") add("auth", "Credentials", "info", `Needs ${header ?? "a header"}${server.headers.find((each) => each.required)?.description ? `: ${server.headers.find((each) => each.required)!.description}` : ""}.`)
 
-  await repoChecks(server.repository, githubToken, add)
+  await repoPromise
+  checks.push(...repoResults)
 
   if (!tools.length && listedTools.length) {
     tools = listedTools.slice(0, 50)

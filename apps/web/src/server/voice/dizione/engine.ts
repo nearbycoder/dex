@@ -9,7 +9,7 @@ import { Model } from "./g2p.ts"
 import { Homographs } from "./homographs.ts"
 import { compound, derive, plural } from "./morphology.ts"
 import { Normalizer, type Token, type Word } from "./normalize.ts"
-import { end, re, splitlines } from "./py.ts"
+import { end, re } from "./py.ts"
 import { groups, joinClause, promote, stressClause, type Unit, unit } from "./sentence.ts"
 import type { Phones, Piece } from "./symbols.ts"
 import { type Entry, entryPhones, functionWords, mapping, names, phrases, pronunciations } from "./tables.ts"
@@ -18,6 +18,8 @@ import { type Entry, entryPhones, functionWords, mapping, names, phrases, pronun
 
 const LEIGH = re(`(?<=[a-z]{2})leigh(?=s?${end})`)
 const VIRUS = ["viruses", "virus"]
+// Bound the per-word cache so a long-lived Worker isolate cannot grow without limit.
+const WORD_CACHE_LIMIT = 10_000
 
 /** The built files, already read. */
 export interface Built {
@@ -34,6 +36,7 @@ export class Phonemizer {
   private readonly homographs: Homographs | null
   private readonly functions = functionWords(TABLES["function_words.txt"])
   private readonly phrases = phrases(TABLES["phrases.txt"])
+  private readonly phraseStarts: Set<string>
   private readonly phraseLength: number
   private readonly exceptions = pronunciations(TABLES["exceptions.txt"])
   private readonly names = names(TABLES["exceptions.txt"])
@@ -44,15 +47,24 @@ export class Phonemizer {
   private readonly cache = new Map<string, readonly [Phones, string]>()
 
   constructor(built: Built) {
-    for (const line of splitlines(built.lexicon)) {
-      if (!line) continue
-      const tab = line.indexOf("\t")
-      if (tab < 0) throw new Error("lexicon.tsv: a line without a tab")
-      this.lexicon.set(line.slice(0, tab), line.slice(tab + 1))
+    // Scan lines directly rather than allocating a 100k+ element array via splitlines().
+    const lexicon = built.lexicon
+    let start = 0
+    while (start < lexicon.length) {
+      let nl = lexicon.indexOf("\n", start)
+      if (nl < 0) nl = lexicon.length
+      const lineEnd = nl > start && lexicon.charCodeAt(nl - 1) === 13 ? nl - 1 : nl
+      if (lineEnd > start) {
+        const tab = lexicon.indexOf("\t", start)
+        if (tab < 0 || tab >= lineEnd) throw new Error("lexicon.tsv: a line without a tab")
+        this.lexicon.set(lexicon.slice(start, tab), lexicon.slice(tab + 1, lineEnd))
+      }
+      start = nl + 1
     }
     this.aligner = new Aligner(built.align)
     this.model = built.model
     this.homographs = built.homographs
+    this.phraseStarts = new Set(Array.from(this.phrases.keys(), (key) => key.split(" ")[0]!))
     this.phraseLength = Math.max(1, ...Array.from(this.phrases.keys(), (key) => key.split(" ").length))
     this.nameStarts = new Set(Array.from(this.names.keys(), (key) => key.split(" ")[0]!))
     this.nameLength = Math.max(1, ...Array.from(this.names.keys(), (key) => key.split(" ").length))
@@ -151,6 +163,10 @@ export class Phonemizer {
       source = "model"
     }
     const result = [phones, source] as const
+    if (this.cache.size >= WORD_CACHE_LIMIT) {
+      const oldest = this.cache.keys().next().value
+      if (oldest !== undefined) this.cache.delete(oldest)
+    }
     this.cache.set(word, result)
     return result
   }
@@ -175,7 +191,7 @@ export class Phonemizer {
           index += size
           continue
         }
-        size = this.phrase(words, index)
+        size = this.phraseStarts.has(token.text) ? this.phrase(words, index) : 0
         if (size) {
           const key = words.slice(index, index + size).map((w) => w.text)
           const [kind, forms, final] = this.phrases.get(key.join(" "))!

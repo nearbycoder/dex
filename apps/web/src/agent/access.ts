@@ -75,17 +75,19 @@ export type OperationOutcome =
 
 export class AccessError extends Error {}
 
+const UTF8_ENC = new TextEncoder()
+const UTF8_DEC = new TextDecoder()
 const toHex = (bytes: ArrayBuffer) => [...new Uint8Array(bytes)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
-const sha256 = async (text: string) => toHex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)))
+const sha256 = async (text: string) => toHex(await crypto.subtle.digest("SHA-256", UTF8_ENC.encode(text)))
 const base64url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
-export const encodeUserId = (userId: string) => base64url(new TextEncoder().encode(userId))
+export const encodeUserId = (userId: string) => base64url(UTF8_ENC.encode(userId))
 
 /** `dexk.<user>.<random>.<tag>`: who it's for, and an HMAC over both. */
 export const parseAccessToken = (token: string) => {
   const [prefix, user, random, tag, ...rest] = token.split(".")
   if (prefix !== TOKEN_PREFIX || !user || !random || !tag || rest.length) return null
   try {
-    const userId = new TextDecoder().decode(Uint8Array.from(atob(user.replace(/-/g, "+").replace(/_/g, "/")), (char) => char.charCodeAt(0)))
+    const userId = UTF8_DEC.decode(Uint8Array.from(atob(user.replace(/-/g, "+").replace(/_/g, "/")), (char) => char.charCodeAt(0)))
     return { userId, signed: `${TOKEN_PREFIX}.${user}.${random}`, tag }
   } catch {
     return null
@@ -159,9 +161,15 @@ export class AccessCenter {
       id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, actor TEXT NOT NULL, actor_ref TEXT NOT NULL,
       actor_label TEXT NOT NULL, operation TEXT NOT NULL, summary TEXT NOT NULL, ok INTEGER NOT NULL, error TEXT)`)
     host.sql.exec(`CREATE INDEX IF NOT EXISTS dex_audit_actor ON dex_audit (actor_ref, at)`)
+    host.sql.exec(`CREATE INDEX IF NOT EXISTS dex_audit_chat_op ON dex_audit (actor, operation, at)`)
     host.sql.exec(`CREATE TABLE IF NOT EXISTS dex_pending (
       id TEXT PRIMARY KEY, session_id TEXT NOT NULL, operation TEXT NOT NULL, args TEXT NOT NULL, summary TEXT NOT NULL,
       created_at INTEGER NOT NULL, status TEXT NOT NULL, result TEXT)`)
+    host.sql.exec(`CREATE INDEX IF NOT EXISTS dex_pending_created ON dex_pending (created_at)`)
+  }
+
+  forgetSession(sessionId: string) {
+    this.uiCalls.delete(sessionId)
   }
 
   status(): AccessState {
@@ -370,14 +378,18 @@ export class AccessCenter {
     if (!operation) throw new AccessError("That operation no longer exists.")
     const caller: Caller = { kind: "user", sessionId: row.session_id }
     if (!approve) {
-      this.host.sql.exec(`UPDATE dex_pending SET status = 'declined' WHERE id = ?`, id)
+      if (this.host.sql.exec(`UPDATE dex_pending SET status = 'declined' WHERE id = ? AND status = 'pending'`, id).rowsWritten !== 1) {
+        throw new AccessError("That request was already handled.")
+      }
       this.audit(caller, row.operation, `Declined: ${row.summary}`, null)
       this.refresh()
       await this.host.tellChat(row.session_id, `[Declined] ${row.summary}. Don't retry unless I ask.`)
       return
     }
     // Claimed before running, so a double tap can't run it twice.
-    this.host.sql.exec(`UPDATE dex_pending SET status = 'approved' WHERE id = ? AND status = 'pending'`, id)
+    if (this.host.sql.exec(`UPDATE dex_pending SET status = 'approved' WHERE id = ? AND status = 'pending'`, id).rowsWritten !== 1) {
+      throw new AccessError("That request was already handled.")
+    }
     const outcome = await this.run(operation, JSON.parse(row.args), caller, row.summary)
     const result = outcome.ok === true ? stringifyResult(outcome.result).slice(0, 2_000) : outcome.ok === false ? outcome.error : ""
     this.host.sql.exec(`UPDATE dex_pending SET status = ?, result = ? WHERE id = ?`, outcome.ok === true ? "approved" : "failed", result, id)

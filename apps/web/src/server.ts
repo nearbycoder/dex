@@ -7,9 +7,9 @@ import { handleVmDesktop, VM_DESKTOP_PREFIX } from "./server/vm-desktop"
 
 export { DexAgent } from "./agent/dex-agent"
 
-const sameOrigin = (origin: string, request: Request) => {
+const sameOrigin = (origin: string, url: URL) => {
   try {
-    return new URL(origin).host === new URL(request.url).host
+    return new URL(origin).host === url.host
   } catch {
     // e.g. `Origin: null` from a sandboxed frame or a file.
     return false
@@ -17,9 +17,9 @@ const sameOrigin = (origin: string, request: Request) => {
 }
 
 /** Agent requests need a current (not revoked) session cookie for the same user the instance belongs to. */
-const authorizeAgent = (env: Env) => async (request: Request, route: { name: string }) => {
+const authorizeAgent = (env: Env, url: URL) => async (request: Request, route: { name: string }) => {
   const origin = request.headers.get("origin")
-  if (origin && !sameOrigin(origin, request)) {
+  if (origin && !sameOrigin(origin, url)) {
     return new Response("Cross-origin agent requests are not allowed", { status: 403 })
   }
   // A 401 tells the apps the session is gone (they sign out); a check that couldn't run is a 503 to retry.
@@ -56,7 +56,7 @@ const CONTENT_SECURITY_POLICY = [
   "form-action 'self'"
 ].join("; ")
 
-const withSecurityHeaders = (response: Response, request: Request) => {
+const withSecurityHeaders = (response: Response, url: URL) => {
   // WebSocket upgrades and the like can't be copied.
   if (response.status === 101 || response.webSocket) return response
   const secured = new Response(response.body, response)
@@ -68,7 +68,7 @@ const withSecurityHeaders = (response: Response, request: Request) => {
   secured.headers.set("Permissions-Policy", "camera=(), microphone=(self), geolocation=()")
   // Pages opened from Dex (links in chats) get no handle back to it, and Dex none to them.
   secured.headers.set("Cross-Origin-Opener-Policy", "same-origin")
-  if (new URL(request.url).protocol === "https:") secured.headers.set("Strict-Transport-Security", "max-age=31536000")
+  if (url.protocol === "https:") secured.headers.set("Strict-Transport-Security", "max-age=31536000")
   return secured
 }
 
@@ -77,30 +77,29 @@ const withSecurityHeaders = (response: Response, request: Request) => {
  * workers.dev one, or another of the custom domains such as www) move to the main one, so old links and bookmarks land where sign-in works. Only page loads: API clients, MCP
  * connections, and agent sockets on the old address keep working.
  */
-const toCustomDomain = (request: Request, env: Env) => {
+const toCustomDomain = (request: Request, url: URL, env: Env) => {
   // A comma-separated list (e.g. "example.com,www.example.com"); the first is the main one.
   const domain = env.CUSTOM_DOMAIN.split(",")[0]?.trim()
   if (!domain || request.method !== "GET" || request.headers.get("sec-fetch-mode") !== "navigate") return undefined
-  const url = new URL(request.url)
   if (url.hostname === domain || url.hostname === "localhost" || url.hostname === "127.0.0.1") return undefined
   return Response.redirect(`https://${domain}${url.pathname}${url.search}`, 301)
 }
 
 export default {
   async fetch(request, env) {
-    const moved = toCustomDomain(request, env)
+    const url = new URL(request.url)
+    const moved = toCustomDomain(request, url, env)
     if (moved) return moved
     // Agent sockets live at /agents/<class>/<instance>. Other /agents/* paths (the Agents pages, e.g.
     // /agents/pr-reviewer) don't match the SDK's two-segment route and fall through to the app.
-    if (new URL(request.url).pathname.startsWith("/agents/")) {
-      const authorize = authorizeAgent(env)
+    if (url.pathname.startsWith("/agents/")) {
+      const authorize = authorizeAgent(env, url)
       const response = await routeAgentRequest(request, env, { onBeforeConnect: authorize, onBeforeRequest: authorize })
       if (response) return response
     }
-    const { pathname } = new URL(request.url)
-    if (pathname.startsWith(VM_DESKTOP_PREFIX)) return withSecurityHeaders(await handleVmDesktop(request, env), request)
-    if (pathname === TOUR_PATH) return withSecurityHeaders(await serveTour(request, env), request)
-    if (pathname === WORKSPACE_PREVIEW_PATH) return withSecurityHeaders(await handleWorkspacePreview(request, env), request)
-    return withSecurityHeaders(await handler.fetch(request), request)
+    if (url.pathname.startsWith(VM_DESKTOP_PREFIX)) return withSecurityHeaders(await handleVmDesktop(request, env), url)
+    if (url.pathname === TOUR_PATH) return withSecurityHeaders(await serveTour(request, env), url)
+    if (url.pathname === WORKSPACE_PREVIEW_PATH) return withSecurityHeaders(await handleWorkspacePreview(request, env), url)
+    return withSecurityHeaders(await handler.fetch(request), url)
   }
 } satisfies ExportedHandler<Env>

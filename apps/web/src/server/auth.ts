@@ -27,6 +27,11 @@ export const viewerFromRequest = Effect.fn("auth.viewerFromRequest")(function*(r
   return yield* sessions.verify(readCookie(request.headers.get("cookie"), SESSION_COOKIE))
 })
 
+export const viewerSessionFromRequest = Effect.fn("auth.viewerSessionFromRequest")(function*(request: Request) {
+  const sessions = yield* Sessions
+  return yield* sessions.verifyWithIssuedAt(readCookie(request.headers.get("cookie"), SESSION_COOKIE))
+})
+
 export const authOptions = Effect.gen(function*() {
   const config = yield* AppConfig
   return { github: Option.isSome(config.github), devLogin: config.devLogin, password: Option.isSome(config.ownerPassword) }

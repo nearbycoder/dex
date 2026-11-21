@@ -1,12 +1,13 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
-import { mkdtempSync, mkdirSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync, existsSync } from "node:fs"
+import { mkdtempSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync, existsSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { after, test } from "node:test"
 import { parseVmFiles, vmFilesCommand, type VmChanges, type VmDirectory, type VmFile, type VmFilesView } from "../src/agent/vm-files.ts"
 
-const fixture = mkdtempSync(join(tmpdir(), "dex-files-"))
+// Git reports the physical path even when the temporary directory is a symlink.
+const fixture = realpathSync(mkdtempSync(join(tmpdir(), "dex-files-")))
 after(() => rmSync(fixture, { recursive: true, force: true }))
 const repo = join(fixture, "repo")
 mkdirSync(repo)

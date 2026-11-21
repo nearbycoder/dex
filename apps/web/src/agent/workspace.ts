@@ -65,7 +65,7 @@ export class Workspace {
     const bytes = typeof content === "string" ? encoder.encode(content) : content
     if (bytes.length > MAX_FILE_BYTES) throw new Error(`File too large (${bytes.length} bytes; limit ${MAX_FILE_BYTES})`)
     const resolved = resolveWorkspacePath(path)
-    const existing = this.read(resolved)?.length ?? 0
+    const existing = this.sql.exec<{ size: number }>(`SELECT length(content) AS size FROM dex_files WHERE path = ?`, resolved).toArray()[0]?.size ?? 0
     if (this.totalBytes() - existing + bytes.length > MAX_WORKSPACE_BYTES) {
       throw new Error(`Workspace is full (limit ${MAX_WORKSPACE_BYTES / 1024 / 1024} MB)`)
     }
@@ -80,7 +80,8 @@ export class Workspace {
 
   remove(path: string): boolean {
     const resolved = resolveWorkspacePath(path)
-    const cursor = this.sql.exec(`DELETE FROM dex_files WHERE path = ? OR path LIKE ?`, resolved, `${resolved}/%`)
+    const prefix = `${resolved.replace(/[\\%_]/g, "\\$&")}/%`
+    const cursor = this.sql.exec(`DELETE FROM dex_files WHERE path = ? OR path LIKE ? ESCAPE '\\'`, resolved, prefix)
     return cursor.rowsWritten > 0
   }
 

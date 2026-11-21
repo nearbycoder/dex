@@ -5,6 +5,8 @@ import type { ApnsSender, FcmSender } from "./native-push"
 /** Push services browsers subscribe through; subscriptions elsewhere are refused, so nobody can aim pushes at other hosts. */
 const PUSH_HOSTS = [/^fcm\.googleapis\.com$/, /(^|\.)push\.apple\.com$/, /(^|\.)push\.services\.mozilla\.com$/, /(^|\.)notify\.windows\.com$/]
 const KIND_IDS = new Set<string>(NOTIFY_KINDS.map((kind) => kind.id))
+const UTF8_ENC = new TextEncoder()
+const PUSH_TIMEOUT_MS = 15_000
 
 interface DeviceRow {
   id: string
@@ -112,7 +114,7 @@ export class PushCenter {
     const p256dh = String(input.keys?.p256dh ?? "")
     const auth = String(input.keys?.auth ?? "")
     if (!/^[\w-]{40,200}$/.test(p256dh) || !/^[\w-]{8,64}$/.test(auth)) throw new Error("The subscription's keys are malformed.")
-    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(url.href)))
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", UTF8_ENC.encode(url.href)))
     const id = [...digest.slice(0, 8)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
     this.host.sql.exec(
       `INSERT INTO dex_push (id, endpoint, p256dh, auth, label, kinds, only_when_away, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?)
@@ -131,7 +133,7 @@ export class PushCenter {
     const clean = String(token ?? "").trim()
     if (!/^[\w:.-]{20,4096}$/.test(clean)) throw new Error("That isn't a push token.")
     const endpoint = `${platform}:${clean}`
-    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(endpoint)))
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", UTF8_ENC.encode(endpoint)))
     const id = [...digest.slice(0, 8)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
     const env = platform === "ios" ? (environment === "sandbox" ? "sandbox" : "production") : null
     this.host.sql.exec(
@@ -208,9 +210,10 @@ export class PushCenter {
         { endpoint: row.endpoint, expirationTime: null, keys: { p256dh: row.p256dh, auth: row.auth } },
         { subject: this.host.subject(), publicKey: this.host.publicKey, privateKey: this.signingKey() }
       )
-      const response = await fetch(row.endpoint, { method: "POST", headers: request.headers, body: request.body })
+      const response = await fetch(row.endpoint, { method: "POST", headers: request.headers, body: request.body, signal: AbortSignal.timeout(PUSH_TIMEOUT_MS) })
       // Gone: the user turned notifications off in the browser, or the subscription expired.
       if (response.status === 404 || response.status === 410) {
+        void response.body?.cancel()
         this.host.sql.exec(`DELETE FROM dex_push WHERE id = ?`, row.id)
         return false
       }
@@ -219,6 +222,7 @@ export class PushCenter {
         this.host.sql.exec(`UPDATE dex_push SET error = ? WHERE id = ?`, `${response.status} ${detail}`.trim(), row.id)
         return false
       }
+      void response.body?.cancel()
       this.host.sql.exec(`UPDATE dex_push SET last_sent_at = ?, error = NULL WHERE id = ?`, Date.now(), row.id)
       return true
     } catch (error) {

@@ -211,6 +211,7 @@ export interface ModelCatalog {
 
 /** Every model that can run now. The same array is updated in place by `setModelCatalog`, so importers see changes. */
 const current: DexModel[] = [...BUILT_IN_MODELS]
+const byId = new Map<string, DexModel>(current.map((model) => [model.id, model]))
 let currentUpdatedAt = 0
 export const MODELS: ReadonlyArray<DexModel> = current
 
@@ -222,6 +223,8 @@ export function setModelCatalog(catalog: Pick<ModelCatalog, "models" | "updatedA
   const models = catalog.models.filter((model) => model.maker in MODEL_MAKERS && model.provider in MODEL_PROVIDERS)
   if (catalog.updatedAt < currentUpdatedAt || models.length === 0) return false
   current.splice(0, current.length, ...models)
+  byId.clear()
+  for (const model of models) byId.set(model.id, model)
   currentUpdatedAt = catalog.updatedAt
   return true
 }
@@ -243,7 +246,7 @@ export const modelsOf = (provider: ModelProvider) => MODELS.filter((model) => mo
 export const DEFAULT_MODEL_ID = "cline-pass/glm-5.3"
 export const DEFAULT_THINKING: ThinkingLevel = "low"
 
-export const findModel = (id: string) => MODELS.find((model) => model.id === id)
+export const findModel = (id: string) => byId.get(id)
 
 /** The default model, or the first one listed if the provider has retired it. */
 export const defaultModelId = () => (findModel(DEFAULT_MODEL_ID) ? DEFAULT_MODEL_ID : (MODELS[0]?.id ?? DEFAULT_MODEL_ID))

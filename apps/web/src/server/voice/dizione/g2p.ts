@@ -16,6 +16,16 @@ interface Tensor {
   readonly data: Float32Array
 }
 
+const UTF8 = new TextDecoder()
+
+async function inflateRaw(data: Uint8Array): Promise<Uint8Array> {
+  const stream = new DecompressionStream("deflate-raw")
+  const writer = stream.writable.getWriter()
+  const writing = writer.write(data as BufferSource).then(() => writer.close())
+  const [buffer] = await Promise.all([new Response(stream.readable).arrayBuffer(), writing])
+  return new Uint8Array(buffer)
+}
+
 /** The arrays of an .npz file (a zip of .npy files, stored or deflated). */
 export async function readNpz(bytes: Uint8Array): Promise<Map<string, Tensor>> {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
@@ -29,7 +39,7 @@ export async function readNpz(bytes: Uint8Array): Promise<Map<string, Tensor>> {
   if (directory < 0) throw new Error("g2p.npz is not a zip file")
   const count = view.getUint16(directory + 10, true)
   let offset = view.getUint32(directory + 16, true)
-  const out = new Map<string, Tensor>()
+  const entries: { name: string; method: number; file: Uint8Array }[] = []
   for (let n = 0; n < count; n++) {
     const method = view.getUint16(offset + 10, true)
     let size = view.getUint32(offset + 20, true)
@@ -37,7 +47,7 @@ export async function readNpz(bytes: Uint8Array): Promise<Map<string, Tensor>> {
     const extraLength = view.getUint16(offset + 30, true)
     const commentLength = view.getUint16(offset + 32, true)
     let local = view.getUint32(offset + 42, true)
-    const name = new TextDecoder().decode(bytes.subarray(offset + 46, offset + 46 + nameLength))
+    const name = UTF8.decode(bytes.subarray(offset + 46, offset + 46 + nameLength))
     // ZIP64 sizes and offsets live in the extra field when the 32-bit ones are full.
     if (size === 0xffffffff || local === 0xffffffff) {
       let field = offset + 46 + nameLength
@@ -59,12 +69,16 @@ export async function readNpz(bytes: Uint8Array): Promise<Map<string, Tensor>> {
     }
     offset += 46 + nameLength + extraLength + commentLength
     const start = local + 30 + view.getUint16(local + 26, true) + view.getUint16(local + 28, true)
-    let file = bytes.subarray(start, start + size)
-    if (method === 8) file = new Uint8Array(await new Response(new Response(new Uint8Array(file)).body!.pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer())
-    else if (method !== 0) throw new Error(`g2p.npz: unsupported compression ${method}`)
-    out.set(name.replace(/\.npy$/, ""), readNpy(file, name))
+    if (method !== 0 && method !== 8) throw new Error(`g2p.npz: unsupported compression ${method}`)
+    entries.push({ name, method, file: bytes.subarray(start, start + size) })
   }
-  return out
+  const tensors = await Promise.all(
+    entries.map(async ({ name, method, file }) => {
+      const inflated = method === 8 ? await inflateRaw(file) : file
+      return [name.replace(/\.npy$/, ""), readNpy(inflated, name)] as const
+    })
+  )
+  return new Map(tensors)
 }
 
 function readNpy(bytes: Uint8Array, name: string): Tensor {
@@ -72,7 +86,7 @@ function readNpy(bytes: Uint8Array, name: string): Tensor {
   const major = bytes[6]!
   const headerLength = major === 1 ? view.getUint16(8, true) : view.getUint32(8, true)
   const headerStart = major === 1 ? 10 : 12
-  const header = new TextDecoder().decode(bytes.subarray(headerStart, headerStart + headerLength))
+  const header = UTF8.decode(bytes.subarray(headerStart, headerStart + headerLength))
   if (!/'descr':\s*'<f4'/.test(header) || /'fortran_order':\s*True/.test(header)) throw new Error(`g2p.npz ${name}: expected little-endian float32 in C order`)
   const shape = (/'shape':\s*\(([^)]*)\)/.exec(header)?.[1] ?? "").split(",").map((part) => part.trim()).filter(Boolean).map(Number)
   const length = shape.reduce((a, b) => a * b, 1)

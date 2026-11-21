@@ -53,6 +53,8 @@ export class UsageLedger {
     sql.exec(`CREATE TABLE IF NOT EXISTS dex_vm_runs (
       id INTEGER PRIMARY KEY AUTOINCREMENT, sandbox_id TEXT NOT NULL, size TEXT NOT NULL,
       started_at INTEGER NOT NULL, ended_at INTEGER)`)
+    sql.exec(`CREATE INDEX IF NOT EXISTS dex_vm_runs_open ON dex_vm_runs (sandbox_id, ended_at)`)
+    sql.exec(`CREATE INDEX IF NOT EXISTS dex_vm_runs_range ON dex_vm_runs (started_at, ended_at)`)
   }
 
   // ── Model responses ───────────────────────────────────────────────────────
@@ -136,6 +138,119 @@ export class UsageLedger {
     }
   }
 
+  /** Every subscription's usage, daily cost, and total daily tokens in a single range scan. */
+  allModelUsage(
+    since: number,
+    until: number,
+    titles: ReadonlyMap<string, string>
+  ): {
+    readonly byProvider: Record<ModelProvider, ClineUsage>
+    readonly dailyByProvider: Record<ModelProvider, Map<string, number>>
+    readonly tokensDaily: Map<string, { tokens: number; responses: number }>
+  } {
+    type Bucket = {
+      responses: number
+      input: number
+      output: number
+      cacheRead: number
+      total: number
+      cost: number
+      byModel: Map<string, { model: string; responses: number; totalTokens: number; listCost: number }>
+      byChat: Map<string, { sessionId: string; title: string; totalTokens: number; listCost: number }>
+      daily: Map<string, number>
+    }
+    const empty = (): Bucket => ({
+      responses: 0, input: 0, output: 0, cacheRead: 0, total: 0, cost: 0,
+      byModel: new Map(), byChat: new Map(), daily: new Map()
+    })
+    const buckets: Record<ModelProvider, Bucket> = {
+      clinepass: empty(),
+      "opencode-go": empty(),
+      chatgpt: empty(),
+      commandcode: empty(),
+      openrouter: empty()
+    }
+    const tokensDaily = new Map<string, { tokens: number; responses: number }>()
+    const rows = this.sql.exec<LlmRow & { provider: string | null }>(
+      `SELECT at, session_id, model, provider, input, output, cache_read, total_tokens, cost FROM dex_usage_llm
+       WHERE at >= ? AND at <= ?`,
+      since, until
+    )
+    for (const row of rows) {
+      const provider = (row.provider as ModelProvider | null) ?? "clinepass"
+      const bucket = buckets[provider] ?? buckets.clinepass
+      bucket.responses++
+      bucket.input += row.input
+      bucket.output += row.output
+      bucket.cacheRead += row.cache_read
+      bucket.total += row.total_tokens
+      bucket.cost += row.cost
+      const model = bucket.byModel.get(row.model) ?? { model: row.model, responses: 0, totalTokens: 0, listCost: 0 }
+      model.responses++
+      model.totalTokens += row.total_tokens
+      model.listCost += row.cost
+      bucket.byModel.set(row.model, model)
+      const chat = bucket.byChat.get(row.session_id) ?? {
+        sessionId: row.session_id,
+        title: titles.get(row.session_id) ?? "Deleted chat",
+        totalTokens: 0,
+        listCost: 0
+      }
+      chat.totalTokens += row.total_tokens
+      chat.listCost += row.cost
+      bucket.byChat.set(row.session_id, chat)
+      const dayKey = utcDate(row.at)
+      bucket.daily.set(dayKey, (bucket.daily.get(dayKey) ?? 0) + row.cost)
+      const dayTokens = tokensDaily.get(dayKey) ?? { tokens: 0, responses: 0 }
+      dayTokens.tokens += row.total_tokens
+      dayTokens.responses++
+      tokensDaily.set(dayKey, dayTokens)
+    }
+    const finish = (bucket: Bucket): ClineUsage => ({
+      responses: bucket.responses,
+      inputTokens: bucket.input,
+      outputTokens: bucket.output,
+      cacheReadTokens: bucket.cacheRead,
+      totalTokens: bucket.total,
+      listCost: bucket.cost,
+      byModel: [...bucket.byModel.values()].sort((a, b) => b.listCost - a.listCost),
+      byChat: [...bucket.byChat.values()].sort((a, b) => b.listCost - a.listCost).slice(0, 10)
+    })
+    return {
+      byProvider: {
+        clinepass: finish(buckets.clinepass),
+        "opencode-go": finish(buckets["opencode-go"]),
+        chatgpt: finish(buckets.chatgpt),
+        commandcode: finish(buckets.commandcode),
+        openrouter: finish(buckets.openrouter)
+      },
+      dailyByProvider: {
+        clinepass: buckets.clinepass.daily,
+        "opencode-go": buckets["opencode-go"].daily,
+        chatgpt: buckets.chatgpt.daily,
+        commandcode: buckets.commandcode.daily,
+        openrouter: buckets.openrouter.daily
+      },
+      tokensDaily
+    }
+  }
+
+  /** One subscription's spend over several `[cutoff, until]` windows in one scan. */
+  modelSpends(provider: ModelProvider, cutoffs: readonly number[], until: number): number[] {
+    if (!cutoffs.length) return []
+    const totals = new Array<number>(cutoffs.length).fill(0)
+    const earliest = Math.min(...cutoffs)
+    for (const row of this.sql.exec<{ at: number; cost: number }>(
+      `SELECT at, cost FROM dex_usage_llm WHERE at >= ? AND at <= ? AND coalesce(provider, 'clinepass') = ?`,
+      earliest, until, provider
+    )) {
+      for (let index = 0; index < cutoffs.length; index++) {
+        if (row.at >= cutoffs[index]!) totals[index]! += row.cost
+      }
+    }
+    return totals
+  }
+
   modelDaily(provider: ModelProvider, since: number, until: number): Map<string, number> {
     const daily = new Map<string, number>()
     const rows = this.sql.exec<{ at: number; cost: number }>(
@@ -143,7 +258,8 @@ export class UsageLedger {
       since, until, provider
     )
     for (const row of rows) {
-      daily.set(utcDate(row.at), (daily.get(utcDate(row.at)) ?? 0) + row.cost)
+      const dayKey = utcDate(row.at)
+      daily.set(dayKey, (daily.get(dayKey) ?? 0) + row.cost)
     }
     return daily
   }
@@ -152,10 +268,11 @@ export class UsageLedger {
   tokensDaily(since: number, until: number): Map<string, { tokens: number; responses: number }> {
     const daily = new Map<string, { tokens: number; responses: number }>()
     for (const row of this.sql.exec<{ at: number; total_tokens: number }>(`SELECT at, total_tokens FROM dex_usage_llm WHERE at >= ? AND at <= ?`, since, until)) {
-      const day = daily.get(utcDate(row.at)) ?? { tokens: 0, responses: 0 }
+      const dayKey = utcDate(row.at)
+      const day = daily.get(dayKey) ?? { tokens: 0, responses: 0 }
       day.tokens += row.total_tokens
       day.responses++
-      daily.set(utcDate(row.at), day)
+      daily.set(dayKey, day)
     }
     return daily
   }
@@ -218,9 +335,10 @@ export class UsageLedger {
       runs.push({ startedAt: row.started_at, endedAt: row.ended_at, size: row.size, hours: runHours, cost: runHours * rate })
       // Split the run across the UTC days it spans.
       for (let cursor = start; cursor < end; ) {
-        const dayEnd = Date.parse(utcDate(cursor)) + DAY_MS
+        const dayKey = utcDate(cursor)
+        const dayEnd = Date.parse(dayKey) + DAY_MS
         const sliceEnd = Math.min(dayEnd, end)
-        daily.set(utcDate(cursor), (daily.get(utcDate(cursor)) ?? 0) + ((sliceEnd - cursor) / HOUR_MS) * rate)
+        daily.set(dayKey, (daily.get(dayKey) ?? 0) + ((sliceEnd - cursor) / HOUR_MS) * rate)
         cursor = sliceEnd
       }
     }

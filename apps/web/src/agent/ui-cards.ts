@@ -11,10 +11,12 @@ export class UiCards {
   constructor(private readonly sql: SqlStorage) {
     sql.exec(`CREATE TABLE IF NOT EXISTS dex_ui_state (
       scope TEXT NOT NULL, card TEXT NOT NULL, state TEXT NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (scope, card))`)
+    sql.exec(`CREATE INDEX IF NOT EXISTS dex_ui_state_updated ON dex_ui_state (scope, updated_at)`)
     // The board of pinned cards is gone: its panels and their saved state go with it.
     sql.exec(`DROP TABLE IF EXISTS dex_pins`)
     sql.exec(`DELETE FROM dex_ui_state WHERE scope LIKE 'pin:%'`)
     sql.exec(`CREATE TABLE IF NOT EXISTS dex_ui_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, at INTEGER NOT NULL, text TEXT NOT NULL)`)
+    sql.exec(`CREATE INDEX IF NOT EXISTS dex_ui_notes_session ON dex_ui_notes (session_id, id)`)
   }
 
   // ── Card state ────────────────────────────────────────────────────────────

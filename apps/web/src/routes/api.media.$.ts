@@ -70,7 +70,8 @@ async function upload(request: Request, token: string) {
   const parsed = parseUploadToken(token)
   const valid = parsed ? await serverRuntime(env).runPromise(Keys.use((keys) => keys.verify(parsed.signed, parsed.tag))) : false
   if (!parsed || !valid) {
-    await env.LOGIN_LIMITER.limit({ key: request.headers.get("cf-connecting-ip") ?? "unknown" })
+    const { success } = await env.LOGIN_LIMITER.limit({ key: request.headers.get("cf-connecting-ip") ?? "unknown" })
+    if (!success) return status(429, "Too many attempts")
     return status(401, "Invalid upload token")
   }
   const size = Number(request.headers.get("content-length"))
@@ -96,7 +97,8 @@ async function download(request: Request, token: string) {
   const parsed = parseDownloadToken(token)
   const valid = parsed ? await serverRuntime(env).runPromise(Keys.use((keys) => keys.verify(parsed.signed, parsed.tag))) : false
   if (!parsed || !valid) {
-    await env.LOGIN_LIMITER.limit({ key: request.headers.get("cf-connecting-ip") ?? "unknown" })
+    const { success } = await env.LOGIN_LIMITER.limit({ key: request.headers.get("cf-connecting-ip") ?? "unknown" })
+    if (!success) return status(429, "Too many attempts")
     return status(401, "Invalid download token")
   }
   const agent = await agentFor(parsed.userId)

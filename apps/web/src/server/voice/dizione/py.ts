@@ -55,9 +55,9 @@ export class Match {
 /** A compiled pattern with Python's `sub`, `search`, `match`, `fullmatch`, `finditer`, `findall` and `split`.
  * `indices` is needed only by callers that ask for the start or end of a group. */
 export class Pattern {
-  private readonly all: RegExp
-  private readonly first: RegExp
-  private readonly sticky: RegExp
+  private _all?: RegExp
+  private _first?: RegExp
+  private _sticky?: RegExp
   private whole?: RegExp
   readonly source: string
   readonly flags: string
@@ -65,9 +65,18 @@ export class Pattern {
   constructor(source: string, flags = "", indices = false) {
     this.source = source
     this.flags = "u" + flags + (indices ? "d" : "")
-    this.all = new RegExp(source, this.flags + "g")
-    this.first = new RegExp(source, this.flags)
-    this.sticky = new RegExp(source, this.flags + "y")
+  }
+
+  private get all(): RegExp {
+    return (this._all ??= new RegExp(this.source, this.flags + "g"))
+  }
+
+  private get first(): RegExp {
+    return (this._first ??= new RegExp(this.source, this.flags))
+  }
+
+  private get sticky(): RegExp {
+    return (this._sticky ??= new RegExp(this.source, this.flags + "y"))
   }
 
   *finditer(text: string): Generator<Match> {
@@ -75,10 +84,16 @@ export class Pattern {
   }
 
   sub(text: string, repl: string | ((m: Match) => string)): string {
+    if (typeof repl === "string") {
+      // Literal replacement (Python's plain string sub has no JS `$` expansion).
+      return text.replace(this.all, repl.includes("$") ? repl.replaceAll("$", "$$$$") : repl)
+    }
+    // Skip cloning the global RegExp via matchAll when the pattern never matches.
+    if (!this.first.test(text)) return text
     let out = ""
     let last = 0
     for (const m of text.matchAll(this.all)) {
-      out += text.slice(last, m.index) + (typeof repl === "string" ? repl : repl(new Match(m as RegExpExecArray, text)))
+      out += text.slice(last, m.index) + repl(new Match(m as RegExpExecArray, text))
       last = m.index + m[0].length
     }
     return out + text.slice(last)
@@ -91,8 +106,14 @@ export class Pattern {
 
   /** Python's `match`: anchored at the start of ``text``. */
   match(text: string): Match | null {
-    this.sticky.lastIndex = 0
-    const m = this.sticky.exec(text)
+    return this.matchAt(text, 0)
+  }
+
+  /** Anchored match starting at ``index`` in ``text``, avoiding a slice allocation. */
+  matchAt(text: string, index: number): Match | null {
+    const sticky = this.sticky
+    sticky.lastIndex = index
+    const m = sticky.exec(text)
     return m ? new Match(m, text) : null
   }
 
@@ -180,10 +201,11 @@ const TITLE = /\p{Lt}/u
 const OTHER_DIGITS =
   /^[²³¹፩-፱᧚⁰⁴-⁹₀-₉①-⑨⑴-⑼⒈-⒐⓪⓵-⓽⓿❶-❾➀-➈➊-➒\u{10a40}-\u{10a43}\u{10e60}-\u{10e68}\u{11052}-\u{1105a}\u{1f100}-\u{1f10a}]$/u
 
+const ASCII = /^[\x00-\x7f]*$/
 export const isspace = (text: string) => SPACE.test(text)
 export const isalpha = (text: string) => ALPHA.test(text)
 export const isalnum = (text: string) => ALNUM.test(text)
-export const isascii = (text: string) => /^[\x00-\x7f]*$/.test(text)
+export const isascii = (text: string) => ASCII.test(text)
 export const isdigit = (text: string) => text !== "" && chars(text).every((c) => DECIMAL.test(c) || OTHER_DIGITS.test(c))
 
 /** `str.isupper()`: at least one cased character and no lower-case or title-case one. */
@@ -270,7 +292,7 @@ export function int(text: string): number {
 const NEWER = /[\u088f\u0897\u0c5c\u0cdc\u1acf-\u1add\u1ae0-\u1aeb\u1b4e-\u1b4f\u1b7f\u1c89-\u1c8a\u20c1\u2427-\u2429\u2ffc-\u2fff\u31e4-\u31e5\u31ef\ua7cb-\ua7cf\ua7d2\ua7d4\ua7da-\ua7dc\ua7f1\ufbc3-\ufbd2\ufd90-\ufd91\ufdc8-\ufdce\u{105c0}-\u{105f3}\u{10940}-\u{10959}\u{10d40}-\u{10d65}\u{10d69}-\u{10d85}\u{10d8e}-\u{10d8f}\u{10ec2}-\u{10ec7}\u{10ed0}-\u{10ed8}\u{10efa}-\u{10efc}\u{11380}-\u{11389}\u{1138b}\u{1138e}\u{11390}-\u{113b5}\u{113b7}-\u{113c0}\u{113c2}\u{113c5}\u{113c7}-\u{113ca}\u{113cc}-\u{113d5}\u{113d7}-\u{113d8}\u{113e1}-\u{113e2}\u{116d0}-\u{116e3}\u{11b60}-\u{11b67}\u{11bc0}-\u{11be1}\u{11bf0}-\u{11bf9}\u{11db0}-\u{11ddb}\u{11de0}-\u{11de9}\u{11f5a}\u{13460}-\u{143fa}\u{16100}-\u{16139}\u{16d40}-\u{16d79}\u{16ea0}-\u{16eb8}\u{16ebb}-\u{16ed3}\u{16ff2}-\u{16ff6}\u{187f8}-\u{187ff}\u{18cff}\u{18d09}-\u{18d1e}\u{18d80}-\u{18df2}\u{1cc00}-\u{1ccfc}\u{1cd00}-\u{1ceb3}\u{1ceba}-\u{1ced0}\u{1cee0}-\u{1cef0}\u{1e5d0}-\u{1e5fa}\u{1e5ff}\u{1e6c0}-\u{1e6de}\u{1e6e0}-\u{1e6f5}\u{1e6fe}-\u{1e6ff}\u{1fbcb}-\u{1fbef}\u{1fbfa}\u{2b73a}-\u{2b73f}\u{2cea2}-\u{2cead}\u{2ebf0}-\u{2ee5d}\u{323b0}-\u{33479}]/gu
 
 /** ``text`` with the characters Python's Unicode doesn't know yet replaced by one no version knows (U+0378). */
-export const asPythonSees = (text: string) => text.replace(NEWER, "\u0378")
+export const asPythonSees = (text: string) => (ASCII.test(text) ? text : text.replace(NEWER, "\u0378"))
 
 /** Python's ValueError, for the cases where the original raises one. */
 export class ValueError extends Error {

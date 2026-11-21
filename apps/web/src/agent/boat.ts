@@ -220,7 +220,10 @@ export class BoatClient extends Context.Service<BoatClient, {
                 const value = frame.value
                 if (value.type === "stdout" || value.type === "stderr") {
                   options.onOutput?.(value.type, value.data)
-                  collected[value.type] = (collected[value.type] + value.data).slice(-MAX_COLLECTED_OUTPUT)
+                  collected[value.type] += value.data
+                  if (collected[value.type].length > MAX_COLLECTED_OUTPUT * 2) {
+                    collected[value.type] = collected[value.type].slice(-MAX_COLLECTED_OUTPUT)
+                  }
                 }
                 else if (value.type === "exit") result = value
                 else if (value.type === "error") failure = value.message ?? value.error ?? "Command failed"
@@ -230,7 +233,11 @@ export class BoatClient extends Context.Service<BoatClient, {
           )
           if (failure !== undefined) return yield* new BoatError({ code: "command_error", status: 0, message: failure, retryable: false })
           if (!result) return yield* new BoatError({ code: "invalid_response", status: 0, message: "The command ended without an exit status", retryable: false })
-          return { ...result, stdout: collected.stdout, stderr: collected.stderr }
+          return {
+            ...result,
+            stdout: collected.stdout.length > MAX_COLLECTED_OUTPUT ? collected.stdout.slice(-MAX_COLLECTED_OUTPUT) : collected.stdout,
+            stderr: collected.stderr.length > MAX_COLLECTED_OUTPUT ? collected.stderr.slice(-MAX_COLLECTED_OUTPUT) : collected.stderr
+          }
         }),
 
         spawn: (id, command, cwd) =>
@@ -277,6 +284,7 @@ export async function checkBoatKey(key: string): Promise<string | null> {
     () => null
   )
   if (!response) return "Couldn't reach boat.dev. Try again in a moment."
+  void response.body?.cancel()
   if (response.status === 401 || response.status === 403) return "boat.dev didn't accept that key."
   if (!response.ok) return `boat.dev returned ${response.status}. Try again in a moment.`
   return null

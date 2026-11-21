@@ -24,8 +24,11 @@ export interface NativeMessage {
 /** What came of one delivery: sent, the token is dead (forget the device), or another failure worth showing. */
 export type NativeResult = { readonly ok: true } | { readonly ok: false; readonly gone: boolean; readonly error: string }
 
+const UTF8_ENC = new TextEncoder()
+const PUSH_TIMEOUT_MS = 15_000
+
 const base64url = (bytes: ArrayBuffer | Uint8Array | string) => {
-  const data = typeof bytes === "string" ? new TextEncoder().encode(bytes) : new Uint8Array(bytes)
+  const data = typeof bytes === "string" ? UTF8_ENC.encode(bytes) : new Uint8Array(bytes)
   let binary = ""
   for (const byte of data) binary += String.fromCharCode(byte)
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
@@ -38,7 +41,7 @@ const pemBody = (pem: string) => {
 
 async function signJwt(header: object, claims: object, key: CryptoKey, algorithm: AlgorithmIdentifier | EcdsaParams) {
   const input = `${base64url(JSON.stringify(header))}.${base64url(JSON.stringify(claims))}`
-  const signature = await crypto.subtle.sign(algorithm, key, new TextEncoder().encode(input))
+  const signature = await crypto.subtle.sign(algorithm, key, UTF8_ENC.encode(input))
   return `${input}.${base64url(signature)}`
 }
 
@@ -53,21 +56,29 @@ export interface ApnsConfig {
 
 export class ApnsSender {
   private token: { value: string; at: number } | null = null
+  private tokenPending: Promise<string> | null = null
+  private signingKey: Promise<CryptoKey> | null = null
 
   constructor(private readonly config: ApnsConfig) {}
 
   /** Apple wants a fresh provider token at most hourly and no more often than every 20 minutes. */
-  private async providerToken() {
-    if (this.token && Date.now() - this.token.at < 40 * 60_000) return this.token.value
-    const key = await crypto.subtle.importKey("pkcs8", pemBody(this.config.key), { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"])
-    const value = await signJwt(
-      { alg: "ES256", kid: this.config.keyId },
-      { iss: this.config.teamId, iat: Math.floor(Date.now() / 1000) },
-      key,
-      { name: "ECDSA", hash: "SHA-256" }
-    )
-    this.token = { value, at: Date.now() }
-    return value
+  private providerToken(): Promise<string> {
+    if (this.token && Date.now() - this.token.at < 40 * 60_000) return Promise.resolve(this.token.value)
+    this.tokenPending ??= (async () => {
+      this.signingKey ??= crypto.subtle.importKey("pkcs8", pemBody(this.config.key), { name: "ECDSA", namedCurve: "P-256" }, false, ["sign"])
+      const key = await this.signingKey
+      const value = await signJwt(
+        { alg: "ES256", kid: this.config.keyId },
+        { iss: this.config.teamId, iat: Math.floor(Date.now() / 1000) },
+        key,
+        { name: "ECDSA", hash: "SHA-256" }
+      )
+      this.token = { value, at: Date.now() }
+      return value
+    })().finally(() => {
+      this.tokenPending = null
+    })
+    return this.tokenPending
   }
 
   async send(deviceToken: string, environment: "sandbox" | "production", message: NativeMessage): Promise<NativeResult> {
@@ -95,9 +106,13 @@ export class ApnsSender {
           url: message.url,
           sessionId: message.sessionId ?? null,
           kind: message.kind
-        })
+        }),
+        signal: AbortSignal.timeout(PUSH_TIMEOUT_MS)
       })
-      if (response.ok) return { ok: true }
+      if (response.ok) {
+        void response.body?.cancel()
+        return { ok: true }
+      }
       const reason = ((await response.json().catch(() => ({}))) as { reason?: string }).reason ?? `HTTP ${response.status}`
       if (reason === "ExpiredProviderToken") this.token = null
       return { ok: false, gone: response.status === 410 || reason === "BadDeviceToken" || reason === "Unregistered", error: `APNs: ${reason}` }
@@ -117,6 +132,8 @@ interface ServiceAccount {
 
 export class FcmSender {
   private access: { value: string; until: number } | null = null
+  private accessPending: Promise<string> | null = null
+  private signingKey: Promise<CryptoKey> | null = null
   private readonly account: ServiceAccount
 
   constructor(serviceAccountJson: string) {
@@ -125,25 +142,33 @@ export class FcmSender {
   }
 
   /** An OAuth access token for the FCM API, from the service account (a signed JWT traded at Google). */
-  private async accessToken() {
-    if (this.access && Date.now() < this.access.until) return this.access.value
-    const key = await crypto.subtle.importKey("pkcs8", pemBody(this.account.private_key), { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"])
-    const now = Math.floor(Date.now() / 1000)
-    const assertion = await signJwt(
-      { alg: "RS256", typ: "JWT" },
-      { iss: this.account.client_email, scope: "https://www.googleapis.com/auth/firebase.messaging", aud: "https://oauth2.googleapis.com/token", iat: now, exp: now + 3600 },
-      key,
-      { name: "RSASSA-PKCS1-v1_5" }
-    )
-    const response = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion })
+  private accessToken(): Promise<string> {
+    if (this.access && Date.now() < this.access.until) return Promise.resolve(this.access.value)
+    // Deduplicate concurrent token fetches when notifying several Android devices at once.
+    this.accessPending ??= (async () => {
+      this.signingKey ??= crypto.subtle.importKey("pkcs8", pemBody(this.account.private_key), { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"])
+      const key = await this.signingKey
+      const now = Math.floor(Date.now() / 1000)
+      const assertion = await signJwt(
+        { alg: "RS256", typ: "JWT" },
+        { iss: this.account.client_email, scope: "https://www.googleapis.com/auth/firebase.messaging", aud: "https://oauth2.googleapis.com/token", iat: now, exp: now + 3600 },
+        key,
+        { name: "RSASSA-PKCS1-v1_5" }
+      )
+      const response = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion }),
+        signal: AbortSignal.timeout(PUSH_TIMEOUT_MS)
+      })
+      const body = (await response.json()) as { access_token?: string; expires_in?: number; error_description?: string }
+      if (!body.access_token) throw new Error(body.error_description ?? `Google token ${response.status}`)
+      this.access = { value: body.access_token, until: Date.now() + ((body.expires_in ?? 3600) - 300) * 1000 }
+      return body.access_token
+    })().finally(() => {
+      this.accessPending = null
     })
-    const body = (await response.json()) as { access_token?: string; expires_in?: number; error_description?: string }
-    if (!body.access_token) throw new Error(body.error_description ?? `Google token ${response.status}`)
-    this.access = { value: body.access_token, until: Date.now() + ((body.expires_in ?? 3600) - 300) * 1000 }
-    return body.access_token
+    return this.accessPending
   }
 
   async send(deviceToken: string, message: NativeMessage): Promise<NativeResult> {
@@ -166,9 +191,13 @@ export class FcmSender {
             },
             android: { priority: "HIGH", ttl: "43200s" }
           }
-        })
+        }),
+        signal: AbortSignal.timeout(PUSH_TIMEOUT_MS)
       })
-      if (response.ok) return { ok: true }
+      if (response.ok) {
+        void response.body?.cancel()
+        return { ok: true }
+      }
       const error = ((await response.json().catch(() => ({}))) as { error?: { status?: string; message?: string } }).error
       const gone =
         response.status === 404 || error?.status === "NOT_FOUND" || error?.status === "UNREGISTERED" || /registration token/i.test(error?.message ?? "")

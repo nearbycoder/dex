@@ -46,16 +46,25 @@ export interface SkillHost {
   readonly githubToken: () => Promise<string | null>
 }
 
-const bytes = (value: string) => new TextEncoder().encode(value).length
+const UTF8 = new TextEncoder()
+const bytes = (value: string) => UTF8.encode(value).length
 const encodePath = (path: string) => path.split("/").map(encodeURIComponent).join("/")
 
 /** Installed skills, which chats invoked which, and installing from skills.sh (GitHub underneath). */
 export class SkillCenter {
   private readonly searches = new Map<string, { at: number; results: DirectorySkill[] }>()
+  /** Cached summaries and auto-prompt section so LLM turns don't re-read and JSON.parse every skill blob. */
+  private cachedList: SkillInfo[] | null = null
+  private cachedAutoSection: string | undefined | null = null
 
   constructor(private readonly host: SkillHost) {
     host.sql.exec(`CREATE TABLE IF NOT EXISTS dex_skills (id TEXT PRIMARY KEY, data TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
     host.sql.exec(`CREATE TABLE IF NOT EXISTS dex_session_skills (session_id TEXT NOT NULL, skill_id TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (session_id, skill_id))`)
+  }
+
+  private invalidateCache() {
+    this.cachedList = null
+    this.cachedAutoSection = null
   }
 
   private rows() {
@@ -82,7 +91,10 @@ export class SkillCenter {
   }
 
   list(): SkillInfo[] {
-    return this.rows().map((row) => this.info(row.id, JSON.parse(row.data) as StoredSkill, row.created_at, row.updated_at))
+    if (!this.cachedList) {
+      this.cachedList = this.rows().map((row) => this.info(row.id, JSON.parse(row.data) as StoredSkill, row.created_at, row.updated_at))
+    }
+    return this.cachedList
   }
 
   refresh() {
@@ -106,6 +118,7 @@ export class SkillCenter {
        ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
       id, JSON.stringify(skill), createdAt ?? now, now
     )
+    this.invalidateCache()
     this.refresh()
     return this.get(id)!
   }
@@ -146,6 +159,7 @@ export class SkillCenter {
   remove(id: string) {
     const existed = this.host.sql.exec(`DELETE FROM dex_skills WHERE id = ?`, id).rowsWritten > 0
     this.host.sql.exec(`DELETE FROM dex_session_skills WHERE skill_id = ?`, id)
+    this.invalidateCache()
     this.refresh()
     return existed
   }
@@ -165,12 +179,15 @@ export class SkillCenter {
 
   /** The prompt section listing skills chats may load on their own. */
   autoSection(): string | undefined {
+    if (this.cachedAutoSection !== null) return this.cachedAutoSection
     const skills = this.list().filter((skill) => skill.auto)
-    if (!skills.length) return undefined
-    return [
-      "Skills are instructions for particular kinds of tasks. When a request matches one of these, call use_skill with its name before you start, then follow what it says:",
-      ...skills.slice(0, 80).map((skill) => `- ${skill.id}: ${skill.description.replace(/\s+/g, " ").slice(0, 300)}`)
-    ].join("\n")
+    this.cachedAutoSection = skills.length
+      ? [
+          "Skills are instructions for particular kinds of tasks. When a request matches one of these, call use_skill with its name before you start, then follow what it says:",
+          ...skills.slice(0, 80).map((skill) => `- ${skill.id}: ${skill.description.replace(/\s+/g, " ").slice(0, 300)}`)
+        ].join("\n")
+      : undefined
+    return this.cachedAutoSection
   }
 
   /** The prompt section with the full instructions of the skills this chat invoked, newest last. */
