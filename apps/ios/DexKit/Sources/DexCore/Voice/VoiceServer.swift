@@ -78,9 +78,10 @@ public struct VoiceServer: Sendable {
 
     /// Where one of tiny-voca's files downloads from.
     public func modelURL(_ file: String) -> URL {
-        var components = URLComponents(url: server.appending(path: "api/voice/model/\(file)"), resolvingAgainstBaseURL: false)!
-        components.queryItems = [URLQueryItem(name: "v", value: Self.modelVersion)]
-        return components.url!
+        let base = server.appending(path: "api/voice/model/\(file)")
+        var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
+        components?.queryItems = [URLQueryItem(name: "v", value: Self.modelVersion)]
+        return components?.url ?? base
     }
 
     /// The phoneme ids for some text (whole sentences; at most `VoiceText.maxSpokenCharacters`). 401 means signed out;
@@ -147,45 +148,117 @@ public actor VoiceModelStore {
         return try await task.value
     }
 
-    private func download(from voice: VoiceServer, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
-        let request = DexHTTP.request(voice.modelURL(Self.modelFile), token: voice.token)
-        let (bytes, response) = try await voice.session.bytes(for: request)
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        if status == 401 { throw VoiceError.signedOut }
-        guard status == 200 else { throw VoiceError("Couldn't download their voice (\(status)).", status: status) }
-        let total = response.expectedContentLength
-        let fileManager = FileManager.default
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        let partial = directory.appending(path: "download-\(UUID().uuidString).part")
-        fileManager.createFile(atPath: partial.path, contents: nil)
-        defer { try? fileManager.removeItem(at: partial) }
-        let handle = try FileHandle(forWritingTo: partial)
-        var buffer = Data()
-        buffer.reserveCapacity(1 << 16)
-        var loaded: Int64 = 0
-        do {
-            for try await byte in bytes {
-                buffer.append(byte)
-                if buffer.count == 1 << 16 {
-                    try handle.write(contentsOf: buffer)
-                    loaded += Int64(buffer.count)
-                    buffer.removeAll(keepingCapacity: true)
-                    if total > 0 { progress(min(1, Double(loaded) / Double(total))) }
+    private final class StreamDownload: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+        private let lock = NSLock()
+        private let handle: FileHandle
+        private let progress: @Sendable (Double) -> Void
+        private var continuation: CheckedContinuation<Void, Error>?
+        private var expected: Int64 = -1
+        private var loaded: Int64 = 0
+        private var reported: Int64 = 0
+        private var lastFraction: Double = -1
+
+        init(handle: FileHandle, progress: @escaping @Sendable (Double) -> Void, continuation: CheckedContinuation<Void, Error>) {
+            self.handle = handle
+            self.progress = progress
+            self.continuation = continuation
+        }
+
+        private func finish(_ result: Result<Void, Error>) {
+            let cont: CheckedContinuation<Void, Error>? = lock.withLock {
+                let current = continuation
+                continuation = nil
+                return current
+            }
+            guard let cont else { return }
+            try? handle.close()
+            cont.resume(with: result)
+        }
+
+        private func emit(_ fraction: Double) {
+            let clamped = min(1, max(0, fraction))
+            guard clamped > lastFraction else { return }
+            lastFraction = clamped
+            progress(clamped)
+        }
+
+        func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
+                        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if status == 401 {
+                completionHandler(.cancel)
+                finish(.failure(VoiceError.signedOut))
+                return
+            }
+            guard status == 200 else {
+                completionHandler(.cancel)
+                finish(.failure(VoiceError("Couldn't download their voice (\(status)).", status: status)))
+                return
+            }
+            lock.withLock {
+                expected = response.expectedContentLength
+                emit(0)
+            }
+            completionHandler(.allow)
+        }
+
+        func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+            do {
+                try handle.write(contentsOf: data)
+            } catch {
+                dataTask.cancel()
+                finish(.failure(error))
+                return
+            }
+            lock.withLock {
+                loaded += Int64(data.count)
+                if expected > 0, loaded - reported >= 65_536 {
+                    reported = loaded
+                    emit(Double(loaded) / Double(expected))
                 }
             }
-            try handle.write(contentsOf: buffer)
-            loaded += Int64(buffer.count)
-            try handle.close()
-        } catch {
-            try? handle.close()
-            throw error
         }
-        if total > 0, loaded != total { throw VoiceError("Their voice didn't finish downloading. Try again.") }
-        progress(1)
+
+        func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+            if let error {
+                let mapped: Error = (error as? URLError)?.code == .cancelled ? CancellationError() : error
+                finish(.failure(mapped))
+                return
+            }
+            let mismatch: Bool = lock.withLock {
+                if expected > 0, loaded != expected { return true }
+                emit(1)
+                return false
+            }
+            if mismatch {
+                finish(.failure(VoiceError("Their voice didn't finish downloading. Try again.")))
+            } else {
+                finish(.success(()))
+            }
+        }
+    }
+
+    private func download(from voice: VoiceServer, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
+        let request = DexHTTP.request(voice.modelURL(Self.modelFile), token: voice.token)
+        let fileManager = FileManager.default
         try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
+        let tempURL = folder.appending(path: "\(Self.modelFile).\(UUID().uuidString).part")
+        fileManager.createFile(atPath: tempURL.path, contents: nil)
+        defer { try? fileManager.removeItem(at: tempURL) }
+        let handle = try FileHandle(forWritingTo: tempURL)
+        // Stream OS-sized chunks straight to disk instead of awaiting every byte in Swift.
+        let task = voice.session.dataTask(with: request)
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                task.delegate = StreamDownload(handle: handle, progress: progress, continuation: continuation)
+                task.resume()
+            }
+        } onCancel: {
+            task.cancel()
+        }
         let destination = folder.appending(path: Self.modelFile)
         try? fileManager.removeItem(at: destination)
-        try fileManager.moveItem(at: partial, to: destination)
+        try fileManager.moveItem(at: tempURL, to: destination)
         // Downloaded again rather than restored from a backup.
         var values = URLResourceValues()
         values.isExcludedFromBackup = true

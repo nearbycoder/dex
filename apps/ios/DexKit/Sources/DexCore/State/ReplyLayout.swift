@@ -43,10 +43,14 @@ public struct ReplyLayout: Sendable, Equatable {
         failure = failedLast ? (messages.last?.errorMessage ?? "The model returned an error.") : nil
         touchedMemory = blocks.contains { step in
             guard case .toolCall(let call) = step.block else { return false }
-            let path = call.arguments["path"]?.string ?? ""
-            let command = call.arguments["command"]?.string ?? ""
-            if call.name == "write_file" || call.name == "edit_file" { return path.range(of: #"(^|/)MEMORY\.md$"#, options: [.regularExpression, .caseInsensitive]) != nil }
-            if call.name == "bash" { return command.range(of: "MEMORY.md", options: .caseInsensitive) != nil && command.range(of: #"(>|\btee\b|sed\s+-i)"#, options: .regularExpression) != nil }
+            if call.name == "write_file" || call.name == "edit_file" {
+                let path = call.arguments["path"]?.string ?? ""
+                return path.firstMatch(of: /(?i)(?:^|\/)MEMORY\.md$/) != nil
+            }
+            if call.name == "bash" {
+                let command = call.arguments["command"]?.string ?? ""
+                return command.range(of: "MEMORY.md", options: .caseInsensitive) != nil && command.firstMatch(of: /(?:>|\btee\b|sed\s+-i)/) != nil
+            }
             return false
         }
     }
@@ -110,14 +114,21 @@ public struct ReplyLayout: Sendable, Equatable {
 
     static func plural(_ count: Int, _ one: String) -> String { "\(count) \(count == 1 ? one : one + "s")" }
 
-    /// The latest line of some thinking or notes, as plain text.
+    /// The latest line of some thinking or notes, scanned from the end so streaming stays O(line).
     public static func latestLine(_ text: String) -> String {
-        let lines = text.split(separator: "\n").map { line in
-            line.replacingOccurrences(of: #"[*_`#>]+"#, with: "", options: .regularExpression)
-                .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+        var end = text.endIndex
+        while end > text.startIndex {
+            let newline = text[..<end].lastIndex(of: "\n")
+            let start = newline.map { text.index(after: $0) } ?? text.startIndex
+            let cleaned = text[start..<end]
+                .replacing(/[*_`#>]+/, with: "")
+                .replacing(/\s+/, with: " ")
                 .trimmingCharacters(in: .whitespaces)
-        }.filter { !$0.isEmpty }
-        return String((lines.last ?? "").suffix(200))
+            if !cleaned.isEmpty { return String(cleaned.suffix(200)) }
+            guard let newline else { break }
+            end = newline
+        }
+        return ""
     }
 
     static let summaryKeys = ["command", "path", "query", "url", "prompt", "name", "id", "operation"]

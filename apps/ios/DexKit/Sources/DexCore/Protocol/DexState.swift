@@ -749,7 +749,14 @@ public struct DexState: Codable, Sendable, Hashable {
     }
 
     /// Every chat but spaces' threads: what the switcher, the strip of active chats, and the badges look at.
-    public var conversationsOutsideThreads: [SessionMeta] { sessions.filter { !isThread($0) } }
+    public var conversationsOutsideThreads: [SessionMeta] {
+        guard !spaces.isEmpty else { return sessions.filter { $0.spaceId == nil } }
+        let coordinators = Dictionary(spaces.map { ($0.id, $0.sessionId) }, uniquingKeysWith: { first, _ in first })
+        return sessions.filter { session in
+            guard let spaceId = session.spaceId else { return true }
+            return coordinators[spaceId] == session.id
+        }
+    }
 
     /// A space's threads: its chats other than the coordinator's, newest first.
     public func threads(of space: SpaceProfile) -> [SessionMeta] { Spaces.threads(of: space, in: sessions) }
@@ -759,7 +766,15 @@ public struct DexState: Codable, Sendable, Hashable {
 
     /// Chats (sidekicks' conversations and spaces' coordinators too) with a reply you haven't seen: the app icon's
     /// badge. Spaces' threads are left out: they're muted, and their space's coordinator reports on them.
-    public var unreadCount: Int { sessions.filter { $0.unread && !isThread($0) }.count }
+    public var unreadCount: Int {
+        guard !spaces.isEmpty else { return sessions.count { $0.unread && $0.spaceId == nil } }
+        let coordinators = Dictionary(spaces.map { ($0.id, $0.sessionId) }, uniquingKeysWith: { first, _ in first })
+        return sessions.count { session in
+            guard session.unread else { return false }
+            guard let spaceId = session.spaceId else { return true }
+            return coordinators[spaceId] == session.id
+        }
+    }
 
     /// A character's conversations, the newest first (the current one, and any from before Start over).
     public func conversations(of characterId: String) -> [SessionMeta] {

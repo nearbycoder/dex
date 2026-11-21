@@ -94,11 +94,8 @@ public struct GitHubRepo: Codable, Sendable, Hashable, Identifiable {
     public var name: String { fullName.split(separator: "/").last.map(String.init) ?? fullName }
     /// When it was last pushed to, in milliseconds since 1970.
     public var pushedAtMs: Double? {
-        guard let pushedAt else { return nil }
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let date = formatter.date(from: pushedAt) ?? ISO8601DateFormatter().date(from: pushedAt)
-        return date.map { $0.timeIntervalSince1970 * 1000 }
+        guard let pushedAt, let date = ISODates.parse(pushedAt) else { return nil }
+        return date.timeIntervalSince1970 * 1000
     }
 
     public init(fullName: String, isPrivate: Bool = false, description: String = "", defaultBranch: String = "main", pushedAt: String? = nil, fork: Bool = false,
@@ -170,16 +167,12 @@ public struct ProjectImageCandidate: Codable, Sendable, Hashable, Identifiable {
 
 /// Repo URLs as the server reads them (shared/projects.ts).
 public enum Repos {
-    private static let part = "[A-Za-z0-9_.-]"
-
     /// `owner/repo`, `github.com/owner/repo`, or a full https URL, as a clone URL; nil if it isn't a repo.
     public static func normalize(_ input: String) -> String? {
         var value = input.trimmingCharacters(in: .whitespacesAndNewlines)
         while value.hasSuffix("/") { value.removeLast() }
-        if !value.contains(":"), let match = value.wholeMatch(of: try! Regex("(?:github\\.com/)?(\(part)+)/(\(part)+?)(?:\\.git)?")) {
-            let owner = match.output[1].substring.map(String.init) ?? ""
-            let name = match.output[2].substring.map(String.init) ?? ""
-            return "https://github.com/\(owner)/\(name).git"
+        if !value.contains(":"), let match = value.wholeMatch(of: /(?:github\.com\/)?([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?/) {
+            return "https://github.com/\(match.output.1)/\(match.output.2).git"
         }
         guard let url = URL(string: value), url.scheme == "https", url.user == nil, url.password == nil, url.host() != nil,
               url.path().split(separator: "/").count >= 2 else { return nil }
@@ -188,8 +181,8 @@ public enum Repos {
 
     /// The `owner/repo` of a GitHub clone URL; nil for other hosts.
     public static func githubFullName(_ url: String) -> String? {
-        guard let match = url.wholeMatch(of: try! Regex("https://github\\.com/(\(part)+/\(part)+?)(?:\\.git)?/?")) else { return nil }
-        return match.output[1].substring.map(String.init)
+        guard let match = url.wholeMatch(of: /https:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?)(?:\.git)?\/?/) else { return nil }
+        return String(match.output.1)
     }
 
     /// The GitHub `owner/repo` behind anything the editor accepts (`owner/repo` or a URL).
@@ -199,14 +192,14 @@ public enum Repos {
     public static func dirName(_ url: String) -> String {
         let last = url.split(separator: "/").last.map(String.init) ?? "repo"
         let trimmed = last.hasSuffix(".git") ? String(last.dropLast(4)) : last
-        let cleaned = trimmed.replacing(try! Regex("[^A-Za-z0-9_.-]"), with: "-")
+        let cleaned = trimmed.replacing(/[^A-Za-z0-9_.-]/, with: "-")
         return cleaned.isEmpty ? "repo" : cleaned
     }
 
     /// A short label: `owner/repo` for GitHub, else the URL without `https://` and `.git`.
     public static func label(_ url: String) -> String {
-        if let match = url.firstMatch(of: try! Regex("github\\.com/(\(part)+/\(part)+?)(?:\\.git)?$")), let name = match.output[1].substring {
-            return String(name)
+        if let match = url.firstMatch(of: /github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+?)(?:\.git)?$/) {
+            return String(match.output.1)
         }
         var label = url
         if label.hasPrefix("https://") { label.removeFirst(8) }
@@ -216,7 +209,7 @@ public enum Repos {
 
     /// Whether the label is a GitHub `owner/repo`.
     public static func isGitHub(_ url: String) -> Bool {
-        label(url).wholeMatch(of: try! Regex("\(part)+/\(part)+")) != nil
+        label(url).wholeMatch(of: /[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+/) != nil
     }
 }
 
@@ -329,13 +322,13 @@ public struct SkillInput: Codable, Sendable, Hashable {
 public enum Skills {
     /// What a name becomes: lowercase letters, digits, and dashes (shared/skills.ts `skillSlug`).
     public static func slug(_ value: String) -> String {
-        let dashed = value.lowercased().replacing(try! Regex("[^a-z0-9]+"), with: "-")
+        let dashed = value.lowercased().replacing(/[^a-z0-9]+/, with: "-")
         let trimmed = dashed.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
         return String(trimmed.prefix(64))
     }
 
     public static func isValidName(_ name: String) -> Bool {
-        name.wholeMatch(of: try! Regex("[a-z0-9][a-z0-9-]{0,63}")) != nil
+        name.wholeMatch(of: /[a-z0-9][a-z0-9-]{0,63}/) != nil
     }
 
     /// "1.2M", "34K", "4.5K", "980".
@@ -545,7 +538,7 @@ public enum McpRegistry {
     /// `io.github.owner/my-server` → `My server`.
     public static func title(_ name: String) -> String {
         let last = name.split(separator: "/").last.map(String.init) ?? name
-        let words = last.replacing(try! Regex("[-_.]+"), with: " ").trimmingCharacters(in: .whitespaces)
+        let words = last.replacing(/[-_.]+/, with: " ").trimmingCharacters(in: .whitespaces)
         guard let first = words.first else { return name }
         return first.uppercased() + words.dropFirst()
     }

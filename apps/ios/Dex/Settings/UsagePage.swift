@@ -125,12 +125,16 @@ struct UsagePage: View {
 }
 
 extension DailySpend {
+    private static let utcMonthDay: Date.FormatStyle = {
+        var style = Date.FormatStyle.dateTime.month(.abbreviated).day()
+        style.timeZone = .gmt
+        return style
+    }()
+
     /// "Oct 19" (the day is a UTC date).
     var label: String {
         guard let day else { return date }
-        var style = Date.FormatStyle.dateTime.month(.abbreviated).day()
-        style.timeZone = TimeZone(identifier: "UTC")!
-        return day.formatted(style)
+        return day.formatted(Self.utcMonthDay)
     }
 }
 

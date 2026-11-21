@@ -109,13 +109,13 @@ enum Senders {
             context.fill(bounds)
             tint.withAlphaComponent(0.3).setFill()
             context.fill(bounds)
-            if let picture, picture.cgImage.map(SidekickPicture.isFace) == true {
+            if let picture, picture.size.width > 0, picture.size.height > 0, picture.cgImage.map(SidekickPicture.isFace) == true {
                 let inset = side * 0.08
                 let box = bounds.insetBy(dx: inset, dy: inset)
                 let scale = min(box.width / picture.size.width, box.height / picture.size.height)
                 let size = CGSize(width: picture.size.width * scale, height: picture.size.height * scale)
                 picture.draw(in: CGRect(x: (side - size.width) / 2, y: (side - size.height) / 2, width: size.width, height: size.height))
-            } else if let picture {
+            } else if let picture, picture.size.width > 0, picture.size.height > 0 {
                 // Fill the circle, cropping the longer side.
                 let scale = max(side / picture.size.width, side / picture.size.height)
                 let size = CGSize(width: picture.size.width * scale, height: picture.size.height * scale)

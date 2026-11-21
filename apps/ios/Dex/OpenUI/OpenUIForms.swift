@@ -189,21 +189,25 @@ struct OUIDatePicker: View {
         card.document.setField(node.key, ["from": .string(Self.iso(min(from, to))), "to": .string(Self.iso(max(from, to)))])
     }
 
-    static func date(_ value: JSONValue?) -> Date? {
-        guard let text = value?.string else { return nil }
+    @MainActor private static let isoFractional: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.date(from: text) ?? ISO8601DateFormatter().date(from: text) ?? {
-            let day = DateFormatter()
-            day.dateFormat = "yyyy-MM-dd"
-            return day.date(from: text)
-        }()
+        return formatter
+    }()
+    @MainActor private static let isoStandard = ISO8601DateFormatter()
+    @MainActor private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
+    @MainActor static func date(_ value: JSONValue?) -> Date? {
+        guard let text = value?.string else { return nil }
+        return isoFractional.date(from: text) ?? isoStandard.date(from: text) ?? dayFormatter.date(from: text)
     }
 
-    static func iso(_ date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: date)
+    @MainActor static func iso(_ date: Date) -> String {
+        isoFractional.string(from: date)
     }
 }
 

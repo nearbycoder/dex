@@ -53,36 +53,52 @@ nonisolated final class CallAudio: @unchecked Sendable {
             try? engine.inputNode.setVoiceProcessingEnabled(true)
         }
         engine.attach(player)
-        engine.connect(player, to: engine.mainMixerNode, format: format)
-        let loudness = loudness
-        player.installTap(onBus: 0, bufferSize: 1024, format: nil) { buffer, _ in
-            guard let samples = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return }
-            var sum: Float = 0
-            for index in 0..<Int(buffer.frameLength) { sum += samples[index] * samples[index] }
-            let level = min(1, Double((sum / Float(buffer.frameLength)).squareRoot()) * 4)
-            loudness.withLock { $0 = level }
-        }
-        if listens {
-            let input = engine.inputNode
-            let microphone = microphone
-            let format = input.outputFormat(forBus: 0)
-            guard format.sampleRate > 0, format.channelCount > 0 else { throw VoiceError("No microphone was found.") }
-            input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
-                microphone.withLock { $0?.append(buffer) }
+        var playerTapped = false
+        var inputTapped = false
+        do {
+            engine.connect(player, to: engine.mainMixerNode, format: format)
+            let loudness = loudness
+            player.installTap(onBus: 0, bufferSize: 1024, format: nil) { buffer, _ in
+                guard let samples = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return }
+                var sum: Float = 0
+                for index in 0..<Int(buffer.frameLength) { sum += samples[index] * samples[index] }
+                let level = min(1, Double((sum / Float(buffer.frameLength)).squareRoot()) * 4)
+                loudness.withLock { $0 = level }
             }
+            playerTapped = true
+            if listens {
+                let input = engine.inputNode
+                let microphone = microphone
+                let format = input.outputFormat(forBus: 0)
+                guard format.sampleRate > 0, format.channelCount > 0 else { throw VoiceError("No microphone was found.") }
+                input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
+                    microphone.withLock { $0?.append(buffer) }
+                }
+                inputTapped = true
+            }
+            engine.prepare()
+            try engine.start()
+            running = true
+        } catch {
+            // Undo partial engine setup so a later retry doesn't crash on duplicate taps or attachments.
+            if playerTapped { player.removeTap(onBus: 0) }
+            if inputTapped { engine.inputNode.removeTap(onBus: 0) }
+            engine.detach(player)
+            engine.stop()
+            try? session.setActive(false, options: .notifyOthersOnDeactivation)
+            AppAudio.useDefault()
+            throw error
         }
-        engine.prepare()
-        try engine.start()
-        running = true
     }
 
     /// Plays a piece after what's queued; `heard` runs (on the engine's thread) once it has played.
     func schedule(_ samples: [Float], heard: @escaping @Sendable () -> Void) throws {
+        guard !samples.isEmpty else { return heard() }
         try start()
         guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(samples.count)) else { return heard() }
         buffer.frameLength = AVAudioFrameCount(samples.count)
         samples.withUnsafeBufferPointer { source in
-            buffer.floatChannelData?[0].update(from: source.baseAddress!, count: samples.count)
+            if let base = source.baseAddress { buffer.floatChannelData?[0].update(from: base, count: samples.count) }
         }
         player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { _ in heard() }
         if !player.isPlaying { player.play() }

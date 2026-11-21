@@ -531,7 +531,8 @@ private struct TemplateGrid: View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: tileWidth), spacing: 10)], spacing: 10) {
             ForEach(CharacterTemplate.all) { template in
                 tile(id: template.id, title: template.name, subtitle: template.tagline) {
-                    CharacterAvatar(glyph: String(template.name.prefix(1)), color: template.color, image: template.look?.image, look: true, size: 32)
+                    CharacterAvatar(glyph: String(template.name.prefix(1)), color: template.color, image: template.look?.image, look: true,
+                                    parts: template.look.flatMap { SidekickParts($0.look) }, size: 32)
                 } action: { pick(template) }
             }
             tile(id: "blank", title: "Blank", subtitle: "Start from scratch") {
@@ -577,7 +578,7 @@ private struct LookGrid: View {
             ForEach(SidekickLook.all) { look in
                 let selected = selection == look.id
                 Button { pick(look) } label: {
-                    CharacterAvatar(glyph: String(look.name.prefix(1)), color: look.color, image: look.image, look: true, size: 46)
+                    CharacterAvatar(glyph: String(look.name.prefix(1)), color: look.color, image: look.image, look: true, parts: SidekickParts(look.look), size: 46)
                         .padding(5)
                         .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(selected ? Color.dexAccent : .clear, lineWidth: 2.5) }
                         .contentShape(.rect(cornerRadius: 14))

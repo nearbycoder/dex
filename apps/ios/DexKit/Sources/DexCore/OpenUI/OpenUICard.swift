@@ -69,16 +69,16 @@ public final class OpenUICard {
     public var visible = false {
         didSet {
             guard visible else { return }
-            let resume = waiting
-            waiting = []
-            resume.forEach { $0.resume() }
+            let resume = waiting.values
+            waiting.removeAll()
+            for continuation in resume { continuation.resume() }
         }
     }
 
     public static let cancelled = "You cancelled it."
 
     @ObservationIgnored private let host: OpenUICardHost
-    @ObservationIgnored private var waiting: [CheckedContinuation<Void, Never>] = []
+    @ObservationIgnored private var waiting: [UUID: CheckedContinuation<Void, Error>] = [:]
     @ObservationIgnored private var answer: ((Bool) -> Void)?
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var savedState: JSONValue?
@@ -96,6 +96,15 @@ public final class OpenUICard {
         document.onStateChange = { [weak self] state in self?.stateChanged(state) }
         document.onRender = { [weak self] in self?.refreshErrors() }
         document.restore(self.savedState)
+    }
+
+    isolated deinit {
+        saveTask?.cancel()
+        noticeTask?.cancel()
+        let pending = waiting.values
+        waiting.removeAll()
+        for continuation in pending { continuation.resume(throwing: CancellationError()) }
+        confirm(false)
     }
 
     /// The program so far (streaming) or in full.
@@ -131,9 +140,29 @@ public final class OpenUICard {
 
     // MARK: Tools
 
+    private func waitUntilVisible() async throws {
+        if visible { return }
+        let token = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                if visible {
+                    continuation.resume()
+                } else if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                } else {
+                    waiting[token] = continuation
+                }
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                self?.waiting.removeValue(forKey: token)?.resume(throwing: CancellationError())
+            }
+        }
+    }
+
     private func runTool(_ call: OpenUIToolCall) async -> Result<JSONValue, OpenUIToolError> {
         do {
-            if call.query, !visible { await withCheckedContinuation { waiting.append($0) } }
+            if call.query, !visible { try await waitUntilVisible() }
             var outcome = try await host.run(call.name, call.args, call.query, false)
             if case .confirm(let summary) = outcome {
                 guard await ask(summary) else { return .failure(OpenUIToolError(Self.cancelled)) }
@@ -144,6 +173,8 @@ public final class OpenUICard {
             case .failed(let error): return .failure(OpenUIToolError(error))
             case .confirm: return .failure(OpenUIToolError("It wasn't confirmed."))
             }
+        } catch is CancellationError {
+            return .failure(OpenUIToolError(Self.cancelled))
         } catch {
             return .failure(OpenUIToolError(error.localizedDescription))
         }
@@ -151,9 +182,17 @@ public final class OpenUICard {
 
     private func ask(_ summary: String) async -> Bool {
         confirm(false)
-        return await withCheckedContinuation { continuation in
-            answer = { continuation.resume(returning: $0) }
-            confirmation = Confirmation(summary: summary)
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                if Task.isCancelled {
+                    continuation.resume(returning: false)
+                    return
+                }
+                answer = { continuation.resume(returning: $0) }
+                confirmation = Confirmation(summary: summary)
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in self?.confirm(false) }
         }
     }
 
@@ -287,11 +326,12 @@ public extension OpenUICard {
             }
     }
 
+    private static let toolErrorPattern = #/^(?:Query|Mutation) "([^"]+)" (?:returned an error|failed): /#
+
     /// `Query "app_x" returned an error: …` → `app_x: …`.
     static func toolMessage(_ message: String) -> String {
-        guard let pattern = try? Regex(#"^(?:Query|Mutation) "([^"]+)" (?:returned an error|failed): "#),
-              let match = try? pattern.prefixMatch(in: message), let name = match.output[1].substring else { return message }
-        return "\(name): " + message[match.range.upperBound...]
+        guard let match = message.prefixMatch(of: toolErrorPattern) else { return message }
+        return "\(match.output.1): " + message[match.range.upperBound...]
     }
 
     static func fixMessage(_ problems: [String]) -> String {

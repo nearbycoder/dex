@@ -115,6 +115,7 @@ public final class VoiceCall {
     @ObservationIgnored private var finalText = ""
     @ObservationIgnored private var interim = ""
     @ObservationIgnored private var turnTimer: Task<Void, Never>?
+    @ObservationIgnored private var relistenTask: Task<Void, Never>?
     /// Bumped when they're cut off: work for an older reply is dropped.
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var speech: Task<Void, Never>?
@@ -142,7 +143,7 @@ public final class VoiceCall {
     public func start() async {
         listen()
         do {
-            try await synthesizer.prepare { fraction in
+            try await synthesizer.prepare { [weak self] fraction in
                 Task { @MainActor [weak self] in
                     guard let self, !self.isOver, !self.prepared else { return }
                     self.downloading = fraction
@@ -211,7 +212,10 @@ public final class VoiceCall {
         downloading = nil
         generation += 1
         turnTimer?.cancel()
+        relistenTask?.cancel()
+        relistenTask = nil
         speech?.cancel()
+        speech = nil
         silence()
         stopListening()
         player.close()
@@ -268,8 +272,10 @@ public final class VoiceCall {
             session += 1
             if !finalText.isEmpty || !interim.isEmpty { endTurn() }
             let delay = relisten
-            Task { [weak self] in
+            relistenTask?.cancel()
+            relistenTask = Task { [weak self] in
                 try? await Task.sleep(for: delay)
+                guard !Task.isCancelled else { return }
                 self?.listen()
             }
         case .failed(let message):
@@ -411,9 +417,9 @@ public final class VoiceCall {
         guard speaking else { return }
         generation += 1
         silence()
-        // The batches still queued run down (dropped by the generation): they're no longer speech, and what's said
-        // next doesn't wait for them.
+        // Cancel in-flight phoneme requests and synthesis so the old reply stops using network and CPU immediately.
         pending = 0
+        speech?.cancel()
         speech = nil
         unsaid = replyKey
         replyDone = true

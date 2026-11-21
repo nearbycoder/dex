@@ -37,11 +37,11 @@ public final class WebSocketTransport: NSObject, AgentTransport, URLSessionWebSo
     private var finished = false
 
     public init(server: URL, userId: String, token: String) {
-        var components = URLComponents(url: server, resolvingAgainstBaseURL: false)!
+        var components = URLComponents(url: server, resolvingAgainstBaseURL: false) ?? URLComponents()
         components.scheme = server.scheme == "http" ? "ws" : "wss"
         components.path = "/agents/dex-agent/\(userId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? userId)"
         components.queryItems = [URLQueryItem(name: "_pk", value: UUID().uuidString)]
-        var request = URLRequest(url: components.url!)
+        var request = URLRequest(url: components.url ?? server)
         request.setValue("\(DexHTTP.sessionCookie)=\(token)", forHTTPHeaderField: "Cookie")
         request.timeoutInterval = 30
         self.request = request
@@ -91,16 +91,21 @@ public final class WebSocketTransport: NSObject, AgentTransport, URLSessionWebSo
     }
 
     private func finish(code: Int, reason: String?, httpStatus: Int?) {
-        let handler: (@Sendable (TransportEvent) -> Void)? = lock.withLock {
-            if finished { return nil }
+        let (handler, session, wasOpened): ((@Sendable (TransportEvent) -> Void)?, URLSession?, Bool) = lock.withLock {
+            if finished { return (nil, nil, false) }
             finished = true
-            return self.handler
+            let handler = self.handler
+            let session = self.session
+            self.handler = nil
+            self.session = nil
+            self.task = nil
+            return (handler, session, opened)
         }
-        lock.withLock { session }?.invalidateAndCancel()
+        session?.invalidateAndCancel()
         guard let handler else { return }
         // URLSession doesn't say why an upgrade was refused, so a socket that never opened asks over HTTP whether the
         // session still works (`/api/version` answers 401 when it doesn't): that's "sign in again", not "retry".
-        if httpStatus == nil, !lock.withLock({ opened }) {
+        if httpStatus == nil, !wasOpened {
             let probe = DexHTTP.request(server.appending(path: "api/version"), token: token)
             Task {
                 let status = (try? await DexHTTP.session.data(for: probe)).flatMap { ($0.1 as? HTTPURLResponse)?.statusCode }

@@ -46,10 +46,12 @@ public final class AgentConnection {
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var pending: [String: PendingCall] = [:]
     /// Frames sent while not connected, flushed once open (RPC calls made during a reconnect still go).
-    @ObservationIgnored private var outbox: [String] = []
+    @ObservationIgnored private var outbox: [(id: String, frame: String)] = []
     @ObservationIgnored private var open = false
     @ObservationIgnored private var attempts = 0
     @ObservationIgnored private var reconnectTask: Task<Void, Never>?
+    @ObservationIgnored private var eventTask: Task<Void, Never>?
+    @ObservationIgnored private var eventContinuation: AsyncStream<TransportEvent>.Continuation?
     @ObservationIgnored private var listeners: [UUID: (ServerMessage) -> Void] = [:]
     @ObservationIgnored private var connectListeners: [UUID: () -> Void] = [:]
     @ObservationIgnored private var stateFollows = false
@@ -92,6 +94,10 @@ public final class AgentConnection {
     public func stop() {
         reconnectTask?.cancel()
         reconnectTask = nil
+        eventContinuation?.finish()
+        eventContinuation = nil
+        eventTask?.cancel()
+        eventTask = nil
         generation += 1
         transport?.close()
         transport = nil
@@ -105,10 +111,22 @@ public final class AgentConnection {
         let current = generation
         status = .connecting
         stateFollows = false
+        eventContinuation?.finish()
+        eventTask?.cancel()
+        let (stream, continuation) = AsyncStream.makeStream(of: TransportEvent.self)
+        eventContinuation = continuation
+        // Deliver every frame through one ordered stream so `.opened`, messages, and `.closed` never overtake each other.
+        eventTask = Task { @MainActor [weak self] in
+            for await event in stream {
+                guard let self, current == self.generation else { break }
+                self.handle(event, generation: current)
+            }
+        }
         let transport = factory.makeTransport()
         self.transport = transport
-        transport.open { [weak self] event in
-            Task { @MainActor [weak self] in self?.handle(event, generation: current) }
+        transport.open { event in
+            continuation.yield(event)
+            if case .closed = event { continuation.finish() }
         }
     }
 
@@ -121,7 +139,7 @@ public final class AgentConnection {
             for index in pending.keys { pending[index]?.transmitted = true }
             let frames = outbox
             outbox.removeAll()
-            for frame in frames { transport?.send(frame) }
+            for entry in frames { transport?.send(entry.frame) }
         case .message(let text):
             receive(text)
         case .closed(let code, _, let httpStatus):
@@ -249,20 +267,35 @@ public final class AgentConnection {
     @discardableResult
     public func call(_ method: String, _ args: [JSONValue] = [], timeout: Double? = 30) async throws -> JSONValue {
         if status == .signedOut { throw AgentError.connectionClosed }
+        try Task.checkCancellation()
         let id = UUID().uuidString
         let frame = JSONValue.object(["type": "rpc", "id": .string(id), "method": .string(method), "args": .array(args)]).jsonText
-        return try await withCheckedThrowingContinuation { continuation in
-            let timer: Task<Void, Never>? = timeout.map { seconds in
-                Task { [weak self] in
-                    try? await Task.sleep(for: .seconds(seconds))
-                    guard !Task.isCancelled, let self, let call = self.pending.removeValue(forKey: id) else { return }
-                    call.continuation.resume(throwing: AgentError.timedOut(method))
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                if Task.isCancelled {
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
+                let timer: Task<Void, Never>? = timeout.map { seconds in
+                    Task { [weak self] in
+                        try? await Task.sleep(for: .seconds(seconds))
+                        guard !Task.isCancelled, let self, let call = self.pending.removeValue(forKey: id) else { return }
+                        self.outbox.removeAll { $0.id == id }
+                        call.continuation.resume(throwing: AgentError.timedOut(method))
+                    }
+                }
+                pending[id] = PendingCall(method: method, continuation: continuation, transmitted: open, timeout: timer)
+                if open { transport?.send(frame) } else {
+                    outbox.append((id: id, frame: frame))
+                    if transport == nil, case .idle = status { start() }
                 }
             }
-            pending[id] = PendingCall(method: method, continuation: continuation, transmitted: open, timeout: timer)
-            if open { transport?.send(frame) } else {
-                outbox.append(frame)
-                if transport == nil, case .idle = status { start() }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                guard let self, let call = self.pending.removeValue(forKey: id) else { return }
+                self.outbox.removeAll { $0.id == id }
+                call.timeout?.cancel()
+                call.continuation.resume(throwing: CancellationError())
             }
         }
     }

@@ -44,17 +44,27 @@ struct OpenUICardView: View {
     private func makeHost(session: OpenUISessionCards) -> OpenUICardHost {
         let sessionId = feed.sessionId
         let cardId = call.id
+        // Weak captures keep OpenUISessionCards (stored statically by weak ChatFeed) from retaining ChatFeed, DexClient, or itself.
         return OpenUICardHost(
-            run: { [client] name, args, query, confirmed in
-                try await client.runUiOperation(sessionId: sessionId, name: name, args: args, query: query, confirmed: confirmed)
+            run: { [weak client] name, args, query, confirmed in
+                guard let client else { throw AgentError.connectionClosed }
+                return try await client.runUiOperation(sessionId: sessionId, name: name, args: args, query: query, confirmed: confirmed)
             },
-            send: { [feed] text in try await feed.send(text) },
-            storeSecret: { [feed] field, value in try await feed.storeSecret(field: field, value: value) },
-            saveState: { [client] state in
-                session.states[cardId] = state
+            send: { [weak feed] text in
+                guard let feed else { return }
+                try await feed.send(text)
+            },
+            storeSecret: { [weak feed] field, value in
+                guard let feed else { throw AgentError.connectionClosed }
+                return try await feed.storeSecret(field: field, value: value)
+            },
+            saveState: { [weak client, weak session] state in
+                session?.states[cardId] = state
+                guard let client else { return }
                 Task { try? await client.saveUiState(sessionId: sessionId, card: cardId, state: state) }
             },
-            open: { [router] destination in
+            open: { [weak router] destination in
+                guard let router else { return }
                 switch destination {
                 case .url(let url): if !router.handle(url) { InAppBrowser.open(url) }
                 case .chat(let id): router.openChat(id)

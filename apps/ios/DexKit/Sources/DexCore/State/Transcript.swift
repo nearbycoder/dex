@@ -69,7 +69,7 @@ public struct TranscriptState: Sendable, Hashable, Codable {
     public mutating func apply(_ event: AgentEvent) {
         switch event {
         case .snapshot(let snapshot):
-            self = .from(snapshot: snapshot)
+            self = .from(snapshot: snapshot, previous: self)
         case .runStart:
             running = true; error = nil
         case .runEnd:
@@ -211,7 +211,14 @@ public extension TranscriptState {
     /// The items from the recorded entries alone.
     var recordedItems: [DisplayItem] {
         var items: [DisplayItem] = []
-        for entry in entries {
+        var results: [String: ToolResultMessage] = [:]
+        Self.appendRecorded(entries[...], items: &items, results: &results)
+        return items
+    }
+
+    /// Folds a slice of recorded entries onto an existing item list and tool-result map.
+    static func appendRecorded(_ slice: ArraySlice<EntryRecord>, items: inout [DisplayItem], results: inout [String: ToolResultMessage]) {
+        for entry in slice {
             // A compaction's summary (and a reset's handoff) is a user message for the model, not something you said.
             if entry.kind == "pi.compaction" || entry.kind == "pi.reset" {
                 let summary = Self.summaryText(entry)
@@ -226,6 +233,7 @@ public extension TranscriptState {
                     items.append(.user(id: id, text: split.text, images: user.images, files: split.files, imageParts: user.imageParts))
                 case .assistant(let assistant): Self.addAssistant(id, assistant, streaming: false, to: &items)
                 case .toolResult(let result):
+                    results[result.toolCallId] = result
                     if case .assistant(let lastId, let messages, let streaming, let ended) = items.last {
                         items[items.count - 1] = .assistant(id: lastId, messages: messages, streaming: streaming, endedAt: max(ended ?? 0, result.timestamp))
                     }
@@ -233,14 +241,14 @@ public extension TranscriptState {
                 }
             }
         }
-        return items
     }
 
     /// Consecutive assistant messages (tool results don't interrupt them) are one reply.
     private static func addAssistant(_ id: String, _ message: AssistantMessage, streaming: Bool, to items: inout [DisplayItem]) {
         let ended: Double? = streaming ? nil : message.timestamp + (message.durationMs ?? 0)
-        if case .assistant(let lastId, let messages, _, let lastEnded) = items.last {
-            items[items.count - 1] = .assistant(id: lastId, messages: messages + [message], streaming: streaming, endedAt: ended ?? lastEnded)
+        if case .assistant(let lastId, var messages, _, let lastEnded) = items.last {
+            messages.append(message)
+            items[items.count - 1] = .assistant(id: lastId, messages: messages, streaming: streaming, endedAt: ended ?? lastEnded)
         } else {
             items.append(.assistant(id: id, messages: [message], streaming: streaming, endedAt: ended))
         }

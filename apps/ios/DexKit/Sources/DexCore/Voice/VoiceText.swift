@@ -122,19 +122,20 @@ public enum VoiceText {
     /// text, and the marks around words go.
     public static func speakable(_ markdown: String) -> String {
         var text = markdown
-        text = replace(codeBlocks, in: text, with: " ")
-        text = replace(tableRows, in: text, with: " ")
-        text = replace(images, in: text, with: " ")
-        text = replace(links, in: text, with: "$1")
-        text = replace(tags, in: text, with: " ")
-        text = replace(inlineCode, in: text, with: "$1")
-        text = replace(headings, in: text, with: "$1.")
+        // Skip regex passes whose trigger tokens don't appear in plain prose.
+        if text.contains("```") { text = replace(codeBlocks, in: text, with: " ") }
+        if text.contains("|") { text = replace(tableRows, in: text, with: " ") }
+        if text.contains("![") { text = replace(images, in: text, with: " ") }
+        if text.contains("[") { text = replace(links, in: text, with: "$1") }
+        if text.contains("<") { text = replace(tags, in: text, with: " ") }
+        if text.contains("`") { text = replace(inlineCode, in: text, with: "$1") }
+        if text.contains("#") { text = replace(headings, in: text, with: "$1.") }
         text = replace(listItems, in: text) { groups in finished(groups[1]) }
-        text = replace(quotes, in: text, with: "")
-        text = replace(emphasis, in: text, with: "$2")
-        text = replace(addresses, in: text, with: "a link")
+        if text.contains(">") { text = replace(quotes, in: text, with: "") }
+        if text.contains("*") || text.contains("_") || text.contains("~") { text = replace(emphasis, in: text, with: "$2") }
+        if text.contains("http") { text = replace(addresses, in: text, with: "a link") }
         text = replace(runs, in: text, with: " ")
-        text = replace(blankLines, in: text, with: "\n")
+        if text.contains("\n\n") { text = replace(blankLines, in: text, with: "\n") }
         return trim(text)
     }
 
@@ -205,6 +206,7 @@ public struct SentenceStream: Sendable {
     private static func split(_ text: String) -> [String] { VoiceText.sentences(VoiceText.speakable(text)) }
 
     public mutating func take(_ text: String) -> [String] {
+        guard text != last else { return [] }
         last = text
         let all = Self.split(text)
         // The last sentence may still be growing.

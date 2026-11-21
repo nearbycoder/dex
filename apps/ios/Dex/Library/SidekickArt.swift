@@ -10,32 +10,39 @@ struct SidekickArt: View {
     let parts: SidekickParts
     var live = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var blink = 0.0
 
     var body: some View {
+        let animate = live && !reduceMotion
         Group {
             if let shape = SidekickShapes.shape(parts.shape), parts.isDrawable, let bodyLayer = Self.layer(shape.key, "body"), let eyesLayer = Self.layer(shape.key, "eyes") {
-                if live && !reduceMotion {
-                    // A blink every five seconds or so; each face starts at its own point, so faces don't blink together.
-                    TimelineView(.periodic(from: .now, by: 1 / 30)) { context in
-                        face(shape, body: bodyLayer, eyes: eyesLayer, blink: Self.blink(at: context.date, offset: offset))
-                    }
-                } else {
-                    face(shape, body: bodyLayer, eyes: eyesLayer, blink: 0)
-                }
+                face(shape, body: bodyLayer, eyes: eyesLayer, blink: animate ? blink : 0)
             } else {
                 Color.clear
             }
         }
         .aspectRatio(1, contentMode: .fit)
         .accessibilityHidden(true)
+        // Sleep between blinks instead of redrawing at 30 fps during the ~5 seconds the eyes stay open.
+        .task(id: animate) {
+            blink = 0
+            guard animate else { return }
+            let initial = Double.random(in: 0.4..<Self.blinkEvery)
+            try? await Task.sleep(for: .seconds(initial))
+            while !Task.isCancelled {
+                withAnimation(.linear(duration: 0.08)) { blink = 1 }
+                try? await Task.sleep(for: .milliseconds(80))
+                guard !Task.isCancelled else { break }
+                withAnimation(.linear(duration: 0.12)) { blink = 0 }
+                try? await Task.sleep(for: .seconds(Self.blinkEvery - 0.08))
+            }
+        }
     }
-
-    @State private var offset = Double.random(in: 0..<Self.blinkEvery)
 
     private func face(_ shape: SidekickShape, body: UIImage, eyes: UIImage, blink: Double) -> some View {
         ZStack {
             Image(uiImage: body).renderingMode(.template).resizable().interpolation(.high)
-                .foregroundStyle(Color(hex: SidekickParts.skinHex(parts.skin)))
+                .foregroundStyle(Self.skinColor(parts.skin))
             Image(uiImage: eyes).resizable().interpolation(.high)
                 .scaleEffect(x: 1, y: 1 - blink * 0.9, anchor: UnitPoint(x: 0.5, y: (shape.eyesTop + shape.eyesBottom) / 2))
         }
@@ -43,12 +50,12 @@ struct SidekickArt: View {
 
     private static let blinkEvery = 5.2
 
-    /// How shut the eyes are at `date`: open, then closing and opening again over the last fifth of a second.
-    private static func blink(at date: Date, offset: Double) -> Double {
-        let t = (date.timeIntervalSinceReferenceDate + offset).truncatingRemainder(dividingBy: blinkEvery)
-        let left = blinkEvery - t
-        guard left < 0.2 else { return 0 }
-        return left > 0.12 ? (0.2 - left) / 0.08 : left / 0.12
+    private static let skinColors: [String: Color] = Dictionary(
+        uniqueKeysWithValues: SidekickParts.skins.map { ($0.name, Color(hex: $0.hex)) }
+    )
+
+    private static func skinColor(_ skin: String) -> Color {
+        skinColors[skin] ?? Color(hex: SidekickParts.skinHex(skin))
     }
 
     @MainActor private static let cache = NSCache<NSString, UIImage>()

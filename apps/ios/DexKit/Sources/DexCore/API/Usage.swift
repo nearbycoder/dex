@@ -77,13 +77,17 @@ public struct DailySpend: Codable, Sendable, Hashable, Identifiable {
 
     public func total(_ series: [UsageSeries]) -> Double { series.reduce(0) { $0 + value($1) } }
 
+    private static let utcCalendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .gmt
+        return calendar
+    }()
+
     /// Midnight UTC of `date`.
     public var day: Date? {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
         let parts = date.split(separator: "-").compactMap { Int($0) }
         guard parts.count == 3 else { return nil }
-        return calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
+        return Self.utcCalendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
     }
 }
 

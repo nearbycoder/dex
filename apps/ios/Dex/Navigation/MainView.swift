@@ -146,6 +146,7 @@ struct NoticeBanner: View {
                 .onTapGesture { client.notice = nil }
                 .task(id: notice) {
                     try? await Task.sleep(for: .seconds(4))
+                    guard !Task.isCancelled, client.notice == notice else { return }
                     client.notice = nil
                 }
                 .accessibilityIdentifier("notice")

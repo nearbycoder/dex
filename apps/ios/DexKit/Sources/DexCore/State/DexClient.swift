@@ -244,14 +244,26 @@ public final class ChatFeed {
 
     @ObservationIgnored private var recordedCache: (key: RecordedKey, items: [DisplayItem], results: [String: ToolResultMessage])?
 
-    /// Entries are only ever added (or replaced by a snapshot), so their count and ends tell a change.
+    /// Entries are usually only appended; extend the cache incrementally when the prefix matches, rebuilding only on snapshot replacements.
     private func recorded() -> (items: [DisplayItem], results: [String: ToolResultMessage]) {
         let entries = transcript.entries
         let key = RecordedKey(count: entries.count, first: entries.first?.id, last: entries.last?.id)
-        if let cache = recordedCache, cache.key == key { return (cache.items, cache.results) }
-        let made = (items: transcript.recordedItems, results: transcript.toolResults)
-        recordedCache = (key, made.items, made.results)
-        return made
+        if let cache = recordedCache {
+            if cache.key == key { return (cache.items, cache.results) }
+            if cache.key.count > 0, entries.count > cache.key.count,
+               entries.first?.id == cache.key.first, entries[cache.key.count - 1].id == cache.key.last {
+                var items = cache.items
+                var results = cache.results
+                TranscriptState.appendRecorded(entries[cache.key.count...], items: &items, results: &results)
+                recordedCache = (key, items, results)
+                return (items, results)
+            }
+        }
+        var items: [DisplayItem] = []
+        var results: [String: ToolResultMessage] = [:]
+        TranscriptState.appendRecorded(entries[...], items: &items, results: &results)
+        recordedCache = (key, items, results)
+        return (items, results)
     }
 
     func activate() {
@@ -321,7 +333,12 @@ public final class ChatFeed {
         // Shown until the agent records it; a message of only files shows their names.
         let label = trimmed.isEmpty ? "Attached: \(attachmentSummary(attachments.map(\.name)))" : trimmed
         let willQueue = transcript.running || !transcript.queue.isEmpty
-        if !willQueue { pending.append(PendingMessage(text: label, after: userCount + pending.count, at: .now)) }
+        var pendingId: UUID?
+        if !willQueue {
+            let item = PendingMessage(text: label, after: userCount + pending.count, at: .now)
+            pendingId = item.id
+            pending.append(item)
+        }
         do {
             if spoken {
                 try await client.run("sendMessage", .string(sessionId), .string(trimmed), attachments.isEmpty ? .null : .array(attachments.map(\.json)), ["spoken": true])
@@ -331,7 +348,7 @@ public final class ChatFeed {
                 try await client.run("sendMessage", .string(sessionId), .string(trimmed), .array(attachments.map(\.json)))
             }
         } catch {
-            pending.removeAll { $0.text == label }
+            if let pendingId { pending.removeAll { $0.id == pendingId } }
             throw error
         }
         Task { [weak self] in

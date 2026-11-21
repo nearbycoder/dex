@@ -54,25 +54,29 @@ private func unescapeAttribute(_ value: String) -> String {
         .replacingOccurrences(of: "&gt;", with: ">").replacingOccurrences(of: "&amp;", with: "&")
 }
 
+private enum AttachmentPatterns {
+    static let tag = try! NSRegularExpression(pattern: #"<attachment ((?:[a-z]+="[^"]*"\s*)+)(?:/>|>\n?[\s\S]*?\n?</attachment>)"#)
+    static let attribute = try! NSRegularExpression(pattern: #"([a-z]+)="([^"]*)""#)
+    static let blankLines = try! NSRegularExpression(pattern: #"\n{3,}"#)
+}
+
 /// A message's text without its attachment tags, and the files they name (splitAttachments on the web).
 public func splitAttachments(_ text: String) -> (text: String, files: [AttachedFile]) {
-    let attachmentTag = try! NSRegularExpression(pattern: #"<attachment ((?:[a-z]+="[^"]*"\s*)+)(?:/>|>\n?[\s\S]*?\n?</attachment>)"#)
-    let attachmentAttribute = try! NSRegularExpression(pattern: #"([a-z]+)="([^"]*)""#)
-    let blankLines = try! NSRegularExpression(pattern: #"\n{3,}"#)
+    guard text.contains("<attachment") else { return (text, []) }
     let source = text as NSString
-    let matches = attachmentTag.matches(in: text, range: NSRange(location: 0, length: source.length))
+    let matches = AttachmentPatterns.tag.matches(in: text, range: NSRange(location: 0, length: source.length))
     guard !matches.isEmpty else { return (text, []) }
     let files = matches.map { match -> AttachedFile in
         let attributes = source.substring(with: match.range(at: 1))
         var values: [String: String] = [:]
         let attributeSource = attributes as NSString
-        for pair in attachmentAttribute.matches(in: attributes, range: NSRange(location: 0, length: attributeSource.length)) {
+        for pair in AttachmentPatterns.attribute.matches(in: attributes, range: NSRange(location: 0, length: attributeSource.length)) {
             values[attributeSource.substring(with: pair.range(at: 1))] = unescapeAttribute(attributeSource.substring(with: pair.range(at: 2)))
         }
         return AttachedFile(name: values["name"] ?? "file", mimeType: values["type"] ?? "application/octet-stream", key: values["key"])
     }
-    let rest = attachmentTag.stringByReplacingMatches(in: text, range: NSRange(location: 0, length: source.length), withTemplate: "")
-    let collapsed = blankLines.stringByReplacingMatches(in: rest, range: NSRange(location: 0, length: (rest as NSString).length), withTemplate: "\n\n")
+    let rest = AttachmentPatterns.tag.stringByReplacingMatches(in: text, range: NSRange(location: 0, length: source.length), withTemplate: "")
+    let collapsed = AttachmentPatterns.blankLines.stringByReplacingMatches(in: rest, range: NSRange(location: 0, length: (rest as NSString).length), withTemplate: "\n\n")
     return (collapsed.trimmingCharacters(in: .whitespacesAndNewlines), files)
 }
 

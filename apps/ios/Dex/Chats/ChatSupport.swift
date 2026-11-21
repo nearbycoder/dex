@@ -91,7 +91,16 @@ final class ComposerModel {
 @MainActor
 final class MediaLoader {
     static let shared = MediaLoader()
-    private let images = NSCache<NSString, UIImage>()
+    private let images: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.countLimit = 60
+        cache.totalCostLimit = 64 * 1024 * 1024
+        return cache
+    }()
+
+    private static func pixelCost(_ image: UIImage) -> Int {
+        max(1, Int(image.size.width * image.size.height * image.scale * image.scale * 4))
+    }
 
     /// The mock agent's server: there's nothing to fetch, so media shows as a drawn placeholder.
     static func isMock(_ server: URL?) -> Bool { server?.host() == "mock.dex.local" }
@@ -111,7 +120,7 @@ final class MediaLoader {
             guard let decoded = UIImage(data: data) else { throw URLError(.cannotDecodeContentData) }
             image = decoded
         }
-        images.setObject(image, forKey: url.absoluteString as NSString)
+        images.setObject(image, forKey: url.absoluteString as NSString, cost: Self.pixelCost(image))
         return image
     }
 
@@ -120,7 +129,7 @@ final class MediaLoader {
         let key = "\(feed.sessionId):\(ref)"
         if let image = cached(key) { return image }
         guard let loaded = try await feed.image(ref: ref), let image = UIImage(data: loaded.data) else { return nil }
-        images.setObject(image, forKey: key as NSString)
+        images.setObject(image, forKey: key as NSString, cost: Self.pixelCost(image))
         return image
     }
 

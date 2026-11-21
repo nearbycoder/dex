@@ -70,11 +70,23 @@ struct AgentAvatar: View {
         .accessibilityHidden(true)
     }
 
-    /// A `data:` URL's image (project pictures are synced as data URLs).
-    static func decode(_ dataURL: String) -> UIImage? {
+    @MainActor private static let imageCache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.countLimit = 80
+        cache.totalCostLimit = 16 * 1024 * 1024
+        return cache
+    }()
+
+    /// A `data:` URL's image (project pictures and sidekick faces are synced as data URLs), decoded once.
+    @MainActor static func decode(_ dataURL: String) -> UIImage? {
+        let key = dataURL as NSString
+        if let cached = imageCache.object(forKey: key) { return cached }
         guard dataURL.hasPrefix("data:"), let comma = dataURL.firstIndex(of: ","),
-              let data = Data(base64Encoded: String(dataURL[dataURL.index(after: comma)...])) else { return nil }
-        return UIImage(data: data)
+              let data = Data(base64Encoded: String(dataURL[dataURL.index(after: comma)...])),
+              let image = UIImage(data: data) else { return nil }
+        let cost = Int(image.size.width * image.size.height * image.scale * image.scale * 4)
+        imageCache.setObject(image, forKey: key, cost: max(1, cost))
+        return image
     }
 }
 

@@ -84,11 +84,16 @@ public struct ScheduledPrompt: Codable, Sendable, Hashable, Identifiable {
 }
 
 enum ISODates {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static let fractional: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+    nonisolated(unsafe) private static let standard = ISO8601DateFormatter()
+
     static func parse(_ text: String) -> Date? {
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = fractional.date(from: text) { return date }
-        return ISO8601DateFormatter().date(from: text)
+        lock.withLock { fractional.date(from: text) ?? standard.date(from: text) }
     }
 }
 

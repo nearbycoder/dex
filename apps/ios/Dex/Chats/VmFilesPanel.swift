@@ -315,6 +315,8 @@ private struct VmFileView: View {
     let showChanges: Bool
     let revision: Int
     @State private var file: VmFile?
+    @State private var sourceLines: [LineDiff.Line] = []
+    @State private var diffLines: [LineDiff.Line] = []
     @State private var error: String?
     @State private var view = "source"
 
@@ -355,9 +357,15 @@ private struct VmFileView: View {
         }
         .task(id: revision) {
             do {
-                file = try await client.vmFiles(sessionId, view: .file, path: path)
+                let loaded: VmFile = try await client.vmFiles(sessionId, view: .file, path: path)
+                file = loaded
+                // Compute line arrays once on load rather than re-diffing inside body on every redraw.
+                sourceLines = loaded.content.map { content in
+                    LineDiff.lines(content).enumerated().map { LineDiff.Line(kind: .same, text: $1, old: nil, new: $0 + 1) }
+                } ?? []
+                diffLines = loaded.change != nil ? LineDiff.unified(before: loaded.before, after: loaded.content) : []
                 error = nil
-                if showChanges, file?.change != nil { view = "diff" }
+                if showChanges, loaded.change != nil { view = "diff" }
             } catch {
                 self.error = error.localizedDescription
             }
@@ -382,9 +390,9 @@ private struct VmFileView: View {
             if let message = file.message {
                 ContentUnavailableView(message, systemImage: "doc")
             } else if view == "diff", file.change != nil {
-                CodeLines(lines: LineDiff.unified(before: file.before, after: file.content))
-            } else if let content = file.content {
-                CodeLines(lines: LineDiff.lines(content).enumerated().map { LineDiff.Line(kind: .same, text: $1, old: nil, new: $0 + 1) })
+                CodeLines(lines: diffLines)
+            } else if file.content != nil {
+                CodeLines(lines: sourceLines)
             } else {
                 ContentUnavailableView("File Deleted", systemImage: "trash", description: Text("Changes shows what it was."))
             }

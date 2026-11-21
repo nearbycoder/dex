@@ -246,7 +246,7 @@ struct AudioPlayerRow: View {
             .accessibilityLabel(playing ? "Pause" : "Play")
             VStack(alignment: .leading, spacing: 4) {
                 Text(title).font(.subheadline.weight(.medium)).lineLimit(1)
-                TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+                TimelineView(.animation(minimumInterval: 0.5, paused: !playing)) { _ in
                     let item = player?.currentItem
                     let elapsed = item?.currentTime().seconds ?? 0
                     let total = item?.duration.seconds ?? .nan
@@ -432,6 +432,11 @@ struct EmbeddedPlayer: UIViewRepresentable {
     }
 
     func updateUIView(_ view: WKWebView, context: Context) {}
+
+    static func dismantleUIView(_ view: WKWebView, coordinator: ()) {
+        view.stopLoading()
+        view.loadHTMLString("", baseURL: nil)
+    }
 }
 
 /// Safari, in the app, over the whole window (links in replies that aren't Dex's own, a VM's exposed port). Never a
