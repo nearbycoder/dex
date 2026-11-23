@@ -114,7 +114,7 @@ import { appTools } from "./tools/app-tools"
 import { loadUiGuideTool, renderUiTool } from "./tools/render-ui"
 import { scheduleTools } from "./tools/schedule-tools"
 import { type SpaceHost, spaceTools } from "./tools/space-tools"
-import { forWorkers, VM_AGENT_TOOLS, type VmAgentsHost, vmAgentTools, vmTools } from "./tools/vm-tools"
+import { browserSearch, type ChatVms, forWorkers, VM_AGENT_TOOLS, type VmAgentsHost, vmAgentTools, type VmSecrets, vmTools } from "./tools/vm-tools"
 import { workspaceTools } from "./tools/workspace-tools"
 import { parseVmFiles, vmFilesCommand, type VmFilesView } from "./vm-files"
 import { verifyGitHubToken, type GitHubIdentity } from "./github-token"
@@ -739,6 +739,28 @@ export class DexAgent extends Agent<Env, DexState> {
   // ── Pi wiring ─────────────────────────────────────────────────────────────
 
   private coreExtension() {
+    const chatVms: ChatVms = {
+      vmFor: (chatId, n) => this.vmFor(vmKeyFor(chatId, n)),
+      list: (chatId) => this.chatVms(chatId).map((vm) => vm.current),
+      worker: (conversationId) => this.vmWorker(conversationId),
+      copyMade: (snapshot) => {
+        this.ctx.storage.sql.exec(`INSERT OR REPLACE INTO dex_vm_copies (snapshot, made_at) VALUES (?, ?)`, snapshot, Date.now())
+      }
+    }
+    const vmSecrets: VmSecrets = {
+      prepare: async (chatId, key = chatId) => {
+        await Promise.all([this.secrets.prepare(chatId), this.accountSecrets.load()])
+        // A failed GitHub sign-in shouldn't fail the command; the next one tries again.
+        await Promise.all([this.syncVmSecrets(key), this.syncVmGitHub(key).catch(() => undefined)])
+      },
+      command: (chatId, command) => this.secrets.command(chatId, command),
+      fill: (chatId, content) => this.secrets.fill(chatId, content),
+      vpn: async (chatId) => {
+        const config = await this.chatVpn(chatId)
+        return config === null ? null : wireproxyConfig(config)
+      }
+    }
+    const searchInBrowser = browserSearch(chatVms, vmSecrets)
     return defineExtension({
       name: "dex",
       sections: [
@@ -847,7 +869,10 @@ export class DexAgent extends Agent<Env, DexState> {
       ],
       tools: [
         ...workspaceTools(this.workspace),
-        ...webTools(this.env.AI),
+        // Searches run in the chat's VM browser when the user has VMs, else (and when that fails) through Cloudflare.
+        ...webTools(this.env.AI, (chatId, n, query, limit, signal) =>
+          this.vmHost.configured() ? searchInBrowser(chatId, n, query, limit, signal) : null
+        ),
         loadUiGuideTool,
         renderUiTool,
         ...scheduleTools(this),
@@ -855,26 +880,7 @@ export class DexAgent extends Agent<Env, DexState> {
         ...skillTools((name, file) => this.skills.use(name, file)),
         // Always offered: a user can connect a boat.dev key at any time. Without one they fail with how to fix it,
         // and the vm_access section tells the model up front.
-        ...vmTools({
-          vmFor: (chatId, n) => this.vmFor(vmKeyFor(chatId, n)),
-          list: (chatId) => this.chatVms(chatId).map((vm) => vm.current),
-          worker: (conversationId) => this.vmWorker(conversationId),
-          copyMade: (snapshot) => {
-            this.ctx.storage.sql.exec(`INSERT OR REPLACE INTO dex_vm_copies (snapshot, made_at) VALUES (?, ?)`, snapshot, Date.now())
-          }
-        }, {
-          prepare: async (chatId, key = chatId) => {
-            await Promise.all([this.secrets.prepare(chatId), this.accountSecrets.load()])
-            // A failed GitHub sign-in shouldn't fail the command; the next one tries again.
-            await Promise.all([this.syncVmSecrets(key), this.syncVmGitHub(key).catch(() => undefined)])
-          },
-          command: (chatId, command) => this.secrets.command(chatId, command),
-          fill: (chatId, content) => this.secrets.fill(chatId, content),
-          vpn: async (chatId) => {
-            const config = await this.chatVpn(chatId)
-            return config === null ? null : wireproxyConfig(config)
-          }
-        }),
+        ...vmTools(chatVms, vmSecrets),
         ...(this.media.configured
           ? mediaTools(
               (chatId, path, title, n) => this.shareMediaFromVm(chatId, path, title, { vmKey: vmKeyFor(chatId, n) }),
@@ -883,7 +889,7 @@ export class DexAgent extends Agent<Env, DexState> {
           : []),
         ...vmAgentTools(this.vmAgentsHost())
       ].map((tool) =>
-        tool.name.startsWith("vm_") || tool.name === "share_media" || tool.name === "get_attachment"
+        tool.name.startsWith("vm_") || tool.name === "share_media" || tool.name === "get_attachment" || tool.name === "web_search"
           ? forWorkers({ worker: (id) => this.vmWorker(id) }, tool)
           : tool
       )

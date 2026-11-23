@@ -21,6 +21,7 @@
     "test:attachments": "node --test tests/attachments.test.ts",
     "test:sidekick-face": "node --test tests/sidekick-face.test.ts",
     "test:vpn": "node --test tests/vpn.test.ts",
+    "test:web-search": "node --test tests/web-search.test.ts",
     "sidekicks:assets": "node scripts/sidekick-assets.ts"
   },
   "dependencies": {

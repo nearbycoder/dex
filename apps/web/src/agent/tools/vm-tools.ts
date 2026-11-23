@@ -84,6 +84,64 @@ export const forWorkers = <T extends ToolRegistration>(vms: Pick<ChatVms, "worke
 /** Seconds since `at`, for "ready in 12s". */
 const since = (at: number) => Math.round((Date.now() - at) / 1000)
 
+type BrowseRun =
+  /** browse ran the code: `status` 0 when it returned, 1 when it threw; `body` is browse's output, `images` the files it saved. */
+  | { ran: true; status: number; body: string; images: string[]; vpn: string }
+  /** The browser couldn't be made ready (or browse itself failed): what the VM said. */
+  | { ran: false; output: string }
+
+/**
+ * Runs `code` (already filled in, it may hold secrets) with browse in `session`'s tab of a chat's VM, getting the
+ * browser ready first (browseReady, with the chat's VPN).
+ */
+const runBrowse = async (
+  vm: VmManager,
+  secrets: VmSecrets,
+  chatId: string,
+  options: { session: string; code: string; timeoutSeconds: number; title: string; screenshot?: boolean; signal?: AbortSignal }
+): Promise<BrowseRun> => {
+  const { session, timeoutSeconds, signal } = options
+  const id = crypto.randomUUID()
+  const script = `/tmp/dex-browse-${id}.js`
+  const result = `/tmp/dex-browse-${id}.txt`
+  // Images the code returned (browse saves them to files and prints their paths) and the screenshot.
+  const images = `${BROWSE_IMAGES}/${id}`
+  await vm.writeFile(script, options.code, "agent", signal)
+  const vpn = await prepareVpn(secrets, chatId, vm, signal)
+  const marker = `@@dex-browse-${id}@@`
+  const command = [
+    // The code may hold filled-in secrets: gone however this ends.
+    `trap 'rm -f ${script} ${result}' EXIT`,
+    // Earlier calls' images, long since read (they can show what's on the page, secrets included).
+    `mkdir -p ${BROWSE_IMAGES}; find ${BROWSE_IMAGES} -type f -mmin +10 -delete 2> /dev/null`,
+    browseReady(session, vpn),
+    `browse execute --tab="$tab" --timeout-ms=${timeoutSeconds * 1000} --file=${script} --output=${images}.png > ${result} 2>&1`,
+    `status=$?`,
+    `rm -f ${script}`,
+    ...(options.screenshot ? [`browse screenshot --tab="$tab" --output=${images}-tab.png > /dev/null 2>&1 && echo ${images}-tab.png >> ${result}`] : []),
+    `echo ${marker}; echo "$status"; cat ${result}`
+  ].join("\n")
+  const ran = await vm.exec(command, {
+    actor: "agent",
+    title: options.title,
+    // Room for setting the browser up (up to ~3 minutes when it has to pair and restart Chrome), around the
+    // code's own timeout (paused while handing off).
+    timeoutSeconds: Math.min(600, timeoutSeconds + 200),
+    signal
+  })
+  const at = ran.output.lastIndexOf(marker)
+  if (at < 0) return { ran: false, output: ran.output }
+  const [status = "", ...lines] = ran.output.slice(at + marker.length).replace(/^\r?\n/, "").split("\n")
+  // `browse execute` exits 0 when the code succeeded and 1 when it threw; anything else is browse failing.
+  return {
+    ran: true,
+    status: status.trim() === "0" ? 0 : Number(status.trim()) || -1,
+    body: lines.filter((line) => !line.trim().startsWith(images)).join("\n").trim(),
+    images: lines.map((line) => line.trim()).filter((line) => line.startsWith(images)),
+    vpn: vpnNote(ran.output.slice(0, at))
+  }
+}
+
 export const vmTools = (vms: ChatVms, secrets: VmSecrets) => {
   const vmFor = (chatId: string, n: unknown) => vms.vmFor(chatId, vmArg(n))
   return [
@@ -400,52 +458,27 @@ export const vmTools = (vms: ChatVms, secrets: VmSecrets) => {
         const session = args.session && /^[a-z0-9][a-z0-9-]{0,39}$/.test(args.session) ? args.session : "dex"
         const timeout = Math.min(540, Math.max(5, Math.round(Number(args.timeout_seconds) || 60)))
         await secrets.prepare(chatId, vm.key)
-        const id = crypto.randomUUID()
-        const script = `/tmp/dex-browse-${id}.js`
-        const result = `/tmp/dex-browse-${id}.txt`
-        // Images the code returned (browse saves them to files and prints their paths) and the screenshot.
-        const images = `${BROWSE_IMAGES}/${id}`
-        await vm.writeFile(script, await secrets.fill(chatId, args.code), "agent", signal)
-        const vpn = await prepareVpn(secrets, chatId, vm, signal)
-        const marker = `@@dex-browse-${id}@@`
-        const command = [
-          // The code may hold filled-in secrets: gone however this ends.
-          `trap 'rm -f ${script} ${result}' EXIT`,
-          // Earlier calls' images, long since read (they can show what's on the page, secrets included).
-          `mkdir -p ${BROWSE_IMAGES}; find ${BROWSE_IMAGES} -type f -mmin +10 -delete 2> /dev/null`,
-          browseReady(session, vpn),
-          `browse execute --tab="$tab" --timeout-ms=${timeout * 1000} --file=${script} --output=${images}.png > ${result} 2>&1`,
-          `status=$?`,
-          `rm -f ${script}`,
-          ...(args.screenshot ? [`browse screenshot --tab="$tab" --output=${images}-tab.png > /dev/null 2>&1 && echo ${images}-tab.png >> ${result}`] : []),
-          `echo ${marker}; echo "$status"; cat ${result}`
-        ].join("\n")
         const firstLine = args.code.trim().split("\n")[0] ?? ""
-        const ran = await vm.exec(command, {
-          actor: "agent",
+        const run = await runBrowse(vm, secrets, chatId, {
+          session,
+          code: await secrets.fill(chatId, args.code),
+          timeoutSeconds: timeout,
           title: `browse: ${firstLine.length > 80 ? `${firstLine.slice(0, 80)}…` : firstLine}`,
-          // Room for setting the browser up (up to ~3 minutes when it has to pair and restart Chrome), around the
-          // code's own timeout (paused while handing off).
-          timeoutSeconds: Math.min(600, timeout + 200),
+          screenshot: args.screenshot,
           signal
         })
-        const at = ran.output.lastIndexOf(marker)
-        if (at < 0) return { output: text(`The VM's browser couldn't run the code:\n${clip(ran.output)}`), isError: true }
-        const [status = "", ...lines] = ran.output.slice(at + marker.length).replace(/^\r?\n/, "").split("\n")
-        // `browse execute` exits 0 when the code succeeded and 1 when it threw; anything else is browse failing.
-        const files = lines.map((line) => line.trim()).filter((line) => line.startsWith(images))
-        const body = lines.filter((line) => !line.trim().startsWith(images)).join("\n").trim()
+        if (!run.ran) return { output: text(`The VM's browser couldn't run the code:\n${clip(run.output)}`), isError: true }
         const output: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }> = text(
-          tag(vmArg(args.vm)) + vpnNote(ran.output.slice(0, at)) + clip(body || "(no result)")
+          tag(vmArg(args.vm)) + run.vpn + clip(run.body || "(no result)")
         )
         // The newest few: the model sees only the latest screenshots anyway.
         const imagesRead = await Promise.all(
-          files.slice(-MAX_BROWSE_IMAGES).map((file) => vm.readFile(file, "agent", "base64", signal).catch(() => null))
+          run.images.slice(-MAX_BROWSE_IMAGES).map((file) => vm.readFile(file, "agent", "base64", signal).catch(() => null))
         )
         for (const image of imagesRead) {
           if (image) output.push({ type: "image", data: image.content, mimeType: imageType(image.content) })
         }
-        return { output, isError: status.trim() !== "0" }
+        return { output, isError: run.status !== 0 }
       }
     }),
 
@@ -524,6 +557,99 @@ export const vmTools = (vms: ChatVms, secrets: VmSecrets) => {
 }
 
 /** What the helper tools need from the agent: helpers are hidden conversations, one per VM, that run on their own. */
+export interface SearchResult {
+  url: string
+  title: string
+  description?: string
+}
+
+/**
+ * The search page code (browse's sandbox): DuckDuckGo's HTML results, else Bing's (DuckDuckGo now and then answers
+ * a search with a bot check, which Bing then covers). Returns `{ engine, items }`, or `{ blocked }` when neither gave
+ * results. Result links are unwrapped from the engines' redirects.
+ */
+export const searchCode = (query: string, limit: number) => `const query = ${JSON.stringify(query)}
+const engines = [
+  ["DuckDuckGo", "https://html.duckduckgo.com/html/?kl=wt-wt&q=" + encodeURIComponent(query), () =>
+    [...document.querySelectorAll(".result:not(.result--ad)")].map((el) => {
+      const a = el.querySelector("a.result__a")
+      let url = a?.getAttribute("href") ?? ""
+      try { const u = new URL(url, location.href); url = u.searchParams.get("uddg") ?? u.href } catch {}
+      return { url, title: a?.textContent?.trim() ?? "", description: el.querySelector(".result__snippet")?.textContent?.trim() }
+    })],
+  ["Bing", "https://www.bing.com/search?setlang=en&cc=us&q=" + encodeURIComponent(query), () =>
+    [...document.querySelectorAll("#b_results > li.b_algo")].map((el) => {
+      const a = el.querySelector("h2 a")
+      let url = a?.getAttribute("href") ?? ""
+      try {
+        const u = new URL(url, location.href)
+        const wrapped = u.hostname.endsWith("bing.com") ? u.searchParams.get("u") : null
+        url = wrapped?.startsWith("a1") ? atob(wrapped.slice(2).replace(/-/g, "+").replace(/_/g, "/")) : u.href
+      } catch {}
+      const description = el.querySelector(".b_caption p, .b_lineclamp2, .b_lineclamp3, .b_lineclamp4, .b_paractl")?.textContent?.trim()
+      return { url, title: a?.textContent?.trim() ?? "", description }
+    })]
+]
+const blocked = []
+for (const [engine, url, read] of engines) {
+  try {
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 })
+    const items = (await page.evaluate(read)).filter((item) => /^https?:/.test(item.url)).slice(0, ${limit})
+    if (items.length) return { engine, items }
+    blocked.push(engine + ": no results (" + (await page.title()) + ")")
+  } catch (error) {
+    blocked.push(engine + ": " + String(error?.message ?? error).split("\\n")[0])
+  }
+}
+return { blocked }`
+
+/**
+ * Searches the web in a chat's VM browser (web_search's default; see webTools), in its own "search" tab so the
+ * model's vm_browser tab stays where it was. A VM's searches go one at a time: they share that tab. Throws with what
+ * went wrong when the browser can't search.
+ */
+export const browserSearch = (vms: Pick<ChatVms, "vmFor">, secrets: VmSecrets) => {
+  const queues = new Map<string, Promise<unknown>>()
+  return (chatId: string, n: number, query: string, limit: number, signal?: AbortSignal) => {
+    const vm = vms.vmFor(chatId, vmArg(n))
+    const search = async (): Promise<{ engine: string; items: SearchResult[] }> => {
+      signal?.throwIfAborted()
+      await secrets.prepare(chatId, vm.key)
+      const run = await runBrowse(vm, secrets, chatId, {
+        session: "search",
+        code: searchCode(query, limit),
+        timeoutSeconds: 60,
+        title: `search: ${query.length > 80 ? `${query.slice(0, 80)}…` : query}`,
+        signal
+      })
+      if (!run.ran) throw new Error(`the VM's browser couldn't be set up (${run.output.trim().split("\n").slice(-2).join(" ").slice(0, 300)})`)
+      // browse prints the returned value as one line of JSON, among its own lines ("tab: …", warnings, page moves).
+      const value =
+        run.body
+          .split("\n")
+          .filter((line) => line.startsWith("{"))
+          .map((line) => {
+            try {
+              return JSON.parse(line) as { engine?: string; items?: SearchResult[]; blocked?: string[] }
+            } catch {
+              return null
+            }
+          })
+          .find((parsed) => parsed && ("items" in parsed || "blocked" in parsed)) ?? null
+      if (run.status !== 0 || !value) throw new Error(`the search page failed (${run.body.slice(0, 300)})`)
+      if (!value.items?.length || !value.engine) throw new Error(`no results: ${(value.blocked ?? []).join("; ").slice(0, 300)}`)
+      return { engine: value.engine, items: value.items }
+    }
+    const previous = queues.get(vm.key) ?? Promise.resolve()
+    const next = previous.catch(() => undefined).then(search)
+    queues.set(vm.key, next)
+    void next.catch(() => undefined).finally(() => {
+      if (queues.get(vm.key) === next) queues.delete(vm.key)
+    })
+    return next
+  }
+}
+
 export interface VmAgentsHost {
   /** Starts a helper on each VM with its task; one line per VM saying what happened. */
   start(chatId: string, agents: ReadonlyArray<{ vm: number; task: string }>): Promise<string[]>
