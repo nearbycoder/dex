@@ -54,6 +54,38 @@ rm -f "$HOME"/.config/google-chrome/Singleton* /tmp/dex-chrome-prewarm.log
 installed || echo "Chrome didn't fetch the browse extension; VMs will fetch it on first use." >&2
 true`
 
+/**
+ * Shell functions for Chrome on the VM. `fresh_worker` (Chrome must be closed) makes Chrome register the extension's
+ * service worker again when it starts: a disk copied from another VM can keep the worker's registration but lose its
+ * cached script, and then Chrome fails to start the worker ("DidStartWorkerFail …: 5" in its log) on every start,
+ * without ever registering it again, so the extension never reaches the relay. Chrome registers it again when the
+ * version it recorded for the worker is gone, and registering is quick, so this runs before every start.
+ */
+const CHROME_FUNCTIONS = `fresh_worker() {
+  python3 -c 'import json, os, sys
+path = os.path.expanduser("~/.config/google-chrome/Default/Preferences")
+try:
+    prefs = json.load(open(path))
+except Exception:
+    sys.exit(0)
+extension = prefs.get("extensions", {}).get("settings", {}).get(sys.argv[1])
+if extension and extension.pop("service_worker_registration_info", None) is not None:
+    json.dump(prefs, open(path + ".dex", "w"))
+    os.replace(path + ".dex", path)' ${BROWSE_EXTENSION_ID} 2> /dev/null || true
+}
+start_chrome() {
+  # A lock left by another machine (this disk copied from a VM whose Chrome was open) would make Chrome refuse the profile.
+  rm -f "$HOME"/.config/google-chrome/Singleton*
+  fresh_worker
+  setsid nohup google-chrome --no-first-run --no-default-browser-check --start-maximized --hide-crash-restore-bubble > /tmp/dex-chrome.log 2>&1 < /dev/null &
+  for i in $(seq 60); do [ -d "$HOME/.config/google-chrome/Default/Extensions/${BROWSE_EXTENSION_ID}" ] && break; sleep 0.5; done
+}
+stop_chrome() {
+  pkill -TERM -x chrome 2> /dev/null || true
+  for i in $(seq 30); do pgrep -x chrome > /dev/null || break; sleep 0.5; done
+  pkill -KILL -x chrome 2> /dev/null || true
+}`
+
 /** Where browseReady keeps each session's tab id on the VM. */
 const TABS_DIR = "$HOME/.cache/dex-browse"
 
@@ -72,29 +104,28 @@ export const browseReady = (session: string) => `export DISPLAY=:0 OPENCODE_BROW
 cd ~
 ${BROWSE_CURRENT} || ( ${BROWSE_BAKE} ) || exit 1
 connected() { browse status 2>/dev/null | grep -q '^Extension: connected'; }
+${CHROME_FUNCTIONS}
 # Any tool call starts the relay (stopped after a VM stop, or replaced: an older browse's relay is asked to stop);
 # a paired extension reconnects within seconds.
 browse tabs > /dev/null 2>&1 || true
 if ! connected; then
-  if ! pgrep -x chrome > /dev/null; then
-    # A lock left by another machine (this disk copied from a VM whose Chrome was open) would make Chrome refuse the profile.
-    rm -f "$HOME"/.config/google-chrome/Singleton*
-    setsid nohup google-chrome --no-first-run --no-default-browser-check --start-maximized --hide-crash-restore-bubble > /tmp/dex-chrome.log 2>&1 < /dev/null &
-  fi
-  for i in $(seq 60); do [ -d "$HOME/.config/google-chrome/Default/Extensions/${BROWSE_EXTENSION_ID}" ] && break; sleep 0.5; done
+  pgrep -x chrome > /dev/null || start_chrome
   for i in $(seq 12); do connected && break; sleep 0.5; done
 fi
 # browse's setup page ("Connect your agent", in its own window): closed once pairing is over, however it went, so the
-# desktop shows the agent's tab.
+# desktop shows the agent's tab. Asked to close by its id, not with Ctrl+W: a window that's closing is still found for a
+# moment, and Ctrl+W then went to the window that had focus, Chrome's last one, and Chrome quit.
 close_setup() {
   for w in $(xdotool search --name '^Connect your agent' 2> /dev/null); do
-    xdotool windowactivate --sync "$w" key --clearmodifiers ctrl+w 2> /dev/null || true
+    wmctrl -i -c "$w" 2> /dev/null || true
   done
 }
 # One pairing attempt: a fresh one-time code from \`browse pair\`, handed to the extension through its welcome page.
 pair() {
   # A pairing or setup left running (a cut-off attempt, or \`browse install\` run by hand) holds the relay's pairing.
-  pkill -f 'browse (pair|install)' 2> /dev/null || true
+  # Anchored to the start of the command line: this script runs as \`bash -lc <script>\`, and its own text says
+  # "browse pair" too, so an unanchored pattern would kill the shell running it.
+  pkill -f '^([^ ]*/)?browse (pair|install)' 2> /dev/null || true
   rm -f /tmp/dex-browse-pair.log
   setsid nohup browse pair --wait-seconds 60 > /tmp/dex-browse-pair.log 2>&1 < /dev/null &
   code=""
@@ -110,6 +141,16 @@ if ! connected; then
   pair || { close_setup; sleep 2; pair; }
   close_setup
   if ! connected; then
+    # Last try: a Chrome that was already open when this started (so fresh_worker didn't run) may have the broken
+    # worker, and then the extension never reaches the relay. Restart it with the worker registered again.
+    echo "Restarting the VM's Chrome…"
+    stop_chrome
+    start_chrome
+    sleep 2
+    pair || { close_setup; sleep 2; pair; }
+    close_setup
+  fi
+  if ! connected; then
     echo "The VM's Chrome didn't connect to browse. Call vm_browser again to retry; don't run browse install or browse pair yourself." >&2
     tail -5 /tmp/dex-browse-pair.log >&2
     exit 1
@@ -117,13 +158,14 @@ if ! connected; then
 fi
 close_setup
 # The session's tab: the one kept for it while it's still among the session's tabs (a VM restart or idle cleanup
-# closes them), else a new one.
+# closes them), else a new one. Options are given as --name=value: browse 0.1.5 reads some \`--name value\` pairs as
+# a flag with no value ("--group needs a value").
 mkdir -p "${TABS_DIR}"
 tab=$(cat "${TABS_DIR}/${session}" 2> /dev/null || true)
-if [ -z "$tab" ] || ! browse tabs --group ${session} 2> /dev/null | python3 -c 'import json, sys; sys.exit(0 if any(str(t.get("tab")) == sys.argv[1] for t in json.load(sys.stdin).get("tabs", [])) else 1)' "$tab" 2> /dev/null; then
+if [ -z "$tab" ] || ! browse tabs --group=${session} 2> /dev/null | python3 -c 'import json, sys; sys.exit(0 if any(str(t.get("tab")) == sys.argv[1] for t in json.load(sys.stdin).get("tabs", [])) else 1)' "$tab" 2> /dev/null; then
   # Keep tabs an hour (chats come back to a page), and ungrouped, so the new tab is the window's last.
   browse settings --json '{"set":{"idleMinutes":60,"grouping":"none"}}' > /dev/null 2>&1 || true
-  tab=$(browse tabs new --group ${session} 2> /tmp/dex-browse-tab.log | python3 -c 'import json, sys; print(json.load(sys.stdin)["tab"])' 2> /dev/null || true)
+  tab=$(browse tabs new --group=${session} 2> /tmp/dex-browse-tab.log | python3 -c 'import json, sys; print(json.load(sys.stdin)["tab"])' 2> /dev/null || true)
   if [ -z "$tab" ]; then
     echo "The VM's browser couldn't open a tab. Call vm_browser again to retry." >&2
     tail -5 /tmp/dex-browse-tab.log >&2

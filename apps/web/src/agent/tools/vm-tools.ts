@@ -119,7 +119,8 @@ export const vmTools = (vms: ChatVms, secrets: VmSecrets) => {
               await vm.ensureRunning(undefined, signal, copy && fresh.has(n) ? copy : undefined)
               if (browser) {
                 await secrets.prepare(chatId, vm.key)
-                const ran = await vm.exec(browseReady("dex"), { actor: "agent", title: "Open the browser", timeoutSeconds: 180, signal })
+// Pairing, with a Chrome restart as its last try, can take ~3 minutes.
+                const ran = await vm.exec(browseReady("dex"), { actor: "agent", title: "Open the browser", timeoutSeconds: 240, signal })
                 if (ran.exitCode !== 0) throw new Error(`it started, but its browser didn't: ${ran.output.trim().slice(-400)}`)
               }
               api.output(`VM ${n} ready (${since(startedAt)}s)\n`)
@@ -389,18 +390,19 @@ export const vmTools = (vms: ChatVms, secrets: VmSecrets) => {
           // Earlier calls' images, long since read (they can show what's on the page, secrets included).
           `mkdir -p ${BROWSE_IMAGES}; find ${BROWSE_IMAGES} -type f -mmin +10 -delete 2> /dev/null`,
           browseReady(session),
-          `browse execute --tab "$tab" --timeout-ms ${timeout * 1000} --file ${script} --output ${images}.png > ${result} 2>&1`,
+          `browse execute --tab="$tab" --timeout-ms=${timeout * 1000} --file=${script} --output=${images}.png > ${result} 2>&1`,
           `status=$?`,
           `rm -f ${script}`,
-          ...(args.screenshot ? [`browse screenshot --tab "$tab" --output ${images}-tab.png > /dev/null 2>&1 && echo ${images}-tab.png >> ${result}`] : []),
+          ...(args.screenshot ? [`browse screenshot --tab="$tab" --output=${images}-tab.png > /dev/null 2>&1 && echo ${images}-tab.png >> ${result}`] : []),
           `echo ${marker}; echo "$status"; cat ${result}`
         ].join("\n")
         const firstLine = args.code.trim().split("\n")[0] ?? ""
         const ran = await vm.exec(command, {
           actor: "agent",
           title: `browse: ${firstLine.length > 80 ? `${firstLine.slice(0, 80)}…` : firstLine}`,
-          // Room for setting the browser up, around the code's own timeout (paused while handing off).
-          timeoutSeconds: Math.min(600, timeout + 60),
+          // Room for setting the browser up (up to ~3 minutes when it has to pair and restart Chrome), around the
+          // code's own timeout (paused while handing off).
+          timeoutSeconds: Math.min(600, timeout + 200),
           signal
         })
         const at = ran.output.lastIndexOf(marker)
