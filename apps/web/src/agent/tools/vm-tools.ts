@@ -1,6 +1,7 @@
 import { Type } from "@earendil-works/pi-ai"
 import { defineTool, type ToolRegistration } from "@earendil-works/pi-durable"
 import { browseReady } from "../browse"
+import type { SearchResult } from "../chatgpt-search"
 import { VM_ENV_FILE } from "../secrets"
 import { VPN_CONFIG_PATH } from "../vpn"
 import { MAX_VMS_PER_CHAT, type VmInfo, vmNumber } from "~/shared/protocol"
@@ -557,11 +558,6 @@ export const vmTools = (vms: ChatVms, secrets: VmSecrets) => {
 }
 
 /** What the helper tools need from the agent: helpers are hidden conversations, one per VM, that run on their own. */
-export interface SearchResult {
-  url: string
-  title: string
-  description?: string
-}
 
 /**
  * The search page code (browse's sandbox): DuckDuckGo's HTML results, else Bing's (DuckDuckGo now and then answers

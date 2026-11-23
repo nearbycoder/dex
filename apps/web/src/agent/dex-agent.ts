@@ -90,7 +90,7 @@ import { CloudflareAnalytics, type CloudflareDay, dayCost, emptyDay } from "./cl
 import { datesBetween, UsageLedger, utcDate } from "./usage-ledger"
 import { checkAttachments, messageContent } from "./attachments"
 import { CLINEPASS_PROVIDER_ID, ClinePassClient, clinePassProvider } from "./clinepass"
-import { type ChatGPTCredential, ChatGPTClient, type ChatGPTPending, chatGPTProvider, CHATGPT_REDIRECT_URI, parseChatGPTCallback, startChatGPTSignIn } from "./chatgpt"
+import { type ChatGPTCredential, ChatGPTClient, type ChatGPTPending, chatGPTProvider, CHATGPT_BASE_URL, CHATGPT_REDIRECT_URI, parseChatGPTCallback, startChatGPTSignIn } from "./chatgpt"
 import { catalogChanges, catalogVersion, fetchModelCatalog } from "./model-catalog"
 import { OpenCodeGoClient, openCodeGoProvider } from "./opencode-go"
 import { checkOpenRouterKey, openRouterAccount, OpenRouterError, openRouterProvider } from "./openrouter"
@@ -110,6 +110,7 @@ import { SkillCenter } from "./skills"
 import { skillTools } from "./tools/skill-tools"
 import { handleMcpBody } from "./mcp-server"
 import { webTools } from "./tools/agents-tools"
+import { chatGPTSearch } from "./chatgpt-search"
 import { appTools } from "./tools/app-tools"
 import { loadUiGuideTool, renderUiTool } from "./tools/render-ui"
 import { scheduleTools } from "./tools/schedule-tools"
@@ -869,10 +870,29 @@ export class DexAgent extends Agent<Env, DexState> {
       ],
       tools: [
         ...workspaceTools(this.workspace),
-        // Searches run in the chat's VM browser when the user has VMs, else (and when that fails) through Cloudflare.
-        ...webTools(this.env.AI, (chatId, n, query, limit, signal) =>
-          this.vmHost.configured() ? searchInBrowser(chatId, n, query, limit, signal) : null
-        ),
+        // Searches go through ChatGPT's web search when the user connected ChatGPT, else the chat's VM browser when
+        // they have VMs, and through Cloudflare when neither can.
+        ...webTools(this.env.AI, [
+          {
+            name: "ChatGPT's web search",
+            search: (_chatId, _n, query, limit, signal) =>
+              this.secret("chatgpt_credential")
+                ? this.resolveChatGPTToken().then((token) => {
+                    if (!token) throw new Error("ChatGPT isn't signed in")
+                    // The plan's cheapest model: they all search well, and the cheap ones are the fastest.
+                    const model = [...modelsOf("chatgpt")].filter((entry) => !/codex/i.test(entry.apiId)).sort((a, b) => a.cost.input - b.cost.input)[0]
+                    if (!model) throw new Error("no ChatGPT model to search with")
+                    const timeout = AbortSignal.timeout(60_000)
+                    return chatGPTSearch({ baseUrl: CHATGPT_BASE_URL, token: token.key, model: model.apiId }, query, limit, signal ? AbortSignal.any([signal, timeout]) : timeout)
+                  })
+                : null
+          },
+          {
+            name: "your VM's browser",
+            search: (chatId, n, query, limit, signal) =>
+              this.vmHost.configured() ? searchInBrowser(chatId, n, query, limit, signal).then((found) => found.items) : null
+          }
+        ]),
         loadUiGuideTool,
         renderUiTool,
         ...scheduleTools(this),
