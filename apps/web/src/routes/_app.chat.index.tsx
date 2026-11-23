@@ -5,6 +5,7 @@ import { AgentAvatar } from "~/client/components/agent-avatar"
 import { PickersSkeleton } from "~/client/components/skeleton"
 import { Composer } from "~/client/components/composer"
 import { McpPicker } from "~/client/components/mcp-picker"
+import { VpnPicker } from "~/client/components/vpn-picker"
 import { ModelLogo } from "~/client/components/model-logo"
 import { ModelPicker } from "~/client/components/model-picker"
 import { useDex } from "~/client/lib/dex"
@@ -32,6 +33,8 @@ function NewChat() {
   const [projectId, setProjectId] = useState<string | null>(null)
   // null: follow the default (servers marked for new chats); a list once the user or an agent picks.
   const [mcpChoice, setMcpChoice] = useState<string[] | null>(null)
+  // The VPN the new chat's VM browser goes through: off unless picked.
+  const [vpnId, setVpnId] = useState<string | null>(null)
   const [draft, setDraft] = useState<{ text: string; key: number } | undefined>()
   const [error, setError] = useState<string | null>(null)
 
@@ -85,7 +88,7 @@ function NewChat() {
   const start = async (text: string, attachments: ChatAttachment[]) => {
     setError(null)
     try {
-      const session = await stub.createSession({ ...choice, agentId, mcpServers, projectId })
+      const session = await stub.createSession({ ...choice, agentId, mcpServers, projectId, vpnId })
       await stub.sendMessage(session.id, text, attachments.length ? attachments : undefined)
       await navigate({ to: "/chat/$sessionId", params: { sessionId: session.id } })
     } catch (cause) {
@@ -266,6 +269,7 @@ function NewChat() {
             <div className="flex min-w-0 items-center gap-1">
               <ModelPicker model={choice.model} thinking={choice.thinking} onChange={setChoice} />
               <McpPicker servers={state?.mcp ?? []} selected={mcpServers} onChange={setMcpChoice} />
+              {state?.vpns && <VpnPicker vpns={state.vpns} selected={vpnId} onChange={setVpnId} />}
             </div>
           }
         />

@@ -70,6 +70,7 @@ export type OperationHost = Pick<
   | "connectMcpServer"
   | "setMcpServerDefault"
   | "deleteMcpServer"
+  | "deleteVpn"
   | "updateSettings"
   | "usageReport"
   | "usageGlance"
@@ -152,6 +153,7 @@ export const EXCLUDED: Readonly<Record<string, string>> = {
   connectBoat: "Credentials are entered only in Settings, never through a chat or an external agent.",
   saveSecret: "Secrets are entered only in Settings, never through a chat or an external agent.",
   removeSecret: "Secrets are managed only in Settings.",
+  saveVpn: "VPN configs hold a private key: they're entered only on the Secrets page, never through a chat or an external agent.",
   transcriptImage: "The chat page loading a screenshot it shows; chats and external agents read chats with app_read_session.",
   chatHistory: "The chat page loading the older messages it shows (before a summary); chats and external agents read chats with app_read_session.",
   storeChatSecret: "Secrets come only from the user's password fields in the browser; no chat or external agent may set or read them.",
@@ -585,6 +587,17 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     run: async (host) => host.appState().secrets
   }),
   define({
+    name: "app_list_vpns",
+    description:
+      "The user's saved VPNs (names and the servers they connect to): a chat's VMs' browser can go through one (app_update_session vpn_id), so " +
+      "sites see the VPN's address and country. Configs are added only on the Secrets page.",
+    risk: "read",
+    parameters: Type.Object({}),
+    covers: [],
+    summarize: () => "List saved VPNs",
+    run: async (host) => host.appState().vpns ?? []
+  }),
+  define({
     name: "app_list_skills",
     description:
       "List installed skills: name (what follows / in a message), description, where it came from, and whether chats load it on their own (auto).",
@@ -897,7 +910,8 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
       project_id: Type.Optional(id("Work on this project.")),
       model: Type.Optional(modelId),
       thinking: Type.Optional(thinking),
-      mcp_servers: Type.Optional(Type.Array(id("MCP server id"), { maxItems: 20 }))
+      mcp_servers: Type.Optional(Type.Array(id("MCP server id"), { maxItems: 20 })),
+      vpn_id: Type.Optional(id("A saved VPN (app_list_vpns) its VMs' browser goes through."))
     }),
     covers: ["createSession"],
     summarize: (args) => `Start a chat${args.title ? ` ${quote(args.title)}` : args.message ? ` about ${quote(args.message)}` : ""}`,
@@ -909,13 +923,15 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
       const state = host.appState()
       if (args.agent_id && !state.agents.some((agent) => agent.id === args.agent_id)) throw new Error(`No agent ${args.agent_id}.`)
       if (args.project_id && !state.projects.some((project) => project.id === args.project_id)) throw new Error(`No project ${args.project_id}.`)
+      if (args.vpn_id && !state.vpns?.some((vpn) => vpn.id === args.vpn_id)) throw new Error(`No VPN ${args.vpn_id}.`)
       const session = await host.createSession({
         title: args.title,
         agentId: args.agent_id ?? null,
         projectId: args.project_id ?? null,
         model: args.model,
         thinking: args.thinking as ThinkingLevel | undefined,
-        mcpServers: args.mcp_servers
+        mcpServers: args.mcp_servers,
+        vpnId: args.vpn_id ?? null
       })
       if (parent) host.noteSessionParent(session.id, parent)
       if (args.message?.trim()) await host.sendMessage(session.id, args.message)
@@ -951,7 +967,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
   define({
     name: "app_update_session",
     description:
-      "Rename a chat, change its model, thinking level, or MCP servers, mute its notifications, settle it (done for now; " +
+      "Rename a chat, change its model, thinking level, MCP servers, or the VPN its VMs' browser goes through, mute its notifications, settle it (done for now; " +
       "it leaves the inbox until something new happens), or snooze it until a time (it comes back then).",
     risk: "write",
     parameters: Type.Object({
@@ -960,6 +976,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
       model: Type.Optional(modelId),
       thinking: Type.Optional(thinking),
       mcp_servers: Type.Optional(Type.Array(id("MCP server id"), { maxItems: 20 })),
+      vpn_id: Type.Optional(Type.Union([id("A saved VPN (app_list_vpns)."), Type.Null()], { description: "The VPN its VMs' browser goes through; null for none." })),
       muted: Type.Optional(Type.Boolean()),
       settled: Type.Optional(Type.Boolean({ description: "Settle (true) or bring back to the inbox (false)." })),
       snoozed_until: Type.Optional(Type.Union([Type.String({ maxLength: 40, description: "ISO 8601 time to come back." }), Type.Null()]))
@@ -971,6 +988,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
         args.model !== undefined && `model ${args.model}`,
         args.thinking !== undefined && `thinking ${args.thinking}`,
         args.mcp_servers !== undefined && "MCP servers",
+        args.vpn_id !== undefined && (args.vpn_id === null ? "VPN off" : `VPN ${state.vpns?.find((vpn) => vpn.id === args.vpn_id)?.name ?? args.vpn_id}`),
         args.muted !== undefined && (args.muted ? "mute" : "unmute"),
         args.settled !== undefined && (args.settled ? "settle" : "back to the inbox"),
         args.snoozed_until !== undefined && (args.snoozed_until === null ? "unsnooze" : `snooze until ${args.snoozed_until}`)
@@ -980,8 +998,13 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     run: async (host, args) => {
       if (!host.appState().sessions.some((session) => session.id === args.session_id)) throw new Error(`No chat ${args.session_id}.`)
       if (args.title !== undefined) await host.renameSession(args.session_id, args.title)
-      if (args.model !== undefined || args.thinking !== undefined || args.mcp_servers !== undefined) {
-        await host.configureSession(args.session_id, { model: args.model, thinking: args.thinking as ThinkingLevel | undefined, mcpServers: args.mcp_servers })
+      if (args.model !== undefined || args.thinking !== undefined || args.mcp_servers !== undefined || args.vpn_id !== undefined) {
+        await host.configureSession(args.session_id, {
+          model: args.model,
+          thinking: args.thinking as ThinkingLevel | undefined,
+          mcpServers: args.mcp_servers,
+          vpnId: args.vpn_id
+        })
       }
       if (args.muted !== undefined) await host.setSessionMuted(args.session_id, args.muted)
       if (args.settled !== undefined) await host.triageSession(args.session_id, { settled: args.settled })
@@ -1329,6 +1352,18 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     run: async (host, args) => {
       await host.deleteMcpServer(args.server_id)
       return { deleted: args.server_id }
+    }
+  }),
+  define({
+    name: "app_delete_vpn",
+    description: "Delete a saved VPN. Chats that used it go back to browsing directly (their VMs' browser switches right away).",
+    risk: "admin",
+    parameters: Type.Object({ vpn_id: id("The VPN's id (app_list_vpns).") }),
+    covers: ["deleteVpn"],
+    summarize: (args, state) => `Delete VPN ${quote(state.vpns?.find((vpn) => vpn.id === args.vpn_id)?.name ?? args.vpn_id)}`,
+    run: async (host, args) => {
+      if (!(await host.deleteVpn(args.vpn_id))) throw new Error(`No VPN ${args.vpn_id}.`)
+      return { deleted: args.vpn_id }
     }
   }),
 

@@ -104,6 +104,8 @@ import { checkServer, searchRegistry, searchSmithery } from "./mcp-registry"
 import { MessageQueue } from "./queue"
 import { findImage, slimEntry, slimEvents, withoutImages } from "./transcript-images"
 import { AccountSecrets, SecretVault, VM_ENV_FILE, VM_ENV_HOOK } from "./secrets"
+import { browseVpn } from "./browse"
+import { VPN_CONFIG_PATH, VpnStore, wireproxyConfig } from "./vpn"
 import { SkillCenter } from "./skills"
 import { skillTools } from "./tools/skill-tools"
 import { handleMcpBody } from "./mcp-server"
@@ -244,6 +246,7 @@ interface SessionRow {
   read_at: number | null
   reply_at: number | null
   last_reply: string | null
+  vpn_id: string | null
   [key: string]: SqlStorageValue
 }
 
@@ -385,7 +388,8 @@ export class DexAgent extends Agent<Env, DexState> {
     push: { configured: false, publicKey: null, devices: [] },
     access: NO_ACCESS,
     skills: [],
-    secrets: []
+    secrets: [],
+    vpns: []
   }
 
   readonly runtime = ManagedRuntime.make(AgentLayer(this.env, BoatKey.of({ get: Effect.promise(() => this.boatKey()) })))
@@ -471,6 +475,13 @@ export class DexAgent extends Agent<Env, DexState> {
     encrypt: (value) => this.runtime.runPromise(Keys.use((keys) => keys.encrypt(value))),
     decrypt: (sealed) => this.runtime.runPromise(Keys.use((keys) => keys.decrypt(sealed)).pipe(Effect.option)).then(Option.getOrNull),
     publish: (secrets) => this.publish({ secrets })
+  })
+  /** VPNs (Secrets page) a chat's VM browser can go through. */
+  readonly vpns = new VpnStore({
+    sql: this.ctx.storage.sql,
+    encrypt: (value) => this.runtime.runPromise(Keys.use((keys) => keys.encrypt(value))),
+    decrypt: (sealed) => this.runtime.runPromise(Keys.use((keys) => keys.decrypt(sealed)).pipe(Effect.option)).then(Option.getOrNull),
+    publish: (vpns) => this.publish({ vpns })
   })
   /** The saved-secrets version each VM's env file has, so it's rewritten only after a change. */
   private readonly vmSecretsVersion = new Map<string, number>()
@@ -588,6 +599,8 @@ export class DexAgent extends Agent<Env, DexState> {
     // Inbox triage: settled (done for now) and snoozed (hidden until a time).
     if (!sessionColumns.includes("settled_at")) ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN settled_at INTEGER`)
     if (!sessionColumns.includes("snoozed_until")) ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN snoozed_until INTEGER`)
+    // The saved VPN its VMs' browser goes through (vpn.ts).
+    if (!sessionColumns.includes("vpn_id")) ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN vpn_id TEXT`)
     // A character's conversations (the current one and any from before Start over).
     if (!sessionColumns.includes("character_id")) ctx.storage.sql.exec(`ALTER TABLE dex_sessions ADD COLUMN character_id TEXT`)
     // Unread: when a reply last finished (and how it began), and when you last looked.
@@ -673,6 +686,7 @@ export class DexAgent extends Agent<Env, DexState> {
       this.publishHelpers()
       this.skills.refresh()
       this.accountSecrets.refresh()
+      this.vpns.refresh()
       this.startMcp()
       this.refreshOpenCodeStatus()
       this.refreshChatGPTStatus()
@@ -855,7 +869,11 @@ export class DexAgent extends Agent<Env, DexState> {
             await Promise.all([this.syncVmSecrets(key), this.syncVmGitHub(key).catch(() => undefined)])
           },
           command: (chatId, command) => this.secrets.command(chatId, command),
-          fill: (chatId, content) => this.secrets.fill(chatId, content)
+          fill: (chatId, content) => this.secrets.fill(chatId, content),
+          vpn: async (chatId) => {
+            const config = await this.chatVpn(chatId)
+            return config === null ? null : wireproxyConfig(config)
+          }
         }),
         ...(this.media.configured
           ? mediaTools(
@@ -1043,7 +1061,8 @@ export class DexAgent extends Agent<Env, DexState> {
             repliedAt: row.reply_at ?? null,
             muted: row.muted === 1,
             settledAt: row.settled_at ?? null,
-            snoozedUntil: row.snoozed_until ?? null
+            snoozedUntil: row.snoozed_until ?? null,
+            vpnId: row.vpn_id ?? null
           }))
         this.publish({ sessions })
       } while (this.sessionsRefreshQueued)
@@ -1088,6 +1107,30 @@ export class DexAgent extends Agent<Env, DexState> {
   @callable()
   async saveSecret(name: string, value: string | undefined, note?: string) {
     return this.accountSecrets.save(name, value, note)
+  }
+
+  /** Saves a VPN config (a provider's WireGuard file) chats can put their VM's browser on; with `id`, edits that one. */
+  @callable()
+  async saveVpn(draft: { id?: string; name: string; config?: string }) {
+    const saved = await this.vpns.save(draft)
+    // Chats on it get the new config from their next browser call; their running VMs get it now.
+    if (draft.id && draft.config?.trim()) {
+      for (const row of this.ctx.storage.sql.exec<{ id: string }>(`SELECT id FROM dex_sessions WHERE vpn_id = ?`, draft.id).toArray()) {
+        void this.keepAliveWhile(() => this.applyChatVpn(row.id)).catch(() => undefined)
+      }
+    }
+    return saved
+  }
+
+  /** Deletes a VPN; chats on it go back to browsing directly. */
+  @callable()
+  async deleteVpn(id: string) {
+    const chats = this.ctx.storage.sql.exec<{ id: string }>(`SELECT id FROM dex_sessions WHERE vpn_id = ?`, id).toArray()
+    this.ctx.storage.sql.exec(`UPDATE dex_sessions SET vpn_id = NULL WHERE vpn_id = ?`, id)
+    const removed = this.vpns.remove(id)
+    for (const chat of chats) void this.keepAliveWhile(() => this.applyChatVpn(chat.id)).catch(() => undefined)
+    if (chats.length) await this.refreshSessions()
+    return removed
   }
 
   @callable()
@@ -1467,6 +1510,7 @@ export class DexAgent extends Agent<Env, DexState> {
       agentId?: string | null
       mcpServers?: readonly string[]
       projectId?: string | null
+      vpnId?: string | null
     } = {}
   ): Promise<SessionMeta> {
     return this.openSession(options, null)
@@ -1480,6 +1524,7 @@ export class DexAgent extends Agent<Env, DexState> {
       agentId?: string | null
       mcpServers?: readonly string[]
       projectId?: string | null
+      vpnId?: string | null
       /** A space chat: its coordinator (`coordinator`) or one of its threads (muted: they report to the coordinator). */
       spaceId?: string | null
       coordinator?: boolean
@@ -1501,9 +1546,10 @@ export class DexAgent extends Agent<Env, DexState> {
     const title = options.title?.trim() || "New chat"
     const spaceId = options.spaceId ?? null
     const muted = spaceId && !options.coordinator ? 1 : null
+    const vpnId = options.vpnId && this.vpns.get(options.vpnId) ? options.vpnId : null
     this.ctx.storage.sql.exec(
-      `INSERT INTO dex_sessions (id, title, model, thinking, created_at, updated_at, agent_id, mcp_servers, project_id, character_id, space_id, muted) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      session.id, title, model, thinking, now, now, agent?.id ?? null, JSON.stringify(mcpServers), project?.id ?? null, characterId, spaceId, muted
+      `INSERT INTO dex_sessions (id, title, model, thinking, created_at, updated_at, agent_id, mcp_servers, project_id, character_id, space_id, muted, vpn_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      session.id, title, model, thinking, now, now, agent?.id ?? null, JSON.stringify(mcpServers), project?.id ?? null, characterId, spaceId, muted, vpnId
     )
     await this.refreshSessions()
     // A project chat will need its VM, so it starts now and is set up (repos, setup script) by the time the
@@ -1531,7 +1577,8 @@ export class DexAgent extends Agent<Env, DexState> {
       repliedAt: null,
       muted: muted === 1,
       settledAt: null,
-      snoozedUntil: null
+      snoozedUntil: null,
+      vpnId
     }
   }
 
@@ -1719,7 +1766,7 @@ export class DexAgent extends Agent<Env, DexState> {
   }
 
   @callable()
-  async configureSession(sessionId: string, options: { model?: string; thinking?: ThinkingLevel; mcpServers?: readonly string[] }) {
+  async configureSession(sessionId: string, options: { model?: string; thinking?: ThinkingLevel; mcpServers?: readonly string[]; vpnId?: string | null }) {
     const row = this.ctx.storage.sql.exec<SessionRow>(`SELECT * FROM dex_sessions WHERE id = ?`, sessionId).toArray()[0]
     if (!row) throw new Error("Chat not found")
     const model = options.model && findModel(options.model) ? options.model : findModel(row.model) ? row.model : this.replacementModel()
@@ -1730,7 +1777,30 @@ export class DexAgent extends Agent<Env, DexState> {
       `UPDATE dex_sessions SET model = ?, thinking = ?, mcp_servers = ? WHERE id = ?`,
       model, thinking, mcpServers ? JSON.stringify(mcpServers) : row.mcp_servers, sessionId
     )
+    if (options.vpnId !== undefined && options.vpnId !== row.vpn_id) {
+      if (options.vpnId !== null && !this.vpns.get(options.vpnId)) throw new Error("That VPN no longer exists.")
+      this.ctx.storage.sql.exec(`UPDATE dex_sessions SET vpn_id = ? WHERE id = ?`, options.vpnId, sessionId)
+      void this.keepAliveWhile(() => this.applyChatVpn(sessionId)).catch(() => undefined)
+    }
     await this.refreshSessions()
+  }
+
+  /** The chat's VPN config for its VMs (vpn.ts), or null when it has none (or it was deleted). */
+  private async chatVpn(chatId: string): Promise<string | null> {
+    const row = this.ctx.storage.sql.exec<{ vpn_id: string | null }>(`SELECT vpn_id FROM dex_sessions WHERE id = ?`, chatId).toArray()[0]
+    return row?.vpn_id ? this.vpns.config(row.vpn_id) : null
+  }
+
+  /** Puts the chat's running VMs' Chrome on its VPN setting now, instead of at their next vm_browser call. */
+  private async applyChatVpn(chatId: string) {
+    const config = await this.chatVpn(chatId)
+    const running = this.chatVms(chatId).filter((vm) => vm.current.status === "running")
+    await Promise.all(
+      running.map(async (vm) => {
+        if (config) await vm.writeFile(VPN_CONFIG_PATH, wireproxyConfig(config), "user")
+        await vm.exec(browseVpn(config !== null), { actor: "user", title: config ? "Browser on the VPN" : "Browser off the VPN", timeoutSeconds: 120 })
+      })
+    )
   }
 
   /** Models for one-off requests outside a chat's run (writing a chat's title), on the same subscriptions. */

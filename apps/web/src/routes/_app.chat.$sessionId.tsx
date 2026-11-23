@@ -5,6 +5,7 @@ import { Composer } from "~/client/components/composer"
 import { ChatArtifactsContext, type ChatArtifacts } from "~/client/components/media"
 import { MessageList, type Speaker } from "~/client/components/message-list"
 import { McpPicker } from "~/client/components/mcp-picker"
+import { VpnPicker } from "~/client/components/vpn-picker"
 import { HelpersPanel } from "~/client/components/helpers-panel"
 import { QueuePanel } from "~/client/components/queue-panel"
 import { ModelPicker } from "~/client/components/model-picker"
@@ -464,6 +465,8 @@ function Chat() {
                   selected={session.mcpServers}
                   onChange={(mcpServers) => void stub.configureSession(sessionId, { mcpServers })}
                 />
+                {/* An agent from before VPNs has no list. The VM's browser switches right away. */}
+                {state?.vpns && <VpnPicker vpns={state.vpns} selected={session.vpnId ?? null} onChange={(vpnId) => void stub.configureSession(sessionId, { vpnId })} />}
               </div>
             )
           }

@@ -50,6 +50,16 @@ export interface SessionMeta {
   readonly settledAt: number | null
   /** Hidden under Snoozed until then; it comes back (with a notification) at that time. */
   readonly snoozedUntil: number | null
+  /** The saved VPN (DexState.vpns) its VMs' browser goes through, if any. Missing from older agents. */
+  readonly vpnId?: string | null
+}
+
+export interface VpnInfo {
+  readonly id: string
+  readonly name: string
+  /** The server it connects to (host:port), to tell configs apart. */
+  readonly endpoint: string
+  readonly updatedAt: number
 }
 
 export interface GitHubStatus {
@@ -268,6 +278,8 @@ export interface DexState {
   readonly access: AccessState
   /** Saved secrets (Settings → Secrets): names and notes only, never values. */
   readonly secrets: ReadonlyArray<{ readonly name: string; readonly note: string; readonly updatedAt: number }>
+  /** Saved VPNs (Secrets page) a chat's VM browser can go through: names and servers only, never keys. Missing from older agents. */
+  readonly vpns?: ReadonlyArray<VpnInfo>
   /** Installed skills (without their instructions). */
   readonly skills: ReadonlyArray<SkillInfo>
   /** The build the agent is running (ISO time it was built): tells a deploy apart from a stale instance. */

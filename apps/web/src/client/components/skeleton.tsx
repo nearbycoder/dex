@@ -127,6 +127,7 @@ function ComposerBones() {
         <div className="mt-3 flex items-center gap-1.5">
           <Bone className="h-7 w-20 rounded-lg" />
           <Bone className="h-7 w-20 rounded-lg" />
+          <Bone className="h-7 w-7 rounded-lg sm:w-14" />
           <Bone className="h-7 w-7 rounded-lg" />
           <Bone className="ml-auto size-8 rounded-full" />
         </div>
@@ -902,6 +903,20 @@ export function SecretsSkeleton() {
                 <Bone className="size-7" />
               </div>
             ))}
+          </div>
+        </div>
+        {/* VPNs: the add form (name, config, buttons). */}
+        <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/40">
+          <div className="flex min-h-11 items-center px-4 pt-3 pb-1 md:px-5">
+            <Bone className="h-3.5 w-10" />
+          </div>
+          <div className="space-y-2.5 px-4 pt-1 pb-4 md:px-5">
+            <Bone className="h-[38px] w-full rounded-lg" />
+            <Bone className="h-[158px] w-full rounded-lg" />
+            <div className="flex items-center gap-2 pt-1.5">
+              <Bone className="h-[38px] w-[155px] rounded-lg" />
+              <Bone className="ml-auto h-9 w-[90px] rounded-lg" />
+            </div>
           </div>
         </div>
       </PageBones>

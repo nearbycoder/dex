@@ -7,6 +7,8 @@
  * The browse CLI lives on the VM; its extension is force-installed by Chromium policy and paired with the CLI's local
  * relay the first time a chat browses (each VM pairs its own, so no pairing key is baked into the template).
  */
+import { vpnSettle, vpnSetup } from "./vpn"
+
 export const BROWSE_EXTENSION_ID = "mfnicocicmmlkpjnaffgihfjhdgjkdjg"
 
 /** Whether the VM's browse is the Rust one (0.1.0+); the TypeScript one (0.0.x) had sessions and a different CLI. */
@@ -98,9 +100,10 @@ const TABS_DIR = "$HOME/.cache/dex-browse"
  * browse opens agent tabs in the background and can't raise them, so a session's new tab is shown with Chrome's own
  * "last tab" key (agent tabs aren't grouped, so it's last), and the user watching the desktop sees the page the agent
  * is on. Files under home are reachable from `files` and uploads (OPENCODE_BROWSER_FILE_ROOTS, read when the relay
- * starts).
+ * starts). `vpn`: the chat's VPN is on, so Chrome goes through it (Dex wrote its config to the VM first; vpn.ts), else
+ * Chrome goes out directly.
  */
-export const browseReady = (session: string) => `export DISPLAY=:0 OPENCODE_BROWSER_FILE_ROOTS="$HOME" PATH="$HOME/.local/bin:$PATH"
+export const browseReady = (session: string, vpn = false) => `export DISPLAY=:0 OPENCODE_BROWSER_FILE_ROOTS="$HOME" PATH="$HOME/.local/bin:$PATH"
 cd ~
 ${BROWSE_CURRENT} || ( ${BROWSE_BAKE} ) || exit 1
 connected() { browse status 2>/dev/null | grep -q '^Extension: connected'; }
@@ -108,6 +111,8 @@ ${CHROME_FUNCTIONS}
 # Any tool call starts the relay (stopped after a VM stop, or replaced: an older browse's relay is asked to stop);
 # a paired extension reconnects within seconds.
 browse tabs > /dev/null 2>&1 || true
+# The chat's VPN (vpn.ts), before Chrome starts, so it starts on the right route.
+${vpnSetup(vpn)}
 if ! connected; then
   pgrep -x chrome > /dev/null || start_chrome
   for i in $(seq 12); do connected && break; sleep 0.5; done
@@ -157,6 +162,7 @@ if ! connected; then
   fi
 fi
 close_setup
+${vpnSettle(vpn)}
 # The session's tab: the one kept for it while it's still among the session's tabs (a VM restart or idle cleanup
 # closes them), else a new one. Options are given as --name=value: browse 0.1.5 reads some \`--name value\` pairs as
 # a flag with no value ("--group needs a value").
@@ -176,4 +182,17 @@ if [ -z "$tab" ] || ! browse tabs --group=${session} 2> /dev/null | python3 -c '
   for w in $(xdotool search --onlyvisible --class 'chrom' 2> /dev/null); do
     xdotool windowactivate --sync "$w" key --clearmodifiers ctrl+9 2> /dev/null || true
   done
+fi`
+
+/**
+ * Puts a running VM's Chrome on the chat's VPN setting right away, when the chat's VPN changes (with `vpn`, Dex wrote
+ * its config first), instead of at the next vm_browser call. Opens nothing; a Chrome that isn't connected to browse
+ * gets the new route without the wait for it.
+ */
+export const browseVpn = (vpn: boolean) => `export DISPLAY=:0 PATH="$HOME/.local/bin:$PATH"
+cd ~
+connected() { browse status 2>/dev/null | grep -q '^Extension: connected'; }
+${vpnSetup(vpn)}
+if connected; then
+${vpnSettle(vpn)}
 fi`

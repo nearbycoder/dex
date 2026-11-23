@@ -126,6 +126,7 @@
 - They're written to a private env file on each VM, loaded by every command, by login and interactive shells, and by project setup scripts. VMs pick up changes on their next command.
 - **Password fields in chat forms** keep the value out of the transcript. The browser stores it, encrypted per chat, before sending, and the message carries `{{secret:name}}`. VM tools fill placeholders in on the VM, as environment variables from a file the command sources and deletes.
 - Any secret value in VM output, read files, or the Machine page's log is masked before the model or you see it.
+- **VPNs for the VM's browser:** save a WireGuard config from your VPN's manual setup (Surfshark, Mullvad, Proton…) on the Secrets page, then pick it with the shield in a chat's composer, when you start the chat or later. That chat's VMs send their Chrome's traffic through it, so sites see the VPN's address and country. Only the browser uses it; commands and boat's link to the VM go out directly. On the VM, [wireproxy](https://github.com/windtf/wireproxy) serves the tunnel as a local SOCKS proxy, and a Chrome policy points the browser at it. Switching applies right away, without restarting Chrome. If the tunnel is down, the browser can't reach anything, rather than going out directly. Configs are stored encrypted; chats and MCP can list them and pick one, but can't read or add them.
 
 ### Projects, GitHub, and agents
 

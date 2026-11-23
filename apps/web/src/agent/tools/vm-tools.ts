@@ -2,6 +2,7 @@ import { Type } from "@earendil-works/pi-ai"
 import { defineTool, type ToolRegistration } from "@earendil-works/pi-durable"
 import { browseReady } from "../browse"
 import { VM_ENV_FILE } from "../secrets"
+import { VPN_CONFIG_PATH } from "../vpn"
 import { MAX_VMS_PER_CHAT, type VmInfo, vmNumber } from "~/shared/protocol"
 import type { VmCopy, VmManager } from "../vm"
 
@@ -24,6 +25,24 @@ export interface VmSecrets {
   prepare(chatId: string, vmKey?: string): Promise<unknown>
   command(chatId: string, command: string): Promise<{ command: string; env: string | null }>
   fill(chatId: string, content: string): Promise<string>
+  /** The chat's VPN, as the file its VMs run it from (vpn.ts), or null when the chat has none. */
+  vpn(chatId: string): Promise<string | null>
+}
+
+/**
+ * Before browseReady on a VM: writes the chat's VPN config there when it has one, and says whether it does (for
+ * browseReady's `vpn`).
+ */
+const prepareVpn = async (secrets: VmSecrets, chatId: string, vm: VmManager, signal?: AbortSignal) => {
+  const config = await secrets.vpn(chatId)
+  if (config !== null) await vm.writeFile(VPN_CONFIG_PATH, config, "agent", signal)
+  return config !== null
+}
+
+/** browseReady's line about the VPN, when it turned on or off: the VPN's address for the model. */
+const vpnNote = (output: string) => {
+  const line = output.split("\n").find((candidate) => candidate.startsWith("VPN: "))
+  return line ? `${line} It covers the browser only; commands (vm_exec, curl) go out directly.\n` : ""
 }
 
 const SECRET_NOTE =
@@ -119,9 +138,12 @@ export const vmTools = (vms: ChatVms, secrets: VmSecrets) => {
               await vm.ensureRunning(undefined, signal, copy && fresh.has(n) ? copy : undefined)
               if (browser) {
                 await secrets.prepare(chatId, vm.key)
-// Pairing, with a Chrome restart as its last try, can take ~3 minutes.
-                const ran = await vm.exec(browseReady("dex"), { actor: "agent", title: "Open the browser", timeoutSeconds: 240, signal })
+                const vpn = await prepareVpn(secrets, chatId, vm, signal)
+                // Pairing, with a Chrome restart as its last try, can take ~3 minutes.
+                const ran = await vm.exec(browseReady("dex", vpn), { actor: "agent", title: "Open the browser", timeoutSeconds: 240, signal })
                 if (ran.exitCode !== 0) throw new Error(`it started, but its browser didn't: ${ran.output.trim().slice(-400)}`)
+                const note = vpnNote(ran.output)
+                if (note) api.output(`VM ${n}: ${note}`)
               }
               api.output(`VM ${n} ready (${since(startedAt)}s)\n`)
             })
@@ -355,7 +377,8 @@ export const vmTools = (vms: ChatVms, secrets: VmSecrets) => {
         "`setInputFiles` takes paths there. When only a person can go on (2FA, passkey, CAPTCHA, payment confirmation), " +
         "`await handoff(\"Solve the check, then click Continue\", { timeoutMs: 300_000 })` shows the user a card in the browser and waits " +
         "for them on the Machine page; raise timeout_seconds to match, then verify. If the result reports a bot challenge or block, don't " +
-        "retry or solve it yourself: hand off or stop. Set screenshot=true to also see the tab afterwards." +
+        "retry or solve it yourself: hand off or stop. Set screenshot=true to also see the tab afterwards. When the user put the " +
+        "chat on a VPN, the browser goes through it (the result says when it turns on or off, and its address)." +
         SECRET_NOTE,
       parameters: Type.Object({
         code: Type.String({ maxLength: 50_000, description: "JavaScript to run (an async function body) with a Playwright-style `page`." }),
@@ -383,13 +406,14 @@ export const vmTools = (vms: ChatVms, secrets: VmSecrets) => {
         // Images the code returned (browse saves them to files and prints their paths) and the screenshot.
         const images = `${BROWSE_IMAGES}/${id}`
         await vm.writeFile(script, await secrets.fill(chatId, args.code), "agent", signal)
+        const vpn = await prepareVpn(secrets, chatId, vm, signal)
         const marker = `@@dex-browse-${id}@@`
         const command = [
           // The code may hold filled-in secrets: gone however this ends.
           `trap 'rm -f ${script} ${result}' EXIT`,
           // Earlier calls' images, long since read (they can show what's on the page, secrets included).
           `mkdir -p ${BROWSE_IMAGES}; find ${BROWSE_IMAGES} -type f -mmin +10 -delete 2> /dev/null`,
-          browseReady(session),
+          browseReady(session, vpn),
           `browse execute --tab="$tab" --timeout-ms=${timeout * 1000} --file=${script} --output=${images}.png > ${result} 2>&1`,
           `status=$?`,
           `rm -f ${script}`,
@@ -412,7 +436,7 @@ export const vmTools = (vms: ChatVms, secrets: VmSecrets) => {
         const files = lines.map((line) => line.trim()).filter((line) => line.startsWith(images))
         const body = lines.filter((line) => !line.trim().startsWith(images)).join("\n").trim()
         const output: Array<{ type: "text"; text: string } | { type: "image"; data: string; mimeType: string }> = text(
-          tag(vmArg(args.vm)) + clip(body || "(no result)")
+          tag(vmArg(args.vm)) + vpnNote(ran.output.slice(0, at)) + clip(body || "(no result)")
         )
         // The newest few: the model sees only the latest screenshots anyway.
         const imagesRead = await Promise.all(
