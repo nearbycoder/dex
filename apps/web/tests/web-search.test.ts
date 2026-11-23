@@ -80,3 +80,16 @@ test("ChatGPT's answer in prose: the pages it cited", () => {
   ]
   assert.deepEqual(readSearchResponse(output, 5), [{ url: "https://sqlite.org/changes.html", title: "Release History" }])
 })
+
+test("streamed items count when response.completed leaves its output empty", async () => {
+  const { readStream } = await import("../src/agent/chatgpt-search.ts")
+  const event = (value: unknown) => `event: x\ndata: ${JSON.stringify(value)}\n\n`
+  const stream =
+    event({ type: "response.created" }) +
+    event({ type: "response.output_item.done", item: { type: "web_search_call", action: { sources: [{ url: "https://a.example/" }] } } }) +
+    event({ type: "response.output_item.done", item: { type: "message", content: [{ type: "output_text", text: '{"results":[{"title":"A","url":"https://a.example/","description":"About A."}]}' }] } }) +
+    event({ type: "response.completed", response: { output: [] } })
+  const { output } = readStream(stream)
+  assert.deepEqual(readSearchResponse(output, 5), [{ url: "https://a.example/", title: "A", description: "About A." }])
+  assert.throws(() => readStream(event({ type: "response.failed", response: { error: { message: "no" } } })), /no/)
+})

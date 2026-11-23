@@ -60,23 +60,34 @@ export const readSearchResponse = (output: ReadonlyArray<ResponseItem>, limit: n
   return results
 }
 
-/** The finished response from a streamed Responses API call (`response.completed`), or what went wrong. */
-const readStream = async (response: Response) => {
-  const text = await response.text()
+/**
+ * The output items of a streamed Responses API call. Each finished item arrives as `response.output_item.done`;
+ * `response.completed` may repeat them or (with `store: false`) leave its `output` empty, so the streamed items win
+ * when it does. `events` counts the event types, to say what came back when nothing usable did.
+ */
+export const readStream = (text: string) => {
+  const items: ResponseItem[] = []
+  const events: Record<string, number> = {}
+  let completed: ResponseItem[] | null = null
   let failure: string | null = null
   for (const line of text.split("\n")) {
     if (!line.startsWith("data:")) continue
-    let event: { type?: string; response?: { output?: ResponseItem[]; error?: { message?: string } }; message?: string }
+    let event: { type?: string; item?: ResponseItem; response?: { output?: ResponseItem[]; error?: { message?: string } }; message?: string }
     try {
       event = JSON.parse(line.slice(5))
     } catch {
       continue
     }
-    if (event.type === "response.completed") return event.response?.output ?? []
-    if (event.type === "response.failed") failure = event.response?.error?.message ?? "the search failed"
-    if (event.type === "error") failure = event.message ?? "the search failed"
+    const type = event.type ?? "unknown"
+    events[type] = (events[type] ?? 0) + 1
+    if (type === "response.output_item.done" && event.item) items.push(event.item)
+    if (type === "response.completed") completed = event.response?.output ?? []
+    if (type === "response.failed") failure = event.response?.error?.message ?? "the search failed"
+    if (type === "error") failure = event.message ?? "the search failed"
   }
-  throw new Error(failure ?? "OpenAI's response ended early")
+  if (failure) throw new Error(failure)
+  if (completed === null) throw new Error("OpenAI's response ended early")
+  return { output: completed.length ? completed : items, events }
 }
 
 /**
@@ -117,7 +128,12 @@ export async function chatGPTSearch(
     if (!response.ok) throw new Error(`${first}; with only the essentials, ${await failure(response)}`)
   }
   if (!response.ok) throw new Error(await failure(response))
-  const results = readSearchResponse(await readStream(response), limit)
-  if (!results.length) throw new Error("ChatGPT's search found no pages")
+  const { output, events } = readStream(await response.text())
+  const results = readSearchResponse(output, limit)
+  if (!results.length) {
+    const what = Object.entries(events).map(([type, count]) => `${type}×${count}`).join(", ")
+    const kinds = output.map((item) => item.type).join(", ")
+    throw new Error(`ChatGPT's search found no pages (events: ${what || "none"}; items: ${kinds || "none"})`)
+  }
   return results
 }
