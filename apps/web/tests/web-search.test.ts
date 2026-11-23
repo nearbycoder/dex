@@ -12,7 +12,7 @@ const run = async (tool: ReturnType<typeof webTools>[number], args: Record<strin
   const result = (await tool.execute(args as never, api, context)) as { output: Array<{ text: string }>; isError?: boolean; details: Record<string, unknown> }
   return { text: result.output.map((part) => part.text).join(""), isError: result.isError ?? false, details: result.details }
 }
-const searcher = (name: string, search: Searcher["search"]): Searcher => ({ name, search })
+const searcher = (name: string, search: Searcher["search"]): Searcher => ({ name, unavailable: `${name} isn't set up`, search })
 
 test("the first searcher that can search answers, rendered as the apps expect", async () => {
   const calls: unknown[] = []
@@ -25,7 +25,7 @@ test("the first searcher that can search answers, rendered as the apps expect", 
   ])
   const result = await run(search!, { query: " sqlite wal ", limit: 50 })
   assert.deepEqual(calls, [["chat-1", 1, "sqlite wal", 10]])
-  assert.equal(result.text, '1 result for "sqlite wal":\n\n1. Write-Ahead Logging\nhttps://sqlite.org/wal.html\nWAL mode.')
+  assert.equal(result.text, '(Searched with browser. ChatGPT isn\'t set up.)\n\n1 result for "sqlite wal":\n\n1. Write-Ahead Logging\nhttps://sqlite.org/wal.html\nWAL mode.')
   assert.deepEqual(result.details, { ok: true, source: "browser", failures: null })
 })
 
@@ -40,10 +40,13 @@ test("a searcher that fails hands over to the next, then to Cloudflare", async (
   const cloudflare = ai(() => Promise.resolve(Response.json({ items: [{ url: "https://a.example", title: "A" }] })))
   const next = await run(webTools(unused, [searcher("ChatGPT", () => Promise.reject(new Error("OpenAI answered 403"))), searcher("browser", () => Promise.resolve(items))])[0]!, { query: "q" })
   assert.deepEqual(next.details, { ok: true, source: "browser", failures: "ChatGPT: OpenAI answered 403" })
+  // Said above the results, so the user sees why in the search card.
+  assert.match(next.text, /^\(Searched with browser\. ChatGPT failed: OpenAI answered 403\.\)\n\n1 result for "q":/)
   const last = await run(webTools(cloudflare, [searcher("browser", () => Promise.reject(new Error("blocked")))])[0]!, { query: "q" })
   assert.deepEqual(last.details, { ok: true, source: "cloudflare", failures: "browser: blocked" })
   const none = await run(webTools(cloudflare, [searcher("ChatGPT", () => null)])[0]!, { query: "q" })
   assert.deepEqual(none.details, { ok: true, source: "cloudflare", failures: null })
+  assert.match(none.text, /^\(Searched with Cloudflare's search API\. ChatGPT isn't set up\.\)/)
 })
 
 test("says what failed when nothing can search", async () => {

@@ -875,6 +875,7 @@ export class DexAgent extends Agent<Env, DexState> {
         ...webTools(this.env.AI, [
           {
             name: "ChatGPT's web search",
+            unavailable: "ChatGPT isn't connected (Settings)",
             search: (_chatId, _n, query, limit, signal) =>
               this.secret("chatgpt_credential")
                 ? this.resolveChatGPTToken().then((token) => {
@@ -889,6 +890,7 @@ export class DexAgent extends Agent<Env, DexState> {
           },
           {
             name: "your VM's browser",
+            unavailable: "no boat.dev account for VMs",
             search: (chatId, n, query, limit, signal) =>
               this.vmHost.configured() ? searchInBrowser(chatId, n, query, limit, signal).then((found) => found.items) : null
           }

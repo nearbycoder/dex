@@ -33,6 +33,8 @@ const withOutput = <T extends ToolRegistration<any, any>>(tool: T): T => ({
  */
 export interface Searcher {
   name: string
+  /** Why `search` gave null, for the result's note ("ChatGPT isn't connected"). */
+  unavailable: string
   search(chatId: string, vm: number, query: string, limit: number, signal?: AbortSignal): Promise<SearchResult[]> | null
 }
 
@@ -65,13 +67,23 @@ const webSearch = (ai: Ai, searchers: ReadonlyArray<Searcher>) => {
       // A VM agent's call arrives (forWorkers) with its chat's id and its own VM's number.
       const vm = Number((args as { vm?: unknown }).vm) || 1
       const failures: string[] = []
+      const skipped: string[] = []
+      // Which way answered and why earlier ones didn't, above the results so the user sees it in the search card
+      // (the apps' result parsers skip lines before the first numbered result).
+      const note = (source: string) => {
+        const why = [...skipped, ...failures.map((failure) => `${failure.replace(/: /, " failed: ")}`)]
+        return why.length ? `(Searched with ${source}. ${why.join("; ")}.)\n\n` : ""
+      }
       for (const searcher of searchers) {
         const searching = searcher.search(String(api.conversationId), vm, query, limit, signal)
-        if (!searching) continue
+        if (!searching) {
+          skipped.push(searcher.unavailable)
+          continue
+        }
         try {
           const items = await searching
           return {
-            output: text(renderWebSearchResults({ items, metadata: { query, requestId: "", latencyMs: 0 } })),
+            output: text(note(searcher.name) + renderWebSearchResults({ items, metadata: { query, requestId: "", latencyMs: 0 } })),
             details: info({ ok: true, source: searcher.name, failures: failures.join("; ") || null })
           }
         } catch (error) {
@@ -84,7 +96,7 @@ const webSearch = (ai: Ai, searchers: ReadonlyArray<Searcher>) => {
       try {
         const timeout = AbortSignal.timeout(30_000)
         const response = await cloudflare.search({ query, limit }, { signal: signal ? AbortSignal.any([signal, timeout]) : timeout })
-        return { output: text(renderWebSearchResults(response)), details: info({ ok: true, source: "cloudflare", failures: failures.join("; ") || null }) }
+        return { output: text(note("Cloudflare's search API") + renderWebSearchResults(response)), details: info({ ok: true, source: "cloudflare", failures: failures.join("; ") || null }) }
       } catch (error) {
         if (signal?.aborted) throw signal.reason
         const code = error instanceof WebSearchError ? error.code : "web_search_unavailable"

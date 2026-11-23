@@ -90,32 +90,33 @@ export async function chatGPTSearch(
   signal?: AbortSignal
 ): Promise<SearchResult[]> {
   const { model, token } = api
-  const response = await fetch(`${api.baseUrl}/responses`, {
-    method: "POST",
-    signal,
-    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-    body: JSON.stringify({
-      model,
-      stream: true,
-      store: false,
-      reasoning: { effort: "low" },
-      tools: [{ type: "web_search" }],
-      tool_choice: "required",
-      include: ["web_search_call.action.sources"],
-      input: [
-        { role: "developer", content: `${INSTRUCTIONS} Give up to ${limit} results.` },
-        { role: "user", content: query }
-      ]
+  const input = [
+    { role: "developer", content: `${INSTRUCTIONS} Give up to ${limit} results.` },
+    { role: "user", content: query }
+  ]
+  const request = (body: Record<string, unknown>) =>
+    fetch(`${api.baseUrl}/responses`, {
+      method: "POST",
+      signal,
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ model, stream: true, store: false, tools: [{ type: "web_search" }], input, ...body })
     })
-  })
-  if (!response.ok) {
+  const failure = async (response: Response) => {
     const body = await response.text().catch(() => "")
     let message = body.slice(0, 300)
     try {
       message = (JSON.parse(body) as { error?: { message?: string } }).error?.message ?? message
     } catch {}
-    throw new Error(`OpenAI answered ${response.status}${message ? `: ${message}` : ""}`)
+    return `OpenAI answered ${response.status}${message ? `: ${message}` : ""}`
   }
+  let response = await request({ reasoning: { effort: "low" }, tool_choice: "required", include: ["web_search_call.action.sources"] })
+  // Sign in with ChatGPT tokens reject some request fields: a rejected one gets a second try with only the essentials.
+  if (response.status === 400) {
+    const first = await failure(response)
+    response = await request({})
+    if (!response.ok) throw new Error(`${first}; with only the essentials, ${await failure(response)}`)
+  }
+  if (!response.ok) throw new Error(await failure(response))
   const results = readSearchResponse(await readStream(response), limit)
   if (!results.length) throw new Error("ChatGPT's search found no pages")
   return results
