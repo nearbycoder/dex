@@ -480,7 +480,11 @@ struct CharacterEditor: View {
         error = nil
         defer { saving = false }
         do {
-            let character = try await client.saveCharacter(draft)
+            var outgoing = draft
+            if outgoing.pictureChanged, let parts = outgoing.parts, parts.isFluffy, parts.isDrawable, outgoing.image == nil {
+                outgoing.image = SidekickArt.fluffyDataURL(for: parts)
+            }
+            let character = try await client.saveCharacter(outgoing)
             let fresh = CharacterDraft(character)
             self.draft = fresh
             original = fresh

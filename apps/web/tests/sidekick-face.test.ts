@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { faceRgba, facePng, flattenPath } from "../src/agent/sidekick-face.ts"
-import { cleanLook, customShapeErrors, LEGACY_FINISH, LOOK_PRESETS, makeLook, SHAPES } from "../src/shared/sidekick-look.ts"
+import { cleanLook, customShapeErrors, LEGACY_FINISH, LOOK_PRESETS, lookMaterial, makeLook, sameLook, SHAPES } from "../src/shared/sidekick-look.ts"
 
 test("path data flattens with relative commands, curves, and arcs", () => {
   const square = flattenPath("M10 10h20v20H10z")
@@ -56,4 +56,23 @@ test("a custom shape is checked by Open Bot Avatar's validator", () => {
   assert.ok(customShapeErrors(outside)?.some((error) => error.includes("safe area")))
   // One that can't be drawn falls back rather than breaking a page.
   assert.equal(cleanLook({ shape: "custom", custom: outside, skin: "teal" })?.shape, "bot")
+})
+
+test("fluffy material round-trips, defaults to flat, and survives older apps", () => {
+  const fluffy = makeLook("cat", "sky", null, "fluffy")
+  assert.equal(fluffy.material, "fluffy")
+  assert.equal(lookMaterial(fluffy), "fluffy")
+  assert.equal(sameLook(fluffy, makeLook("cat", "sky", null, "flat")), false)
+  assert.equal(sameLook(fluffy, makeLook("cat", "sky", null, "fluffy")), true)
+  // Older apps that don't send `material` keep a sidekick fluffy when editing color or shape.
+  const kept = cleanLook({ shape: "mug", skin: "pink" }, fluffy)
+  assert.equal(kept?.material, "fluffy")
+  // Explicitly switching back to flat clears it; unknown materials fall back to flat.
+  assert.equal(cleanLook({ shape: "cat", skin: "sky", material: "flat" }, fluffy)?.material, "flat")
+  assert.equal(cleanLook({ shape: "cat", skin: "sky", material: "velvet" }, fluffy)?.material, "flat")
+  // Without a previous look, missing material defaults to flat.
+  assert.equal(cleanLook({ shape: "cat", skin: "sky" })?.material, "flat")
+  // Custom shapes can be fluffy too.
+  const box = { name: "Box", path: "M20 20 H80 V80 H20 Z", eyes: { x: 50, y: 46, spacing: 15, scale: 1 } }
+  assert.equal(cleanLook({ shape: "custom", custom: box, skin: "coral", material: "fluffy" })?.material, "fluffy")
 })

@@ -12,141 +12,153 @@
     "slate": "#94a3b8"
   },
   "ink": "#151515",
+  "ramps": {
+    "peach": "HAUAKgsBNhABQBUCSRkCUh0DWyEEYyQEaygFcysGei8HgTIHhzUIjTcJkzoKmT0Lnz8MpEEMqUQNrkYOs0gPuEoPvEwQwU4RxVARyVISzlQT0lYT1lgU2lkU3VsV4V0W5V4W6WAX7GIX8GMY82UY92YZ+mgZ/Wka/2wh/3Es/3U1/3k8/31D/4FK/4VQ/4hV/4xb/49f/5Fj/5Nm/5Vp/5dr/5hu/5pv/5tx/5xz/510/511/552/593/594/6B5/6B5/6F6/6F6/6F7/6J7/6J8/6J8/6J8/6N8/6N9/6N9/6N9/6N9/6N9/6N+/6N+/6R+/6R+/6R+/6R+/6R+/6R+/6R+/6R//6R//6R//6R//6R//6R//6R//6R//6R/",
+    "lemon": "HRgCMikEQTUFTT8GV0cHYU8IaVYJcVwJeGIKf2gLhm0LjHIMkncMl3wNnYANooQOp4kOrI0OsZEPtpQPu5gQv5wQw6AQyKMRzKYR0KoR1K0S2LAS3LQS4LcT5LoT570T68AU78MU8sYU9sgV+csV/9EW/9IX/9MX/9QY/9UZ/9cZ/9ga/9kb/9ob/9sc/9wd/90d/94e/+Af/+Ef/+Ig/+Mh/+Qh/+Ui/+Yj/+gj/+kk/+ol/+sl/+wm/+0n/+4n/+8o//Ep//Ip//Mq//Qq//Qq//Qq//Qq//Qq//Qq//Qq//Qq//Qq//Qq//Qq//Qq//Qq//Qq//Qq//Qq//Qq//Qq//Qq//Qq//Qq//Qq//Qq//Qq//Qq//Qq//Qq//Qq",
+    "mint": "Ah0SBCscBjUjCD4qC0YwDU02D1U7EVxAE2JFFWhJFm1OGHNRGXhVG3xZHIFcHYVfHopiII5lIZJoIpVrI5luJJ1xJaBzJqR2J6d4KKp7Ka19KrF/K7SCLLeELbqGLbyILr+KL8KMMMWOMceQMcqSMs2UM8+WNNKYNtSaOdacPNmeQNugQt2iRd+kSOGmS+OoTeWqUOesUumuVeuvV+2xWe6zWvC0XPG1XfK2X/O3YPS4YfW5Yva6Y/e7Y/e7ZPi8Zfm8Zfm9Zvq9Zvq+Z/u+Z/u+aPu/aPy/afy/afzAafzAaf3Aav3Aav3Bav3Bav3Ba/7Ba/7Ba/7Ba/7Ca/7Ca/7Ca/7CbP/CbP/CbP/CbP/CbP/CbP/CbP/Cbf/Dbf/D",
+    "teal": "Ah8aAywnBTcwB0A4CEhAClBHDFdODl5UEGRZEWpfE29kFHVoFXltF35xGIN1GYd5Got9G4+BHJOEHZeIHpuLH56OIKKRIaWUIqiXIqyaI6+dJLKgJbWjJrilJruoJ76rKMCtKcOwKcayKsm1K8u3K865LNC8LdO+L9XAM9fCN9rEOtzGPd7IQODLQ+LNRuTPSebQTOjSTurUUezWU+3YVO/ZVvDaWPHcWfPdWvTeW/TeXPXfXfbgXvfhX/fhYPjiYPjiYfnjYfnjYvrkYvrkY/vkY/vlY/vlZPvlZPzlZPzmZPzmZfzmZf3mZf3mZf3nZf3nZv3nZv3nZv3nZv3nZv7nZv7nZv7nZv7oZ/7oZ/7oZ/7oZ/7oZ/7oZ/7oZ/7o",
+    "sky": "AhciBCMxBiw8CTRHCztQDkJZEEliEk9qFFVxFlp4GF9/GWSFG2mLHG2RHnGWH3WbIXmgIn2lI4CqJISuJoezJ4u3KI67KZG/KpTDK5fHLJrLLZ3PLqDSL6PWMKXaMajdMqvgM63kM7DnNLLqNbXtNrfwN7rzOLz3Or75PcD7P8L+RcT/Tsb/Vsj/Xcr/ZMv/as3/cM//dND/edH/fNL/f9P/gtT/hdX/h9X/idb/itf/jNf/jdf/jtj/j9j/kNj/kdn/ktn/k9n/k9n/lNr/ldr/ldr/ldr/ltr/ltr/l9r/l9r/l9v/l9v/mNv/mNv/mNv/mNv/mNv/mNv/mdv/mdv/mdv/mdv/mdv/mdv/mdv/mdv/mdv/mdv/mdv/mdv/",
+    "lilac": "DwocGRMrIBk2Jx9ALiRJNClSOS5aPzNiRThqSjxyTkB5U0R/V0iGW0uMX06RY1KXZ1WcaliibluncV2rdGCwd2O1e2W5fmi+gGrCg23Ghm/KiXHOi3TSjnbWkXjZk3rdlnzhmH7kmoDonYLrn4TvoYbypIj1por4qIz7qo79rJH/rpP/sJb/sZn/spv/tJz/tJ7/tZ//tqD/tqD/tqH/t6H/t6L/t6L/t6L/uKL/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/uKP/",
+    "pink": "HQgTLA8eNxQmQRkuSh41UiI7WyZCYypIay5OcjFTeDVYfzhdhTthij5mkEBqlUNumkZyn0h2pEp5qU19rU+AslGEtlOHulWKvleNwlmQxluTyl2Wzl+Z0WGc1WOe2GSh3Gak32im42mp5mur6W2u7G6w73Cy8nG19XO3+HW5+ne7/Hm9/3u//3/B/4LC/4XD/4fE/4nF/4rF/4vF/4zG/43G/43G/47H/47H/4/H/4/H/4/H/5DH/5DH/5DH/5DH/5DH/5DH/5DH/5DH/5DI/5DI/5DI/5DI/5DI/5HI/5HI/5HI/5HI/5HI/5HI/5HI/5HI/5HI/5HI/5HI/5HI/5HI/5HI/5HI/5HI/5HI/5HI/5HI/5HI/5HI/5HI/5HI",
+    "coral": "HgcKLA4SOBMZQhgeSx0jVCEoXSUtZSkybS02dDA6ezQ+gjdCiDpFjj1Ikz9MmUJPnkVSo0dUqElXrUxask5ctlBfu1Jhv1Rkw1Zmx1hoy1prz1xt015v12Bx22Jz3mN14mV35Wd56Wh77Gp98Gx/822B9m+C+XCE/HKG/3SI/3iL/3yO/4CQ/4OS/4WU/4aV/4eW/4iW/4mX/4mX/4mY/4qY/4qY/4qY/4qY/4qY/4uY/4uY/4uY/4uZ/4uZ/4uZ/4uZ/4uZ/4uZ/4uZ/4uZ/4uZ/4uZ/4uZ/4uZ/4uZ/4uZ/4uZ/4uZ/4uZ/4uZ/4uZ/4uZ/4uZ/4uZ/4uZ/4uZ/4uZ/4uZ/4uZ/4uZ/4uZ/4uZ/4uZ/4uZ/4uZ/4uZ/4uZ",
+    "cloud": "KCgpNzc5QkJETExNVFRWXFxeYmJkaWlrbm5xdHR2eXl7fn6AgoKFhoaJioqNjo6RkpKVlpaZmZmcnZ2goKCjo6Onp6eqqqqtra2wsLCzsrK2tbW5uLi7u7u+vb3BwMDDwsLGxcXJx8fLysrNzMzQzs7S0dHV09PX1dXZ19fb2dnd3Nzg3t7i4ODk4uLm5OTo5ubq6Ojs6uru6+vv7e3x7u7y7+/z8PD08fH18vL28/P38/P49PT49fX59fX59vb69vb69/f79/f79/f79/f8+Pj8+Pj8+Pj8+Pj9+fn9+fn9+fn9+fn9+fn9+fn++vr++vr++vr++vr++vr++vr++vr++vr++vr++vr++vr++vr++vr++vr/+vr/+vr/+/v/",
+    "slate": "DA4SFRgdHCAlIiYsJywzLTI6MjhANz5HPENNQUhSRU1XSVFcTVVhUFllVF1qV2FuW2RyXmh2YWt6ZG59Z3KBanWEbHiHb3uLcn2OdICRd4OUeYaXe4iafoudgI2ggpCihZKlh5SoiZeqi5mtjZuvj56ykaC0k6K3laS5l6a7mai9m6q/nazBn67DobDFo7LHpbTJp7bLqLjNqrrPrLvRrr3TsL/VscHWs8PYtcTatsbcuMjducnfu8rgvMzivc3jv87kwM/lwdDmwtLow9LpxNPpxNTqxdXrxtbsx9ftx9ftyNjuydnvydnvytrwytrxy9vxzNvyzNzyzNzzzd3zzd3zzt70zt70zt71z9/1z9/1z9/20OD20OD20OD20OD3"
+  },
   "shapes": [
     {
       "key": "bot",
       "name": "Robot",
       "eyes": {
-        "top": 0.40719012698458334,
-        "bottom": 0.62214909223873
+        "top": 0.4127345003581188,
+        "bottom": 0.6278747056490251
       }
     },
     {
       "key": "blob",
       "name": "Blob",
       "eyes": {
-        "top": 0.3266741602414174,
-        "bottom": 0.5326428785034036
+        "top": 0.3295211011560976,
+        "bottom": 0.5354898194180839
       }
     },
     {
       "key": "ghost",
       "name": "Ghost",
       "eyes": {
-        "top": 0.31065196526276323,
-        "bottom": 0.5088046525664657
+        "top": 0.3134989061774436,
+        "bottom": 0.511651593481146
       }
     },
     {
       "key": "cat",
       "name": "Cat",
       "eyes": {
-        "top": 0.4081195028981091,
-        "bottom": 0.6074464062356881
+        "top": 0.4109664438127894,
+        "bottom": 0.6102933471503684
       }
     },
     {
       "key": "bean",
       "name": "Bean",
       "eyes": {
-        "top": 0.2802973414862325,
-        "bottom": 0.4610566428225523
+        "top": 0.28314428240091283,
+        "bottom": 0.46390358373723267
       }
     },
     {
       "key": "cube",
       "name": "Cube",
       "eyes": {
-        "top": 0.34200150419779357,
-        "bottom": 0.5569604694519402
+        "top": 0.34484844511247387,
+        "bottom": 0.5598074103666206
       }
     },
     {
       "key": "cloud",
       "name": "Cloud",
       "eyes": {
-        "top": 0.4086106351787274,
-        "bottom": 0.6067633224824299
+        "top": 0.4114575760934078,
+        "bottom": 0.6096102633971102
       }
     },
     {
       "key": "screen",
       "name": "Screen",
       "eyes": {
-        "top": 0.2474023237677749,
-        "bottom": 0.4545452580636378
+        "top": 0.25258492698313156,
+        "bottom": 0.4598486345343161
       }
     },
     {
       "key": "rocket",
       "name": "Rocket",
       "eyes": {
-        "top": 0.32151363162223995,
-        "bottom": 0.48605376302505365
+        "top": 0.3293082826311144,
+        "bottom": 0.49094501953693515
       }
     },
     {
       "key": "note",
       "name": "Note",
       "eyes": {
-        "top": 0.37078152232054196,
-        "bottom": 0.5689342096242443
+        "top": 0.37362846323522225,
+        "bottom": 0.5717811505389246
       }
     },
     {
       "key": "heart",
       "name": "Heart",
       "eyes": {
-        "top": 0.29120198005936604,
-        "bottom": 0.4893546673630685
+        "top": 0.2940489209740464,
+        "bottom": 0.49220160827774884
       }
     },
     {
       "key": "controller",
       "name": "Controller",
       "eyes": {
-        "top": 0.3037328140191654,
-        "bottom": 0.4772631924141396
+        "top": 0.30657975493384576,
+        "bottom": 0.48011013332881997
       }
     },
     {
       "key": "mug",
       "name": "Mug",
       "eyes": {
-        "top": 0.3453756112504049,
-        "bottom": 0.5345380515619469
+        "top": 0.3502789075693498,
+        "bottom": 0.5395636201157417
       }
     },
     {
       "key": "lightbulb",
       "name": "Lightbulb",
       "eyes": {
-        "top": 0.2394072384790359,
-        "bottom": 0.43697281776580005
+        "top": 0.2441889516444175,
+        "bottom": 0.4420016931479309
       }
     },
     {
       "key": "chat",
       "name": "Chat",
       "eyes": {
-        "top": 0.28734599215992324,
-        "bottom": 0.49331471042190955
+        "top": 0.29019293307460353,
+        "bottom": 0.4961616513365899
       }
     },
     {
       "key": "sprout",
       "name": "Sprout",
       "eyes": {
-        "top": 0.5691991901298401,
-        "bottom": 0.7427295685248143
+        "top": 0.574845754030043,
+        "bottom": 0.7545851427194015
       }
     },
     {
       "key": "watering-can",
       "name": "Watering can",
       "eyes": {
-        "top": 0.46321437918778696,
-        "bottom": 0.6523768194993289
+        "top": 0.4709945585858095,
+        "bottom": 0.6577961979778809
       }
     }
   ]

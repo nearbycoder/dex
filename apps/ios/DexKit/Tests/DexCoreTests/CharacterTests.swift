@@ -85,11 +85,16 @@ import Testing
     }
 
     @Test func shapes() throws {
-        // assets/sidekicks/shapes: seventeen, each a body and eyes the app draws faces from.
+        // assets/sidekicks/shapes: seventeen, each flat and fluffy body + eyes the app draws faces from.
         #expect(SidekickShapes.all.count == 17 && SidekickShapes.all.first?.key == "bot")
         for shape in SidekickShapes.all {
-            for part in ["body", "eyes"] { #expect(SidekickShapes.layer(shape.key, part)?.prefix(4) == Data([0x89, 0x50, 0x4e, 0x47]), "\(shape.key) \(part)") }
+            for part in ["body", "eyes", "fluffy-body", "fluffy-eyes"] {
+                #expect(SidekickShapes.layer(shape.key, part)?.prefix(4) == Data([0x89, 0x50, 0x4e, 0x47]), "\(shape.key) \(part)")
+            }
             #expect(shape.eyesTop < shape.eyesBottom && shape.eyesTop > 0 && shape.eyesBottom < 1, "\(shape.key)")
+        }
+        for skin in SidekickParts.skins {
+            #expect(SidekickShapes.ramp(skin.name)?.count == 96 * 3, "\(skin.name)")
         }
         #expect(SidekickShapes.layer("teapot", "body") == nil)
     }
@@ -187,18 +192,22 @@ import Testing
 
 @Suite struct SidekickPartsTests {
     @Test func readsAndWritesLooks() {
-        let look: JSONValue = ["shape": "mug", "custom": .null, "skin": "pink", "body": "blob", "eyes": "round", "mouth": "smile", "extra": "none", "blush": false, "finish": 101]
+        let look: JSONValue = ["shape": "mug", "custom": .null, "skin": "pink", "material": "flat", "body": "blob", "eyes": "round", "mouth": "smile", "extra": "none", "blush": false, "finish": 101]
         let parts = SidekickParts(look)
         #expect(parts == SidekickParts.make("mug", skin: "pink"))
         #expect(parts?.json == look)
+        let fluffy = SidekickParts(["shape": "cat", "skin": "sky", "material": "fluffy"])
+        #expect(fluffy == SidekickParts.make("cat", skin: "sky", material: "fluffy"))
+        #expect(fluffy?.isFluffy == true && fluffy?.json["material"] == "fluffy")
+        #expect(SidekickParts(["shape": "cat", "skin": "sky", "material": "velvet"])?.material == "flat")
         // From an older agent: no shape, the one nearest its body; a color it doesn't know, the first.
         #expect(SidekickParts(["body": "cat", "skin": "mint", "finish": 1504]) == SidekickParts.make("cat", skin: "mint"))
         #expect(SidekickParts(["body": "dragon", "skin": 3]) == SidekickParts.make("bot", skin: "peach"))
         // A newer agent's shape this build doesn't have: the nearest it has; its picture shows where there is one.
         #expect(SidekickParts(["shape": "teapot", "body": "ghost", "skin": "sky"])?.shape == "ghost")
         // A shape a chat drew: kept as sent, shown as its picture.
-        let drawn = SidekickParts(["shape": "custom", "skin": "teal", "custom": ["name": "Box", "path": "M20 20 H80 V80 H20 Z", "eyes": ["x": 50, "y": 46, "spacing": 15, "scale": 1]]])
-        #expect(drawn?.shape == "custom" && drawn?.shapeName == "Box" && drawn?.isDrawable == false && drawn?.json["custom"]?["path"] == "M20 20 H80 V80 H20 Z")
+        let drawn = SidekickParts(["shape": "custom", "skin": "teal", "material": "fluffy", "custom": ["name": "Box", "path": "M20 20 H80 V80 H20 Z", "eyes": ["x": 50, "y": 46, "spacing": 15, "scale": 1]]])
+        #expect(drawn?.shape == "custom" && drawn?.shapeName == "Box" && drawn?.isDrawable == false && drawn?.isFluffy == true && drawn?.json["custom"]?["path"] == "M20 20 H80 V80 H20 Z")
         #expect(SidekickParts(["shape": "custom", "skin": "teal"])?.shape == "bot")
         #expect(SidekickParts.skinHex("lilac") == "#a78bfa" && SidekickParts.skins.count == 10)
         #expect(SidekickParts(.string("x")) == nil)

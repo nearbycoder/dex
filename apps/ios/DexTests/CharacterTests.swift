@@ -82,4 +82,13 @@ import UIKit
             #expect(Double(off) / (256 * 256) < 0.01, "\(look.id): \(off) pixels differ")
         }
     }
+
+    @Test @MainActor func fluffyFacesRenderAndFitPictureLimit() throws {
+        let fluffy = SidekickParts.make("cat", skin: "sky", material: "fluffy")
+        let url = try #require(SidekickArt.fluffyDataURL(for: fluffy))
+        #expect(url.hasPrefix("data:image/png;base64,"))
+        #expect(url.count <= Characters.maxImageURLLength)
+        let image = try #require(AgentAvatar.decode(url))
+        #expect(SidekickPicture.isFace(try #require(image.cgImage)))
+    }
 }

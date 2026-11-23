@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -64,9 +65,12 @@ fun SidekickLookPicker(draft: CharacterProfile, onChange: ((CharacterProfile) ->
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), itemVerticalAlignment = Alignment.CenterVertically) {
             OutlinedButton(
                 onClick = {
-                    // Any shape in any color, with any accent, as the web's Shuffle.
+                    // Any shape in any color and coat, with any accent, as the web's Shuffle.
                     val accent = Catalogs.AGENT_COLORS.keys.random()
-                    onChange { pick(SidekickLooks.make(SidekickLooks.SHAPES.random().key, SidekickLooks.SKINS.keys.random()))(it).copy(color = accent) }
+                    onChange {
+                        pick(SidekickLooks.make(SidekickLooks.SHAPES.random().key, SidekickLooks.SKINS.keys.random(), material = SidekickLooks.MATERIALS.random()))(it)
+                            .copy(color = accent)
+                    }
                 },
                 modifier = Modifier.testTag("character-look-shuffle"),
             ) {
@@ -85,6 +89,38 @@ fun SidekickLookPicker(draft: CharacterProfile, onChange: ((CharacterProfile) ->
             modifier = Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp)).testTag("character-look-parts"),
         ) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                if (look?.shape != "custom") {
+                    PartRow("Coat") {
+                        SidekickLooks.MATERIALS.forEach { material ->
+                            val selected = look != null && current.material == material
+                            val label = if (material == "fluffy") "Fluffy" else "Flat"
+                            val preview = SidekickLooks.make(if (SidekickArt.draws(current)) current.shape else "bot", current.skin, material = material)
+                            val shape = RoundedCornerShape(14.dp)
+                            Surface(
+                                onClick = { onChange(pick(SidekickLooks.make(current.shape, current.skin, current.custom, material))) },
+                                shape = shape,
+                                color = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                                modifier = Modifier
+                                    .then(if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, shape) else Modifier)
+                                    .semantics {
+                                        contentDescription = "Coat $label"
+                                        this.selected = selected
+                                        role = Role.RadioButton
+                                    }
+                                    .testTag("look-material-$material"),
+                            ) {
+                                Row(
+                                    Modifier.padding(start = 8.dp, top = 6.dp, end = 12.dp, bottom = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    SidekickFace(preview, 28.dp)
+                                    Text(label, style = MaterialTheme.typography.labelLarge)
+                                }
+                            }
+                        }
+                    }
+                }
                 PartRow("Shape") {
                     if (current.shape == "custom") {
                         // A chat drew it: its picture, picked.
@@ -94,7 +130,7 @@ fun SidekickLookPicker(draft: CharacterProfile, onChange: ((CharacterProfile) ->
                         }
                     }
                     SidekickLooks.SHAPES.forEach { shape ->
-                        val candidate = SidekickLooks.make(shape.key, current.skin)
+                        val candidate = SidekickLooks.make(shape.key, current.skin, material = current.material)
                         ShapeTile(shape.name, on = look != null && current.shape == shape.key, Modifier.testTag("look-shape-${shape.key}"), onClick = { onChange(pick(candidate)) }) {
                             SidekickFace(candidate, 40.dp)
                         }
@@ -106,16 +142,16 @@ fun SidekickLookPicker(draft: CharacterProfile, onChange: ((CharacterProfile) ->
                     )
                 }
                 PartRow("Color") {
-                    // A shape a chat drew is drawn by the agent and the web only: its color changes there.
+                    // A shape a chat drew is drawn by the agent and the web only: its color and coat change there.
                     if (look?.shape == "custom") {
-                        Text("Change a drawn shape's color on the web, or ask a chat.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Change a drawn shape's color or coat on the web, or ask a chat.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         return@PartRow
                     }
                     SidekickLooks.SKINS.forEach { (skin, hex) ->
                         Swatch(
                             Color(android.graphics.Color.parseColor(hex)), null, look != null && look.skin == skin, "Color $skin",
                             Modifier.testTag("look-color-$skin"),
-                        ) { onChange(pick(SidekickLooks.make(current.shape, skin, current.custom))) }
+                        ) { onChange(pick(SidekickLooks.make(current.shape, skin, current.custom, current.material))) }
                     }
                 }
                 PartRow("Accent") {

@@ -358,9 +358,14 @@ class DexApi(private val rpc: AgentRpc) {
             json["voice"] = character.voice?.let(::JsonPrimitive) ?: JsonNull
             if (picture) {
                 json["image"] = character.image?.let(::JsonPrimitive) ?: JsonNull
-                // With its finish always stated: apps from before Open Bot Avatar show the picture of a look with one.
+                // With its finish and material always stated: older apps show the picture of a look with finish, and
+                // stating material ensures switching from fluffy back to flat isn't mistaken for an older app omitting it.
                 json["look"] = character.look?.let { look ->
-                    JsonObject(DexJson.encodeToJsonElement(SidekickLook.serializer(), look).jsonObject + ("finish" to (look.finish?.let(::JsonPrimitive) ?: JsonNull)))
+                    JsonObject(
+                        DexJson.encodeToJsonElement(SidekickLook.serializer(), look).jsonObject +
+                            ("material" to JsonPrimitive(if (look.material == "fluffy") "fluffy" else "flat")) +
+                            ("finish" to (look.finish?.let(::JsonPrimitive) ?: JsonNull)),
+                    )
                 } ?: JsonNull
             } else {
                 json.remove("image")

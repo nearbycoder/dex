@@ -38,7 +38,7 @@ globalThis.Date = FakeDate as DateConstructor
 const { videoSource } = load("client/components/media.tsx", ["DIRECT_VIDEO", "videoSource"], { MEDIA_PREFIX, mediaTypeOf, vmMediaSource })
 const { summarize, toolActivity } = load("client/components/tool-card.tsx", ["summaryKeys", "summarize", "toolActivity", "activities"], { Predicate })
 const { inboxState, snoozeOptions, snoozedLabel } = load("client/components/session-menu.tsx", ["inboxState", "at", "when", "snoozeOptions", "snoozedLabel"])
-const { formatTokens, releaseLabel, PERIODS } = load("client/components/model-picker.tsx", ["formatTokens", "releaseLabel", "PERIODS"])
+const { formatTokens, releaseLabel, PERIODS } = load("client/components/model-picker.tsx", ["releaseThisYearFmt", "releaseOlderFmt", "formatTokens", "releaseLabel", "PERIODS"])
 // The web's picker dropped its released-within chips (f1e6d8c); Android still has them, as they were.
 const WITHIN = [
   { days: 0, label: "Any time" },
@@ -46,7 +46,7 @@ const WITHIN = [
   { days: 30, label: "30 days" },
   { days: 90, label: "90 days" }
 ]
-const { usd, compact } = load("routes/_app.usage.tsx", ["usd", "compact"])
+const { usd, compact } = load("routes/_app.usage.tsx", ["compactIntFmt", "compactDecFmt", "usd", "compact"])
 
 // ── Formatting ───────────────────────────────────────────────────────────────
 
@@ -358,9 +358,11 @@ write("sidekicks.json", {
     { body: "bot", skin: "slate", eyes: "round", mouth: "smile", extra: "none", blush: false, finish: null },
     { body: "dragon", skin: "plaid", eyes: "laser", mouth: "", extra: "cape", blush: false, finish: 1800 },
     { shape: "mug", skin: "sky" },
+    { shape: "mug", skin: "sky", material: "fluffy" },
+    { shape: "mug", skin: "sky", material: "velvet" },
     { shape: "watering-can", skin: "lemon", body: "cat", finish: null },
     { shape: "teapot", skin: "mint", body: "ghost" },
-    { shape: "custom", skin: "coral", custom: { name: "Box", path: "M20 20 H80 V80 H20 Z", eyes: { x: 50, y: 46, spacing: 15, scale: 1 } } }
+    { shape: "custom", skin: "coral", material: "fluffy", custom: { name: "Box", path: "M20 20 H80 V80 H20 Z", eyes: { x: 50, y: 46, spacing: 15, scale: 1 } } }
   ].map((input) => ({ input, look: cleanLook(input) }))
 })
 

@@ -145,9 +145,18 @@ class CharactersTest {
         assertThat(colored["image"]).isEqualTo(JsonNull)
         rule.awaitText("Saved")
 
-        rule.onNodeWithTag("look-accent-rose").performScrollTo().performClick()
+        // Switching to fluffy sends the fluffy coat and its rendered picture so widgets and older apps show fur too.
+        rule.onNodeWithTag("look-material-fluffy").performScrollTo().performClick()
         rule.onNodeWithTag("character-save").performClick()
         rule.waitUntil(10_000) { harness.fake.calls.count { it.first == "saveCharacter" } == 4 }
+        val fluffy = harness.fake.calls.last { it.first == "saveCharacter" }.second[0].jsonObject
+        assertThat(fluffy["look"]!!.jsonObject["material"]!!.jsonPrimitive.content).isEqualTo("fluffy")
+        assertThat(fluffy["image"]!!.jsonPrimitive.content).startsWith("data:image/")
+        rule.awaitText("Saved")
+
+        rule.onNodeWithTag("look-accent-rose").performScrollTo().performClick()
+        rule.onNodeWithTag("character-save").performClick()
+        rule.waitUntil(10_000) { harness.fake.calls.count { it.first == "saveCharacter" } == 5 }
         val accent = harness.fake.calls.last { it.first == "saveCharacter" }.second.toString()
         assertThat(accent).contains("\"color\":\"rose\"")
         assertThat(accent).doesNotContain("\"image\"")

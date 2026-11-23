@@ -3,7 +3,7 @@ import type { Static, TSchema } from "typebox"
 import type { AccessRisk } from "~/shared/access"
 import { AGENT_COLORS, AGENT_ICONS, type AgentProfile } from "~/shared/agents"
 import type { CharacterProfile } from "~/shared/characters"
-import { CUSTOM_PATH_LIMIT, LOOK_PRESETS, SHAPES, type SidekickLook, SKINS } from "~/shared/sidekick-look"
+import { CUSTOM_PATH_LIMIT, LOOK_PRESETS, MATERIALS, SHAPES, type SidekickLook, SKINS } from "~/shared/sidekick-look"
 import { MAX_SPACE_GOAL, MAX_SPACE_NAME, type SpaceProfile, spaceThreads, THREAD_STATUS_LABELS, threadStatus } from "~/shared/spaces"
 import { MODEL_PROVIDERS, MODELS, supportedThinkingLevels, THINKING_LEVELS, type ThinkingLevel } from "~/shared/models"
 import type { McpAuth, McpTransport } from "~/shared/mcp"
@@ -216,6 +216,11 @@ const characterFields = {
           skin: Type.Union(Object.keys(SKINS).map((value) => Type.Literal(value)), {
             description: `The face's color: ${Object.entries(SKINS).map(([key, hex]) => `${key} ${hex}`).join(", ")}.`
           }),
+          material: Type.Optional(
+            Type.Union(MATERIALS.map((value) => Type.Literal(value)), {
+              description: "The coat's finish: flat (solid color) or fluffy (a soft coat of fur with glossy eyes). Works on any shape, custom included; omitted keeps the current finish (or flat on a new sidekick)."
+            })
+          ),
           custom: Type.Optional(
             Type.Object(
               {
@@ -246,7 +251,7 @@ const characterFields = {
         Type.Null()
       ],
       {
-        description: `Their face: an Open Bot Avatar, a little object with two dark eyes that moves (breathes, thinks, works, celebrates), in a color. Ready-made ones: ${LOOK_PRESETS.map((preset) => `${preset.key} ${JSON.stringify({ shape: preset.look.shape, skin: preset.look.skin })}`).join("; ")}. The picture apps show is drawn from it.`
+        description: `Their face: an Open Bot Avatar, a little object with two dark eyes that moves (breathes, thinks, works, celebrates), in a color, flat or fluffy. Ready-made ones: ${LOOK_PRESETS.map((preset) => `${preset.key} ${JSON.stringify({ shape: preset.look.shape, skin: preset.look.skin })}`).join("; ")}. The picture apps show is drawn from it.`
       }
     )
   ),

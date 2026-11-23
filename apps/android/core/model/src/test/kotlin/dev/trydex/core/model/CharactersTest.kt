@@ -80,8 +80,13 @@ class CharactersTest {
     @Test fun shapesAreBundled() {
         assertThat(SidekickLooks.SHAPES).hasSize(17)
         for (shape in SidekickLooks.SHAPES) {
-            for (part in listOf("body", "eyes")) assertWithMessage("${shape.key} $part").that(SidekickLooks.layer(shape.key, part)?.take(4)).isEqualTo(listOf<Byte>(-119, 80, 78, 71))
+            for (part in listOf("body", "eyes", "fluffy-body", "fluffy-eyes")) {
+                assertWithMessage("${shape.key} $part").that(SidekickLooks.layer(shape.key, part)?.take(4)).isEqualTo(listOf<Byte>(-119, 80, 78, 71))
+            }
             assertThat(shape.eyes.top).isLessThan(shape.eyes.bottom)
+        }
+        for (skin in SidekickLooks.SKINS.keys) {
+            assertWithMessage(skin).that(SidekickLooks.ramp(skin)?.size).isEqualTo(96 * 3)
         }
         assertThat(SidekickLooks.layer("teapot", "body")).isNull()
     }

@@ -27,7 +27,7 @@ import {
 } from "lucide-react"
 import { AGENT_COLORS, type AgentColor, type AgentIcon } from "~/shared/agents"
 import type { CharacterProfile } from "~/shared/characters"
-import type { LookMood } from "~/shared/sidekick-look"
+import { lookMaterial, type LookMood } from "~/shared/sidekick-look"
 import { SidekickFace } from "./sidekick-face"
 
 export const AGENT_ICON_COMPONENTS: Record<AgentIcon, LucideIcon> = {
@@ -119,7 +119,7 @@ export function CharacterAvatar({
 }) {
   const [background, foreground] = AGENT_COLORS[character.color] ?? AGENT_COLORS.violet
   if (character.look) {
-    if (mood === "still" && character.image) {
+    if (mood === "still" && character.image && lookMaterial(character.look) !== "fluffy") {
       return <img src={character.image} alt="" className={`shrink-0 ${className}`} style={{ width: size, height: size }} draggable={false} />
     }
     return <SidekickFace look={character.look} size={size} mood={mood} failed={failed} interactive={interactive} className={className} />

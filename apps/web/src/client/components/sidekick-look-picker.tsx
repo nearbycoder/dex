@@ -1,7 +1,7 @@
 import { Dices, ImagePlus, X } from "lucide-react"
 import type { ReactNode } from "react"
 import { AGENT_COLORS, type AgentColor } from "~/shared/agents"
-import { LOOK_PRESETS, makeLook, randomLook, sameLook, SHAPES, type SidekickLook, SKINS, type Skin } from "~/shared/sidekick-look"
+import { LOOK_PRESETS, lookMaterial, makeLook, MATERIALS, type Material, randomLook, sameLook, SHAPES, type SidekickLook, SKINS, type Skin } from "~/shared/sidekick-look"
 import { SidekickFace } from "./sidekick-face"
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
@@ -35,6 +35,7 @@ export function SidekickLookPicker({
 }) {
   // Customizing a photo or an emoji starts from the first ready-made look.
   const current = look ?? LOOK_PRESETS[0]!.look
+  const material = lookMaterial(current)
   const set = (next: SidekickLook) => onChange({ look: next, image: null })
 
   return (
@@ -81,6 +82,28 @@ export function SidekickLookPicker({
       </div>
 
       <div className="space-y-4 rounded-xl border border-zinc-800/80 bg-zinc-900/30 p-3 sm:p-4">
+        <Row label="Coat">
+          {MATERIALS.map((option: Material) => {
+            const selected = Boolean(look) && material === option
+            const candidate = makeLook(current.shape, current.skin, current.custom ?? null, option)
+            const label = option === "fluffy" ? "Fluffy" : "Flat"
+            return (
+              <button
+                key={option}
+                type="button"
+                aria-label={`Coat ${label}`}
+                aria-pressed={selected}
+                onClick={() => set(candidate)}
+                className={`flex items-center gap-2 rounded-xl py-1.5 pr-3 pl-2 text-sm transition-colors ${
+                  selected ? "bg-zinc-800 text-zinc-100 ring-2 ring-emerald-500" : "bg-zinc-900/60 text-zinc-300 ring-1 ring-zinc-800 hover:text-zinc-100 hover:ring-zinc-600"
+                }`}
+              >
+                <SidekickFace look={candidate} size={26} mood="still" />
+                {label}
+              </button>
+            )
+          })}
+        </Row>
         <Row label="Shape">
           {current.shape === "custom" && current.custom && (
             <button type="button" title={current.custom.name} aria-label={`Shape ${current.custom.name}`} aria-pressed={Boolean(look)} className={tile(Boolean(look))}>
@@ -89,7 +112,7 @@ export function SidekickLookPicker({
           )}
           {SHAPES.map((shape) => {
             const selected = Boolean(look) && current.shape === shape.key
-            const candidate = makeLook(shape.key, current.skin)
+            const candidate = makeLook(shape.key, current.skin, null, material)
             return (
               <button
                 key={shape.key}
@@ -116,7 +139,7 @@ export function SidekickLookPicker({
                 title={skin}
                 aria-label={`Color ${skin}`}
                 aria-pressed={selected}
-                onClick={() => set(makeLook(current.shape, skin, current.custom ?? null))}
+                onClick={() => set(makeLook(current.shape, skin, current.custom ?? null, material))}
                 className={`size-8 rounded-[30%] ring-offset-2 ring-offset-zinc-950 ${selected ? "ring-2 ring-zinc-200" : "ring-1 ring-zinc-700/60"}`}
                 style={{ background: SKINS[skin] }}
               />

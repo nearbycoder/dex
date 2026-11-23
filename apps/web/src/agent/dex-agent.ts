@@ -2654,7 +2654,10 @@ export class DexAgent extends Agent<Env, DexState> {
     let faceStyle: number | undefined
     if (look) {
       const kept = existing?.look && existing.image && sameLook(existing.look, look) && this.characterFaceStyle(existing.id) === FACE_STYLE
-      image = kept ? existing.image : await facePng(look)
+      // A fluffy look's coat needs WebGL2 (or bundled fur layers), so keep the picture the browser or app rendered for
+      // it; fall back to the agent's flat renderer when none was sent (for instance when a chat changes the look).
+      const supplied = look.material === "fluffy" && draft.image ? draft.image : null
+      image = supplied ?? (kept ? existing.image : await facePng(look))
       faceStyle = FACE_STYLE
     }
     const model = findModel(draft.model) ? draft.model : (existing?.model ?? this.state.settings.defaultModel)

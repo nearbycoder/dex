@@ -875,17 +875,21 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
         val id = existing?.id ?: (name.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').take(32).ifEmpty { "character" } + "-" + UUID.randomUUID().toString().take(6))
         val now = clock()
         val parsed = DexJson.decodeFromJsonElement(CharacterProfile.serializer(), JsonObject(draft + mapOf("id" to JsonPrimitive(id))))
-        // As the agent's cleanLook: a look without a shape (from an app that predates them) keeps the shape it had.
+        // As the agent's cleanLook: a look without a shape or material (from an app that predates them) keeps what it had.
         val look = if ("look" in draft) parsed.look?.let { sent ->
-            val shaped = if ("shape" in draft["look"]!!.jsonObject) sent else existing?.look?.let { sent.copy(shape = it.shape, custom = it.custom) } ?: sent
-            SidekickLooks.clean(shaped)
+            val rawLook = draft["look"]!!.jsonObject
+            val shaped = if ("shape" in rawLook) sent else existing?.look?.let { sent.copy(shape = it.shape, custom = it.custom) } ?: sent
+            val coated = if ("material" in rawLook) shaped else existing?.look?.let { shaped.copy(material = it.material) } ?: shaped
+            SidekickLooks.clean(coated)
         } else existing?.look
         var character = parsed.copy(
             name = name,
             tagline = parsed.tagline.trim().take(120),
             greeting = parsed.greeting.trim().take(2_000),
             avatar = parsed.avatar.trim().let { if (it.isEmpty()) "" else it.substring(0, it.offsetByCodePoints(0, 1)) },
-            image = if (look != null && "look" in draft) Characters.PRESETS.firstOrNull { it.look == look }?.dataUrl else image,
+            image = if (look != null && "look" in draft) {
+                (if (SidekickLooks.isFluffy(look) && sent != null) sent else null) ?: Characters.PRESETS.firstOrNull { it.look == look }?.dataUrl
+            } else image,
             look = look,
             color = parsed.color.takeIf { it in dev.trydex.core.model.Catalogs.AGENT_COLORS } ?: "violet",
             mcpServers = if ("mcpServers" in draft) parsed.mcpServers.filter { server -> state.mcp.any { it.id == server } } else existing?.mcpServers.orEmpty(),

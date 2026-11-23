@@ -90,6 +90,7 @@ import dev.trydex.android.ui.components.ModelLogo
 import dev.trydex.android.ui.components.PageColumn
 import dev.trydex.android.ui.components.PaneScaffold
 import dev.trydex.android.ui.components.SectionCard
+import dev.trydex.android.ui.components.SidekickArt
 import dev.trydex.android.ui.components.haptics
 import dev.trydex.android.ui.components.rememberConfirm
 import dev.trydex.android.ui.nav.CharacterEditor
@@ -269,12 +270,17 @@ fun CharacterEditorScreen(id: String, route: Route) {
         saving = true
         error = null
         scope.launch {
-            // The picture and look go only when they changed here: left out, the agent keeps them as they are. A look
-            // goes alone: the agent draws its picture.
+            // The picture and look go only when they changed here: left out, the agent keeps them as they are. A flat
+            // look goes alone (the agent draws it); a fluffy look sends its rendered picture so widgets and older apps show fur too.
             val look = value.look?.let(SidekickLooks::clean)
             val picture = isNew || value.image != base?.image || look != base?.look?.let(SidekickLooks::clean)
             attempt {
-                val sent = if (look == null || !picture) value else value.copy(look = look, image = null)
+                val sent = when {
+                    look == null || !picture -> value
+                    SidekickLooks.isFluffy(look) && SidekickArt.draws(look) ->
+                        value.copy(look = look, image = withContext(Dispatchers.Default) { SidekickArt.fluffyDataUrl(look) })
+                    else -> value.copy(look = look, image = null)
+                }
                 repository.api.saveCharacter(DexApi.characterDraft(sent, picture))
             }
                 .onSuccess { result ->

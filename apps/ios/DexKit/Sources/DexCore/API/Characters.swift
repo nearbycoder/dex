@@ -48,9 +48,10 @@ public struct CharacterDraft: Codable, Sendable, Hashable {
         look = preset.look; image = preset.image; color = preset.color; avatar = ""; pictureChanged = true
     }
 
-    /// A look of your own: its shape and color, and its background color. Its picture is drawn by the agent on saving.
-    public mutating func use(parts: SidekickParts, color: String) {
-        look = parts.json; image = nil; self.color = color; avatar = ""; pictureChanged = true
+    /// A look of your own: its shape, coat, color, and background color. Flat pictures are drawn by the agent on saving;
+    /// a fluffy look may pass its rendered PNG so notifications, widgets, and older apps show fur too.
+    public mutating func use(parts: SidekickParts, color: String, image: String? = nil) {
+        look = parts.json; self.image = image; self.color = color; avatar = ""; pictureChanged = true
     }
 
     /// The parts of the look this draft wears (ready-made or mixed), if it wears one.
@@ -186,11 +187,11 @@ public struct SidekickLook: Sendable, Hashable, Identifiable {
     }()
 
     /// A PNG as a data: URL the server keeps (`Characters.maxImageURLLength`), made smaller until it fits.
-    static func fitting(_ png: Data) -> String {
+    public static func fitting(_ png: Data) -> String {
         func url(_ data: Data) -> String { "data:image/png;base64," + data.base64EncodedString() }
         var smallest = url(png)
         guard smallest.count > Characters.maxImageURLLength, let source = CGImageSourceCreateWithData(png as CFData, nil) else { return smallest }
-        for side in [224, 192, 160, 128] {
+        for side in [224, 192, 160, 128, 96] {
             let options = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: side] as CFDictionary
             let data = NSMutableData()
             guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options),
