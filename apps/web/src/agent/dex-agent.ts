@@ -64,7 +64,7 @@ import { CLOUDFLARE_RATES, COMMANDCODE_LIMITS, type CloudflareLine, type OpenCod
 import { AGENT_COLORS, AGENT_ICONS, type AgentDraft, type AgentProfile, STARTER_AGENTS } from "~/shared/agents"
 import { type CharacterDraft, characterMemoryPath, type CharacterProfile, MAX_CHARACTER_MEMORY_CHARS, NOTIFY_LEVELS } from "~/shared/characters"
 import { VOICES } from "~/shared/voice"
-import { cleanLook, customShapeErrors, LOOK_PRESETS, randomLook, sameLook, type CustomShape, type SidekickLook } from "~/shared/sidekick-look"
+import { cleanLook, customShapeErrors, LOOK_PRESETS, lookMaterial, randomLook, sameLook, type CustomShape, type SidekickLook } from "~/shared/sidekick-look"
 import { FACE_STYLE, facePng } from "./sidekick-face"
 import {
   MAX_SPACE_GOAL,
@@ -2654,9 +2654,9 @@ export class DexAgent extends Agent<Env, DexState> {
     let faceStyle: number | undefined
     if (look) {
       const kept = existing?.look && existing.image && sameLook(existing.look, look) && this.characterFaceStyle(existing.id) === FACE_STYLE
-      // A fluffy look's coat needs WebGL2 (or bundled fur layers), so keep the picture the browser or app rendered for
-      // it; fall back to the agent's flat renderer when none was sent (for instance when a chat changes the look).
-      const supplied = look.material === "fluffy" && draft.image ? draft.image : null
+      // Material finishes (fluffy, glass) need WebGL2 (or bundled layers), so keep the picture the browser or app
+      // rendered for them; fall back to the agent's flat renderer when none was sent (for instance from a chat).
+      const supplied = lookMaterial(look) !== "flat" && draft.image ? draft.image : null
       image = supplied ?? (kept ? existing.image : await facePng(look))
       faceStyle = FACE_STYLE
     }

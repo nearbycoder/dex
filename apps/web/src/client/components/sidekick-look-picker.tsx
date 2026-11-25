@@ -1,7 +1,7 @@
 import { Dices, ImagePlus, X } from "lucide-react"
 import type { ReactNode } from "react"
 import { AGENT_COLORS, type AgentColor } from "~/shared/agents"
-import { LOOK_PRESETS, lookMaterial, makeLook, MATERIALS, type Material, randomLook, sameLook, SHAPES, type SidekickLook, SKINS, type Skin } from "~/shared/sidekick-look"
+import { LOOK_PRESETS, lookMaterial, makeLook, MATERIAL_LABELS, MATERIALS, type Material, randomLook, sameLook, SHAPES, type SidekickLook, SKINS, type Skin } from "~/shared/sidekick-look"
 import { SidekickFace } from "./sidekick-face"
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
@@ -82,16 +82,16 @@ export function SidekickLookPicker({
       </div>
 
       <div className="space-y-4 rounded-xl border border-zinc-800/80 bg-zinc-900/30 p-3 sm:p-4">
-        <Row label="Coat">
+        <Row label="Material">
           {MATERIALS.map((option: Material) => {
             const selected = Boolean(look) && material === option
             const candidate = makeLook(current.shape, current.skin, current.custom ?? null, option)
-            const label = option === "fluffy" ? "Fluffy" : "Flat"
+            const label = MATERIAL_LABELS[option]
             return (
               <button
                 key={option}
                 type="button"
-                aria-label={`Coat ${label}`}
+                aria-label={`Material ${label}`}
                 aria-pressed={selected}
                 onClick={() => set(candidate)}
                 className={`flex items-center gap-2 rounded-xl py-1.5 pr-3 pl-2 text-sm transition-colors ${

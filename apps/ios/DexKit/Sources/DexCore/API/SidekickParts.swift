@@ -16,7 +16,7 @@ public struct SidekickParts: Sendable, Hashable {
     public var custom: JSONValue?
     /// The face's color.
     public var skin: String
-    /// The coat's finish: "flat" (solid color) or "fluffy" (brushed fur).
+    /// The body's finish: "flat" (solid color), "fluffy" (brushed fur), or "glass" (tinted glass).
     public var material: String
     public var body: String
     public var eyes: String
@@ -28,13 +28,20 @@ public struct SidekickParts: Sendable, Hashable {
 
     public init(shape: String = "bot", custom: JSONValue? = nil, skin: String = "peach", material: String = "flat", body: String = "bot", eyes: String = "round",
                 mouth: String = "smile", extra: String = "none", blush: Bool = false, finish: Int? = SidekickParts.legacyFinish) {
-        self.shape = shape; self.custom = custom; self.skin = skin; self.material = material == "fluffy" ? "fluffy" : "flat"
+        self.shape = shape; self.custom = custom; self.skin = skin; self.material = Self.cleanMaterial(material)
         self.body = body; self.eyes = eyes; self.mouth = mouth; self.extra = extra
         self.blush = blush; self.finish = finish
     }
 
-    public static let materials = ["flat", "fluffy"]
+    public static let materials = ["flat", "fluffy", "glass"]
+    public static func cleanMaterial(_ value: String?) -> String {
+        guard let value, materials.contains(value) else { return "flat" }
+        return value
+    }
+    public static func materialLabel(_ name: String) -> String { name.capitalized }
     public var isFluffy: Bool { material == "fluffy" }
+    public var isGlass: Bool { material == "glass" }
+    public var isRenderedMaterial: Bool { material != "flat" }
 
     /// A BoopFace finish number: apps from before Open Bot Avatar show a look's picture when it has one.
     public static let legacyFinish = 101
@@ -71,7 +78,7 @@ public struct SidekickParts: Sendable, Hashable {
     public init?(_ json: JSONValue?) {
         guard let object = json?.object else { return nil }
         let skin = object["skin"]?.string.flatMap { name in Self.skins.contains { $0.name == name } ? name : nil } ?? Self.skins[0].name
-        let material = object["material"]?.string == "fluffy" ? "fluffy" : "flat"
+        let material = Self.cleanMaterial(object["material"]?.string)
         let shape = object["shape"]?.string ?? ""
         if shape == "custom" {
             let custom = object["custom"].flatMap { $0.object?["path"]?.string?.isEmpty == false ? $0 : nil }
@@ -154,7 +161,7 @@ public enum SidekickShapes {
     /// The 96-entry RGB dye ramp (288 bytes) for `skin` (falls back to the first skin).
     public static func ramp(_ skin: String) -> [UInt8]? { ramps[skin] ?? ramps[SidekickParts.skins[0].name] }
 
-    /// A shape's `part` ("body", "eyes", "fluffy-body", or "fluffy-eyes") as a 256-pixel PNG; nil for one this build doesn't have.
+    /// A shape's `part` ("body", "eyes", "fluffy-body", "fluffy-eyes", "glass-body", or "glass-eyes") as a 256-pixel PNG; nil for one this build doesn't have.
     public static func layer(_ key: String, _ part: String) -> Data? {
         Bundle.module.url(forResource: "\(key)-\(part)", withExtension: "png", subdirectory: "Sidekicks/shapes").flatMap { try? Data(contentsOf: $0) }
     }

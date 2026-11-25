@@ -359,10 +359,12 @@ write("sidekicks.json", {
     { body: "dragon", skin: "plaid", eyes: "laser", mouth: "", extra: "cape", blush: false, finish: 1800 },
     { shape: "mug", skin: "sky" },
     { shape: "mug", skin: "sky", material: "fluffy" },
+    { shape: "mug", skin: "sky", material: "glass" },
     { shape: "mug", skin: "sky", material: "velvet" },
     { shape: "watering-can", skin: "lemon", body: "cat", finish: null },
     { shape: "teapot", skin: "mint", body: "ghost" },
-    { shape: "custom", skin: "coral", material: "fluffy", custom: { name: "Box", path: "M20 20 H80 V80 H20 Z", eyes: { x: 50, y: 46, spacing: 15, scale: 1 } } }
+    { shape: "custom", skin: "coral", material: "fluffy", custom: { name: "Box", path: "M20 20 H80 V80 H20 Z", eyes: { x: 50, y: 46, spacing: 15, scale: 1 } } },
+    { shape: "custom", skin: "sky", material: "glass", custom: { name: "Box", path: "M20 20 H80 V80 H20 Z", eyes: { x: 50, y: 46, spacing: 15, scale: 1 } } }
   ].map((input) => ({ input, look: cleanLook(input) }))
 })
 

@@ -71,7 +71,7 @@ data class SidekickLook(
     val custom: CustomShape? = null,
     /** The face's color (a key of SidekickLooks.SKINS). */
     val skin: String = "",
-    /** The coat's finish: "flat" (solid color, default when absent on older looks) or "fluffy" (brushed fur). */
+    /** The body's finish: "flat" (solid color, default when absent on older looks), "fluffy" (brushed fur), or "glass" (tinted glass). */
     val material: String = "flat",
     val body: String = "",
     val eyes: String = "",

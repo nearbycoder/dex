@@ -85,10 +85,10 @@ import Testing
     }
 
     @Test func shapes() throws {
-        // assets/sidekicks/shapes: seventeen, each flat and fluffy body + eyes the app draws faces from.
+        // assets/sidekicks/shapes: seventeen, each flat, fluffy, and glass body + eyes the app draws faces from.
         #expect(SidekickShapes.all.count == 17 && SidekickShapes.all.first?.key == "bot")
         for shape in SidekickShapes.all {
-            for part in ["body", "eyes", "fluffy-body", "fluffy-eyes"] {
+            for part in ["body", "eyes", "fluffy-body", "fluffy-eyes", "glass-body", "glass-eyes"] {
                 #expect(SidekickShapes.layer(shape.key, part)?.prefix(4) == Data([0x89, 0x50, 0x4e, 0x47]), "\(shape.key) \(part)")
             }
             #expect(shape.eyesTop < shape.eyesBottom && shape.eyesTop > 0 && shape.eyesBottom < 1, "\(shape.key)")
@@ -198,7 +198,10 @@ import Testing
         #expect(parts?.json == look)
         let fluffy = SidekickParts(["shape": "cat", "skin": "sky", "material": "fluffy"])
         #expect(fluffy == SidekickParts.make("cat", skin: "sky", material: "fluffy"))
-        #expect(fluffy?.isFluffy == true && fluffy?.json["material"] == "fluffy")
+        #expect(fluffy?.isFluffy == true && fluffy?.isRenderedMaterial == true && fluffy?.json["material"] == "fluffy")
+        let glass = SidekickParts(["shape": "cat", "skin": "sky", "material": "glass"])
+        #expect(glass == SidekickParts.make("cat", skin: "sky", material: "glass"))
+        #expect(glass?.isGlass == true && glass?.isRenderedMaterial == true && glass?.json["material"] == "glass")
         #expect(SidekickParts(["shape": "cat", "skin": "sky", "material": "velvet"])?.material == "flat")
         // From an older agent: no shape, the one nearest its body; a color it doesn't know, the first.
         #expect(SidekickParts(["body": "cat", "skin": "mint", "finish": 1504]) == SidekickParts.make("cat", skin: "mint"))

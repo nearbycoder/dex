@@ -48,8 +48,8 @@ public struct CharacterDraft: Codable, Sendable, Hashable {
         look = preset.look; image = preset.image; color = preset.color; avatar = ""; pictureChanged = true
     }
 
-    /// A look of your own: its shape, coat, color, and background color. Flat pictures are drawn by the agent on saving;
-    /// a fluffy look may pass its rendered PNG so notifications, widgets, and older apps show fur too.
+    /// A look of your own: its shape, material, color, and background color. Flat pictures are drawn by the agent on saving;
+    /// fluffy and glass looks may pass their rendered PNG so notifications, widgets, and older apps show them too.
     public mutating func use(parts: SidekickParts, color: String, image: String? = nil) {
         look = parts.json; self.image = image; self.color = color; avatar = ""; pictureChanged = true
     }

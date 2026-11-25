@@ -218,7 +218,7 @@ const characterFields = {
           }),
           material: Type.Optional(
             Type.Union(MATERIALS.map((value) => Type.Literal(value)), {
-              description: "The coat's finish: flat (solid color) or fluffy (a soft coat of fur with glossy eyes). Works on any shape, custom included; omitted keeps the current finish (or flat on a new sidekick)."
+              description: "The body's finish: flat (solid color), fluffy (a soft coat of fur with glossy eyes), or glass (tinted glass with reflections and refraction). Works on any shape, custom included; omitted keeps the current finish (or flat on a new sidekick)."
             })
           ),
           custom: Type.Optional(
@@ -251,7 +251,7 @@ const characterFields = {
         Type.Null()
       ],
       {
-        description: `Their face: an Open Bot Avatar, a little object with two dark eyes that moves (breathes, thinks, works, celebrates), in a color, flat or fluffy. Ready-made ones: ${LOOK_PRESETS.map((preset) => `${preset.key} ${JSON.stringify({ shape: preset.look.shape, skin: preset.look.skin })}`).join("; ")}. The picture apps show is drawn from it.`
+        description: `Their face: an Open Bot Avatar, a little object with two dark eyes that moves (breathes, thinks, works, celebrates), in a color, flat, fluffy, or glass. Ready-made ones: ${LOOK_PRESETS.map((preset) => `${preset.key} ${JSON.stringify({ shape: preset.look.shape, skin: preset.look.skin })}`).join("; ")}. The picture apps show is drawn from it.`
       }
     )
   ),

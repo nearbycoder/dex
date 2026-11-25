@@ -58,21 +58,29 @@ test("a custom shape is checked by Open Bot Avatar's validator", () => {
   assert.equal(cleanLook({ shape: "custom", custom: outside, skin: "teal" })?.shape, "bot")
 })
 
-test("fluffy material round-trips, defaults to flat, and survives older apps", () => {
+test("fluffy and glass materials round-trip, default to flat, and survive older apps", () => {
   const fluffy = makeLook("cat", "sky", null, "fluffy")
+  const glass = makeLook("cat", "sky", null, "glass")
   assert.equal(fluffy.material, "fluffy")
+  assert.equal(glass.material, "glass")
   assert.equal(lookMaterial(fluffy), "fluffy")
+  assert.equal(lookMaterial(glass), "glass")
   assert.equal(sameLook(fluffy, makeLook("cat", "sky", null, "flat")), false)
+  assert.equal(sameLook(fluffy, glass), false)
+  assert.equal(sameLook(glass, makeLook("cat", "sky", null, "flat")), false)
   assert.equal(sameLook(fluffy, makeLook("cat", "sky", null, "fluffy")), true)
-  // Older apps that don't send `material` keep a sidekick fluffy when editing color or shape.
-  const kept = cleanLook({ shape: "mug", skin: "pink" }, fluffy)
-  assert.equal(kept?.material, "fluffy")
+  assert.equal(sameLook(glass, makeLook("cat", "sky", null, "glass")), true)
+  // Older apps that don't send `material` keep a sidekick's material when editing color or shape.
+  assert.equal(cleanLook({ shape: "mug", skin: "pink" }, fluffy)?.material, "fluffy")
+  assert.equal(cleanLook({ shape: "mug", skin: "pink" }, glass)?.material, "glass")
   // Explicitly switching back to flat clears it; unknown materials fall back to flat.
   assert.equal(cleanLook({ shape: "cat", skin: "sky", material: "flat" }, fluffy)?.material, "flat")
-  assert.equal(cleanLook({ shape: "cat", skin: "sky", material: "velvet" }, fluffy)?.material, "flat")
+  assert.equal(cleanLook({ shape: "cat", skin: "sky", material: "flat" }, glass)?.material, "flat")
+  assert.equal(cleanLook({ shape: "cat", skin: "sky", material: "velvet" }, glass)?.material, "flat")
   // Without a previous look, missing material defaults to flat.
   assert.equal(cleanLook({ shape: "cat", skin: "sky" })?.material, "flat")
-  // Custom shapes can be fluffy too.
+  // Custom shapes can be fluffy or glass too.
   const box = { name: "Box", path: "M20 20 H80 V80 H20 Z", eyes: { x: 50, y: 46, spacing: 15, scale: 1 } }
   assert.equal(cleanLook({ shape: "custom", custom: box, skin: "coral", material: "fluffy" })?.material, "fluffy")
+  assert.equal(cleanLook({ shape: "custom", custom: box, skin: "coral", material: "glass" })?.material, "glass")
 })

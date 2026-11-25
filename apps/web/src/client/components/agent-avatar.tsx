@@ -119,7 +119,7 @@ export function CharacterAvatar({
 }) {
   const [background, foreground] = AGENT_COLORS[character.color] ?? AGENT_COLORS.violet
   if (character.look) {
-    if (mood === "still" && character.image && lookMaterial(character.look) !== "fluffy") {
+    if (mood === "still" && character.image && lookMaterial(character.look) === "flat") {
       return <img src={character.image} alt="" className={`shrink-0 ${className}`} style={{ width: size, height: size }} draggable={false} />
     }
     return <SidekickFace look={character.look} size={size} mood={mood} failed={failed} interactive={interactive} className={className} />

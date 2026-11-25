@@ -37,9 +37,9 @@ import kotlin.random.Random
 
 /**
  * Sidekick faces on the device. Dex's own shapes are drawn from the layers bundled with them (SidekickLooks.layer:
- * flat bodies tinted the look's color, or fluffy coats dyed with Open Bot Avatar's dye ramps, under their eyes), so
- * they match the web and agent at any color and blink their eyes. Pictures the agent saved (a shape a chat drew, or one
- * this build doesn't have) are decoded once.
+ * flat bodies tinted the look's color, fluffy coats dyed with Open Bot Avatar's dye ramps, or glass bodies tinted from
+ * its ray-marched basis, under their eyes), so they match the web and agent at any color and blink their eyes. Pictures
+ * the agent saved (a shape a chat drew, or one this build doesn't have) are decoded once.
  */
 object SidekickArt {
     private class Scratch {
@@ -75,6 +75,40 @@ object SidekickArt {
         dyeLuts.putIfAbsent(skin, table) ?: table
     }
 
+    /**
+     * Per-channel interpolation weights for tinting the baked `#ff8000` glass basis (R: full tint, G: half tint, B:
+     * white reflection) into [skin]'s glass hue and Beer-Lambert absorption, matching Open Bot Avatar's glass shader.
+     */
+    private fun glassWeights(skin: String): DoubleArray {
+        val hex = SidekickLooks.SKINS[skin] ?: SidekickLooks.SKINS.values.first()
+        val rgb = android.graphics.Color.parseColor(hex)
+        val r = ((rgb ushr 16) and 0xFF) / 255.0
+        val g = ((rgb ushr 8) and 0xFF) / 255.0
+        val b = (rgb and 0xFF) / 255.0
+        val maxC = max(r, max(g, b))
+        val minC = min(r, min(g, b))
+        val sat = if (maxC > 0.001) (maxC - minC) / maxC else 0.0
+        val pureR = if (maxC > 0.05) r / maxC else 0.88
+        val pureG = if (maxC > 0.05) g / maxC else 0.94
+        val pureB = if (maxC > 0.05) b / maxC else 0.97
+        val s1 = min(1.0, sat * 1.08)
+        val jtR = 0.88 + (pureR - 0.88) * s1
+        val jtG = 0.94 + (pureG - 0.94) * s1
+        val jtB = 0.97 + (pureB - 0.97) * s1
+        val s2 = min(1.0, sat * 0.88)
+        val tcR = 0.97 + (jtR - 0.97) * s2
+        val tcG = 0.97 + (jtG - 0.97) * s2
+        val tcB = 0.97 + (jtB - 0.97) * s2
+        fun weight(jt: Double, tc: Double): Double {
+            val tn = ((tc - 0.1164) / 0.88).coerceIn(0.0, 1.0)
+            return (0.75 * jt + 0.25 * tn).coerceIn(0.0, 1.0)
+        }
+        return doubleArrayOf(weight(jtR, tcR), weight(jtG, tcG), weight(jtB, tcB))
+    }
+
+    private fun pwl(y0: Int, y5: Int, y1: Int, t: Double): Int =
+        (if (t <= 0.5) y0 + (y5 - y0) * (2.0 * t) else y5 + (y1 - y5) * (2.0 * t - 1.0)).roundToInt().coerceIn(0, 255)
+
     private fun layer(shape: String, part: String): Bitmap? {
         val key = "layer:$shape:$part"
         cache.get(key)?.let { return it }
@@ -108,6 +142,39 @@ object SidekickArt {
         return dyed
     }
 
+    /** A shape's glass body tinted into [skin], cached per `(shape, skin)`. */
+    private fun glassBody(shape: String, skin: String): Bitmap? {
+        val key = "glass-body:$shape:$skin"
+        cache.get(key)?.let { return it }
+        val bytes = SidekickLooks.layer(shape, "glass-body") ?: return null
+        val opts = BitmapFactory.Options().apply { inPremultiplied = false }
+        val source = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts) ?: return null
+        val weights = glassWeights(skin)
+        val wr = weights[0]
+        val wg = weights[1]
+        val wb = weights[2]
+        val width = source.width
+        val height = source.height
+        val pixels = IntArray(width * height)
+        source.getPixels(pixels, 0, width, 0, 0, width, height)
+        for (i in pixels.indices) {
+            val pixel = pixels[i]
+            val alpha = pixel and 0xFF000000.toInt()
+            if (alpha == 0) {
+                pixels[i] = 0
+                continue
+            }
+            val r = (pixel ushr 16) and 0xFF
+            val g = (pixel ushr 8) and 0xFF
+            val b = pixel and 0xFF
+            pixels[i] = alpha or (pwl(b, g, r, wr) shl 16) or (pwl(b, g, r, wg) shl 8) or pwl(b, g, r, wb)
+        }
+        val tinted = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        tinted.setPixels(pixels, 0, width, 0, 0, width, height)
+        cache.put(key, tinted)
+        return tinted
+    }
+
     /** Whether this app draws [look] itself: one of its own shapes. */
     fun draws(look: SidekickLook): Boolean = look.shape != "custom" && SidekickLooks.shape(look.shape) != null
 
@@ -120,18 +187,28 @@ object SidekickArt {
         val s = scratch.get()!!
         s.target.set(0f, 0f, size, size)
         val eyes: Bitmap
-        if (SidekickLooks.isFluffy(look)) {
-            val coat = fluffyBody(shape.key, look.skin) ?: return
-            eyes = layer(shape.key, "fluffy-eyes") ?: return
-            s.source.set(0, 0, coat.width, coat.height)
-            s.bodyPaint.colorFilter = null
-            canvas.drawBitmap(coat, s.source, s.target, s.bodyPaint)
-        } else {
-            val body = layer(shape.key, "body") ?: return
-            eyes = layer(shape.key, "eyes") ?: return
-            s.source.set(0, 0, body.width, body.height)
-            s.bodyPaint.colorFilter = colorFilter(SidekickLooks.color(look))
-            canvas.drawBitmap(body, s.source, s.target, s.bodyPaint)
+        when {
+            SidekickLooks.isFluffy(look) -> {
+                val coat = fluffyBody(shape.key, look.skin) ?: return
+                eyes = layer(shape.key, "fluffy-eyes") ?: return
+                s.source.set(0, 0, coat.width, coat.height)
+                s.bodyPaint.colorFilter = null
+                canvas.drawBitmap(coat, s.source, s.target, s.bodyPaint)
+            }
+            SidekickLooks.isGlass(look) -> {
+                val glass = glassBody(shape.key, look.skin) ?: return
+                eyes = layer(shape.key, "glass-eyes") ?: return
+                s.source.set(0, 0, glass.width, glass.height)
+                s.bodyPaint.colorFilter = null
+                canvas.drawBitmap(glass, s.source, s.target, s.bodyPaint)
+            }
+            else -> {
+                val body = layer(shape.key, "body") ?: return
+                eyes = layer(shape.key, "eyes") ?: return
+                s.source.set(0, 0, body.width, body.height)
+                s.bodyPaint.colorFilter = colorFilter(SidekickLooks.color(look))
+                canvas.drawBitmap(body, s.source, s.target, s.bodyPaint)
+            }
         }
         canvas.save()
         // Blinking: the eyes close toward their middle.
@@ -145,7 +222,7 @@ object SidekickArt {
     /** [look]'s face as a square bitmap [size] pixels wide, on a clear background; null for a shape this app doesn't have. */
     fun bitmap(look: SidekickLook, size: Int): Bitmap? {
         if (!draws(look)) return null
-        val material = if (SidekickLooks.isFluffy(look)) "fluffy" else "flat"
+        val material = SidekickLooks.cleanMaterial(look.material)
         val key = "face:$size:${look.shape}:${look.skin}:$material"
         cache.get(key)?.let { return it }
         val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
@@ -155,11 +232,11 @@ object SidekickArt {
     }
 
     /**
-     * Renders a fluffy look as a transparent data: URL under the 48 KB character picture limit, so notifications,
-     * widgets, and older apps show fur too. Null for flat or custom shapes.
+     * Renders a fluffy or glass look as a transparent data: URL under the 48 KB character picture limit, so
+     * notifications, widgets, and older apps show the material too. Null for flat or custom shapes.
      */
-    fun fluffyDataUrl(look: SidekickLook): String? {
-        if (!SidekickLooks.isFluffy(look) || !draws(look)) return null
+    fun materialDataUrl(look: SidekickLook): String? {
+        if (!SidekickLooks.isRenderedMaterial(look) || !draws(look)) return null
         val full = bitmap(look, 256) ?: return null
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val bytes = ByteArrayOutputStream().also { full.compress(Bitmap.CompressFormat.WEBP_LOSSY, 85, it) }.toByteArray()

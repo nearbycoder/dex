@@ -90,10 +90,10 @@ fun SidekickLookPicker(draft: CharacterProfile, onChange: ((CharacterProfile) ->
         ) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 if (look?.shape != "custom") {
-                    PartRow("Coat") {
+                    PartRow("Material") {
                         SidekickLooks.MATERIALS.forEach { material ->
                             val selected = look != null && current.material == material
-                            val label = if (material == "fluffy") "Fluffy" else "Flat"
+                            val label = SidekickLooks.materialLabel(material)
                             val preview = SidekickLooks.make(if (SidekickArt.draws(current)) current.shape else "bot", current.skin, material = material)
                             val shape = RoundedCornerShape(14.dp)
                             Surface(
@@ -103,7 +103,7 @@ fun SidekickLookPicker(draft: CharacterProfile, onChange: ((CharacterProfile) ->
                                 modifier = Modifier
                                     .then(if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, shape) else Modifier)
                                     .semantics {
-                                        contentDescription = "Coat $label"
+                                        contentDescription = "Material $label"
                                         this.selected = selected
                                         role = Role.RadioButton
                                     }
@@ -142,9 +142,9 @@ fun SidekickLookPicker(draft: CharacterProfile, onChange: ((CharacterProfile) ->
                     )
                 }
                 PartRow("Color") {
-                    // A shape a chat drew is drawn by the agent and the web only: its color and coat change there.
+                    // A shape a chat drew is drawn by the agent and the web only: its color and material change there.
                     if (look?.shape == "custom") {
-                        Text("Change a drawn shape's color or coat on the web, or ask a chat.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Change a drawn shape's color or material on the web, or ask a chat.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         return@PartRow
                     }
                     SidekickLooks.SKINS.forEach { (skin, hex) ->

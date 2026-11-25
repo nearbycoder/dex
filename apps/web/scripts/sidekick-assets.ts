@@ -1,6 +1,6 @@
 // Draws the sidekick pictures the iPhone and Android apps bundle, with the agent's own renderer (src/agent/sidekick-face.ts)
-// and Open Bot Avatar's fluffy WebGL2 shaders (in headless Chrome), into assets/sidekicks and both apps' copies of it.
-// Run it whenever SHAPES, SKINS, LOOK_PRESETS, or open-bot-avatar's fluffy look changes:
+// and Open Bot Avatar's fluffy and glass WebGL2 shaders (in headless Chrome), into assets/sidekicks and both apps' copies of it.
+// Run it whenever SHAPES, SKINS, LOOK_PRESETS, or open-bot-avatar's material shaders change:
 //   npm run sidekicks:assets -w @dex/web
 //
 //   presets.json, <preset>.png     the ready-made looks: key, name, accent color, look, and its picture
@@ -10,13 +10,17 @@
 //   shapes/<shape>-fluffy-body.png, shapes/<shape>-fluffy-eyes.png
 //                                  each shape's fluffy coat as exposure + alpha (grayscale+alpha PNG, dyed via shapes.json's
 //                                  ramps so any skin matches WebGL2) and its glossy eye beads (to lay over it and blink)
+//   shapes/<shape>-glass-body.png, shapes/<shape>-glass-eyes.png
+//                                  each shape's ray-marched glass body in #ff8000 basis (R = full tint, G = half tint,
+//                                  B = white reflection/zero tint, A = glass alpha; piecewise-linearly tinted per skin on
+//                                  device to match WebGL2) and its glossy eye beads (to lay over it and blink)
 import { execFile } from "node:child_process"
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { createServer } from "node:http"
-import { dirname, join } from "node:path"
+import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { deflateSync } from "node:zlib"
-import { build } from "esbuild"
+import { build, type Plugin } from "esbuild"
 import { DYE_RAMP_RANGE, DYE_RAMP_SIZE, dyeRamp } from "../../../node_modules/open-bot-avatar/dist/dom/fluffy/dye.js"
 import { encodePng, faceOutlines, facePng, faceRgba } from "../src/agent/sidekick-face.ts"
 import { EYE_INK, LOOK_PRESETS, lookDefinition, makeLook, SHAPES, SKINS } from "../src/shared/sidekick-look.ts"
@@ -40,19 +44,7 @@ const crc32 = (bytes: Uint8Array) => {
   return (c ^ 0xffffffff) >>> 0
 }
 
-/** Grayscale + alpha (2 bytes/pixel, PNG color type 4) with Sub filter and max zlib compression. */
-function encodeGrayAlphaPng(ga: Uint8Array, width: number, height: number): Uint8Array {
-  const rowLen = width * 2
-  const raw = new Uint8Array(height * (rowLen + 1))
-  for (let y = 0; y < height; y++) {
-    const rowOut = y * (rowLen + 1)
-    const rowIn = y * rowLen
-    raw[rowOut] = 1 // Sub filter
-    for (let x = 0; x < rowLen; x++) {
-      const prev = x >= 2 ? ga[rowIn + x - 2]! : 0
-      raw[rowOut + 1 + x] = (ga[rowIn + x]! - prev) & 0xff
-    }
-  }
+function packPng(width: number, height: number, colorType: number, raw: Uint8Array): Uint8Array {
   const chunk = (type: string, data: Uint8Array) => {
     const out = new Uint8Array(12 + data.length)
     const view = new DataView(out.buffer)
@@ -66,7 +58,7 @@ function encodeGrayAlphaPng(ga: Uint8Array, width: number, height: number): Uint
   const view = new DataView(header.buffer)
   view.setUint32(0, width)
   view.setUint32(4, height)
-  header.set([8, 4, 0, 0, 0], 8) // 8-bit grayscale + alpha
+  header.set([8, colorType, 0, 0, 0], 8)
   const parts = [new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", header), chunk("IDAT", deflateSync(raw, { level: 9 })), chunk("IEND", new Uint8Array())]
   const png = new Uint8Array(parts.reduce((total, part) => total + part.length, 0))
   let at = 0
@@ -75,6 +67,45 @@ function encodeGrayAlphaPng(ga: Uint8Array, width: number, height: number): Uint
     at += part.length
   }
   return png
+}
+
+/** Grayscale + alpha (2 bytes/pixel, PNG color type 4) with Sub filter and max zlib compression. */
+function encodeGrayAlphaPng(ga: Uint8Array, width: number, height: number): Uint8Array {
+  const rowLen = width * 2
+  const raw = new Uint8Array(height * (rowLen + 1))
+  for (let y = 0; y < height; y++) {
+    const rowOut = y * (rowLen + 1)
+    const rowIn = y * rowLen
+    raw[rowOut] = 1 // Sub filter
+    for (let x = 0; x < rowLen; x++) {
+      const prev = x >= 2 ? ga[rowIn + x - 2]! : 0
+      raw[rowOut + 1 + x] = (ga[rowIn + x]! - prev) & 0xff
+    }
+  }
+  return packPng(width, height, 4, raw)
+}
+
+/** RGBA (4 bytes/pixel, PNG color type 6) with Paeth filter and max zlib compression for smooth glass gradients. */
+function encodeRgbaPng(rgba: Uint8Array, width: number, height: number): Uint8Array {
+  const rowLen = width * 4
+  const raw = new Uint8Array(height * (rowLen + 1))
+  for (let y = 0; y < height; y++) {
+    const rowOut = y * (rowLen + 1)
+    const rowIn = y * rowLen
+    raw[rowOut] = 4 // Paeth filter
+    for (let x = 0; x < rowLen; x++) {
+      const a = x >= 4 ? rgba[rowIn + x - 4]! : 0
+      const b = y > 0 ? rgba[rowIn - rowLen + x]! : 0
+      const c = x >= 4 && y > 0 ? rgba[rowIn - rowLen + x - 4]! : 0
+      const p = a + b - c
+      const pa = Math.abs(p - a)
+      const pb = Math.abs(p - b)
+      const pc = Math.abs(p - c)
+      const pr = pa <= pb && pa <= pc ? a : pb <= pc ? b : c
+      raw[rowOut + 1 + x] = (rgba[rowIn + x]! - pr) & 0xff
+    }
+  }
+  return packPng(width, height, 6, raw)
 }
 
 /**
@@ -125,20 +156,75 @@ function findChrome(): string {
     "/usr/bin/chromium"
   ].filter(Boolean) as string[]
   for (const path of candidates) if (existsSync(path)) return path
-  throw new Error("Headless Chrome is needed to bake fluffy sidekick layers (set CHROME=/path/to/chrome).")
+  throw new Error("Headless Chrome is needed to bake fluffy and glass sidekick layers (set CHROME=/path/to/chrome).")
 }
 
 /**
- * Renders every shape's fluffy coat (exposure + alpha) and glossy eyes in one headless Chrome WebGL2 run using
- * Open Bot Avatar's own shaders and meshes.
+ * Splits Open Bot Avatar's glass renderer into two shader variants at bundle time:
+ *  - `?glass=body`: keeps the glowing eye socket bezel on the glass body while skipping opaque eye beads so eyes blink cleanly
+ *  - `?glass=eyes`: renders only the opaque glossy black eye beads on a transparent background
  */
-async function bakeFluffyLayers(): Promise<Map<string, { body: Uint8Array; eyes: Uint8Array }>> {
+const glassVariantsPlugin: Plugin = {
+  name: "glass-variants",
+  setup(buildApi) {
+    buildApi.onResolve({ filter: /\?glass=(body|eyes)$/ }, (args) => ({
+      path: resolve(args.resolveDir, args.path.replace(/\?glass=(body|eyes)$/, "")),
+      namespace: `glass-${args.path.split("?glass=")[1]}`
+    }))
+    buildApi.onLoad({ filter: /.*/, namespace: "glass-body" }, (args) => {
+      let src = readFileSync(args.path, "utf8")
+      if (args.path.endsWith("renderer.js")) {
+        src = src.replace("./shaders.js", "./shaders.js?glass=body")
+      } else if (args.path.endsWith("shaders.js")) {
+        const needle = "if (eyeMask > 0.001) {"
+        if (!src.includes(needle)) throw new Error("Open Bot Avatar glass shader changed: missing eyeMask branch")
+        src = src.replace(needle, "if (false && eyeMask > 0.001) {")
+      }
+      return { contents: src, resolveDir: dirname(args.path), loader: "js" }
+    })
+    buildApi.onLoad({ filter: /.*/, namespace: "glass-eyes" }, (args) => {
+      let src = readFileSync(args.path, "utf8")
+      if (args.path.endsWith("renderer.js")) {
+        src = src.replace("./shaders.js", "./shaders.js?glass=eyes")
+      } else if (args.path.endsWith("shaders.js")) {
+        const needle = "  // --- 1. External Fresnel Reflection"
+        if (!src.includes(needle)) throw new Error("Open Bot Avatar glass shader changed: missing External Fresnel marker")
+        src = src.replace(
+          needle,
+          `  if (eyeMask <= 0.001) return vec4(0.0);
+  float ePeak0 = max(eyeColor.r, max(eyeColor.g, eyeColor.b));
+  vec3 eMapped0 = ePeak0 > 0.0001 ? eyeColor * ((ePeak0 / (1.0 + ePeak0 * 0.4)) / ePeak0) : vec3(0.0);
+  vec3 eCol0 = pow(clamp(eMapped0, 0.0, 1.0), vec3(1.0 / 2.2));
+  return vec4(eCol0 * eyeMask, eyeMask);
+  // --- 1. External Fresnel Reflection`
+        )
+      }
+      return { contents: src, resolveDir: dirname(args.path), loader: "js" }
+    })
+  }
+}
+
+interface BakedMaterialLayers {
+  fluffyBody: Uint8Array
+  fluffyEyes: Uint8Array
+  glassBody: Uint8Array
+  glassEyes: Uint8Array
+}
+
+/**
+ * Renders every shape's fluffy coat + eyes and glass body + eyes in one headless Chrome WebGL2 run using
+ * Open Bot Avatar's own shaders, meshes, and 3D SDF ray-marcher.
+ */
+async function bakeMaterialLayers(): Promise<Map<string, BakedMaterialLayers>> {
   const harness = `
 import { liveFrame, preparedVolume } from "../../node_modules/open-bot-avatar/dist/render.js";
 import { fragmentShader, vertexShader, PASS } from "../../node_modules/open-bot-avatar/dist/dom/fluffy/shaders.js";
-import { buildMesh, halfDepth, ROOT_PASSES, rootsIn } from "../../node_modules/open-bot-avatar/dist/dom/fluffy/mesh.js";
-import { SOCKET_TILE, exposedHeight, socketRegion, socketTile } from "../../node_modules/open-bot-avatar/dist/dom/fluffy/socket.js";
+import { buildMesh, ROOT_PASSES, rootsIn } from "../../node_modules/open-bot-avatar/dist/dom/fluffy/mesh.js";
+import { halfDepth } from "../../node_modules/open-bot-avatar/dist/dom/materials/shape.js";
+import { SOCKET_TILE, exposedHeight, socketRegion, socketTile } from "../../node_modules/open-bot-avatar/dist/dom/materials/socket.js";
 import { DYE_RAMP_RANGE } from "../../node_modules/open-bot-avatar/dist/dom/fluffy/dye.js";
+import { renderGlass as renderGlassBody } from "../../node_modules/open-bot-avatar/dist/dom/glass/renderer.js?glass=body";
+import { renderGlass as renderGlassEyes } from "../../node_modules/open-bot-avatar/dist/dom/glass/renderer.js?glass=eyes";
 
 const bodyFrag = fragmentShader
   .replace("if (pass == BODY && d < 3.7) {", "if (false && pass == BODY && d < 3.7) {")
@@ -210,7 +296,7 @@ function toBase64(bytes) {
   return btoa(out);
 }
 
-function makeRenderer(fragSrc) {
+function makeFluffyRenderer(fragSrc) {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = 512;
   const gl = canvas.getContext("webgl2", { alpha: true, antialias: true, premultipliedAlpha: true, preserveDrawingBuffer: true });
@@ -351,11 +437,41 @@ function makeRenderer(fragSrc) {
   };
 }
 
+function makeGlassPass(renderFn) {
+  const out = document.createElement("canvas");
+  out.width = out.height = ${SIZE};
+  const octx = out.getContext("2d", { willReadFrequently: true });
+  return (def) => {
+    const vol = preparedVolume(def).vol;
+    const frame = liveFrame(def, { color: "#ff8000", eyeColor: "${EYE_INK}", reducedMotion: true, size: ${SIZE} });
+    const { view, scale: bodyScale, eyes } = frame.surface;
+    const scale = ${SIZE} / 100;
+    const img = renderFn(vol, view, { color: "#ff8000", ink: "${EYE_INK}", eyes }, scale);
+    if (!img) throw new Error("Glass WebGL2 render returned null for " + def.id);
+    octx.setTransform(1, 0, 0, 1, 0, 0);
+    octx.clearRect(0, 0, ${SIZE}, ${SIZE});
+    const [a, b0, c, d, e, f] = frame.root;
+    octx.setTransform(scale * a, scale * b0, scale * c, scale * d, scale * e, scale * f);
+    const rScaled = img.radius * bodyScale;
+    octx.drawImage(img.canvas, img.x, img.y, img.size, img.size, img.cx - rScaled, img.cy - rScaled, 2 * rScaled, 2 * rScaled);
+    return toBase64(new Uint8Array(octx.getImageData(0, 0, ${SIZE}, ${SIZE}).data.buffer));
+  };
+}
+
 window.bakeAll = (defs) => {
-  const renderBody = makeRenderer(bodyFrag);
-  const renderEyes = makeRenderer(eyeFrag);
+  const fluffyBody = makeFluffyRenderer(bodyFrag);
+  const fluffyEyes = makeFluffyRenderer(eyeFrag);
+  const glassBody = makeGlassPass(renderGlassBody);
+  const glassEyes = makeGlassPass(renderGlassEyes);
   const out = {};
-  for (const def of defs) out[def.id] = { ga: renderBody(def, false), eyes: renderEyes(def, true) };
+  for (const def of defs) {
+    out[def.id] = {
+      fluffyGa: fluffyBody(def, false),
+      fluffyEyes: fluffyEyes(def, true),
+      glassBody: glassBody(def),
+      glassEyes: glassEyes(def)
+    };
+  }
   return out;
 };
 `
@@ -363,7 +479,8 @@ window.bakeAll = (defs) => {
     stdin: { contents: harness, resolveDir: join(root, "apps/web"), loader: "js" },
     bundle: true,
     write: false,
-    format: "iife"
+    format: "iife",
+    plugins: [glassVariantsPlugin]
   })
   const defs = SHAPES.map((shape) => lookDefinition(makeLook(shape.key, "peach")))
   const html = `<!doctype html><html><body><script>${bundle.outputFiles[0]!.text}</script><script>
@@ -385,9 +502,9 @@ try {
     res.writeHead(200, { "content-type": "text/html" })
     res.end(html)
   })
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen))
   const address = server.address() as { port: number }
-  const dom = await new Promise<string>((resolve, reject) => {
+  const dom = await new Promise<string>((resolveDom, reject) => {
     execFile(
       findChrome(),
       [
@@ -397,14 +514,14 @@ try {
         "--use-gl=angle",
         "--use-angle=swiftshader",
         "--window-size=400,400",
-        "--virtual-time-budget=60000",
+        "--virtual-time-budget=120000",
         "--dump-dom",
         `http://127.0.0.1:${address.port}/`
       ],
-      { maxBuffer: 128 * 1024 * 1024 },
+      { maxBuffer: 256 * 1024 * 1024 },
       (error, stdout, stderr) => {
         if (error) reject(new Error(`${error.message}\n${stderr}`))
-        else resolve(stdout)
+        else resolveDom(stdout)
       }
     )
   })
@@ -414,12 +531,19 @@ try {
   if (!match) throw new Error(`Chrome returned no output: ${dom.slice(0, 500)}`)
   const text = match[2]!.replaceAll("&amp;", "&").replaceAll("&lt;", "<").replaceAll("&gt;", ">")
   if (match[1] === "err") throw new Error(`Chrome error:\n${text}`)
-  const parsed = JSON.parse(text) as Record<string, { ga: string; eyes: string }>
-  const layers = new Map<string, { body: Uint8Array; eyes: Uint8Array }>()
-  for (const [key, { ga, eyes }] of Object.entries(parsed)) {
-    const rawGa = Uint8Array.from(Buffer.from(ga, "base64"))
-    const eyePng = Uint8Array.from(Buffer.from(eyes.slice(eyes.indexOf(",") + 1), "base64"))
-    layers.set(key, { body: encodeGrayAlphaPng(rawGa, SIZE, SIZE), eyes: eyePng })
+  const parsed = JSON.parse(text) as Record<string, { fluffyGa: string; fluffyEyes: string; glassBody: string; glassEyes: string }>
+  const layers = new Map<string, BakedMaterialLayers>()
+  for (const [key, entry] of Object.entries(parsed)) {
+    const rawGa = Uint8Array.from(Buffer.from(entry.fluffyGa, "base64"))
+    const fluffyEyesPng = Uint8Array.from(Buffer.from(entry.fluffyEyes.slice(entry.fluffyEyes.indexOf(",") + 1), "base64"))
+    const glassBodyRgba = Uint8Array.from(Buffer.from(entry.glassBody, "base64"))
+    const glassEyesRgba = Uint8Array.from(Buffer.from(entry.glassEyes, "base64"))
+    layers.set(key, {
+      fluffyBody: encodeGrayAlphaPng(rawGa, SIZE, SIZE),
+      fluffyEyes: fluffyEyesPng,
+      glassBody: encodeRgbaPng(glassBodyRgba, SIZE, SIZE),
+      glassEyes: encodeRgbaPng(glassEyesRgba, SIZE, SIZE)
+    })
   }
   return layers
 }
@@ -437,7 +561,7 @@ files.set(
 )
 for (const preset of LOOK_PRESETS) files.set(`${preset.key}.png`, png(await facePng(preset.look, SIZE)))
 
-const fluffy = await bakeFluffyLayers()
+const materials = await bakeMaterialLayers()
 const ramps = Object.fromEntries(Object.entries(SKINS).map(([skin, hex]) => [skin, Buffer.from(skinRamp(hex)).toString("base64")]))
 
 const shapes = []
@@ -445,9 +569,11 @@ for (const shape of SHAPES) {
   const look = makeLook(shape.key, "peach")
   files.set(`shapes/${shape.key}-body.png`, await encodePng(faceRgba(look, SIZE, "body"), SIZE, SIZE))
   files.set(`shapes/${shape.key}-eyes.png`, await encodePng(faceRgba(look, SIZE, "eyes"), SIZE, SIZE))
-  const coat = fluffy.get(shape.key)!
-  files.set(`shapes/${shape.key}-fluffy-body.png`, coat.body)
-  files.set(`shapes/${shape.key}-fluffy-eyes.png`, coat.eyes)
+  const baked = materials.get(shape.key)!
+  files.set(`shapes/${shape.key}-fluffy-body.png`, baked.fluffyBody)
+  files.set(`shapes/${shape.key}-fluffy-eyes.png`, baked.fluffyEyes)
+  files.set(`shapes/${shape.key}-glass-body.png`, baked.glassBody)
+  files.set(`shapes/${shape.key}-glass-eyes.png`, baked.glassEyes)
   // Where the eyes are, as fractions of the picture: they close toward their middle to blink.
   const points = faceOutlines(look).eyes.flatMap((outline) => outline.polygons.flat())
   const ys = points.map(([, y]) => y / 100)

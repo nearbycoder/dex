@@ -145,7 +145,7 @@ class CharactersTest {
         assertThat(colored["image"]).isEqualTo(JsonNull)
         rule.awaitText("Saved")
 
-        // Switching to fluffy sends the fluffy coat and its rendered picture so widgets and older apps show fur too.
+        // Switching to fluffy or glass sends the material and its rendered picture so widgets and older apps show it too.
         rule.onNodeWithTag("look-material-fluffy").performScrollTo().performClick()
         rule.onNodeWithTag("character-save").performClick()
         rule.waitUntil(10_000) { harness.fake.calls.count { it.first == "saveCharacter" } == 4 }
@@ -154,9 +154,17 @@ class CharactersTest {
         assertThat(fluffy["image"]!!.jsonPrimitive.content).startsWith("data:image/")
         rule.awaitText("Saved")
 
-        rule.onNodeWithTag("look-accent-rose").performScrollTo().performClick()
+        rule.onNodeWithTag("look-material-glass").performScrollTo().performClick()
         rule.onNodeWithTag("character-save").performClick()
         rule.waitUntil(10_000) { harness.fake.calls.count { it.first == "saveCharacter" } == 5 }
+        val glass = harness.fake.calls.last { it.first == "saveCharacter" }.second[0].jsonObject
+        assertThat(glass["look"]!!.jsonObject["material"]!!.jsonPrimitive.content).isEqualTo("glass")
+        assertThat(glass["image"]!!.jsonPrimitive.content).startsWith("data:image/")
+        rule.awaitText("Saved")
+
+        rule.onNodeWithTag("look-accent-rose").performScrollTo().performClick()
+        rule.onNodeWithTag("character-save").performClick()
+        rule.waitUntil(10_000) { harness.fake.calls.count { it.first == "saveCharacter" } == 6 }
         val accent = harness.fake.calls.last { it.first == "saveCharacter" }.second.toString()
         assertThat(accent).contains("\"color\":\"rose\"")
         assertThat(accent).doesNotContain("\"image\"")

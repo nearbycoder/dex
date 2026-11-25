@@ -379,6 +379,25 @@
    "input": {
     "shape": "mug",
     "skin": "sky",
+    "material": "glass"
+   },
+   "look": {
+    "shape": "mug",
+    "custom": null,
+    "skin": "sky",
+    "material": "glass",
+    "body": "blob",
+    "eyes": "round",
+    "mouth": "smile",
+    "extra": "none",
+    "blush": false,
+    "finish": 101
+   }
+  },
+  {
+   "input": {
+    "shape": "mug",
+    "skin": "sky",
     "material": "velvet"
    },
    "look": {
@@ -463,6 +482,44 @@
     },
     "skin": "coral",
     "material": "fluffy",
+    "body": "blob",
+    "eyes": "round",
+    "mouth": "smile",
+    "extra": "none",
+    "blush": false,
+    "finish": 101
+   }
+  },
+  {
+   "input": {
+    "shape": "custom",
+    "skin": "sky",
+    "material": "glass",
+    "custom": {
+     "name": "Box",
+     "path": "M20 20 H80 V80 H20 Z",
+     "eyes": {
+      "x": 50,
+      "y": 46,
+      "spacing": 15,
+      "scale": 1
+     }
+    }
+   },
+   "look": {
+    "shape": "custom",
+    "custom": {
+     "name": "Box",
+     "path": "M20 20 H80 V80 H20 Z",
+     "eyes": {
+      "x": 50,
+      "y": 46,
+      "spacing": 15,
+      "scale": 1
+     }
+    },
+    "skin": "sky",
+    "material": "glass",
     "body": "blob",
     "eyes": "round",
     "mouth": "smile",

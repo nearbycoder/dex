@@ -481,8 +481,8 @@ struct CharacterEditor: View {
         defer { saving = false }
         do {
             var outgoing = draft
-            if outgoing.pictureChanged, let parts = outgoing.parts, parts.isFluffy, parts.isDrawable, outgoing.image == nil {
-                outgoing.image = SidekickArt.fluffyDataURL(for: parts)
+            if outgoing.pictureChanged, let parts = outgoing.parts, parts.isRenderedMaterial, parts.isDrawable, outgoing.image == nil {
+                outgoing.image = SidekickArt.materialDataURL(for: parts)
             }
             let character = try await client.saveCharacter(outgoing)
             let fresh = CharacterDraft(character)

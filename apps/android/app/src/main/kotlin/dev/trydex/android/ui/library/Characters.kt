@@ -271,14 +271,14 @@ fun CharacterEditorScreen(id: String, route: Route) {
         error = null
         scope.launch {
             // The picture and look go only when they changed here: left out, the agent keeps them as they are. A flat
-            // look goes alone (the agent draws it); a fluffy look sends its rendered picture so widgets and older apps show fur too.
+            // look goes alone (the agent draws it); fluffy and glass send their rendered picture so widgets and older apps show them too.
             val look = value.look?.let(SidekickLooks::clean)
             val picture = isNew || value.image != base?.image || look != base?.look?.let(SidekickLooks::clean)
             attempt {
                 val sent = when {
                     look == null || !picture -> value
-                    SidekickLooks.isFluffy(look) && SidekickArt.draws(look) ->
-                        value.copy(look = look, image = withContext(Dispatchers.Default) { SidekickArt.fluffyDataUrl(look) })
+                    SidekickLooks.isRenderedMaterial(look) && SidekickArt.draws(look) ->
+                        value.copy(look = look, image = withContext(Dispatchers.Default) { SidekickArt.materialDataUrl(look) })
                     else -> value.copy(look = look, image = null)
                 }
                 repository.api.saveCharacter(DexApi.characterDraft(sent, picture))

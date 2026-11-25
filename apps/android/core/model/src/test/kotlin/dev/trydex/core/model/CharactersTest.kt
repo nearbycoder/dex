@@ -80,7 +80,7 @@ class CharactersTest {
     @Test fun shapesAreBundled() {
         assertThat(SidekickLooks.SHAPES).hasSize(17)
         for (shape in SidekickLooks.SHAPES) {
-            for (part in listOf("body", "eyes", "fluffy-body", "fluffy-eyes")) {
+            for (part in listOf("body", "eyes", "fluffy-body", "fluffy-eyes", "glass-body", "glass-eyes")) {
                 assertWithMessage("${shape.key} $part").that(SidekickLooks.layer(shape.key, part)?.take(4)).isEqualTo(listOf<Byte>(-119, 80, 78, 71))
             }
             assertThat(shape.eyes.top).isLessThan(shape.eyes.bottom)

@@ -64,14 +64,16 @@ class SidekickArtTest {
         assertThat(SidekickArt.bitmap(SidekickLooks.make("custom", "mint", dev.trydex.core.model.CustomShape("Box", "M20 20 H80 V80 H20 Z")), 64)).isNull()
     }
 
-    @Test fun fluffyFacesRenderWithTransparentCorners() {
-        val fluffy = SidekickLooks.make("cat", "sky", material = "fluffy")
-        val face = SidekickArt.bitmap(fluffy, 256)!!
-        assertThat(Faces.isCutOut(face)).isTrue()
-        val url = SidekickArt.fluffyDataUrl(fluffy)!!
-        assertThat(url).startsWith("data:image/")
-        assertThat(url.length).isAtMost(63_000)
-        assertThat(Faces.isCutOut(SidekickArt.picture(url)!!)).isTrue()
+    @Test fun materialFacesRenderWithTransparentCorners() {
+        for (material in listOf("fluffy", "glass")) {
+            val look = SidekickLooks.make("cat", "sky", material = material)
+            val face = SidekickArt.bitmap(look, 256)!!
+            assertWithMessage(material).that(Faces.isCutOut(face)).isTrue()
+            val url = SidekickArt.materialDataUrl(look)!!
+            assertWithMessage(material).that(url).startsWith("data:image/")
+            assertWithMessage(material).that(url.length).isAtMost(63_000)
+            assertWithMessage(material).that(Faces.isCutOut(SidekickArt.picture(url)!!)).isTrue()
+        }
     }
 
     @Test fun avatarsShowTheWholeFace() {

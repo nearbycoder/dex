@@ -888,7 +888,7 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
             greeting = parsed.greeting.trim().take(2_000),
             avatar = parsed.avatar.trim().let { if (it.isEmpty()) "" else it.substring(0, it.offsetByCodePoints(0, 1)) },
             image = if (look != null && "look" in draft) {
-                (if (SidekickLooks.isFluffy(look) && sent != null) sent else null) ?: Characters.PRESETS.firstOrNull { it.look == look }?.dataUrl
+                (if (SidekickLooks.isRenderedMaterial(look) && sent != null) sent else null) ?: Characters.PRESETS.firstOrNull { it.look == look }?.dataUrl
             } else image,
             look = look,
             color = parsed.color.takeIf { it in dev.trydex.core.model.Catalogs.AGENT_COLORS } ?: "violet",

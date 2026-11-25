@@ -3,9 +3,9 @@ import SwiftUI
 import UIKit
 
 /// A sidekick's look drawn natively: one of Dex's shapes from the layers bundled with it (`SidekickShapes.layer`):
-/// flat bodies tinted the look's color, or fluffy coats dyed with Open Bot Avatar's Oklch dye ramp, with the eyes over
-/// them. `live` ones blink now and then, as on the web, unless Reduce Motion is on. Draws nothing for a shape it doesn't
-/// have (`SidekickParts.isDrawable`).
+/// flat bodies tinted the look's color, fluffy coats dyed with Open Bot Avatar's Oklch dye ramp, or glass bodies tinted
+/// from Open Bot Avatar's ray-marched basis, with the eyes over them. `live` ones blink now and then, as on the web,
+/// unless Reduce Motion is on. Draws nothing for a shape it doesn't have (`SidekickParts.isDrawable`).
 struct SidekickArt: View {
     let parts: SidekickParts
     var live = false
@@ -17,7 +17,9 @@ struct SidekickArt: View {
         Group {
             if let shape = SidekickShapes.shape(parts.shape), parts.isDrawable {
                 if parts.isFluffy, let coat = Self.fluffyBody(shape.key, skin: parts.skin), let eyesLayer = Self.layer(shape.key, "fluffy-eyes") {
-                    fluffyFace(shape, coat: coat, eyes: eyesLayer, blink: animate ? blink : 0)
+                    layeredFace(shape, body: coat, eyes: eyesLayer, blink: animate ? blink : 0)
+                } else if parts.isGlass, let glass = Self.glassBody(shape.key, skin: parts.skin), let eyesLayer = Self.layer(shape.key, "glass-eyes") {
+                    layeredFace(shape, body: glass, eyes: eyesLayer, blink: animate ? blink : 0)
                 } else if let bodyLayer = Self.layer(shape.key, "body"), let eyesLayer = Self.layer(shape.key, "eyes") {
                     flatFace(shape, body: bodyLayer, eyes: eyesLayer, blink: animate ? blink : 0)
                 } else {
@@ -54,9 +56,9 @@ struct SidekickArt: View {
         }
     }
 
-    private func fluffyFace(_ shape: SidekickShape, coat: UIImage, eyes: UIImage, blink: Double) -> some View {
+    private func layeredFace(_ shape: SidekickShape, body: UIImage, eyes: UIImage, blink: Double) -> some View {
         ZStack {
-            Image(uiImage: coat).resizable().interpolation(.high)
+            Image(uiImage: body).resizable().interpolation(.high)
             Image(uiImage: eyes).resizable().interpolation(.high)
                 .scaleEffect(x: 1, y: 1 - blink * 0.9, anchor: UnitPoint(x: 0.5, y: (shape.eyesTop + shape.eyesBottom) / 2))
         }
@@ -104,6 +106,40 @@ struct SidekickArt: View {
         return table
     }
 
+    /// Per-channel interpolation weights for tinting the baked `#ff8000` glass basis (R: full tint, G: half tint, B: white
+    /// reflection) into `skin`'s glass hue and Beer-Lambert absorption, matching Open Bot Avatar's glass shader.
+    private static func glassWeights(for skin: String) -> (Double, Double, Double) {
+        let hex = SidekickParts.skinHex(skin)
+        let value = UInt64(hex.trimmingCharacters(in: CharacterSet(charactersIn: "#")), radix: 16) ?? 0
+        let r = Double((value >> 16) & 0xFF) / 255
+        let g = Double((value >> 8) & 0xFF) / 255
+        let b = Double(value & 0xFF) / 255
+        let maxC = max(r, g, b)
+        let minC = min(r, g, b)
+        let sat = maxC > 0.001 ? (maxC - minC) / maxC : 0
+        let pureR = maxC > 0.05 ? r / maxC : 0.88
+        let pureG = maxC > 0.05 ? g / maxC : 0.94
+        let pureB = maxC > 0.05 ? b / maxC : 0.97
+        let s1 = min(1.0, sat * 1.08)
+        let jtR = 0.88 + (pureR - 0.88) * s1
+        let jtG = 0.94 + (pureG - 0.94) * s1
+        let jtB = 0.97 + (pureB - 0.97) * s1
+        let s2 = min(1.0, sat * 0.88)
+        let tcR = 0.97 + (jtR - 0.97) * s2
+        let tcG = 0.97 + (jtG - 0.97) * s2
+        let tcB = 0.97 + (jtB - 0.97) * s2
+        func weight(_ jt: Double, _ tc: Double) -> Double {
+            let tn = max(0.0, min(1.0, (tc - 0.1164) / 0.88))
+            return max(0.0, min(1.0, 0.75 * jt + 0.25 * tn))
+        }
+        return (weight(jtR, tcR), weight(jtG, tcG), weight(jtB, tcB))
+    }
+
+    @inline(__always) private static func pwl(_ y0: Double, _ y5: Double, _ y1: Double, _ t: Double, _ limit: Int) -> UInt8 {
+        let value = t <= 0.5 ? y0 + (y5 - y0) * (2 * t) : y5 + (y1 - y5) * (2 * t - 1)
+        return UInt8(max(0, min(limit, Int(value.rounded()))))
+    }
+
     /// A shape's fluffy coat dyed with `skin`'s ramp, cached per `(shape, skin)`.
     @MainActor static func fluffyBody(_ key: String, skin: String) -> UIImage? {
         let cacheKey = "fluffy-body:\(key):\(skin)" as NSString
@@ -142,17 +178,61 @@ struct SidekickArt: View {
         return image
     }
 
-    /// Renders a fluffy look as a transparent PNG data: URL small enough for `saveCharacter`, so notifications, widgets,
-    /// and older apps show fur too. Nil for flat or custom shapes.
-    @MainActor static func fluffyDataURL(for parts: SidekickParts) -> String? {
-        guard parts.isFluffy, parts.isDrawable, let coat = fluffyBody(parts.shape, skin: parts.skin),
-              let eyes = layer(parts.shape, "fluffy-eyes") else { return nil }
+    /// A shape's glass body tinted into `skin`, cached per `(shape, skin)`. Piecewise-linear interpolation commutes with
+    /// premultiplied alpha, so it runs directly on the premultiplied RGB bytes without losing precision on translucent glass.
+    @MainActor static func glassBody(_ key: String, skin: String) -> UIImage? {
+        let cacheKey = "glass-body:\(key):\(skin)" as NSString
+        if let cached = cache.object(forKey: cacheKey) { return cached }
+        guard let source = layer(key, "glass-body")?.cgImage else { return nil }
+        let (wr, wg, wb) = glassWeights(for: skin)
+        let width = source.width
+        let height = source.height
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        let space = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(data: &pixels, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                                      space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.draw(source, in: CGRect(x: 0, y: 0, width: width, height: height))
+        for offset in stride(from: 0, to: pixels.count, by: 4) {
+            let a = Int(pixels[offset + 3])
+            if a == 0 {
+                pixels[offset] = 0; pixels[offset + 1] = 0; pixels[offset + 2] = 0
+                continue
+            }
+            let r = Double(pixels[offset])
+            let g = Double(pixels[offset + 1])
+            let b = Double(pixels[offset + 2])
+            pixels[offset] = pwl(b, g, r, wr, a)
+            pixels[offset + 1] = pwl(b, g, r, wg, a)
+            pixels[offset + 2] = pwl(b, g, r, wb, a)
+        }
+        guard let tinted = context.makeImage() else { return nil }
+        let image = UIImage(cgImage: tinted)
+        cache.setObject(image, forKey: cacheKey)
+        return image
+    }
+
+    /// Renders a fluffy or glass look as a transparent PNG data: URL small enough for `saveCharacter`, so notifications,
+    /// widgets, and older apps show the material too. Nil for flat or custom shapes.
+    @MainActor static func materialDataURL(for parts: SidekickParts) -> String? {
+        guard parts.isRenderedMaterial, parts.isDrawable else { return nil }
+        let body: UIImage?
+        let eyes: UIImage?
+        if parts.isFluffy {
+            body = fluffyBody(parts.shape, skin: parts.skin)
+            eyes = layer(parts.shape, "fluffy-eyes")
+        } else if parts.isGlass {
+            body = glassBody(parts.shape, skin: parts.skin)
+            eyes = layer(parts.shape, "glass-eyes")
+        } else {
+            return nil
+        }
+        guard let body, let eyes else { return nil }
         let rect = CGRect(x: 0, y: 0, width: 256, height: 256)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = false
         let png = UIGraphicsImageRenderer(bounds: rect, format: format).pngData { _ in
-            coat.draw(in: rect)
+            body.draw(in: rect)
             eyes.draw(in: rect)
         }
         let url = SidekickLook.fitting(png)
@@ -168,9 +248,9 @@ extension Color {
     }
 }
 
-/// A look of your own (the web's look picker): Shuffle, Coat (Flat / Fluffy), Shape (each drawn in the look's color and
-/// coat), Color (each drawn as the face you'd get), and Accent. A shape a chat drew shows among the shapes while it's
-/// the look; its color and coat change on the web or in a chat, which can draw it.
+/// A look of your own (the web's look picker): Shuffle, Material (Flat / Fluffy / Glass), Shape (each drawn in the look's
+/// color and material), Color (each drawn as the face you'd get), and Accent. A shape a chat drew shows among the shapes
+/// while it's the look; its color and material change on the web or in a chat, which can draw it.
 struct LookMixer: View {
     /// The look being worn, if it's one (a photo or an emoji has none).
     let parts: SidekickParts?
@@ -181,7 +261,7 @@ struct LookMixer: View {
     var image: String? = nil
     /// A ready-made look picked.
     let preset: (SidekickLook) -> Void
-    /// A shape, coat, or face color picked: the new look and the accent.
+    /// A shape, material, or face color picked: the new look and the accent.
     let change: (SidekickParts, String) -> Void
     /// Only the accent changed: a photo stays a photo.
     let accent: (String) -> Void
@@ -191,7 +271,7 @@ struct LookMixer: View {
         let mine = parts != nil && !isPreset
         VStack(alignment: .leading, spacing: 14) {
             Button {
-                // Any shape in any color and coat, with any accent, as the web's Shuffle.
+                // Any shape in any color and material, with any accent, as the web's Shuffle.
                 change(SidekickParts.random(), AgentColors.all.randomElement() ?? color)
             } label: {
                 Label("Shuffle", systemImage: "dice")
@@ -199,11 +279,11 @@ struct LookMixer: View {
             .buttonStyle(.bordered)
             .accessibilityIdentifier("character.shuffle")
             if current.shape != "custom" || parts == nil {
-                coat(current: current, selected: parts != nil ? current.material : nil)
+                materialRow(current: current, selected: parts != nil ? current.material : nil)
             }
             shapes(current: current, selected: mine ? current.shape : nil)
             if current.shape == "custom" && parts != nil {
-                Text("A chat drew this shape: change its color or coat on the web, or ask a chat.")
+                Text("A chat drew this shape: change its color or material on the web, or ask a chat.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } else {
@@ -229,37 +309,41 @@ struct LookMixer: View {
             .contentShape(.rect(cornerRadius: 12))
     }
 
-    private func coat(current: SidekickParts, selected: String?) -> some View {
+    private func materialRow(current: SidekickParts, selected: String?) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Coat").font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
-            HStack(spacing: 10) {
-                ForEach(SidekickParts.materials, id: \.self) { material in
-                    let candidate = SidekickParts.make(current.isDrawable ? current.shape : "bot", skin: current.skin, material: material)
-                    let label = material == "fluffy" ? "Fluffy" : "Flat"
-                    let isSelected = selected == material
-                    Button {
-                        change(SidekickParts.make(current.shape, skin: current.skin, custom: current.custom, material: material), color)
-                    } label: {
-                        HStack(spacing: 8) {
-                            SidekickArt(parts: candidate).frame(width: 28, height: 28)
-                            Text(label).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
+            Text("Material").font(.subheadline.weight(.medium)).foregroundStyle(.secondary)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(SidekickParts.materials, id: \.self) { material in
+                        let candidate = SidekickParts.make(current.isDrawable ? current.shape : "bot", skin: current.skin, material: material)
+                        let label = SidekickParts.materialLabel(material)
+                        let isSelected = selected == material
+                        Button {
+                            change(SidekickParts.make(current.shape, skin: current.skin, custom: current.custom, material: material), color)
+                        } label: {
+                            HStack(spacing: 8) {
+                                SidekickArt(parts: candidate).frame(width: 28, height: 28)
+                                Text(label).font(.subheadline.weight(.medium)).foregroundStyle(.primary)
+                            }
+                            .padding(.vertical, 6)
+                            .padding(.leading, 8)
+                            .padding(.trailing, 12)
+                            .background(isSelected ? Color.dexAccent.opacity(0.14) : Color(.tertiarySystemFill), in: .rect(cornerRadius: 12, style: .continuous))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .strokeBorder(isSelected ? Color.dexAccent : .clear, lineWidth: 2)
+                            }
+                            .contentShape(.rect(cornerRadius: 12))
                         }
-                        .padding(.vertical, 6)
-                        .padding(.leading, 8)
-                        .padding(.trailing, 12)
-                        .background(isSelected ? Color.dexAccent.opacity(0.14) : Color(.tertiarySystemFill), in: .rect(cornerRadius: 12, style: .continuous))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .strokeBorder(isSelected ? Color.dexAccent : .clear, lineWidth: 2)
-                        }
-                        .contentShape(.rect(cornerRadius: 12))
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Material \(label)")
+                        .accessibilityAddTraits(isSelected ? .isSelected : [])
+                        .accessibilityIdentifier("character.material.\(material)")
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Coat \(label)")
-                    .accessibilityAddTraits(isSelected ? .isSelected : [])
-                    .accessibilityIdentifier("character.material.\(material)")
                 }
+                .padding(.vertical, 2)
             }
+            .scrollClipDisabled()
         }
     }
 

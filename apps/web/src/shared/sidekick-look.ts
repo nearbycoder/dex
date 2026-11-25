@@ -18,7 +18,12 @@ export const BODIES = ["blob", "bean", "cube", "ghost", "cat", "bot"] as const
 export const EYES = ["dot", "round", "sparkle", "happy", "sleepy", "wink", "visor"] as const
 export const MOUTHS = ["smile", "grin", "tongue", "purr", "o", "flat"] as const
 export const EXTRAS = ["none", "headphones", "glasses", "beanie", "beret", "crown", "sprout", "bow", "wizard", "headband"] as const
-export const MATERIALS = ["flat", "fluffy"] as const
+export const MATERIALS = ["flat", "fluffy", "glass"] as const
+export const MATERIAL_LABELS: Record<(typeof MATERIALS)[number], string> = {
+  flat: "Flat",
+  fluffy: "Fluffy",
+  glass: "Glass"
+}
 
 /** Face colors, light enough for the dark eyes. The keys are the ones looks have always had. */
 export const SKINS = {
@@ -171,7 +176,7 @@ export interface SidekickLook {
   readonly custom?: CustomShape | null
   /** The face's color. */
   readonly skin: Skin
-  /** The coat's finish: flat (solid color, default when absent on older looks) or fluffy (brushed fur). */
+  /** The body's finish: flat (solid color, default when absent on older looks), fluffy (brushed fur), or glass. */
   readonly material?: Material
   // For apps from before Open Bot Avatar (see the top of this file).
   readonly body: Body
@@ -192,6 +197,7 @@ const shapeKeys = SHAPES.map((shape) => shape.key) as ReadonlyArray<ShapeKey>
 const SHAPE_BY_KEY = new Map<string, (typeof SHAPES)[number]>(SHAPES.map((shape) => [shape.key, shape]))
 const SKIN_KEYS = Object.keys(SKINS) as ReadonlyArray<Skin>
 const SKIN_SET = new Set<string>(SKIN_KEYS)
+const MATERIAL_SET = new Set<string>(MATERIALS)
 
 /** The older apps' body nearest a shape, and the shape for an older app's body. */
 const BODY_OF: Partial<Record<ShapeKey, Body>> = { bot: "bot", blob: "blob", ghost: "ghost", cat: "cat", bean: "bean", cube: "cube" }
@@ -233,15 +239,16 @@ export const lookDefinition = (look: Pick<SidekickLook, "shape" | "custom">): Av
 export const shapeName = (look: Pick<SidekickLook, "shape" | "custom">) =>
   look.shape === "custom" ? (look.custom?.name ?? "Custom") : (SHAPE_BY_KEY.get(look.shape)?.name ?? SHAPES[0].name)
 
-/** A look's material, defaulting to flat when absent (looks saved before fluffy existed). */
-export const lookMaterial = (look?: Pick<SidekickLook, "material"> | null): Material => (look?.material === "fluffy" ? "fluffy" : "flat")
+/** A look's material, defaulting to flat when absent (looks saved before materials existed). */
+export const lookMaterial = (look?: Pick<SidekickLook, "material"> | null): Material =>
+  typeof look?.material === "string" && MATERIAL_SET.has(look.material) ? (look.material as Material) : "flat"
 
 /** A look of `shape` in `skin`, with `material` and the older apps' parts filled in. */
 export const makeLook = (shape: ShapeKey | "custom", skin: Skin, custom: CustomShape | null = null, material: Material = "flat"): SidekickLook => ({
   shape: shape === "custom" && !custom ? "bot" : shape,
   custom: shape === "custom" ? custom : null,
   skin,
-  material: material === "fluffy" ? "fluffy" : "flat",
+  material: MATERIAL_SET.has(material) ? material : "flat",
   body: shape === "custom" ? "blob" : (BODY_OF[shape] ?? "blob"),
   eyes: "round",
   mouth: "smile",
@@ -253,7 +260,7 @@ export const makeLook = (shape: ShapeKey | "custom", skin: Skin, custom: CustomS
 /**
  * A look from anything: unknown values fall back, so a bad value never breaks a page. Null if it isn't one at all. A
  * look without `shape` (from an app released before Open Bot Avatar) keeps `previous`'s shape, or takes the one
- * nearest its body; one without `material` (from an app released before fluffy) keeps `previous`'s material; such an
+ * nearest its body; one without `material` (from an app released before materials) keeps `previous`'s material; such an
  * app's color is kept.
  */
 export const cleanLook = (value: unknown, previous?: SidekickLook | null): SidekickLook | null => {
@@ -261,7 +268,11 @@ export const cleanLook = (value: unknown, previous?: SidekickLook | null): Sidek
   const look = value as Record<string, unknown>
   const skin = typeof look.skin === "string" && SKIN_SET.has(look.skin) ? (look.skin as Skin) : "peach"
   const material: Material =
-    look.material === "fluffy" || look.material === "flat" ? look.material : !("material" in look) && previous ? lookMaterial(previous) : "flat"
+    typeof look.material === "string" && MATERIAL_SET.has(look.material)
+      ? (look.material as Material)
+      : !("material" in look) && previous
+        ? lookMaterial(previous)
+        : "flat"
   if (look.shape === "custom") {
     const custom = cleanCustom(look.custom) ?? (previous?.shape === "custom" ? (previous.custom ?? null) : null)
     return custom ? makeLook("custom", skin, custom, material) : makeLook("bot", skin, null, material)

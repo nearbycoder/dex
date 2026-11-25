@@ -83,12 +83,14 @@ import UIKit
         }
     }
 
-    @Test @MainActor func fluffyFacesRenderAndFitPictureLimit() throws {
-        let fluffy = SidekickParts.make("cat", skin: "sky", material: "fluffy")
-        let url = try #require(SidekickArt.fluffyDataURL(for: fluffy))
-        #expect(url.hasPrefix("data:image/png;base64,"))
-        #expect(url.count <= Characters.maxImageURLLength)
-        let image = try #require(AgentAvatar.decode(url))
-        #expect(SidekickPicture.isFace(try #require(image.cgImage)))
+    @Test @MainActor func materialFacesRenderAndFitPictureLimit() throws {
+        for material in ["fluffy", "glass"] {
+            let parts = SidekickParts.make("cat", skin: "sky", material: material)
+            let url = try #require(SidekickArt.materialDataURL(for: parts))
+            #expect(url.hasPrefix("data:image/png;base64,"), "\(material)")
+            #expect(url.count <= Characters.maxImageURLLength, "\(material)")
+            let image = try #require(AgentAvatar.decode(url))
+            #expect(SidekickPicture.isFace(try #require(image.cgImage)), "\(material)")
+        }
     }
 }

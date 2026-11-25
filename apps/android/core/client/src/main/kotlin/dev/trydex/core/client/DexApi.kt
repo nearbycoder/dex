@@ -27,6 +27,7 @@ import dev.trydex.core.model.SavedArtifact
 import dev.trydex.core.model.ScheduledPrompt
 import dev.trydex.core.model.SessionMeta
 import dev.trydex.core.model.SidekickLook
+import dev.trydex.core.model.SidekickLooks
 import dev.trydex.core.model.SkillDetail
 import dev.trydex.core.model.SpaceProfile
 import dev.trydex.core.model.SkillPreview
@@ -359,11 +360,11 @@ class DexApi(private val rpc: AgentRpc) {
             if (picture) {
                 json["image"] = character.image?.let(::JsonPrimitive) ?: JsonNull
                 // With its finish and material always stated: older apps show the picture of a look with finish, and
-                // stating material ensures switching from fluffy back to flat isn't mistaken for an older app omitting it.
+                // stating material ensures switching back to flat isn't mistaken for an older app omitting it.
                 json["look"] = character.look?.let { look ->
                     JsonObject(
                         DexJson.encodeToJsonElement(SidekickLook.serializer(), look).jsonObject +
-                            ("material" to JsonPrimitive(if (look.material == "fluffy") "fluffy" else "flat")) +
+                            ("material" to JsonPrimitive(SidekickLooks.cleanMaterial(look.material))) +
                             ("finish" to (look.finish?.let(::JsonPrimitive) ?: JsonNull)),
                     )
                 } ?: JsonNull

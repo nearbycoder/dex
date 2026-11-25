@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { ArrowLeft, Check, LoaderCircle, MessageCircle, Plug, RotateCcw, Square, Trash2, Volume2 } from "lucide-react"
 import { type ReactNode, useEffect, useRef, useState } from "react"
 import { CharacterAvatar } from "~/client/components/agent-avatar"
-import { fluffyImageDataUrl } from "~/client/components/sidekick-face"
+import { materialImageDataUrl } from "~/client/components/sidekick-face"
 import { SidekickLookPicker } from "~/client/components/sidekick-look-picker"
 import { lookMaterial, randomLook } from "~/shared/sidekick-look"
 import { InfoTip } from "~/client/components/info-tip"
@@ -116,8 +116,8 @@ function CharacterEditor() {
     setSaving(true)
     setError(null)
     try {
-      // A flat look's picture is drawn by the agent; a fluffy one is rendered here (WebGL2) so notifications, widgets, and older apps show fur too.
-      const image = draft.look ? (lookMaterial(draft.look) === "fluffy" ? await fluffyImageDataUrl(draft.look) : null) : draft.image
+      // A flat look's picture is drawn by the agent; fluffy and glass are rendered here (WebGL2) so notifications, widgets, and older apps show them too.
+      const image = draft.look ? (lookMaterial(draft.look) !== "flat" ? await materialImageDataUrl(draft.look) : null) : draft.image
       // A new one keeps the voice shown here (with none chosen, it would otherwise come from the id they're given).
       const voice = isNew && !draft.voice ? voiceOf({ id: draft.name, voice: null }) : draft.voice
       const result = await stub.saveCharacter({ ...draft, image, voice })

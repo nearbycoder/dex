@@ -1,20 +1,43 @@
 import { renderAvatarSvg } from "open-bot-avatar"
-import type { AvatarOptions, MountedAvatar } from "open-bot-avatar/dom"
+import type { AvatarMaterial, AvatarOptions, MountedAvatar } from "open-bot-avatar/dom"
 import { memo, type PointerEvent, useEffect, useMemo, useRef, useState } from "react"
-import { EYE_INK, type LookMood, lookDefinition, lookMaterial, SKINS, type SidekickLook } from "~/shared/sidekick-look"
+import { EYE_INK, type LookMood, lookDefinition, lookMaterial, type Material, SKINS, type SidekickLook } from "~/shared/sidekick-look"
 
 /** Open Bot Avatar's live renderer touches the DOM, so it loads in the browser only, once. */
 let loading: Promise<typeof import("open-bot-avatar/dom")> | null = null
 const loadLive = () => (loading ??= import("open-bot-avatar/dom"))
 
+/** Open Bot Avatar 0.5+ materials are imported values so unused ones stay out of the bundle. */
+const resolvedMaterials = new Map<Material, AvatarMaterial>([["flat", "flat"]])
+const materialLoaders = new Map<Material, Promise<AvatarMaterial>>()
+function loadMaterial(material: Material): Promise<AvatarMaterial> {
+  const ready = resolvedMaterials.get(material)
+  if (ready) return Promise.resolve(ready)
+  let pending = materialLoaders.get(material)
+  if (!pending) {
+    pending = (
+      material === "fluffy"
+        ? import("open-bot-avatar/materials/fluffy").then((mod) => mod.fluffy)
+        : material === "glass"
+          ? import("open-bot-avatar/materials/glass").then((mod) => mod.glass)
+          : Promise.resolve<AvatarMaterial>("flat")
+    ).then((value) => {
+      resolvedMaterials.set(material, value)
+      return value
+    })
+    materialLoaders.set(material, pending)
+  }
+  return pending
+}
+
 /** How long a face celebrates when its work is done, or shows its exclamation mark when the work failed. */
 const AFTERGLOW_MS = { done: 6000, blocked: 4000 } as const
 const ZERO_VIEW = { yaw: 0, pitch: 0 }
 
-/** Cached fluffy still data URLs so lists, pickers, and long chats render plain <img>s after one WebGL2 paint. */
-const fluffyCache = new Map<string, string>()
-const fluffyPending = new Map<string, Promise<string | null>>()
-let fluffyQueue: Promise<unknown> = Promise.resolve()
+/** Cached material still data URLs so lists, pickers, and long chats render plain <img>s after one WebGL2 paint. */
+const materialCache = new Map<string, string>()
+const materialPending = new Map<string, Promise<string | null>>()
+let materialQueue: Promise<unknown> = Promise.resolve()
 let webgl2Checked: boolean | null = null
 
 function hasWebGL2(): boolean {
@@ -33,7 +56,7 @@ function hasWebGL2(): boolean {
 
 function lookCacheKey(look: SidekickLook, size: number): string {
   const custom = look.shape === "custom" && look.custom ? `${look.custom.path}|${look.custom.eyes.x},${look.custom.eyes.y},${look.custom.eyes.spacing},${look.custom.eyes.scale}` : ""
-  return `${size}|${look.shape}|${look.skin}|${custom}`
+  return `${size}|${lookMaterial(look)}|${look.shape}|${look.skin}|${custom}`
 }
 
 /** Encodes a transparent 256px (or smaller) canvas under the 48 KB character image limit (WebP first, PNG fallback). */
@@ -53,69 +76,73 @@ function encodeStillCanvas(source: HTMLCanvasElement, maxChars = 63_000): string
 }
 
 /**
- * Renders a fluffy look once at rest into a transparent square data: URL using Open Bot Avatar's WebGL2 renderer,
- * cached by look and size. Returns null without WebGL2 (callers fall back to flat SVG / the agent's flat PNG).
+ * Renders a non-flat look (fluffy or glass) once at rest into a transparent square data: URL using Open Bot Avatar's
+ * WebGL2 renderer, cached by look, material, and size. Returns null for flat looks or without WebGL2 (callers fall
+ * back to flat SVG / the agent's flat PNG).
  */
-export function fluffyImageDataUrl(look: SidekickLook, size = 256): Promise<string | null> {
-  if (!hasWebGL2()) return Promise.resolve(null)
+export function materialImageDataUrl(look: SidekickLook, size = 256): Promise<string | null> {
+  const material = lookMaterial(look)
+  if (material === "flat" || !hasWebGL2()) return Promise.resolve(null)
   const key = lookCacheKey(look, size)
-  const hit = fluffyCache.get(key)
+  const hit = materialCache.get(key)
   if (hit) return Promise.resolve(hit)
-  const inflight = fluffyPending.get(key)
+  const inflight = materialPending.get(key)
   if (inflight) return inflight
 
-  const run = (fluffyQueue = fluffyQueue.then(async () => {
-    const again = fluffyCache.get(key)
-    if (again) return again
-    const { mountAvatar } = await loadLive()
-    const host = document.createElement("div")
-    host.style.cssText = `position:fixed;left:-9999px;top:0;width:${size}px;height:${size}px;pointer-events:none;visibility:hidden`
-    document.body.appendChild(host)
-    let mounted: MountedAvatar | null = null
-    try {
-      const definition = lookDefinition(look)
-      const color = SKINS[look.skin] ?? SKINS.peach
-      mounted = mountAvatar(host, {
-        definition,
-        color,
-        eyeColor: EYE_INK,
-        material: "fluffy",
-        still: true,
-        view: ZERO_VIEW,
-        label: ""
-      })
-      let painted: HTMLCanvasElement | null = null
-      for (let attempt = 0; attempt < 30; attempt++) {
-        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-        const canvas = host.querySelector("canvas")
-        if (canvas && canvas.width > 0 && canvas.style.width) {
-          painted = canvas
-          break
+  const run = (materialQueue = materialQueue
+    .then(async () => {
+      const again = materialCache.get(key)
+      if (again) return again
+      const [{ mountAvatar }, avatarMaterial] = await Promise.all([loadLive(), loadMaterial(material)])
+      const host = document.createElement("div")
+      host.style.cssText = `position:fixed;left:-9999px;top:0;width:${size}px;height:${size}px;pointer-events:none;visibility:hidden`
+      document.body.appendChild(host)
+      let mounted: MountedAvatar | null = null
+      try {
+        const definition = lookDefinition(look)
+        const color = SKINS[look.skin] ?? SKINS.peach
+        mounted = mountAvatar(host, {
+          definition,
+          color,
+          eyeColor: EYE_INK,
+          material: avatarMaterial,
+          still: true,
+          view: ZERO_VIEW,
+          label: ""
+        })
+        let painted: HTMLCanvasElement | null = null
+        for (let attempt = 0; attempt < 30; attempt++) {
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+          const canvas = host.querySelector("canvas")
+          if (canvas && canvas.width > 0 && canvas.style.width) {
+            painted = canvas
+            break
+          }
         }
+        if (!painted) return null
+        const out = document.createElement("canvas")
+        out.width = out.height = size
+        const ctx = out.getContext("2d")
+        if (!ctx) return null
+        const left = Number.parseFloat(painted.style.left) || 0
+        const top = Number.parseFloat(painted.style.top) || 0
+        const width = Number.parseFloat(painted.style.width) || size
+        const height = Number.parseFloat(painted.style.height) || size
+        ctx.drawImage(painted, left, top, width, height)
+        const url = encodeStillCanvas(out)
+        if (!url) return null
+        if (materialCache.size >= 128) materialCache.delete(materialCache.keys().next().value!)
+        materialCache.set(key, url)
+        return url
+      } finally {
+        mounted?.destroy()
+        host.remove()
       }
-      if (!painted) return null
-      const out = document.createElement("canvas")
-      out.width = out.height = size
-      const ctx = out.getContext("2d")
-      if (!ctx) return null
-      const left = Number.parseFloat(painted.style.left) || 0
-      const top = Number.parseFloat(painted.style.top) || 0
-      const width = Number.parseFloat(painted.style.width) || size
-      const height = Number.parseFloat(painted.style.height) || size
-      ctx.drawImage(painted, left, top, width, height)
-      const url = encodeStillCanvas(out)
-      if (!url) return null
-      if (fluffyCache.size >= 64) fluffyCache.delete(fluffyCache.keys().next().value!)
-      fluffyCache.set(key, url)
-      return url
-    } finally {
-      mounted?.destroy()
-      host.remove()
-    }
-  }).catch(() => null)) as Promise<string | null>
+    })
+    .catch(() => null)) as Promise<string | null>
 
-  fluffyPending.set(key, run)
-  void run.finally(() => fluffyPending.delete(key))
+  materialPending.set(key, run)
+  void run.finally(() => materialPending.delete(key))
   return run
 }
 
@@ -123,8 +150,8 @@ export function fluffyImageDataUrl(look: SidekickLook, size = 256): Promise<stri
  * A sidekick's face, an Open Bot Avatar, live: it breathes, blinks, looks around, and follows the pointer. While `mood`
  * is thinking, it turns into three hopping dots; while working, it bends over the work. When either ends it
  * celebrates, or shows an exclamation mark if `failed`. A still face is drawn once, with no animation (plain SVG when
- * flat, cached single-frame WebGL2 image when fluffy). An `interactive` face turns when dragged. Elsewhere clicks go
- * to what's under it.
+ * flat, cached single-frame WebGL2 image when fluffy or glass). An `interactive` face turns when dragged. Elsewhere
+ * clicks go to what's under it.
  */
 export const SidekickFace = memo(function SidekickFace({
   look,
@@ -151,29 +178,50 @@ export const SidekickFace = memo(function SidekickFace({
   // Until the live face loads (and whenever a flat face is still), draw the same face as a static SVG.
   const still = useMemo(() => renderAvatarSvg(definition, { color, reducedMotion: true }), [definition, color])
 
-  // A fluffy still renders once into the shared cache and displays as an ordinary <img>.
+  // A fluffy or glass still renders once into the shared cache and displays as an ordinary <img>.
   const stillPixels = size <= 48 ? 128 : 256
-  const stillKey = isStill && material === "fluffy" ? lookCacheKey(look, stillPixels) : null
-  const [fluffyStill, setFluffyStill] = useState<string | null>(() => (stillKey ? (fluffyCache.get(stillKey) ?? null) : null))
+  const stillKey = isStill && material !== "flat" ? lookCacheKey(look, stillPixels) : null
+  const [materialStill, setMaterialStill] = useState<string | null>(() => (stillKey ? (materialCache.get(stillKey) ?? null) : null))
   useEffect(() => {
     if (!stillKey) {
-      setFluffyStill(null)
+      setMaterialStill(null)
       return
     }
-    const cached = fluffyCache.get(stillKey)
+    const cached = materialCache.get(stillKey)
     if (cached) {
-      setFluffyStill(cached)
+      setMaterialStill(cached)
       return
     }
-    setFluffyStill(null)
+    setMaterialStill(null)
     let active = true
-    void fluffyImageDataUrl(look, stillPixels).then((url) => {
-      if (active) setFluffyStill(url)
+    void materialImageDataUrl(look, stillPixels).then((url) => {
+      if (active) setMaterialStill(url)
     })
     return () => {
       active = false
     }
   }, [stillKey, look, stillPixels])
+
+  // Load the imported Open Bot Avatar material object for live avatars when needed.
+  const [resolvedMaterial, setResolvedMaterial] = useState<{ name: Material; value: AvatarMaterial } | null>(() => {
+    const ready = resolvedMaterials.get(material)
+    return ready ? { name: material, value: ready } : null
+  })
+  useEffect(() => {
+    if (isStill) return
+    const ready = resolvedMaterials.get(material)
+    if (ready) {
+      setResolvedMaterial({ name: material, value: ready })
+      return
+    }
+    let active = true
+    void loadMaterial(material).then((value) => {
+      if (active) setResolvedMaterial({ name: material, value })
+    })
+    return () => {
+      active = false
+    }
+  }, [isStill, material])
 
   // When thinking or working ends: a short celebration, or the exclamation mark.
   const [afterglow, setAfterglow] = useState<keyof typeof AFTERGLOW_MS | null>(null)
@@ -190,32 +238,34 @@ export const SidekickFace = memo(function SidekickFace({
   }, [mood, failed])
 
   const [view, setView] = useState<{ yaw: number; pitch: number } | null>(null)
-  const options = useMemo<AvatarOptions>(
+  const options = useMemo<Omit<AvatarOptions, "material">>(
     () => ({
       definition,
       color,
-      material,
       state: mood === "working" ? "working" : mood === "thinking" ? "thinking" : (afterglow ?? "idle"),
       followPointer: !isStill && !view,
       still: isStill,
       view: view ?? ZERO_VIEW,
       label: ""
     }),
-    [definition, color, material, mood, afterglow, isStill, view]
+    [definition, color, mood, afterglow, isStill, view]
   )
-  const latest = useRef(options)
-  latest.current = options
+  const latestOptions = useRef(options)
+  latestOptions.current = options
+  const latestMaterial = useRef(material)
+  latestMaterial.current = material
 
   useEffect(() => {
-    // Still faces stay static (plain SVG for flat, cached image for fluffy) without mounting live DOM controllers.
+    // Still faces stay static (plain SVG for flat, cached image for fluffy/glass) without mounting live DOM controllers.
     if (isStill) {
       setMounted(false)
       return
     }
     let live = true
-    void loadLive().then(({ mountAvatar }) => {
+    void Promise.all([loadLive(), loadMaterial(latestMaterial.current)]).then(([{ mountAvatar }, loadedMaterial]) => {
       if (!live || !host.current) return
-      avatar.current = mountAvatar(host.current, latest.current)
+      const currentMaterial = resolvedMaterials.get(latestMaterial.current) ?? loadedMaterial
+      avatar.current = mountAvatar(host.current, { ...latestOptions.current, material: currentMaterial })
       setMounted(true)
     })
     return () => {
@@ -226,8 +276,13 @@ export const SidekickFace = memo(function SidekickFace({
   }, [isStill])
 
   useEffect(() => {
-    avatar.current?.update(options)
-  }, [options])
+    if (!avatar.current) return
+    if (resolvedMaterial?.name === material) {
+      avatar.current.update({ ...options, material: resolvedMaterial.value })
+    } else {
+      avatar.current.update(options)
+    }
+  }, [options, material, resolvedMaterial])
 
   // Dragging turns it; letting go, it turns back.
   const drag = useRef<{ x: number; y: number } | null>(null)
@@ -261,8 +316,8 @@ export const SidekickFace = memo(function SidekickFace({
       aria-hidden="true"
       {...pointer}
     >
-      {fluffyStill ? (
-        <img src={fluffyStill} alt="" className="size-full" draggable={false} />
+      {materialStill ? (
+        <img src={materialStill} alt="" className="size-full" draggable={false} />
       ) : (
         !mounted && <span className="absolute inset-0 [&>svg]:size-full" dangerouslySetInnerHTML={{ __html: still }} />
       )}
