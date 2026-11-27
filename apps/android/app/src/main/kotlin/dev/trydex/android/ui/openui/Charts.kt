@@ -112,7 +112,7 @@ data class ChartSeries(val name: String, val values: List<Double>, val color: Co
 @Immutable
 data class ChartData(val categories: List<String>, val series: List<ChartSeries>)
 
-private fun num(value: Any?): Double = Js.toNumber(value).let { if (it.isNaN()) 0.0 else it }
+private fun num(value: Any?): Double = Js.toNumber(value).let { if (it.isFinite()) it else 0.0 }
 
 /** labels + Series(…) → rows (buildChartData), or query rows `[cat, v1, v2…]` with column names as labels. */
 fun buildChartData(labelsRaw: Any?, seriesRaw: Any?): ChartData? {
@@ -149,7 +149,9 @@ fun buildChartData(labelsRaw: Any?, seriesRaw: Any?): ChartData? {
 fun buildSlices(labelsRaw: Any?, valuesRaw: Any?): List<Pair<String, Double>>? {
     val labels = labelsRaw as? List<*> ?: return null
     val values = valuesRaw as? List<*>
-    if (labels.isNotEmpty() && !values.isNullOrEmpty()) return labels.mapIndexed { i, label -> cellText(label) to ((values.getOrNull(i) as? Double) ?: 0.0) }
+    if (labels.isNotEmpty() && !values.isNullOrEmpty()) {
+        return labels.mapIndexed { i, label -> cellText(label) to ((values.getOrNull(i) as? Double)?.takeIf { it.isFinite() } ?: 0.0) }
+    }
     val slices = labels.filterIsInstance<ElementNode>().filter { it.typeName == "Slice" }
     if (slices.isNotEmpty()) return slices.map { cellText(it.props["category"]) to num(it.props["value"]) }
     return null
@@ -183,6 +185,7 @@ data class Scale(val min: Double, val max: Double, val ticks: List<Double>) {
 
     companion object {
         fun nice(low: Double, high: Double, count: Int): Scale {
+            if (!low.isFinite() || !high.isFinite()) return Scale(0.0, 1.0, listOf(0.0, 1.0))
             var start = low
             var stop = high
             if (start == stop) return Scale(start, stop, listOf(start))
@@ -207,6 +210,7 @@ data class Scale(val min: Double, val max: Double, val ticks: List<Double>) {
 
 /** Axis labels: 1.5K, 2.0K, 10K, 3M; small integers as they are, other values to two places. */
 fun tickLabel(value: Double): String {
+    if (!value.isFinite()) return "0"
     val a = abs(value)
     for ((unit, suffix) in listOf(1e12 to "T", 1e9 to "B", 1e6 to "M", 1e3 to "K")) {
         if (a >= unit) {
@@ -217,10 +221,12 @@ fun tickLabel(value: Double): String {
     return if (value == floor(value)) Js.numberToString(value) else fixed(value, 2)
 }
 
-private fun fixed(value: Double, places: Int) = BigDecimal(value.toString()).setScale(places, RoundingMode.HALF_UP).toPlainString()
+private fun fixed(value: Double, places: Int) =
+    if (!value.isFinite()) "0" else BigDecimal(value.toString()).setScale(places, RoundingMode.HALF_UP).toPlainString()
 
 /** Tooltip values: grouped digits under 100,000, then 123.4K, 1.9M (floored). */
 fun tooltipValue(value: Double): String {
+    if (!value.isFinite()) return "0"
     val a = abs(value)
     if (a < 100_000) return NumberFormat.getNumberInstance().apply { maximumFractionDigits = 3 }.format(value)
     var scaled = a
@@ -678,7 +684,10 @@ fun RadarChart(node: ElementNode) {
     Column(Modifier.fillMaxWidth().testTag("openui-chart"), horizontalAlignment = Alignment.CenterHorizontally) {
         BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             val chart = maxWidth.coerceAtMost(300.dp).coerceAtLeast(150.dp)
-            var selected by remember { mutableStateOf<Int?>(null) }
+            val centerPx = with(LocalDensity.current) { chart.toPx() / 2f }
+            val selected = touch?.let { t ->
+                ((((atan2((t.y - centerPx).toDouble(), (t.x - centerPx).toDouble()) + PI / 2) % (2 * PI) + 2 * PI) % (2 * PI)) / (2 * PI / n)).roundToInt() % n
+            }
             Canvas(Modifier.size(chart).track { touch = it }) {
                 val c = Offset(size.width / 2, size.height / 2)
                 val r = 0.35f * size.width
@@ -701,7 +710,6 @@ fun RadarChart(node: ElementNode) {
                     val ay = when { sin(a) < -0.3 -> 1f; sin(a) > 0.3 -> 0f; else -> 0.5f }
                     drawText(layout, topLeft = Offset(lx - layout.size.width * ax, ly - layout.size.height * ay))
                 }
-                selected = touch?.let { t -> ((((atan2((t.y - c.y).toDouble(), (t.x - c.x).toDouble()) + PI / 2) % (2 * PI) + 2 * PI) % (2 * PI)) / (2 * PI / n)).roundToInt() % n }
                 for (s in visible) {
                     val path = Path()
                     for (i in 0 until n) point(i, s.value.values[i]).let { if (i == 0) path.moveTo(it.x, it.y) else path.lineTo(it.x, it.y) }
@@ -713,7 +721,7 @@ fun RadarChart(node: ElementNode) {
                     }
                 }
             }
-            selected?.let { i ->
+            selected?.takeIf { it in data.categories.indices }?.let { i ->
                 ChartTooltip(data.categories[i], visible.map { TipLine(it.value.name, tooltipValue(it.value.values[i]), it.value.color) }, Modifier.align(Alignment.TopEnd))
             }
         }
@@ -751,7 +759,7 @@ private fun OneDimensional(raw: List<Pair<String, Double>>, radial: Boolean, don
     val sorted = remember(raw) { raw.sortedByDescending { it.second } }
     val colors = chartColors(sorted.size)
     var hidden by remember(sorted.size) { mutableStateOf(emptySet<Int>()) }
-    var active by remember { mutableStateOf<Int?>(null) }
+    var active by remember(sorted.size) { mutableStateOf<Int?>(null) }
     val visible = sorted.indices.filter { it !in hidden }
     val total = visible.sumOf { max(0.0, sorted[it].second) }
     val track = MaterialTheme.colorScheme.surfaceContainerHighest
@@ -888,7 +896,7 @@ fun SingleStackedBarChart(node: ElementNode) {
     val values = slices.map { max(0.0, it.second.takeIf { v -> v.isFinite() } ?: 0.0) }
     val sum = values.sum()
     val colors = slices.indices.map { CHART_PALETTE[it % CHART_PALETTE.size] }
-    var active by remember { mutableStateOf<Int?>(null) }
+    var active by remember(slices.size) { mutableStateOf<Int?>(null) }
     Column(Modifier.fillMaxWidth().testTag("openui-chart"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(
             Modifier.fillMaxWidth().height(28.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest).padding(4.dp),
@@ -905,7 +913,7 @@ fun SingleStackedBarChart(node: ElementNode) {
                 }
             }
         }
-        active?.let { i -> ChartTooltip(slices[i].first, listOf(TipLine("Value", tickLabel(values[i]), colors[i]), TipLine("Percentage", percent(values[i], sum), colors[i]))) }
+        active?.takeIf { it in slices.indices }?.let { i -> ChartTooltip(slices[i].first, listOf(TipLine("Value", tickLabel(values[i]), colors[i]), TipLine("Percentage", percent(values[i], sum), colors[i]))) }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Legend(slices.map { it.first to Color.Unspecified }.mapIndexed { i, (name, _) -> name to colors[i] }, emptySet(), null) { i -> percent(values[i], sum) }
     }
@@ -917,7 +925,7 @@ fun SingleStackedBarChart(node: ElementNode) {
 fun ScatterChart(node: ElementNode) {
     val datasets = node.p.list("datasets").filterIsInstance<ElementNode>().map { ds ->
         val points = (ds.props["points"] as? List<*>).orEmpty().filterIsInstance<ElementNode>().map { pt -> Js.toNumber(pt.props["x"]) to Js.toNumber(pt.props["y"]) }
-            .filter { !it.first.isNaN() && !it.second.isNaN() }
+            .filter { it.first.isFinite() && it.second.isFinite() }
         cellText(ds.props["name"]) to points
     }
     if (node.p["datasets"] == null) return
@@ -935,17 +943,34 @@ fun ScatterChart(node: ElementNode) {
     Column(Modifier.fillMaxWidth().testTag("openui-chart")) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val widthPx = with(density) { maxWidth.toPx() }
+            val heightPx = with(density) { 296.dp.toPx() }
+            val topPx = with(density) { 10.dp.toPx() }
+            val bottomPx = with(density) { 28.dp.toPx() }
+            val maxHitPx = with(density) { 30.dp.toPx() }
             val xScale = if (xs.isEmpty()) Scale.nice(0.0, 100.0, 5) else Scale.nice(xs.min(), xs.max(), max(2, (widthPx / with(density) { 60.dp.toPx() }).toInt()))
             val yScale = if (ys.isEmpty()) Scale.nice(0.0, 100.0, 6) else Scale.nice(ys.min(), ys.max(), 6)
             val yLabels = yScale.ticks.map { tickLabel(it) }
             val yAxis = with(density) { ((yLabels.maxOfOrNull { measurer.measure(it, style).size.width } ?: 0) + 10.dp.roundToPx()).toFloat() }
-            var nearest by remember { mutableStateOf<Triple<Int, Double, Double>?>(null) }
+            val plotH = heightPx - topPx - bottomPx
+            val plotW = widthPx - yAxis
+            val nearest = touch?.let { t ->
+                var best: Triple<Int, Double, Double>? = null
+                var bestD = maxHitPx
+                datasets.forEachIndexed { i, (_, points) ->
+                    if (i in hidden) return@forEachIndexed
+                    points.forEach { (x, y) ->
+                        val d = hypot(yAxis + plotW * xScale.fraction(x) - t.x, topPx + plotH * (1 - yScale.fraction(y)) - t.y)
+                        if (d < bestD) { bestD = d; best = Triple(i, x, y) }
+                    }
+                }
+                best
+            }
             Canvas(Modifier.fillMaxWidth().height(296.dp).track { touch = it }) {
                 val top = 10.dp.toPx()
-                val plotH = size.height - top - 28.dp.toPx()
-                val plotW = size.width - yAxis
-                fun px(x: Double) = yAxis + plotW * xScale.fraction(x)
-                fun py(y: Double) = top + plotH * (1 - yScale.fraction(y))
+                val pH = size.height - top - 28.dp.toPx()
+                val pW = size.width - yAxis
+                fun px(x: Double) = yAxis + pW * xScale.fraction(x)
+                fun py(y: Double) = top + pH * (1 - yScale.fraction(y))
                 val dash = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 3.dp.toPx()))
                 yScale.ticks.forEachIndexed { i, t ->
                     drawLine(grid, Offset(yAxis, py(t)), Offset(size.width, py(t)), 1f, pathEffect = dash)
@@ -953,30 +978,21 @@ fun ScatterChart(node: ElementNode) {
                     drawText(layout, topLeft = Offset(yAxis - 8.dp.toPx() - layout.size.width, py(t) - layout.size.height / 2))
                 }
                 xScale.ticks.forEach { t ->
-                    drawLine(grid, Offset(px(t), top), Offset(px(t), top + plotH), 1f, pathEffect = dash)
-                    label(measurer, tickLabel(t), style, px(t), top + plotH + 14.dp.toPx() - 10.dp.toPx(), 60.dp.toPx().toInt())
+                    drawLine(grid, Offset(px(t), top), Offset(px(t), top + pH), 1f, pathEffect = dash)
+                    label(measurer, tickLabel(t), style, px(t), top + pH + 14.dp.toPx() - 10.dp.toPx(), 60.dp.toPx().toInt())
                 }
-                var best: Triple<Int, Double, Double>? = null
-                var bestD = 30.dp.toPx()
-                touch?.let { t ->
-                    datasets.forEachIndexed { i, (_, points) ->
-                        if (i in hidden) return@forEachIndexed
-                        points.forEach { (x, y) -> val d = hypot(px(x) - t.x, py(y) - t.y); if (d < bestD) { bestD = d; best = Triple(i, x, y) } }
-                    }
-                }
-                nearest = best
                 datasets.forEachIndexed { i, (_, points) ->
                     if (i in hidden) return@forEachIndexed
-                    val dim = best != null && best!!.first != i
+                    val dim = nearest != null && nearest.first != i
                     points.forEach { (x, y) ->
-                        val hot = best?.let { it.first == i && it.second == x && it.third == y } == true
+                        val hot = nearest?.let { it.first == i && it.second == x && it.third == y } == true
                         val c = Offset(px(x), py(y))
                         drawCircle(colors[i].copy(alpha = if (dim) 0.3f else 1f), (if (hot) 6 else 4).dp.toPx(), c)
                         drawCircle(surface, (if (hot) 6 else 4).dp.toPx(), c, style = Stroke(1.5f.dp.toPx()))
                     }
                 }
             }
-            nearest?.let { (i, x, y) ->
+            nearest?.takeIf { it.first in datasets.indices }?.let { (i, x, y) ->
                 ChartTooltip(datasets[i].first, listOf(TipLine("X", tooltipValue(x), colors[i]), TipLine("Y", tooltipValue(y), colors[i])), Modifier.align(Alignment.TopEnd))
             }
         }

@@ -415,7 +415,7 @@ public enum DesktopURL {
 
     /// Whether the page is served by Dex (and so needs the session cookie).
     public static func isOnServer(_ url: URL, server: URL) -> Bool {
-        url.host() == server.host() && url.scheme == server.scheme
+        DexHTTP.sameOrigin(url, server)
     }
 }
 

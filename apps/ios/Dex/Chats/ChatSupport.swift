@@ -97,6 +97,17 @@ final class MediaLoader {
         cache.totalCostLimit = 64 * 1024 * 1024
         return cache
     }()
+    private let svgAvatars: NSCache<NSString, NSString> = {
+        let cache = NSCache<NSString, NSString>()
+        cache.countLimit = 40
+        return cache
+    }()
+    private var downloadedFiles: [String: URL] = [:]
+
+    enum AvatarContent {
+        case image(UIImage)
+        case svg(String)
+    }
 
     private static func pixelCost(_ image: UIImage) -> Int {
         max(1, Int(image.size.width * image.size.height * image.scale * image.scale * 4))
@@ -107,13 +118,112 @@ final class MediaLoader {
 
     func cached(_ key: String) -> UIImage? { images.object(forKey: key as NSString) }
 
+    func clear() {
+        images.removeAllObjects()
+        svgAvatars.removeAllObjects()
+        downloadedFiles.removeAll()
+    }
+
+    /// Downloads any remote asset (audio clip, video, image, or attached file) to a local temporary export URL,
+    /// attaching Dex's session cookie only when the URL shares the signed-in server's origin.
+    func download(_ url: URL, suggestedName: String? = nil, client: DexClient) async throws -> URL {
+        let key = "\(url.absoluteString)|\(suggestedName ?? "")"
+        if let existing = downloadedFiles[key], FileManager.default.fileExists(atPath: existing.path()) {
+            return existing
+        }
+        let dir = FileManager.default.temporaryDirectory.appending(path: "DexExport/\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        if Self.isMock(client.server) {
+            let name = Self.sanitizedFileName(suggestedName, fallback: url.lastPathComponent, ext: url.pathExtension.isEmpty ? "png" : url.pathExtension)
+            let target = dir.appending(path: name)
+            let data = Self.placeholder(seed: url.lastPathComponent).pngData() ?? Data()
+            try data.write(to: target, options: .atomic)
+            downloadedFiles[key] = target
+            return target
+        }
+        let own = client.server.map { DexHTTP.sameOrigin(url, $0) } ?? false
+        let request = DexHTTP.request(url, token: own ? client.credentials?.token : nil)
+        let (tempURL, response) = try await DexHTTP.session.download(for: request)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            try? FileManager.default.removeItem(at: tempURL)
+            throw URLError(.badServerResponse)
+        }
+        let urlExt = url.pathExtension
+        let responseName = response.suggestedFilename
+        let fallback = (responseName?.isEmpty == false ? responseName! : nil) ?? url.lastPathComponent
+        let fileName = Self.sanitizedFileName(suggestedName, fallback: fallback, ext: urlExt)
+        let target = dir.appending(path: fileName)
+        try FileManager.default.moveItem(at: tempURL, to: target)
+        downloadedFiles[key] = target
+        return target
+    }
+
+    /// Writes an in-memory image (attached image or VM screenshot) into `tmp/DexExport` for saving to Files.
+    func exportImage(_ image: UIImage, name: String = "image") throws -> URL {
+        guard let data = image.pngData() ?? image.jpegData(compressionQuality: 0.92) else {
+            throw URLError(.cannotDecodeContentData)
+        }
+        let dir = FileManager.default.temporaryDirectory.appending(path: "DexExport/\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let ext = image.pngData() != nil ? "png" : "jpg"
+        let fileName = Self.sanitizedFileName(name, fallback: "image.\(ext)", ext: ext)
+        let target = dir.appending(path: fileName)
+        try data.write(to: target, options: .atomic)
+        return target
+    }
+
+    private static func sanitizedFileName(_ preferred: String?, fallback: String, ext: String) -> String {
+        let invalid = CharacterSet(charactersIn: "/\\:*?\"<>|\r\n\t\0")
+        func clean(_ raw: String) -> String {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            let stripped = trimmed.components(separatedBy: invalid).joined(separator: "_")
+            return String(stripped.prefix(120)).trimmingCharacters(in: CharacterSet(charactersIn: ". "))
+        }
+        let cleanFallback = clean(fallback)
+        let base = preferred.map(clean).flatMap { $0.isEmpty ? nil : $0 } ?? (cleanFallback.isEmpty ? "download" : cleanFallback)
+        let cleanExt = ext.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !cleanExt.isEmpty && cleanExt.count <= 10 && !base.lowercased().hasSuffix(".\(cleanExt)") {
+            return "\(base).\(cleanExt)"
+        }
+        return base
+    }
+
+    func cachedAvatar(_ path: String) -> AvatarContent? {
+        if let image = images.object(forKey: path as NSString) { return .image(image) }
+        if let svg = svgAvatars.object(forKey: path as NSString) { return .svg(svg as String) }
+        return nil
+    }
+
+    /// Fetches a content-addressed `/api/avatars/...` image with the session cookie and caches it in memory.
+    func avatar(_ path: String, client: DexClient) async throws -> AvatarContent {
+        if let cached = cachedAvatar(path) { return cached }
+        guard path.hasPrefix("/api/avatars/"), let server = client.server, !Self.isMock(server),
+              let url = ChatMedia.absolute(path, server: server), DexHTTP.sameOrigin(url, server) else {
+            throw URLError(.badURL)
+        }
+        let request = DexHTTP.request(url, token: client.credentials?.token)
+        let (data, response) = try await DexHTTP.session.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        let mime = http.value(forHTTPHeaderField: "Content-Type")?.lowercased() ?? ""
+        if mime.hasPrefix("image/svg+xml") {
+            let dataUrl = "data:image/svg+xml;base64," + data.base64EncodedString()
+            svgAvatars.setObject(dataUrl as NSString, forKey: path as NSString)
+            return .svg(dataUrl)
+        }
+        guard let decoded = UIImage(data: data) else { throw URLError(.cannotDecodeContentData) }
+        images.setObject(decoded, forKey: path as NSString, cost: Self.pixelCost(decoded))
+        return .image(decoded)
+    }
+
     func image(_ url: URL, client: DexClient) async throws -> UIImage {
         if let image = cached(url.absoluteString) { return image }
         let image: UIImage
         if Self.isMock(client.server) {
             image = Self.placeholder(seed: url.lastPathComponent)
         } else {
-            let own = client.server.map { url.host() == $0.host() } ?? false
+            let own = client.server.map { DexHTTP.sameOrigin(url, $0) } ?? false
             let request = DexHTTP.request(url, token: own ? client.credentials?.token : nil)
             let (data, response) = try await DexHTTP.session.data(for: request)
             if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) { throw URLError(.badServerResponse) }
@@ -136,7 +246,7 @@ final class MediaLoader {
     /// An asset for AVPlayer that sends the session cookie to Dex.
     func asset(_ url: URL, client: DexClient) -> AVURLAsset {
         var options: [String: Any] = [:]
-        if let server = client.server, let token = client.credentials?.token, url.host() == server.host(),
+        if let server = client.server, let token = client.credentials?.token, DexHTTP.sameOrigin(url, server),
            let cookie = DexHTTP.cookie(server: server, token: token) {
             options[AVURLAssetHTTPCookiesKey] = [cookie]
         }

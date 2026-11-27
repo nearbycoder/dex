@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router"
 import { Brain, CalendarClock, Check, ChevronDown, Eye, RefreshCw, Search } from "lucide-react"
 import { type CSSProperties, type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
-import { useDex } from "~/client/lib/dex"
+import { shallowEqual, useDexActions, useDexConnected, useDexModels, useDexSelector } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
 import {
   clampThinking,
@@ -151,7 +151,10 @@ function ModelMenuPanel(props: {
   // Newest first, and only the free ones: each remembered on this device.
   const [newest, toggleNewest] = useRemembered(NEWEST_KEY)
   const [freeOnly, toggleFree] = useRemembered(FREE_KEY)
-  const { state, stub, connected: online } = useDex()
+  const { stub } = useDexActions()
+  const online = useDexConnected()
+  useDexModels()
+  const modelsMeta = useDexSelector((state) => state?.models)
   const [checking, setChecking] = useState(false)
 
   // Connected subscriptions first; a model matches when every word of the search is in its name, maker, subscription,
@@ -297,9 +300,9 @@ function ModelMenuPanel(props: {
         <span className="flex items-center gap-1">
           <Brain className="size-3" /> thinks
         </span>
-        {state?.models && state.models.updatedAt > 0 && (
+        {modelsMeta && modelsMeta.updatedAt > 0 && (
           <span className="ml-auto flex items-center gap-1 text-zinc-600">
-            Checked {timeAgo(state.models.updatedAt)}
+            Checked {timeAgo(modelsMeta.updatedAt)}
             <button
               type="button"
               title="Check for new and retired models now"
@@ -331,11 +334,12 @@ function ModelMenu(props: { model: string; onSelect: (model: string) => void; di
   const [place, setPlace] = useState<{ upward: boolean; style: CSSProperties } | null>(null)
   const menu = useRef<HTMLDivElement>(null)
   const root = useRef<HTMLDivElement>(null)
+  useDexModels()
   const current = findModel(props.model)
-  const { state } = useDex()
-  const connected: Record<ModelProvider, boolean> = state
-    ? connectedProviders(state)
-    : { clinepass: true, "opencode-go": true, chatgpt: true, commandcode: true, openrouter: true }
+  const connected = useDexSelector<Record<ModelProvider, boolean>>(
+    (state) => (state ? connectedProviders(state) : { clinepass: true, "opencode-go": true, chatgpt: true, commandcode: true, openrouter: true }),
+    shallowEqual
+  )
 
   useEffect(() => {
     if (!open) return

@@ -1,4 +1,4 @@
-import { Type } from "@earendil-works/pi-ai"
+import { Type } from "typebox"
 import { defineTool } from "@earendil-works/pi-durable"
 import { generateSystemPrompt, type LibrarySpec, type ToolSpec } from "@openuidev/lang-core"
 import spec from "~/shared/openui-spec.json"

@@ -1,7 +1,7 @@
 import { BUILT_IN_MODELS, type DexModel, type ModelApi, type ModelMaker, type ModelProvider } from "~/shared/models"
 import { CHATGPT_BASE_URL } from "./chatgpt"
 import { COMMANDCODE_BASE_URL, type CommandCodeListed } from "./commandcode"
-import { OPENCODE_GO_BASE_URL } from "./opencode-go"
+import { isAllowedOpenCodeBaseUrl, OPENCODE_GO_BASE_URL } from "./opencode-go"
 
 /**
  * Keeps the model list current. Providers add, rename, and retire models every few weeks (an anonymous preview
@@ -196,7 +196,7 @@ const zenFreeModels = (listed: ReadonlyArray<ZenModel>, goIds: ReadonlySet<strin
     const apiId = typeof model.id === "string" ? model.id : ""
     const baseUrl = model.api?.["chat-completions"]?.base_url
     const free = model.cost?.text?.input?.price === 0 && model.cost.text.output?.price === 0
-    if (!apiId || !baseUrl || !free || model.type !== "chat" || goIds.has(apiId)) return []
+    if (!apiId || !isAllowedOpenCodeBaseUrl(baseUrl) || !free || model.type !== "chat" || goIds.has(apiId)) return []
     const efforts = model.capabilities?.reasoning?.supported ? model.capabilities.reasoning.effort : undefined
     const entry: DevModel = {
       name: model.name,
@@ -205,7 +205,7 @@ const zenFreeModels = (listed: ReadonlyArray<ZenModel>, goIds: ReadonlySet<strin
       modalities: model.modalities,
       limit: model.limit
     }
-    return [{ ...newOpenCodeModel(apiId, entry), baseUrl: baseUrl.replace(/\/+$/, ""), cost: cost({}), ...released(model.release_date) }]
+    return [{ ...newOpenCodeModel(apiId, entry), baseUrl: baseUrl!.replace(/\/+$/, ""), cost: cost({}), ...released(model.release_date) }]
   })
 
 /** Whether a model is one of Zen's (served on Zen's address rather than OpenCode Go's). */
@@ -431,7 +431,10 @@ const getJson = async (url: string): Promise<unknown> => {
     // models.dev's file is a few MB and changes a few times a day: Cloudflare's cache shares one copy between agents.
     cf: { cacheTtl: 900, cacheEverything: true }
   })
-  if (!response.ok) throw new Error(`${new URL(url).host} returned ${response.status}`)
+  if (!response.ok) {
+    void response.body?.cancel()
+    throw new Error(`${new URL(url).host} returned ${response.status}`)
+  }
   return response.json()
 }
 

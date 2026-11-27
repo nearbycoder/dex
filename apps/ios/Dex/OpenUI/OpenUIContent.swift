@@ -91,7 +91,9 @@ struct OUITextContent: View {
         case "large", "large-heavy": .title3
         default: .body
         }
-        MarkdownView(text: node.string("text") ?? "", font: font) { openURL($0) }
+        MarkdownView(text: node.string("text") ?? "", font: font) { url in
+            if let safe = OpenUICard.safeHttpUrl(.string(url.absoluteString)) { openURL(safe) }
+        }
             .fontWeight(size.hasSuffix("heavy") ? .semibold : nil)
     }
 }
@@ -102,7 +104,9 @@ struct OUIMarkdown: View {
     @Environment(\.openURL) private var openURL
 
     var body: some View {
-        let text = MarkdownView(text: node.string("textMarkdown") ?? "") { openURL($0) }
+        let text = MarkdownView(text: node.string("textMarkdown") ?? "") { url in
+            if let safe = OpenUICard.safeHttpUrl(.string(url.absoluteString)) { openURL(safe) }
+        }
         switch node.string("variant") {
         case "card": text.ouiPanel()
         case "sunk": text.padding(12).background(.quaternary.opacity(0.5), in: .rect(cornerRadius: OUIStyle.corner, style: .continuous))
@@ -126,7 +130,9 @@ struct OUICallout: View {
                 Image(systemName: symbol(variant)).foregroundStyle(OUIStyle.tint(variant))
                 VStack(alignment: .leading, spacing: 3) {
                     if let title = node.string("title") { Text(title).font(.subheadline.weight(.semibold)) }
-                    MarkdownView(text: node.string("description") ?? "", font: .subheadline) { openURL($0) }
+                    MarkdownView(text: node.string("description") ?? "", font: .subheadline) { url in
+                        if let safe = OpenUICard.safeHttpUrl(.string(url.absoluteString)) { openURL(safe) }
+                    }
                 }
             }
             .padding(12)

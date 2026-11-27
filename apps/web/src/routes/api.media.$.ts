@@ -3,9 +3,8 @@ import { getAgentByName } from "agents"
 import { env } from "cloudflare:workers"
 import type { DexAgent } from "~/agent/dex-agent"
 import { encodeUserId, parseDownloadToken, parseUploadToken } from "~/agent/media"
-import { activeViewer } from "~/server/active-session"
-import { Keys } from "~/server/crypto"
-import { serverRuntime } from "~/server/runtime"
+import { activeViewer, rateLimitKey } from "~/server/active-session"
+import { verifyHmac } from "~/server/crypto"
 import { MAX_MEDIA_BYTES, mediaTypeOf } from "~/shared/media"
 
 const KEY = /^[A-Za-z0-9_-]+\/[0-9a-f-]{36}\.[a-z0-9]+$/
@@ -32,12 +31,19 @@ async function serve(request: Request, key: string, head: boolean) {
   const object = head ? await env.MEDIA.head(key) : await env.MEDIA.get(key, { range: request.headers, onlyIf: request.headers })
   if (!object) return status(404, "Not found")
 
+  const requestUrl = new URL(request.url)
+  const forceDownload = requestUrl.searchParams.get("download") === "1"
+  const requestedName = requestUrl.searchParams.get("name")?.replace(/[\u0000-\u001f/\\]/g, "_").trim().slice(0, 140)
+  const baseName = requestedName || object.customMetadata?.name || key.split("/").pop() || "file"
+  const keyExt = /\.([a-z0-9]{1,10})$/i.exec(key)?.[1]?.toLowerCase()
+  const downloadName = keyExt && !baseName.toLowerCase().endsWith(`.${keyExt}`) ? `${baseName}.${keyExt}` : baseName
+
   const headers = new Headers({
     "content-type": media?.type ?? "application/octet-stream",
     "accept-ranges": "bytes",
     etag: object.httpEtag,
     "cache-control": "private, max-age=31536000, immutable",
-    "content-disposition": media ? "inline" : downloadDisposition(object.customMetadata?.name ?? key.split("/").pop() ?? "file"),
+    "content-disposition": media && !forceDownload ? "inline" : downloadDisposition(downloadName),
     "x-content-type-options": "nosniff",
     "content-security-policy": "default-src 'none'; sandbox",
     "cross-origin-resource-policy": "same-origin"
@@ -46,13 +52,21 @@ async function serve(request: Request, key: string, head: boolean) {
     headers.set("content-length", String(object.size))
     return new Response(null, { status: 200, headers })
   }
-  // A failed precondition (If-None-Match, …) returns the object without a body.
-  if (!("body" in object)) return new Response(null, { status: 304, headers })
+  // A failed precondition (If-None-Match / If-Modified-Since → 304; If-Match / If-Unmodified-Since → 412).
+  if (!("body" in object)) {
+    const isPreconditionFailed = request.headers.has("if-match") || request.headers.has("if-unmodified-since")
+    return new Response(null, { status: isPreconditionFailed ? 412 : 304, headers })
+  }
 
   const range = object.range as { offset?: number; length?: number; suffix?: number } | undefined
   if (range && request.headers.has("range")) {
-    const offset = range.suffix !== undefined ? object.size - range.suffix : (range.offset ?? 0)
-    const length = range.suffix !== undefined ? range.suffix : (range.length ?? object.size - offset)
+    const length = range.suffix !== undefined ? Math.min(range.suffix, object.size) : Math.min(range.length ?? Math.max(0, object.size - (range.offset ?? 0)), Math.max(0, object.size - (range.offset ?? 0)))
+    const offset = range.suffix !== undefined ? object.size - length : (range.offset ?? 0)
+    if (length <= 0 || offset < 0 || offset >= object.size) {
+      void (object as R2ObjectBody).body.cancel()
+      headers.set("content-range", `bytes */${object.size}`)
+      return new Response(null, { status: 416, headers })
+    }
     headers.set("content-range", `bytes ${offset}-${offset + length - 1}/${object.size}`)
     headers.set("content-length", String(length))
     return new Response((object as R2ObjectBody).body, { status: 206, headers })
@@ -68,9 +82,10 @@ async function serve(request: Request, key: string, head: boolean) {
 async function upload(request: Request, token: string) {
   if (request.headers.get("origin")) return status(403, "Uploads come from VMs, not browsers")
   const parsed = parseUploadToken(token)
-  const valid = parsed ? await serverRuntime(env).runPromise(Keys.use((keys) => keys.verify(parsed.signed, parsed.tag))) : false
+  const authSecret = String((env as unknown as Record<string, unknown>).AUTH_SECRET ?? "")
+  const valid = parsed ? await verifyHmac(authSecret, parsed.signed, parsed.tag) : false
   if (!parsed || !valid) {
-    const { success } = await env.LOGIN_LIMITER.limit({ key: request.headers.get("cf-connecting-ip") ?? "unknown" })
+    const { success } = await env.LOGIN_LIMITER.limit({ key: rateLimitKey(request, "media-upload") })
     if (!success) return status(429, "Too many attempts")
     return status(401, "Invalid upload token")
   }
@@ -83,9 +98,14 @@ async function upload(request: Request, token: string) {
   const claim = (await agent.consumeMediaUpload(token, size)) as { key: string; contentType: string; name: string; sessionId: string } | null
   if (!claim || !claim.key.startsWith(`${encodeUserId(parsed.userId)}/`)) return status(401, "Upload token expired or already used")
 
-  await env.MEDIA.put(claim.key, request.body, { httpMetadata: { contentType: claim.contentType }, customMetadata: { name: claim.name } })
-  await agent.finishMediaUpload(claim.key, claim.sessionId, claim.name, claim.contentType, size)
-  return new Response(JSON.stringify({ url: `/api/media/${claim.key}` }), { status: 201, headers: { "content-type": "application/json" } })
+  const stored = await env.MEDIA.put(claim.key, request.body, { httpMetadata: { contentType: claim.contentType }, customMetadata: { name: claim.name } })
+  try {
+    await agent.finishMediaUpload(claim.key, claim.sessionId, claim.name, claim.contentType, stored?.size ?? size)
+  } catch (error) {
+    await env.MEDIA.delete(claim.key).catch(() => {})
+    throw error
+  }
+  return new Response(JSON.stringify({ url: `/api/media/${claim.key}` }), { status: 201, headers: { "content-type": "application/json", "cache-control": "no-store" } })
 }
 
 /**
@@ -95,9 +115,10 @@ async function upload(request: Request, token: string) {
 async function download(request: Request, token: string) {
   if (request.headers.get("origin")) return status(403, "Downloads go to VMs, not browsers")
   const parsed = parseDownloadToken(token)
-  const valid = parsed ? await serverRuntime(env).runPromise(Keys.use((keys) => keys.verify(parsed.signed, parsed.tag))) : false
+  const authSecret = String((env as unknown as Record<string, unknown>).AUTH_SECRET ?? "")
+  const valid = parsed ? await verifyHmac(authSecret, parsed.signed, parsed.tag) : false
   if (!parsed || !valid) {
-    const { success } = await env.LOGIN_LIMITER.limit({ key: request.headers.get("cf-connecting-ip") ?? "unknown" })
+    const { success } = await env.LOGIN_LIMITER.limit({ key: rateLimitKey(request, "media-download") })
     if (!success) return status(429, "Too many attempts")
     return status(401, "Invalid download token")
   }

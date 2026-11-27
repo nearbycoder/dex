@@ -108,6 +108,8 @@ export class VoiceCall {
   private turnTimer: ReturnType<typeof setTimeout> | undefined
   /** Bumped when they're cut off: work for an older reply is dropped. */
   private generation = 0
+  private fetchAbort: AbortController | null = null
+  private readonly captionTimers = new Set<ReturnType<typeof setTimeout>>()
   private speech = Promise.resolve()
   private pending = 0
   private stream = sentenceStream()
@@ -185,15 +187,26 @@ export class VoiceCall {
   }
 
   setMuted(muted: boolean) {
-    this.update({ muted })
-    if (muted) this.recognition?.abort()
-    else this.listen()
+    if (muted) {
+      clearTimeout(this.turnTimer)
+      this.finalText = ""
+      this.interim = ""
+      this.update({ muted: true, heard: "" })
+      const recognition = this.recognition
+      this.recognition = null
+      recognition?.abort()
+    } else {
+      this.update({ muted: false })
+      this.listen()
+    }
   }
 
   /** Stops everything. */
   end() {
     this.update({ phase: "ended" })
     this.generation++
+    this.fetchAbort?.abort()
+    this.fetchAbort = null
     clearTimeout(this.turnTimer)
     this.silence()
     const recognition = this.recognition
@@ -319,12 +332,21 @@ export class VoiceCall {
     this.speech = this.speech
       .then(async () => {
         if (generation !== this.generation) return
-        const response = await fetch("/api/voice/phonemes", {
-          method: "POST",
-          credentials: "same-origin",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ text })
-        })
+        const abort = new AbortController()
+        this.fetchAbort = abort
+        let response: Response
+        try {
+          response = await fetch("/api/voice/phonemes", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ text }),
+            signal: abort.signal
+          })
+        } finally {
+          if (this.fetchAbort === abort) this.fetchAbort = null
+        }
+        if (generation !== this.generation) return
         if (!response.ok) throw new Error(response.status === 401 ? "Sign in again to use calls." : "Their voice isn't available right now.")
         const { sentences } = (await response.json()) as PhonemesResponse
         for (const sentence of sentences) {
@@ -359,7 +381,11 @@ export class VoiceCall {
           this.recentlySaid.push({ words: words(text), at: Date.now() })
           // The caption changes when the sentence starts playing, not when it's made (synthesis runs ahead).
           const delay = this.play(reply.samples)
-          setTimeout(() => generation === this.generation && this.update({ saying: text }), delay)
+          const timer = setTimeout(() => {
+            this.captionTimers.delete(timer)
+            if (generation === this.generation) this.update({ saying: text })
+          }, delay)
+          this.captionTimers.add(timer)
         }
         if (reply.type === "done" || reply.type === "error") {
           listeners.delete(listener)
@@ -394,6 +420,8 @@ export class VoiceCall {
   }
 
   private silence() {
+    for (const timer of this.captionTimers) clearTimeout(timer)
+    this.captionTimers.clear()
     for (const source of this.playing) {
       source.onended = null
       try {
@@ -408,6 +436,8 @@ export class VoiceCall {
   private cutOff() {
     if (!this.speaking()) return
     this.generation++
+    this.fetchAbort?.abort()
+    this.fetchAbort = null
     this.silence()
     this.unsaid = this.replyKey
     this.replyDone = true

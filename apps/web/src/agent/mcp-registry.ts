@@ -32,24 +32,28 @@ const searches = new Map<string, { at: number; results: RegistryServer[] }>()
 
 /** Shell-safe words only: registry data goes into a command line on the VM. */
 const SAFE = /^[\w@./:=+-]+$/
+/** Package identifiers cannot start with `-` (prevents flag injection into npx/uvx/docker). */
+const SAFE_IDENT = /^(?!-)[\w@./:=+-]+$/
 
 /**
  * The command that starts a stdio package, as it would run on the MCP VM: npm via npx, PyPI via uvx, images via
  * docker. Required arguments without a value become `<name>` placeholders (`templated`). Null for anything else.
  */
 const packageCommand = (pkg: RawPackage): { command: string; templated: boolean } | null => {
-  if (pkg.transport?.type !== "stdio" || !pkg.identifier || !SAFE.test(pkg.identifier) || (pkg.version && !SAFE.test(pkg.version))) return null
+  if (pkg.transport?.type !== "stdio" || !pkg.identifier || !SAFE_IDENT.test(pkg.identifier) || (pkg.version && !SAFE_IDENT.test(pkg.version))) return null
   let templated = false
   const args: string[] = []
   for (const arg of pkg.packageArguments ?? []) {
     const value = arg.value ?? arg.default
+    const safeName = arg.name && SAFE.test(arg.name) ? arg.name : undefined
     if (value === undefined || !SAFE.test(value)) {
       if (!arg.isRequired && value === undefined) continue
       templated = true
-      args.push(arg.type === "named" && arg.name ? `${arg.name} <value>` : `<${arg.name ?? "value"}>`)
+      const placeholder = (arg.name ?? "value").replace(/[^A-Za-z0-9_.-]+/g, "_").slice(0, 40) || "value"
+      args.push(arg.type === "named" && safeName ? `${safeName} <value>` : `<${placeholder}>`)
       continue
     }
-    if (arg.type === "named" && arg.name && SAFE.test(arg.name)) args.push(arg.name, value)
+    if (arg.type === "named" && safeName) args.push(safeName, value)
     else args.push(value)
   }
   const env = (pkg.environmentVariables ?? []).flatMap((variable) => (variable.name && /^[A-Za-z_]\w*$/.test(variable.name) ? [variable.name] : []))
@@ -154,7 +158,10 @@ export async function searchRegistry(query: string): Promise<RegistryServer[]> {
       }
     )
     if (!response) break
-    if (!response.ok) throw new Error(`The MCP Registry returned ${response.status}.`)
+    if (!response.ok) {
+      void response.body?.cancel()
+      throw new Error(`The MCP Registry returned ${response.status}.`)
+    }
     const body = (await response.json()) as { servers?: RawEntry[]; metadata?: { nextCursor?: string } }
     for (const entry of body.servers ?? []) {
       const server = toServer(entry)
@@ -201,7 +208,10 @@ export async function searchSmithery(query: string): Promise<RegistryServer[]> {
     headers: { accept: "application/json", "user-agent": "Dex (MCP search)" },
     signal: AbortSignal.timeout(TIMEOUT_MS)
   }).catch(() => null)
-  if (!response?.ok) throw new Error(response ? `Smithery returned ${response.status}.` : "Couldn't reach Smithery.")
+  if (!response?.ok) {
+    void response?.body?.cancel()
+    throw new Error(response ? `Smithery returned ${response.status}.` : "Couldn't reach Smithery.")
+  }
   const body = (await response.json()) as { servers?: SmitheryListing[] }
   const lower = q.toLowerCase()
   const results = (body.servers ?? [])
@@ -243,7 +253,10 @@ async function smitheryDetail(name: string): Promise<{ url: string | null; tools
     headers: { accept: "application/json", "user-agent": "Dex (MCP checks)" },
     signal: AbortSignal.timeout(TIMEOUT_MS)
   }).catch(() => null)
-  if (!response?.ok) return { url: null, tools: [] }
+  if (!response?.ok) {
+    void response?.body?.cancel()
+    return { url: null, tools: [] }
+  }
   const body = (await response.json()) as { deploymentUrl?: string; connections?: Array<{ type?: string; deploymentUrl?: string }>; tools?: Array<{ name?: string }> }
   const url = body.connections?.find((connection) => connection.type === "http" && connection.deploymentUrl)?.deploymentUrl ?? body.deploymentUrl ?? null
   return { url: url?.startsWith("https://") ? url : null, tools: (body.tools ?? []).flatMap((tool) => (tool.name ? [tool.name] : [])) }
@@ -282,24 +295,43 @@ const post = (url: string, body: unknown, session?: string | null) =>
 /** Whether the server publishes OAuth metadata (RFC 9728), from its 401 or the well-known paths. */
 async function oauthMetadata(url: URL, challenge: string | null): Promise<string | null> {
   const fromChallenge = challenge && /resource_metadata="([^"]+)"/.exec(challenge)?.[1]
+  // Only follow resource_metadata on the same origin as the checked MCP server.
+  const sameOriginChallenge = (() => {
+    if (!fromChallenge) return null
+    try {
+      const parsed = new URL(fromChallenge)
+      return parsed.protocol === "https:" && parsed.origin === url.origin ? parsed.toString() : null
+    } catch {
+      return null
+    }
+  })()
   const candidates = [
-    fromChallenge,
+    sameOriginChallenge,
     `${url.origin}/.well-known/oauth-protected-resource${url.pathname.replace(/\/$/, "")}`,
     `${url.origin}/.well-known/oauth-protected-resource`,
     `${url.origin}/.well-known/oauth-authorization-server`
-  ].filter((candidate): candidate is string => Boolean(candidate?.startsWith("https://")))
-  for (const candidate of candidates) {
+  ].filter((candidate, idx, all): candidate is string => Boolean(candidate?.startsWith("https://")) && all.indexOf(candidate) === idx)
+
+  const probe = async (candidate: string): Promise<string | null> => {
     const response = await fetch(candidate, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(TIMEOUT_MS) }).catch(() => null)
-    if (!response) continue
+    if (!response) return null
     if (!response.ok) {
       void response.body?.cancel()
-      continue
+      return null
     }
     const body = (await response.json().catch(() => null)) as { authorization_servers?: string[]; issuer?: string } | null
-    if (body?.authorization_servers?.length) return new URL(body.authorization_servers[0]!).host
-    if (body?.issuer) return new URL(body.issuer).host
+    const raw = body?.authorization_servers?.[0] ?? body?.issuer
+    if (!raw) return null
+    try {
+      const parsed = new URL(raw)
+      return parsed.protocol === "https:" ? parsed.host : null
+    } catch {
+      return null
+    }
   }
-  return null
+
+  const results = await Promise.all(candidates.map(probe))
+  return results.find((host): host is string => host !== null) ?? null
 }
 
 /**
@@ -447,7 +479,8 @@ export async function checkServer(listed: RegistryServer, githubToken: string | 
 
 /** The source: is it maintained, licensed, used? */
 async function repoChecks(repository: string | null, githubToken: string | null, add: (id: string, label: string, status: McpCheck["status"], detail: string) => void) {
-  const repo = repository && /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/.exec(repository)?.[1]
+  const match = repository && /^https:\/\/github\.com\/((?!\.+$)[\w.-]+)\/((?!\.+$)[\w.-]+?)(?:\.git)?\/?$/.exec(repository)
+  const repo = match ? `${match[1]}/${match[2]}` : null
   if (repo) {
     const response = await fetch(`https://api.github.com/repos/${repo}`, {
       headers: { accept: "application/vnd.github+json", "user-agent": "Dex (MCP checks)", ...(githubToken ? { authorization: `Bearer ${githubToken}` } : {}) },
@@ -466,6 +499,7 @@ async function repoChecks(repository: string | null, githubToken: string | null,
       const license = info.license?.spdx_id
       add("license", "License", license && license !== "NOASSERTION" ? "pass" : "warn", license && license !== "NOASSERTION" ? license : "No recognised license.")
     } else {
+      void response?.body?.cancel()
       add("repo", "Source", "warn", response?.status === 404 ? `${repo} isn't public on GitHub.` : `Couldn't read ${repo} on GitHub right now.`)
     }
   } else {

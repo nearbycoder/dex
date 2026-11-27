@@ -2,10 +2,9 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context"
 import type { Message as PiMessage } from "@earendil-works/pi-ai"
 import { createModels } from "@earendil-works/pi-ai/models"
 import {
-  type AgentEventStream,
+  type ConversationWatch,
   type Cursor,
   type EntryRecord,
-  type SnapshotEvent,
   createRegistry,
   defineExtension,
   GenerationTask,
@@ -16,6 +15,7 @@ import {
   type ToolRegistration,
   UsageDoc
 } from "@earendil-works/pi-durable"
+import { createToolSearchExtension } from "@earendil-works/pi-durable/tool-search"
 import { Agent, callable, type Connection, getCurrentAgent, type Schedule, type WSMessage } from "agents"
 import { PiHarness } from "agents/harness/pi"
 import { Effect, Layer, ManagedRuntime, Option, Redacted, Schema } from "effect"
@@ -23,21 +23,19 @@ import { AppConfig, envConfigProvider } from "~/server/config"
 import { Keys } from "~/server/crypto"
 import { GitHubOAuth, type GitHubGrant } from "~/server/github"
 import {
+  BUILT_IN_MODELS,
   clampThinking,
+  createModelCatalog,
   DEFAULT_MODEL_ID,
   DEFAULT_THINKING,
-  defaultModelId,
   type DexModel,
-  findModel,
-  MODELS,
   type ModelCatalog,
-  modelsOf,
+  type ModelCatalogView,
   PI_PROVIDER_IDS,
-  providerOf,
-  setModelCatalog,
-  type ThinkingLevel,
-  usableModel
+  type ThinkingLevel
 } from "~/shared/models"
+import { avatarHash, avatarUrl, type AvatarKind, isAvatarUrl } from "~/shared/avatars"
+import { buildMcpEnvFile, buildMcpRunScript, buildMcpSpawnCommand, buildMcpStopCommand, buildMcpTailLogCommand } from "./mcp-isolation"
 import type {
   ChatGPTSignInStart,
   ClientMessage,
@@ -48,6 +46,7 @@ import type {
   VmHelperInfo,
   ServerMessage,
   SessionMeta,
+  SnapshotEvent,
   VmActivity,
   VmInfo,
   VmSize,
@@ -84,8 +83,11 @@ import { extensionOf, MAX_MEDIA_BYTES, vmMediaLinks, vmMediaSource } from "~/sha
 import type { McpCheckReport, RegistryServer, RegistrySource } from "~/shared/mcp-registry"
 import type { GitHubAccess, GitHubRepo } from "~/shared/projects"
 import { invokedSkill, type SkillDetail, type SkillPreview } from "~/shared/skills"
-import type { McpAuth, McpConnectResult, McpServerDraft, McpServerInfo, McpStatus, McpTransport } from "~/shared/mcp"
+import type { McpApproval, McpAuth, McpConnectResult, McpPromptInfo, McpResourceInfo, McpServerDraft, McpServerInfo, McpStatus, McpToolAnnotations, McpTransport } from "~/shared/mcp"
+import type { SearchHit } from "~/shared/search"
+import type { CreatedWebhook, WebhookDraft, WebhookInfo, WebhookTarget } from "~/shared/webhooks"
 import { BoatClient, BoatKey, checkBoatKey } from "./boat"
+import { type BoatOAuthGrant, boatOAuthConfig, refreshBoatGrant, revokeBoatToken } from "~/server/boat-oauth"
 import { CloudflareAnalytics, type CloudflareDay, dayCost, emptyDay } from "./cloudflare-analytics"
 import { datesBetween, UsageLedger, utcDate } from "./usage-ledger"
 import { checkAttachments, messageContent } from "./attachments"
@@ -103,6 +105,7 @@ import { GitHubRepos } from "./github-repos"
 import { checkServer, searchRegistry, searchSmithery } from "./mcp-registry"
 import { MessageQueue } from "./queue"
 import { findImage, slimEntry, slimEvents, withoutImages } from "./transcript-images"
+import { diffConversationView, viewToSnapshot } from "./view-bridge"
 import { AccountSecrets, SecretVault, VM_ENV_FILE, VM_ENV_HOOK } from "./secrets"
 import { browseVpn } from "./browse"
 import { VPN_CONFIG_PATH, VpnStore, wireproxyConfig } from "./vpn"
@@ -112,7 +115,11 @@ import { handleMcpBody } from "./mcp-server"
 import { webTools } from "./tools/agents-tools"
 import { chatGPTSearch } from "./chatgpt-search"
 import { appTools } from "./tools/app-tools"
+import { batchToolsTool } from "./tools/batch-tools"
 import { loadUiGuideTool, renderUiTool } from "./tools/render-ui"
+import { SearchIndex } from "./search-index"
+import { resolveMentions } from "./mentions"
+import { WebhookCenter } from "./webhooks"
 import { scheduleTools } from "./tools/schedule-tools"
 import { type SpaceHost, spaceTools } from "./tools/space-tools"
 import { browserSearch, type ChatVms, forWorkers, VM_AGENT_TOOLS, type VmAgentsHost, vmAgentTools, type VmSecrets, vmTools } from "./tools/vm-tools"
@@ -259,6 +266,8 @@ interface McpRowData {
   headerNames: string[]
   defaultOn: boolean
   prefix: string
+  approval?: McpApproval
+  deferTools?: boolean
   /** A stdio server Dex runs on the MCP VM behind supergateway; `url` is then its port's private address. */
   local?: { command: string; port: number; envNames: string[]; sealedEnv: string | null }
 }
@@ -313,6 +322,7 @@ const SUPERGATEWAY_VERSION = "4.2.0"
 /** Local MCP servers get ports from here up, one each. */
 const LOCAL_MCP_PORT = 8100
 const MCP_AUTHS = new Set<McpAuth>(["none", "headers", "oauth"])
+const MCP_APPROVALS = new Set<McpApproval>(["auto", "writes", "always"])
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error))
 const parseIds = (value: string | null | undefined): string[] => {
   try {
@@ -393,7 +403,15 @@ export class DexAgent extends Agent<Env, DexState> {
     vpns: []
   }
 
-  readonly runtime = ManagedRuntime.make(AgentLayer(this.env, BoatKey.of({ get: Effect.promise(() => this.boatKey()) })))
+  readonly runtime = ManagedRuntime.make(
+    AgentLayer(
+      this.env,
+      BoatKey.of({
+        get: Effect.promise(() => this.boatKey()),
+        refresh: Effect.promise(() => this.forceRefreshBoatKey())
+      })
+    )
+  )
   readonly workspace = new Workspace(this.ctx.storage.sql)
   readonly registry = createRegistry()
   readonly ledger = new UsageLedger(this.ctx.storage.sql)
@@ -435,7 +453,49 @@ export class DexAgent extends Agent<Env, DexState> {
     state: () => this.state,
     publish: (access) => this.publish({ access }),
     sign: (payload) => this.runtime.runPromise(Keys.use((keys) => keys.sign(payload))),
-    tellChat: (sessionId, text) => this.sendMessage(sessionId, text)
+    tellChat: (sessionId, text) => this.sendMessage(sessionId, text),
+    runMcpTool: async (serverId, tool, args) => {
+      const result = await this.callMcpTool(serverId, tool, args, undefined)
+      const text = (result.output ?? [])
+        .map((part) => (typeof part === "object" && part !== null && "text" in part ? String((part as { text: unknown }).text) : "[media]"))
+        .join("\n")
+      return { ok: !result.isError, text: text || "(no output)" }
+    }
+  })
+
+  /** Full-text search index over chats, workspace files, agents, spaces, sidekicks, and MCP servers. */
+  readonly searchIndex = new SearchIndex(this.ctx.storage.sql)
+
+  /** Signed inbound webhooks that trigger chats, spaces, or agents from external systems. */
+  readonly webhooks: WebhookCenter = new WebhookCenter({
+    sql: this.ctx.storage.sql,
+    userId: () => this.name,
+    encrypt: (plain) => this.runtime.runPromise(Keys.use((keys) => keys.encrypt(plain))),
+    decrypt: (sealed) => this.runtime.runPromise(Keys.use((keys) => keys.decrypt(sealed))),
+    publish: (webhooks) => this.publish({ webhooks }),
+    validateTarget: (target) => {
+      if (target.kind === "session") return this.hasSession(target.sessionId) ? null : "Selected chat no longer exists."
+      if (target.kind === "space") return this.spaceById(target.spaceId) ? null : "Selected space no longer exists."
+      if (target.kind === "agent") return this.agentById(target.agentId) ? null : "Selected agent no longer exists."
+      return "Unknown webhook target."
+    },
+    deliver: async (target, message, sourceName) => {
+      if (target.kind === "session") {
+        await this.sendMessage(target.sessionId, message)
+        return { sessionId: target.sessionId }
+      }
+      if (target.kind === "space") {
+        const space = this.spaceById(target.spaceId)
+        if (!space) throw new Error("Target space no longer exists.")
+        await this.sendMessage(space.sessionId, message)
+        return { sessionId: space.sessionId }
+      }
+      const agent = this.agentById(target.agentId)
+      if (!agent) throw new Error("Target agent no longer exists.")
+      const created = await this.createSession({ agentId: agent.id, title: `${sourceName}`.slice(0, 60) })
+      await this.sendMessage(created.id, message)
+      return { sessionId: created.id }
+    }
   })
 
   /** Videos, audio, and images chats share from their VMs, stored in R2. */
@@ -547,9 +607,10 @@ export class DexAgent extends Agent<Env, DexState> {
   }
 
   readonly harness = new PiHarness({
-    harness: ({ storage, context }) => {
+    harness: ({ storage, context, onWake }) => {
       this.registry.install(this.coreExtension())
       this.registry.install(this.spaceExtension())
+      this.registry.install(createToolSearchExtension())
       const registry = this.registry
       const models = createModels()
       this.installProviders(models)
@@ -559,6 +620,7 @@ export class DexAgent extends Agent<Env, DexState> {
         {
           models,
           registry: this.registry,
+          onWake,
           settings: {
             retry: { enabled: true, maxRetries: 2, baseDelayMs: 1_000 },
             // MCP servers are off unless a chat selects them; the space tools are only for space coordinators.
@@ -575,9 +637,11 @@ export class DexAgent extends Agent<Env, DexState> {
 
   /** The model registry chats run on, kept so a refreshed model list reaches running chats too. */
   private chatModels?: ReturnType<typeof createModels>
+  /** Per-agent immutable model catalog (avoids mutating isolate-global state shared across users). */
+  private catalog: ModelCatalogView = createModelCatalog(BUILT_IN_MODELS)
 
   /** Live event streams, by WebSocket connection id. They live in memory; clients re-subscribe after an eviction. */
-  private readonly subscriptions = new Map<string, { sessionId: string; stream: AgentEventStream }>()
+  private readonly subscriptions = new Map<string, { sessionId: string; stream: ConversationWatch }>()
   private readonly subscribing = new Map<string, Promise<void>>()
 
   constructor(ctx: DurableObjectState, env: Env) {
@@ -618,6 +682,7 @@ export class DexAgent extends Agent<Env, DexState> {
     ctx.storage.sql.exec(`CREATE INDEX IF NOT EXISTS dex_sessions_character ON dex_sessions (character_id)`)
     ctx.storage.sql.exec(`CREATE INDEX IF NOT EXISTS dex_sessions_agent ON dex_sessions (agent_id)`)
     ctx.storage.sql.exec(`CREATE INDEX IF NOT EXISTS dex_sessions_project ON dex_sessions (project_id)`)
+    ctx.storage.sql.exec(`CREATE INDEX IF NOT EXISTS dex_sessions_vpn ON dex_sessions (vpn_id)`)
     ctx.storage.sql.exec(`CREATE TABLE IF NOT EXISTS dex_spaces (
       id TEXT PRIMARY KEY, data TEXT NOT NULL, session_id TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
     ctx.storage.sql.exec(`CREATE INDEX IF NOT EXISTS dex_spaces_session ON dex_spaces (session_id)`)
@@ -645,10 +710,10 @@ export class DexAgent extends Agent<Env, DexState> {
       id TEXT PRIMARY KEY, data TEXT NOT NULL, headers TEXT, tools TEXT NOT NULL DEFAULT '[]',
       created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`)
     // The model list this agent last looked up, if it was made by this build (a new build's built-in list wins
-    // until the next lookup, which onStart starts at once).
+    // until the next lookup, which onStart starts at once). Kept per agent instance to prevent cross-tenant bleed.
     const catalog = this.storedCatalog()
     if (catalog) this.catalogMeta = { build: catalog.build, updatedAt: catalog.updatedAt }
-    if (catalog?.build === __DEX_BUILD__) setModelCatalog(catalog)
+    if (catalog?.build === __DEX_BUILD__) this.catalog = createModelCatalog(catalog.models)
     this.lifecycle.use(this.harness)
   }
 
@@ -671,7 +736,7 @@ export class DexAgent extends Agent<Env, DexState> {
       this.publishVms()
       this.refreshProjects()
       this.refreshGitHubStatus()
-      this.publish({ push: this.push.status(), access: this.access.status(), build: __DEX_BUILD__ })
+      this.publish({ push: this.push.status(), access: this.access.status(), webhooks: this.webhooks.list(), build: __DEX_BUILD__ })
       this.seedAgents()
       this.refreshAgents()
       // One-time: sidekicks' memory moved from /workspace/characters (their first name) to /workspace/sidekicks.
@@ -734,7 +799,7 @@ export class DexAgent extends Agent<Env, DexState> {
     this.ctx.waitUntil(this.discardVmCopies())
     this.ctx.waitUntil(this.drainQueues().catch(() => undefined))
     this.ctx.waitUntil(this.checkGitHubToken().catch(() => undefined))
-    this.ctx.waitUntil(this.media.reap((id) => this.hasSession(id)).catch(() => undefined))
+    this.ctx.waitUntil(this.reapOrphanMedia())
   }
 
   // ── Pi wiring ─────────────────────────────────────────────────────────────
@@ -881,7 +946,7 @@ export class DexAgent extends Agent<Env, DexState> {
                 ? this.resolveChatGPTToken().then((token) => {
                     if (!token) throw new Error("ChatGPT isn't signed in")
                     // The plan's cheapest model: they all search well, and the cheap ones are the fastest.
-                    const model = [...modelsOf("chatgpt")].filter((entry) => !/codex/i.test(entry.apiId)).sort((a, b) => a.cost.input - b.cost.input)[0]
+                    const model = [...this.catalog.modelsOf("chatgpt")].filter((entry) => !/codex/i.test(entry.apiId)).sort((a, b) => a.cost.input - b.cost.input)[0]
                     if (!model) throw new Error("no ChatGPT model to search with")
                     const timeout = AbortSignal.timeout(60_000)
                     return chatGPTSearch({ baseUrl: CHATGPT_BASE_URL, token: token.key, model: model.apiId }, query, limit, signal ? AbortSignal.any([signal, timeout]) : timeout)
@@ -899,6 +964,7 @@ export class DexAgent extends Agent<Env, DexState> {
         renderUiTool,
         ...scheduleTools(this),
         ...appTools(this.access),
+        batchToolsTool,
         ...skillTools((name, file) => this.skills.use(name, file)),
         // Always offered: a user can connect a boat.dev key at any time. Without one they fail with how to fix it,
         // and the vm_access section tells the model up front.
@@ -1105,16 +1171,18 @@ export class DexAgent extends Agent<Env, DexState> {
   }
 
   /** `mcpServers` replaces the chat's MCP servers; omitted, they stay as they are. */
-  private async configureConversation(sessionId: string, model: string, thinking: ThinkingLevel, mcpServers?: readonly string[], coordinator = this.isCoordinator(sessionId)) {
+  private async configureConversation(sessionId: string, model: string, thinking: ThinkingLevel, mcpServers?: readonly string[], coordinator = this.isCoordinator(sessionId), maxTurns?: number | null) {
     const conversation = await this.harness.conversation(sessionId)
     // The selection is written whole: a coordinator keeps its space tools beside its MCP servers.
-    const row = this.ctx.storage.sql.exec<{ mcp_servers: string | null }>(`SELECT mcp_servers FROM dex_sessions WHERE id = ?`, sessionId).toArray()[0]
+    const row = this.ctx.storage.sql.exec<{ mcp_servers: string | null; agent_id: string | null }>(`SELECT mcp_servers, agent_id FROM dex_sessions WHERE id = ?`, sessionId).toArray()[0]
     const mcp = mcpServers ?? (coordinator ? parseIds(row?.mcp_servers) : undefined)
+    const resolvedMaxTurns = maxTurns !== undefined ? maxTurns : row?.agent_id ? (this.agentById(row.agent_id)?.maxTurns ?? undefined) : undefined
     await conversation.configure(
       {
         // Each model runs on its own subscription, under the id that provider's API uses.
-        model: { provider: PI_PROVIDER_IDS[findModel(model)?.provider ?? "clinepass"], modelId: findModel(model)?.apiId ?? model },
+        model: { provider: PI_PROVIDER_IDS[this.catalog.findModel(model)?.provider ?? "clinepass"], modelId: this.catalog.findModel(model)?.apiId ?? model },
         thinkingLevel: thinking,
+        ...(resolvedMaxTurns !== undefined && { maxTurns: resolvedMaxTurns === null ? null : Math.max(1, Math.min(100, Math.floor(resolvedMaxTurns))) }),
         ...(mcp && { extensions: { add: [...mcp.map((id) => ({ name: mcpExtensionName(id) })), ...(coordinator ? [{ name: SPACE_EXTENSION }] : [])] } })
       },
       BACKGROUND_CONTEXT
@@ -1183,29 +1251,49 @@ export class DexAgent extends Agent<Env, DexState> {
   private isOwner() {
     const env = this.env as unknown as Record<string, string | undefined>
     const owner = (env.ALLOWED_GITHUB_USERS ?? "").split(",")[0]?.trim().toLowerCase()
-    let name: string
+    let name: string | undefined
     try {
       name = this.name
+      if (name) {
+        this.ctx.storage.sql.exec(`INSERT OR REPLACE INTO dex_meta (key, value) VALUES ('agent_name', ?)`, name)
+      }
     } catch {
-      // No name (shouldn't happen: agents are addressed by name). Keep VM stops and idle checks working: only the
-      // owner can have VMs without a key of their own.
-      return true
+      name = this.ctx.storage.sql.exec<{ value: string }>(`SELECT value FROM dex_meta WHERE key = 'agent_name'`).toArray()[0]?.value
     }
+    if (!name) return false
     return (owner ? name === `user-${owner}` : false) || (/^(true|1|yes|on)$/i.test(env.DEV_LOGIN ?? "") && name === "dev")
   }
 
-  /** Whose boat.dev account this user's VMs use: their own key, else the deployment's key if they're its owner. */
+  private boatOAuthAvailable(): boolean {
+    return boatOAuthConfig(this.env as unknown as Record<string, unknown>) !== null
+  }
+
+  /** Whose boat.dev account this user's VMs use: their own OAuth/key, else the deployment's key if they're its owner. */
   private boatSource(): "user" | "server" | null {
     if (this.secret("boat_api_key")) return "user"
     return this.isOwner() && (this.env as unknown as Record<string, string | undefined>).BOAT_API_KEY ? "server" : null
   }
 
   private boatKeyCache: { sealed: string; key: string | null } | null = null
+  /** Single-flight lock so concurrent VM calls never race to refresh boat.dev's rotating refresh token. */
+  private boatRefreshInFlight: Promise<string | null> | null = null
 
-  /** The key for this user's boat.dev requests (see boatSource), read on every request. */
+  /**
+   * The bearer token for this user's boat.dev requests (see boatSource), read on each one.
+   * For OAuth connections, refreshes proactively inside the 5-minute window before expiry (single-flight).
+   */
   private async boatKey(): Promise<Option.Option<string>> {
     const sealed = this.secret("boat_api_key")
     if (sealed) {
+      if (this.secret("boat_via") === "oauth") {
+        if (this.secret("boat_expired") === "1") return Option.none()
+        const expiresAt = Number(this.secret("boat_expires_at") ?? 0)
+        if (expiresAt > 0 && Date.now() >= expiresAt - 5 * 60_000) {
+          const refreshed = await this.refreshBoatOAuthToken()
+          if (refreshed) return Option.some(refreshed)
+          if (this.secret("boat_expired") === "1" || Date.now() >= expiresAt) return Option.none()
+        }
+      }
       if (this.boatKeyCache?.sealed !== sealed) {
         const key = await this.runtime.runPromise(Keys.use((keys) => keys.decrypt(sealed)).pipe(Effect.option))
         this.boatKeyCache = { sealed, key: Option.getOrNull(key) }
@@ -1216,15 +1304,131 @@ export class DexAgent extends Agent<Env, DexState> {
     return shared ? Option.some(shared) : Option.none()
   }
 
+  /** Called by BoatClient after a 401 on an OAuth token: triggers a single-flight refresh and returns the new token. */
+  private async forceRefreshBoatKey(): Promise<Option.Option<string>> {
+    if (this.secret("boat_via") !== "oauth") return Option.none()
+    const fresh = await this.refreshBoatOAuthToken()
+    return Option.fromNullishOr(fresh)
+  }
+
+  private async refreshBoatOAuthToken(): Promise<string | null> {
+    if (this.boatRefreshInFlight) return this.boatRefreshInFlight
+    const run = (async (): Promise<string | null> => {
+      const config = boatOAuthConfig(this.env as unknown as Record<string, unknown>)
+      const sealedRefresh = this.secret("boat_refresh_token")
+      if (!config || !sealedRefresh) return null
+      const refreshToken = await this.runtime.runPromise(Keys.use((keys) => keys.decrypt(sealedRefresh)).pipe(Effect.option))
+      if (Option.isNone(refreshToken)) return null
+
+      const result = await refreshBoatGrant({ ...config, refreshToken: refreshToken.value })
+      if (!result.ok) {
+        if (result.rejected) {
+          const upsert = `INSERT INTO dex_secrets (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value`
+          this.ctx.storage.sql.exec(upsert, "boat_expired", "1")
+          this.ctx.storage.sql.exec(upsert, "boat_expired_at", String(Date.now()))
+          this.ctx.storage.sql.exec(upsert, "boat_expired_reason", result.error.slice(0, 300))
+          this.boatKeyCache = null
+          this.refreshBoatStatus()
+        }
+        return null
+      }
+
+      // Persist the rotated refresh token immediately and drop the old one (boat revokes on reuse after 1 min).
+      const { grant } = result
+      const sealedAccess = await this.runtime.runPromise(Keys.use((keys) => keys.encrypt(grant.accessToken)))
+      const sealedNextRefresh = grant.refreshToken
+        ? await this.runtime.runPromise(Keys.use((keys) => keys.encrypt(grant.refreshToken!)))
+        : sealedRefresh
+      const upsert = `INSERT INTO dex_secrets (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value`
+      this.ctx.storage.sql.exec(upsert, "boat_api_key", sealedAccess)
+      this.ctx.storage.sql.exec(upsert, "boat_refresh_token", sealedNextRefresh)
+      if (grant.expiresAt !== null) this.ctx.storage.sql.exec(upsert, "boat_expires_at", String(grant.expiresAt))
+      this.ctx.storage.sql.exec(`DELETE FROM dex_secrets WHERE name IN ('boat_expired', 'boat_expired_at', 'boat_expired_reason')`)
+      this.boatKeyCache = { sealed: sealedAccess, key: grant.accessToken }
+      this.refreshBoatStatus()
+      return grant.accessToken
+    })()
+    this.boatRefreshInFlight = run
+    try {
+      return await run
+    } finally {
+      if (this.boatRefreshInFlight === run) this.boatRefreshInFlight = null
+    }
+  }
+
+  private async revokeBoatOAuthToken(keepRefresh?: string | null) {
+    if (this.secret("boat_via") !== "oauth") return
+    const sealedRefresh = this.secret("boat_refresh_token")
+    if (!sealedRefresh) return
+    const token = await this.runtime.runPromise(Keys.use((keys) => keys.decrypt(sealedRefresh)).pipe(Effect.option))
+    if (Option.isSome(token) && token.value !== keepRefresh) {
+      await revokeBoatToken(token.value)
+    }
+  }
+
   private refreshBoatStatus() {
     const source = this.boatSource()
-    this.publish({ vmConfigured: source !== null, boat: { connected: source !== null, source, keyHint: source === "user" ? (this.secret("boat_key_hint") ?? null) : null } })
+    const via = source === "user" ? ((this.secret("boat_via") as "oauth" | "key" | undefined) ?? "key") : null
+    const expired = source === "user" && via === "oauth" && this.secret("boat_expired") === "1"
+    const expiredAtRaw = this.secret("boat_expired_at")
+    const expiredAt = expired && expiredAtRaw ? Number(expiredAtRaw) || null : null
+    const expiredReason = expired ? (this.secret("boat_expired_reason") ?? null) : null
+    const account = source === "user" && via === "oauth" ? (this.secret("boat_account") ?? null) : null
+    this.publish({
+      vmConfigured: source !== null && !expired,
+      boat: {
+        connected: source !== null,
+        source,
+        keyHint: source === "user" ? (this.secret("boat_key_hint") ?? null) : null,
+        via,
+        account,
+        oauthAvailable: this.boatOAuthAvailable(),
+        expired,
+        expiredAt,
+        expiredReason
+      }
+    })
   }
 
   /** VMs live in the boat.dev account that made them: switching accounts would strand them. */
   private vmsBlockingKeyChange() {
     const count = this.liveVms().filter((vm) => vm.id).length
     return count ? `Delete your ${count === 1 ? "VM" : `${count} VMs`} on the Machines page first: ${count === 1 ? "it belongs" : "they belong"} to the boat.dev account you're using now.` : null
+  }
+
+  /** Worker-only RPC called by `/auth/boat/connect/callback` after exchanging the OAuth code. */
+  async connectBoatGrant(grant: BoatOAuthGrant, account: string | null): Promise<ConnectClineResult> {
+    if (!grant.accessToken) return { ok: false, error: "boat.dev returned no access token." }
+    const existingSource = this.boatSource()
+    const existingVia = this.secret("boat_via")
+    const existingAccount = this.secret("boat_account")
+    // Allow seamless reconnect to the same OAuth account (e.g. after expiry/revocation) without deleting VMs.
+    const sameAccountReconnect =
+      existingSource === "user" &&
+      existingVia === "oauth" &&
+      ((existingAccount && account && existingAccount.toLowerCase() === account.toLowerCase()) || this.secret("boat_expired") === "1")
+    const blocked = existingSource && !sameAccountReconnect ? this.vmsBlockingKeyChange() : null
+    if (blocked) return { ok: false, error: blocked }
+
+    await this.revokeBoatOAuthToken(grant.refreshToken)
+    const sealedAccess = await this.runtime.runPromise(Keys.use((keys) => keys.encrypt(grant.accessToken)))
+    const sealedRefresh = grant.refreshToken
+      ? await this.runtime.runPromise(Keys.use((keys) => keys.encrypt(grant.refreshToken!)))
+      : null
+    const upsert = `INSERT INTO dex_secrets (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value`
+    this.ctx.storage.sql.exec(upsert, "boat_api_key", sealedAccess)
+    this.ctx.storage.sql.exec(upsert, "boat_key_hint", account || keyHint(grant.accessToken))
+    this.ctx.storage.sql.exec(upsert, "boat_via", "oauth")
+    if (account) this.ctx.storage.sql.exec(upsert, "boat_account", account)
+    else this.ctx.storage.sql.exec(`DELETE FROM dex_secrets WHERE name = 'boat_account'`)
+    if (sealedRefresh) this.ctx.storage.sql.exec(upsert, "boat_refresh_token", sealedRefresh)
+    else this.ctx.storage.sql.exec(`DELETE FROM dex_secrets WHERE name = 'boat_refresh_token'`)
+    if (grant.expiresAt !== null) this.ctx.storage.sql.exec(upsert, "boat_expires_at", String(grant.expiresAt))
+    else this.ctx.storage.sql.exec(`DELETE FROM dex_secrets WHERE name = 'boat_expires_at'`)
+    this.ctx.storage.sql.exec(`DELETE FROM dex_secrets WHERE name IN ('boat_expired', 'boat_expired_at', 'boat_expired_reason')`)
+    this.boatKeyCache = { sealed: sealedAccess, key: grant.accessToken }
+    this.refreshBoatStatus()
+    return { ok: true }
   }
 
   @callable()
@@ -1235,10 +1439,14 @@ export class DexAgent extends Agent<Env, DexState> {
     if (blocked) return { ok: false, error: blocked }
     const problem = await checkBoatKey(key)
     if (problem) return { ok: false, error: problem }
+    await this.revokeBoatOAuthToken()
     const sealed = await this.runtime.runPromise(Keys.use((keys) => keys.encrypt(key)))
     const upsert = `INSERT INTO dex_secrets (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value`
     this.ctx.storage.sql.exec(upsert, "boat_api_key", sealed)
     this.ctx.storage.sql.exec(upsert, "boat_key_hint", keyHint(key))
+    this.ctx.storage.sql.exec(upsert, "boat_via", "key")
+    this.ctx.storage.sql.exec(`DELETE FROM dex_secrets WHERE name IN ('boat_account', 'boat_refresh_token', 'boat_expires_at', 'boat_expired', 'boat_expired_at', 'boat_expired_reason')`)
+    this.boatKeyCache = { sealed, key }
     this.refreshBoatStatus()
     return { ok: true }
   }
@@ -1247,7 +1455,10 @@ export class DexAgent extends Agent<Env, DexState> {
   async disconnectBoat(): Promise<ConnectClineResult> {
     const blocked = this.vmsBlockingKeyChange()
     if (blocked) return { ok: false, error: blocked }
-    this.ctx.storage.sql.exec(`DELETE FROM dex_secrets WHERE name IN ('boat_api_key', 'boat_key_hint')`)
+    await this.revokeBoatOAuthToken()
+    this.ctx.storage.sql.exec(
+      `DELETE FROM dex_secrets WHERE name IN ('boat_api_key', 'boat_key_hint', 'boat_via', 'boat_account', 'boat_refresh_token', 'boat_expires_at', 'boat_expired', 'boat_expired_at', 'boat_expired_reason')`
+    )
     this.boatKeyCache = null
     this.refreshBoatStatus()
     return { ok: true }
@@ -1381,7 +1592,7 @@ export class DexAgent extends Agent<Env, DexState> {
     this.refreshCommandCodeStatus()
     // Its models join the menu once the plan check is done (a few seconds).
     const added = await this.refreshModels({ force: true }).catch(() => ({ added: [], retired: [] }))
-    const count = modelsOf("commandcode").length
+    const count = this.catalog.modelsOf("commandcode").length
     return { ok: true, note: count ? `${count} models on your plan are in the model menu.` : added.added.length ? undefined : "Connected. Its models appear in the model menu shortly." }
   }
 
@@ -1433,7 +1644,7 @@ export class DexAgent extends Agent<Env, DexState> {
     this.ctx.storage.sql.exec(upsert, "openrouter_key_hint", keyHint(key))
     this.ctx.storage.sql.exec(upsert, "openrouter_verified_at", String(Date.now()))
     this.refreshOpenRouterStatus()
-    const count = modelsOf("openrouter").length
+    const count = this.catalog.modelsOf("openrouter").length
     return { ok: true, note: note ?? (count ? `${count} free models are in the model menu.` : undefined) }
   }
 
@@ -1520,10 +1731,10 @@ export class DexAgent extends Agent<Env, DexState> {
   @callable()
   async updateSettings(patch: Partial<DexSettings>) {
     const settings = { ...this.state.settings, ...patch }
-    if (!findModel(settings.defaultModel)) settings.defaultModel = defaultModelId()
+    if (!this.catalog.findModel(settings.defaultModel)) settings.defaultModel = this.catalog.defaultModelId()
     if (!VM_SIZES.has(settings.vmSize)) settings.vmSize = DEFAULT_SETTINGS.vmSize
     settings.vmMinutes = Math.min(24 * 60, Math.max(1, Math.round(Number(settings.vmMinutes) || DEFAULT_SETTINGS.vmMinutes)))
-    settings.defaultThinking = clampThinking(findModel(settings.defaultModel), settings.defaultThinking)
+    settings.defaultThinking = clampThinking(this.catalog.findModel(settings.defaultModel), settings.defaultThinking)
     this.publish({ settings })
   }
 
@@ -1562,14 +1773,14 @@ export class DexAgent extends Agent<Env, DexState> {
     const agent = options.agentId ? this.agentById(options.agentId) : undefined
     const project = options.projectId ? this.projectById(options.projectId) : undefined
     const fallbackModel = agent?.model ?? this.state.settings.defaultModel
-    const picked = options.model && findModel(options.model) ? options.model : findModel(fallbackModel) ? fallbackModel : defaultModelId()
+    const picked = options.model && this.catalog.findModel(options.model) ? options.model : this.catalog.findModel(fallbackModel) ? fallbackModel : this.catalog.defaultModelId()
     // An agent or default on a subscription this user hasn't connected runs the same model on one they have.
-    const model = usableModel(picked, connectedProviders(this.state))
-    const thinking = clampThinking(findModel(model), options.thinking ?? agent?.thinking ?? this.state.settings.defaultThinking)
+    const model = this.catalog.usableModel(picked, connectedProviders(this.state))
+    const thinking = clampThinking(this.catalog.findModel(model), options.thinking ?? agent?.thinking ?? this.state.settings.defaultThinking)
     // Picked in the composer, else the agent's, else the servers marked for new chats.
     const mcpServers = this.knownMcpIds(options.mcpServers ?? agent?.mcpServers ?? this.mcpRows().filter((row) => row.defaultOn).map((row) => row.id))
     const session = await this.harness.sessions.create()
-    await this.configureConversation(session.id, model, thinking, mcpServers, options.coordinator === true)
+    await this.configureConversation(session.id, model, thinking, mcpServers, options.coordinator === true, agent?.maxTurns ?? null)
     const now = Date.now()
     const title = options.title?.trim() || "New chat"
     const spaceId = options.spaceId ?? null
@@ -1656,17 +1867,55 @@ export class DexAgent extends Agent<Env, DexState> {
     const row = this.ctx.storage.sql.exec<SessionRow>(`SELECT * FROM dex_sessions WHERE id = ?`, sessionId).toArray()[0]
     if (!row) return
     // The provider retired this chat's model since its last message: it continues on the default one.
-    if (!findModel(row.model)) await this.configureSession(sessionId, {})
+    if (!this.catalog.findModel(row.model)) await this.configureSession(sessionId, {})
     // `/<name> …` invokes a skill: its instructions join this chat's prompt from this message on.
     const skill = invokedSkill(content)
     if (skill) this.skills.activate(sessionId, skill)
 
     const session = this.harness.session(sessionId)
+    // Expand `@file:`, `@mcp:`, `@project:`, and `@chat:` mentions into bounded attached context blocks.
+    const withContext = await resolveMentions(content, {
+      readFile: (path) => this.workspace.readText(path),
+      readMcpResource: async (prefix, uri) => {
+        const server = this.state.mcp.find((candidate) => candidate.prefix === prefix)
+        if (!server) return null
+        const res = await this.readMcpResource(server.id, uri)
+        return { label: `${server.name} (${uri})`, text: res.text }
+      },
+      describeProject: (name) => {
+        const project = this.state.projects.find((candidate) => candidate.name.toLowerCase() === name.toLowerCase())
+        if (!project) return null
+        const repos = project.repos.map((r) => `- ${r.url}${r.branch ? ` (${r.branch})` : ""}`).join("\n")
+        return [project.description, repos && `Repositories:\n${repos}`, project.instructions && `Instructions:\n${project.instructions}`]
+          .filter(Boolean)
+          .join("\n\n")
+      },
+      readChatExcerpt: async (targetId) => {
+        const target = this.state.sessions.find((candidate) => candidate.id === targetId)
+        if (!target) return null
+        const conversation = await this.harness.conversation(targetId)
+        const page = await conversation.entries({ order: "descending" }, 14, undefined, BACKGROUND_CONTEXT)
+        const lines = [...page.items]
+          .reverse()
+          .flatMap((entry) =>
+            (entry.model ?? []).flatMap((msg) => {
+              if (msg.role !== "user" && msg.role !== "assistant") return []
+              const raw =
+                typeof msg.content === "string"
+                  ? msg.content
+                  : msg.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join(" ")
+              const trimmed = raw.replace(/\s+/g, " ").trim()
+              return trimmed ? [`${msg.role === "user" ? "User" : "Assistant"}: ${trimmed.slice(0, 500)}`] : []
+            })
+          )
+        return lines.length ? { title: target.title, text: lines.join("\n") } : null
+      }
+    })
     // What you did with this chat's UI since your last message, so the chat isn't working from a stale picture.
-    const text = withUiNotes(this.uiCards.takeNotes(sessionId), content)
+    const text = withUiNotes(this.uiCards.takeNotes(sessionId), withContext)
     // Read again: the chat may have just moved to the default model.
     const model = this.ctx.storage.sql.exec<{ model: string }>(`SELECT model FROM dex_sessions WHERE id = ?`, sessionId).toArray()[0]?.model ?? row.model
-    const vision = findModel(model)?.input.includes("image") ?? false
+    const vision = this.catalog.findModel(model)?.input.includes("image") ?? false
     const receipt = await session.submit(messageContent(text, attachments, vision), steer ? { whenBusy: "steer" } : undefined)
     const title = row.title === "New chat" ? (withoutUiAction(content) || attachmentSummary(attachments)).replace(/\s+/g, " ").slice(0, 60) : row.title
     this.ctx.storage.sql.exec(`UPDATE dex_sessions SET title = ?, updated_at = ?, read_at = ? WHERE id = ?`, title, Date.now(), Date.now(), sessionId)
@@ -1685,6 +1934,14 @@ export class DexAgent extends Agent<Env, DexState> {
       this.ctx.storage.sql.exec(`UPDATE dex_sessions SET updated_at = ? WHERE id = ?`, Date.now(), sessionId)
       const refreshed = await this.notifyRunEnd(sessionId, kind, prompt)
       if (!refreshed) await this.refreshSessions()
+      const meta = this.state.sessions.find((candidate) => candidate.id === sessionId)
+      if (meta) {
+        const page = await this.harness
+          .conversation(sessionId)
+          .then((conv) => conv.entries({ order: "descending" }, 24, undefined, BACKGROUND_CONTEXT))
+          .catch(() => null)
+        if (page) this.searchIndex.indexSessionTranscript(meta, [...page.items].reverse())
+      }
       await this.drainQueue(sessionId)
     }
     this.ctx.waitUntil(this.harness.session(sessionId).wait(operationId).then(finished, finished))
@@ -1705,10 +1962,11 @@ export class DexAgent extends Agent<Env, DexState> {
         }
         return
       }
-      const next = this.messageQueue.next(sessionId)
+      const next = this.messageQueue.peekNext(sessionId)
       if (next === null) return
-      this.publishQueue(sessionId)
       await this.deliver(sessionId, next.text, { attachments: next.attachments })
+      this.messageQueue.remove(sessionId, next.id)
+      this.publishQueue(sessionId)
     } finally {
       this.draining.delete(sessionId)
     }
@@ -1774,11 +2032,12 @@ export class DexAgent extends Agent<Env, DexState> {
   /** Sends a queued message now: into the run that's going as a steer (after its current tool), or as the next run. */
   @callable()
   async steerQueued(sessionId: string, id: string) {
-    const message = this.messageQueue.take(sessionId, id)
-    this.messageQueue.release(sessionId)
-    this.publishQueue(sessionId)
+    const message = this.messageQueue.peek(sessionId, id)
     const steer = await this.isBusy(sessionId)
     await this.deliver(sessionId, message.text, { steer, attachments: message.attachments })
+    this.messageQueue.remove(sessionId, message.id)
+    this.messageQueue.release(sessionId)
+    this.publishQueue(sessionId)
     // Pi reads a steer between steps: cut the current one short so it's read now, not when a long tool call ends.
     if (steer) this.ctx.waitUntil(this.interruptTools(sessionId).catch(() => undefined))
   }
@@ -1793,12 +2052,41 @@ export class DexAgent extends Agent<Env, DexState> {
     this.publishQueue(sessionId)
   }
 
+  /** Resumes an idle chat after a failed, interrupted, or turn-limited run without adding a duplicate user message. */
+  @callable()
+  async continueSession(sessionId: string) {
+    if (!this.hasSession(sessionId)) throw new Error("Chat not found")
+    this.messageQueue.release(sessionId)
+    this.publishQueue(sessionId)
+    const receipt = await this.harness.session(sessionId).continue()
+    this.ctx.storage.sql.exec(`UPDATE dex_sessions SET updated_at = ?, last_failed = NULL WHERE id = ?`, Date.now(), sessionId)
+    await this.returnToInbox(sessionId)
+    await this.refreshSessions()
+    this.afterRun(sessionId, receipt.operationId, "reply")
+    return { operationId: receipt.operationId }
+  }
+
+  /** Instant FTS5 search across chats, workspace files, agents, spaces, sidekicks, and MCP servers. */
+  @callable()
+  search(query: string, limit = 20): SearchHit[] {
+    return this.searchIndex.query(query, this.state, this.workspace, limit)
+  }
+
+  /** Incremental entries strictly after `afterEntryId` so reconnecting clients can resume without a full snapshot. */
+  @callable()
+  async chatEntriesSince(sessionId: string, afterEntryId: number): Promise<{ entries: EntryRecord[]; more: boolean }> {
+    if (!this.hasSession(sessionId) || !Number.isSafeInteger(afterEntryId) || afterEntryId < 0) return { entries: [], more: false }
+    const conversation = await this.harness.conversation(sessionId)
+    const page = await conversation.entries({ minEntryId: (afterEntryId + 1) as never, order: "ascending" }, 100, undefined, BACKGROUND_CONTEXT)
+    return { entries: page.items.map(slimEntry), more: page.next !== undefined }
+  }
+
   @callable()
   async configureSession(sessionId: string, options: { model?: string; thinking?: ThinkingLevel; mcpServers?: readonly string[]; vpnId?: string | null }) {
     const row = this.ctx.storage.sql.exec<SessionRow>(`SELECT * FROM dex_sessions WHERE id = ?`, sessionId).toArray()[0]
     if (!row) throw new Error("Chat not found")
-    const model = options.model && findModel(options.model) ? options.model : findModel(row.model) ? row.model : this.replacementModel()
-    const thinking = clampThinking(findModel(model), options.thinking ?? (row.thinking as ThinkingLevel))
+    const model = options.model && this.catalog.findModel(options.model) ? options.model : this.catalog.findModel(row.model) ? row.model : this.replacementModel()
+    const thinking = clampThinking(this.catalog.findModel(model), options.thinking ?? (row.thinking as ThinkingLevel))
     const mcpServers = options.mcpServers ? this.knownMcpIds(options.mcpServers) : undefined
     await this.configureConversation(sessionId, model, thinking, mcpServers)
     this.ctx.storage.sql.exec(
@@ -1845,11 +2133,11 @@ export class DexAgent extends Agent<Env, DexState> {
 
   /** Every subscription as a pi-ai provider, with the models listed now (installing again replaces them). */
   private installProviders(models: ReturnType<typeof createModels>) {
-    models.setProvider(clinePassProvider(() => this.resolveClineKey()))
-    models.setProvider(openCodeGoProvider(() => this.resolveOpenCodeKey()))
-    models.setProvider(chatGPTProvider(() => this.resolveChatGPTToken()))
-    models.setProvider(commandCodeProvider(() => this.resolveCommandCodeKey()))
-    models.setProvider(openRouterProvider(() => this.resolveOpenRouterKey()))
+    models.setProvider(clinePassProvider(() => this.resolveClineKey(), this.catalog.modelsOf("clinepass")))
+    models.setProvider(openCodeGoProvider(() => this.resolveOpenCodeKey(), this.catalog.modelsOf("opencode-go")))
+    models.setProvider(chatGPTProvider(() => this.resolveChatGPTToken(), this.catalog.modelsOf("chatgpt")))
+    models.setProvider(commandCodeProvider(() => this.resolveCommandCodeKey(), this.catalog.modelsOf("commandcode")))
+    models.setProvider(openRouterProvider(() => this.resolveOpenRouterKey(), this.catalog.modelsOf("openrouter")))
   }
 
   private storedCatalog(): (ModelCatalog & { build?: string }) | undefined {
@@ -1878,7 +2166,7 @@ export class DexAgent extends Agent<Env, DexState> {
     if (!force && (fresh || Date.now() - this.modelsAttemptedAt < 10 * 60_000)) return { added: [], retired: [] }
     this.modelsAttemptedAt = Date.now()
     this.modelsRefresh = (async () => {
-      const before = [...MODELS]
+      const before = this.catalog.models
       const [chatgptIds, commandCode] = await Promise.all([this.chatGPTModelIds(), this.commandCodeCatalog(force)])
       const models = await fetchModelCatalog(before, chatgptIds, commandCode, (service, candidates) =>
         this.freeModelsAnswering(service, candidates)
@@ -1889,12 +2177,12 @@ export class DexAgent extends Agent<Env, DexState> {
         JSON.stringify({ ...catalog, build: __DEX_BUILD__ })
       )
       this.catalogMeta = { build: __DEX_BUILD__, updatedAt: catalog.updatedAt }
-      setModelCatalog(catalog)
+      this.catalog = createModelCatalog(catalog.models)
       if (this.chatModels) this.installProviders(this.chatModels)
       if (this.oneOffModels) this.installProviders(this.oneOffModels)
       this.publish({ models: { version: catalog.version, updatedAt: catalog.updatedAt } })
-      if (!findModel(this.state.settings.defaultModel)) await this.updateSettings({})
-      return catalogChanges(before, MODELS)
+      if (!this.catalog.findModel(this.state.settings.defaultModel)) await this.updateSettings({})
+      return catalogChanges(before, this.catalog.models)
     })().finally(() => {
       this.modelsRefresh = undefined
     })
@@ -1954,21 +2242,21 @@ export class DexAgent extends Agent<Env, DexState> {
 
   /** What a chat on a retired model continues with: your default model, on a subscription you've connected. */
   private replacementModel() {
-    const preferred = findModel(this.state.settings.defaultModel) ? this.state.settings.defaultModel : defaultModelId()
-    return usableModel(preferred, connectedProviders(this.state))
+    const preferred = this.catalog.findModel(this.state.settings.defaultModel) ? this.state.settings.defaultModel : this.catalog.defaultModelId()
+    return this.catalog.usableModel(preferred, connectedProviders(this.state))
   }
 
   /** The current model list, for apps (state carries only its version, so every state change doesn't resend it). */
   @callable()
   async modelCatalog(): Promise<ModelCatalog> {
-    return { version: this.state.models?.version ?? catalogVersion(MODELS), updatedAt: this.state.models?.updatedAt ?? 0, models: MODELS }
+    return { version: this.state.models?.version ?? catalogVersion(this.catalog.models), updatedAt: this.state.models?.updatedAt ?? 0, models: this.catalog.models }
   }
 
   /** Looks up the providers' model lists now. Returns the names of models added and retired. */
   @callable()
   async refreshModelList(): Promise<{ added: string[]; retired: string[]; count: number }> {
     const changes = await this.refreshModels({ force: true })
-    return { ...changes, count: MODELS.length }
+    return { ...changes, count: this.catalog.models.length }
   }
 
   /**
@@ -1989,7 +2277,7 @@ export class DexAgent extends Agent<Env, DexState> {
 
     const connected = connectedProviders(this.state)
     const session = this.state.sessions.find((candidate) => candidate.id === sessionId)
-    const own = providerOf(session?.model ?? DEFAULT_MODEL_ID)
+    const own = this.catalog.providerOf(session?.model ?? DEFAULT_MODEL_ID)
     const provider = connected[own] ? own : (Object.keys(connected) as Array<keyof typeof connected>).find((candidate) => connected[candidate])
     if (!provider) throw new Error("Connect ClinePass, OpenCode Go, ChatGPT, Command Code, or OpenRouter in Settings first.")
     // A fast, cheap model per subscription, or its cheapest one if that's been retired.
@@ -2000,7 +2288,7 @@ export class DexAgent extends Agent<Env, DexState> {
       commandcode: "commandcode/deepseek/deepseek-v4.1-flash",
       openrouter: "openrouter/nvidia/nemotron-3.5-lightning:free"
     }[provider]
-    const fast = findModel(preferred) ?? modelsOf(provider).toSorted((a, b) => a.cost.output - b.cost.output)[0]
+    const fast = this.catalog.findModel(preferred) ?? this.catalog.modelsOf(provider).toSorted((a, b) => a.cost.output - b.cost.output)[0]
     const model = fast && this.models().getModel(PI_PROVIDER_IDS[provider], fast.apiId)
     if (!model) throw new Error("The title model isn't available.")
 
@@ -2051,6 +2339,7 @@ export class DexAgent extends Agent<Env, DexState> {
     this.messageQueue.clear(sessionId)
     this.secrets.forget(sessionId)
     this.uiCards.forget(sessionId)
+    this.searchIndex.remove("chat", sessionId)
     // A character always has a conversation: deleting theirs starts a new one.
     const character = this.loadCharacters().find((candidate) => candidate.sessionId === sessionId)
     if (character) await this.restartCharacter(character.id)
@@ -2064,7 +2353,13 @@ export class DexAgent extends Agent<Env, DexState> {
     await this.refreshSessions()
     // Its VM goes with it, disk and all (stopped first if it was running; deleting does both), and its media.
     if (this.chatVms(sessionId).length) this.ctx.waitUntil(this.reapOrphanVms())
-    this.ctx.waitUntil(this.media.reap((id) => this.hasSession(id)).catch(() => undefined))
+    this.ctx.waitUntil(this.reapOrphanMedia())
+  }
+
+  /** Reaps orphaned media using a single session-id query instead of one SQL lookup per media row. */
+  private reapOrphanMedia() {
+    const live = new Set(this.ctx.storage.sql.exec<{ id: string }>(`SELECT id FROM dex_sessions`).toArray().map((row) => row.id))
+    return this.media.reap((id) => live.has(id)).catch(() => undefined)
   }
 
   /**
@@ -2072,19 +2367,23 @@ export class DexAgent extends Agent<Env, DexState> {
    * can't be reached, it tries again in five minutes, so a deleted chat never leaves a VM (and its bill) behind.
    */
   async reapOrphanVms() {
+    const live = new Set(this.ctx.storage.sql.exec<{ id: string }>(`SELECT id FROM dex_sessions`).toArray().map((row) => row.id))
+    const orphans = storedVmKeys(this.ctx.storage.sql).filter((key) => key !== SHARED_VM && key !== MCP_VM && !live.has(chatOfVm(key)))
+    if (!orphans.length) return
     let failed = false
-    for (const key of storedVmKeys(this.ctx.storage.sql)) {
-      if (key === SHARED_VM || key === MCP_VM || this.hasSession(chatOfVm(key))) continue
-      const vm = this.vmFor(key)
-      try {
-        await vm.destroy("system", { forget: true })
-        this.vms.delete(key)
-        this.forgetVmMeta(key)
-      } catch (error) {
-        failed = true
-        console.warn(`Could not delete the VM of deleted chat ${chatOfVm(key)} (${key}): ${errorText(error)}`)
-      }
-    }
+    await Promise.all(
+      orphans.map(async (key) => {
+        const vm = this.vmFor(key)
+        try {
+          await vm.destroy("system", { forget: true })
+          this.vms.delete(key)
+          this.forgetVmMeta(key)
+        } catch (error) {
+          failed = true
+          console.warn(`Could not delete the VM of deleted chat ${chatOfVm(key)} (${key}): ${errorText(error)}`)
+        }
+      })
+    )
     this.publishVms()
     if (failed && !this.getSchedules().some((schedule) => schedule.callback === "reapOrphanVms")) await this.schedule(300, "reapOrphanVms")
   }
@@ -2140,20 +2439,27 @@ export class DexAgent extends Agent<Env, DexState> {
         this.send(connection, { type: "dex.error", sessionId, message: "Chat not found" })
         return
       }
-      const stream = await this.harness.session(sessionId).events()
+      const stream = await this.harness.session(sessionId).watch()
       this.subscriptions.set(connection.id, { sessionId, stream })
       watching(connection, sessionId)
+      let previousView = stream.value
       // Screenshots load when shown (transcriptImage), so opening a long VM chat doesn't send megabytes.
-      const { snapshot, earlier } = await this.withHistory(sessionId, withoutImages(stream.snapshot))
+      const { snapshot, earlier } = await this.withHistory(sessionId, withoutImages(viewToSnapshot(previousView)), previousView.before)
       this.send(connection, { type: "dex.snapshot", sessionId, snapshot, ...(earlier && { earlier }) })
       this.send(connection, this.artifactsMessage(sessionId))
       this.send(connection, this.queueMessage(sessionId))
-      stream.start(async (events) => {
+      stream.start(async (call) => {
+        if (call.kind !== "value") return
+        const events = diffConversationView(previousView, call.value)
+        previousView = call.value
+        if (events.length === 0) return
         // Screenshots and long outputs stay on the agent here too (see slimEntry); a computer-use run sends a
         // screenshot per step.
         // A stream that fell behind sends a fresh snapshot in its batch: it gets the older messages too.
         const batch = await Promise.all(
-          slimEvents(events).map(async (event) => (event.type === "snapshot" ? (await this.withHistory(sessionId, withoutImages(event))).snapshot : event))
+          slimEvents(events).map(async (event) =>
+            event.type === "snapshot" ? (await this.withHistory(sessionId, withoutImages(event), call.value.before)).snapshot : event
+          )
         )
         if (!this.send(connection, { type: "dex.events", sessionId, events: batch })) {
           await this.unsubscribe(connection.id)
@@ -2177,14 +2483,14 @@ export class DexAgent extends Agent<Env, DexState> {
   }
 
   /**
-   * A chat's snapshot with the messages before its latest summary or reset: Pi's snapshot holds only the model's
-   * context, which starts there, and the page shows the whole chat. `earlier`: there are older ones still
-   * (chatHistory loads them).
+   * A chat's snapshot with the messages before its current window or latest summary/reset so the page shows the
+   * whole chat. `earlier`: there are older ones still (`chatHistory` loads them).
    */
-  private async withHistory(sessionId: string, snapshot: SnapshotEvent): Promise<{ snapshot: SnapshotEvent; earlier: boolean }> {
-    const head = snapshot.entries[0]?.head
-    if (head === undefined) return { snapshot, earlier: false }
-    const older = await this.earlierEntries(sessionId, Number(head)).catch((error: unknown) => {
+  private async withHistory(sessionId: string, snapshot: SnapshotEvent, beforeEntry?: EntryRecord["id"]): Promise<{ snapshot: SnapshotEvent; earlier: boolean }> {
+    const oldest = snapshot.entries[0]
+    const cutoff = beforeEntry !== undefined ? Number(beforeEntry) + 1 : oldest?.head !== undefined ? Number(oldest.head) : undefined
+    if (cutoff === undefined) return { snapshot, earlier: false }
+    const older = await this.earlierEntries(sessionId, cutoff).catch((error: unknown) => {
       console.warn(`Couldn't read the older messages of chat ${sessionId}: ${errorText(error)}`)
       return { entries: [], more: false }
     })
@@ -2251,11 +2557,14 @@ export class DexAgent extends Agent<Env, DexState> {
   @callable()
   async writeFile(path: string, content: string) {
     this.workspace.write(path, content)
+    this.searchIndex.indexFile(path, content)
   }
 
   @callable()
   async deleteFile(path: string) {
-    return this.workspace.remove(path)
+    const removed = this.workspace.remove(path)
+    if (removed) this.searchIndex.remove("file", path)
+    return removed
   }
 
   // ── Custom agents ─────────────────────────────────────────────────────────
@@ -2305,7 +2614,9 @@ export class DexAgent extends Agent<Env, DexState> {
   async saveAgent(draft: AgentDraft): Promise<AgentProfile> {
     const name = String(draft.name ?? "").trim().slice(0, 60)
     if (!name) throw new Error("Give the agent a name.")
-    const model = findModel(draft.model) ? draft.model : defaultModelId()
+    const model = this.catalog.findModel(draft.model) ? draft.model : this.catalog.defaultModelId()
+    const rawMaxTurns = draft.maxTurns
+    const maxTurns = typeof rawMaxTurns === "number" && Number.isFinite(rawMaxTurns) && rawMaxTurns >= 1 ? Math.min(100, Math.floor(rawMaxTurns)) : null
     const clean: Omit<AgentDraft, "id"> = {
       name,
       description: String(draft.description ?? "").trim().slice(0, 200),
@@ -2314,8 +2625,9 @@ export class DexAgent extends Agent<Env, DexState> {
       instructions: String(draft.instructions ?? "").slice(0, 20_000),
       starter: String(draft.starter ?? "").slice(0, 2_000),
       model,
-      thinking: clampThinking(findModel(model), draft.thinking),
-      mcpServers: this.knownMcpIds(draft.mcpServers ?? [])
+      thinking: clampThinking(this.catalog.findModel(model), draft.thinking),
+      mcpServers: this.knownMcpIds(draft.mcpServers ?? []),
+      ...(maxTurns !== null && { maxTurns })
     }
     const now = Date.now()
     const existing = draft.id ? this.agentById(draft.id) : undefined
@@ -2539,16 +2851,17 @@ export class DexAgent extends Agent<Env, DexState> {
 
   // ── Characters ────────────────────────────────────────────────────────────
 
-  private loadCharacters(): CharacterProfile[] {
+  private loadCharacters(inlineImage = false): CharacterProfile[] {
     return this.ctx.storage.sql
       .exec<CharacterRow>(`SELECT * FROM dex_characters ORDER BY created_at, id`)
       .toArray()
-      .map((row) => this.toCharacter(row))
+      .map((row) => this.toCharacter(row, inlineImage))
   }
 
-  private toCharacter(row: CharacterRow): CharacterProfile {
+  private toCharacter(row: CharacterRow, inlineImage = false): CharacterProfile {
     const { faceStyle: _, ...data } = JSON.parse(row.data) as Omit<CharacterProfile, "id" | "sessionId" | "createdAt" | "updatedAt"> & { faceStyle?: number }
-    return { ...data, mcpServers: data.mcpServers ?? [], image: data.image ?? null, look: data.look ?? null, id: row.id, sessionId: row.session_id, createdAt: row.created_at, updatedAt: row.updated_at }
+    const image = data.image ? (inlineImage ? data.image : avatarUrl("character", row.id, data.image)) : null
+    return { ...data, mcpServers: data.mcpServers ?? [], image, look: data.look ?? null, id: row.id, sessionId: row.session_id, createdAt: row.created_at, updatedAt: row.updated_at }
   }
 
   /** Which way of drawing faces drew a sidekick's saved picture (`FACE_STYLE`); none before Open Bot Avatar. */
@@ -2557,9 +2870,9 @@ export class DexAgent extends Agent<Env, DexState> {
     return row ? (JSON.parse(row.data) as { faceStyle?: number }).faceStyle : undefined
   }
 
-  private characterById(id: string): CharacterProfile | undefined {
+  private characterById(id: string, inlineImage = false): CharacterProfile | undefined {
     const row = this.ctx.storage.sql.exec<CharacterRow>(`SELECT * FROM dex_characters WHERE id = ?`, id).toArray()[0]
-    return row && this.toCharacter(row)
+    return row && this.toCharacter(row, inlineImage)
   }
 
   /** The character a chat is a conversation with, current or from before Start over. */
@@ -2639,9 +2952,10 @@ export class DexAgent extends Agent<Env, DexState> {
   async saveCharacter(draft: CharacterDraft): Promise<CharacterProfile> {
     const name = String(draft.name ?? "").trim().slice(0, 40)
     if (!name) throw new Error("Give your sidekick a name.")
-    const existing = draft.id ? this.characterById(draft.id) : undefined
+    const existing = draft.id ? this.characterById(draft.id, true) : undefined
     if (draft.id && !existing) throw new Error("That sidekick no longer exists.")
-    if (draft.image != null && !isProjectImage(draft.image)) throw new Error("Pick a smaller picture (PNG, JPEG, WebP, GIF, or SVG under 48 KB).")
+    const keepingAvatarUrl = isAvatarUrl(draft.image, "character")
+    if (draft.image != null && !keepingAvatarUrl && !isProjectImage(draft.image)) throw new Error("Pick a smaller picture (PNG, JPEG, WebP, GIF, or SVG under 48 KB).")
     const asked = draft.look as (Partial<SidekickLook> & { custom?: CustomShape | null }) | null | undefined
     if (asked?.shape === "custom" && asked.custom) {
       const errors = customShapeErrors(asked.custom)
@@ -2650,17 +2964,17 @@ export class DexAgent extends Agent<Env, DexState> {
     const look = draft.look === undefined ? (existing?.look ?? null) : cleanLook(draft.look, existing?.look)
     // A look's picture is drawn here, whatever sent it (an app's own picture is ignored): kept while the look and the
     // way faces are drawn haven't changed.
-    let image = draft.image === undefined ? (existing?.image ?? null) : draft.image
+    let image = draft.image === undefined || keepingAvatarUrl ? (existing?.image ?? null) : draft.image
     let faceStyle: number | undefined
     if (look) {
       const kept = existing?.look && existing.image && sameLook(existing.look, look) && this.characterFaceStyle(existing.id) === FACE_STYLE
       // Material finishes (fluffy, glass) need WebGL2 (or bundled layers), so keep the picture the browser or app
       // rendered for them; fall back to the agent's flat renderer when none was sent (for instance from a chat).
-      const supplied = lookMaterial(look) !== "flat" && draft.image ? draft.image : null
+      const supplied = lookMaterial(look) !== "flat" && draft.image && !keepingAvatarUrl ? draft.image : null
       image = supplied ?? (kept ? existing.image : await facePng(look))
       faceStyle = FACE_STYLE
     }
-    const model = findModel(draft.model) ? draft.model : (existing?.model ?? this.state.settings.defaultModel)
+    const model = this.catalog.findModel(draft.model) ? draft.model : (existing?.model ?? this.state.settings.defaultModel)
     const data: Omit<CharacterProfile, "id" | "sessionId" | "createdAt" | "updatedAt"> = {
       name,
       tagline: String(draft.tagline ?? "").trim().slice(0, 120),
@@ -2674,7 +2988,7 @@ export class DexAgent extends Agent<Env, DexState> {
       voice: draft.voice === undefined ? (existing?.voice ?? null) : draft.voice && VOICES.includes(draft.voice) ? draft.voice : null,
       color: draft.color in AGENT_COLORS ? draft.color : "violet",
       model,
-      thinking: clampThinking(findModel(model), draft.thinking),
+      thinking: clampThinking(this.catalog.findModel(model), draft.thinking),
       mcpServers: this.knownMcpIds(draft.mcpServers ?? existing?.mcpServers ?? [])
     }
     const now = Date.now()
@@ -2693,7 +3007,7 @@ export class DexAgent extends Agent<Env, DexState> {
     )
     this.refreshCharacters()
     await this.refreshSessions()
-    return { ...data, id, sessionId, createdAt: existing?.createdAt ?? now, updatedAt: now }
+    return { ...data, image: avatarUrl("character", id, image), id, sessionId, createdAt: existing?.createdAt ?? now, updatedAt: now }
   }
 
   /**
@@ -2894,18 +3208,42 @@ export class DexAgent extends Agent<Env, DexState> {
       }
       this.mcpLastStatus.set(row.id, status)
       let tools = row.tools
+      let resources: McpResourceInfo[] = []
+      let prompts: McpPromptInfo[] = []
       if (connection?.connectionState === "ready") {
-        const live: McpToolSpec[] = connection.tools.map((tool) => ({
-          name: tool.name,
-          ...(tool.description && { description: tool.description }),
-          inputSchema: tool.inputSchema as Record<string, unknown>
-        }))
+        const live: McpToolSpec[] = connection.tools.map((tool) => {
+          const rawAnn = (tool as { annotations?: Record<string, unknown> }).annotations
+          const annotations: McpToolAnnotations | undefined = rawAnn
+            ? {
+                ...(typeof rawAnn.readOnlyHint === "boolean" && { readOnlyHint: rawAnn.readOnlyHint }),
+                ...(typeof rawAnn.destructiveHint === "boolean" && { destructiveHint: rawAnn.destructiveHint }),
+                ...(typeof rawAnn.idempotentHint === "boolean" && { idempotentHint: rawAnn.idempotentHint })
+              }
+            : undefined
+          return {
+            name: tool.name,
+            ...(tool.description && { description: tool.description }),
+            inputSchema: tool.inputSchema as Record<string, unknown>,
+            ...(annotations && Object.keys(annotations).length > 0 && { annotations })
+          }
+        })
         if (JSON.stringify(live) !== JSON.stringify(tools)) {
           tools = live
           this.ctx.storage.sql.exec(`UPDATE dex_mcp SET tools = ? WHERE id = ?`, JSON.stringify(live), row.id)
         }
+        resources = (connection.resources ?? []).slice(0, 60).map((resource) => ({
+          uri: resource.uri,
+          name: resource.name,
+          ...(resource.description && { description: resource.description.slice(0, 200) }),
+          ...(resource.mimeType && { mimeType: resource.mimeType })
+        }))
+        prompts = (connection.prompts ?? []).slice(0, 40).map((prompt) => ({
+          name: prompt.name,
+          ...(prompt.description && { description: prompt.description.slice(0, 200) })
+        }))
       }
-      const built = JSON.stringify([row.name, row.url, row.prefix, tools])
+      const approval = row.approval ?? "auto"
+      const built = JSON.stringify([row.name, row.url, row.prefix, approval, row.deferTools, tools, resources, prompts])
       if (this.mcpInstalled.get(row.id) !== built) {
         this.registry.install(
           mcpExtension({
@@ -2914,10 +3252,33 @@ export class DexAgent extends Agent<Env, DexState> {
             // A local server's address carries its port's access token: the model gets the command instead.
             url: row.local ? `run by Dex: ${row.local.command}` : row.url,
             prefix: row.prefix,
+            approval,
+            deferTools: row.deferTools,
             tools,
+            resources,
+            prompts,
             instructions: () => this.mcp.mcpConnections[row.id]?.instructions ?? null,
             problem: () => this.mcpProblem(row.id),
-            call: (tool, args, signal) => this.callMcpTool(row.id, tool, args, signal)
+            call: (tool, args, signal) => this.callMcpTool(row.id, tool, args, signal),
+            requestApproval: async (sessionId, tool, args, summary) => {
+              const outcome = this.access.requestMcpApproval(sessionId, row.id, tool, args, summary)
+              if (outcome.ok === "pending") {
+                return {
+                  output: [
+                    {
+                      type: "text",
+                      text:
+                        `Waiting for the user to confirm: "${outcome.pending.summary}". A Confirm button is shown in this chat. ` +
+                        "End your turn now and don't retry; their answer arrives as a message."
+                    }
+                  ],
+                  details: { confirmation: { id: outcome.pending.id, summary: outcome.pending.summary } }
+                }
+              }
+              return { output: [{ type: "text", text: outcome.ok === false ? outcome.error : "Confirmation refused." }], isError: true }
+            },
+            readResource: (uri, signal) => this.readMcpResourceForTool(row.id, uri, signal),
+            getPrompt: (promptName, args, signal) => this.getMcpPromptForTool(row.id, promptName, args, signal)
           })
         )
         this.mcpInstalled.set(row.id, built)
@@ -2932,9 +3293,17 @@ export class DexAgent extends Agent<Env, DexState> {
         local: row.local ? { command: row.local.command, envNames: row.local.envNames } : null,
         defaultOn: row.defaultOn,
         prefix: row.prefix,
+        ...(approval !== "auto" && { approval }),
+        ...(row.deferTools !== undefined && { deferTools: row.deferTools }),
         status: this.mcpStatus(row.id),
         error: this.mcpError(row.id),
-        tools: tools.map((tool) => ({ name: tool.name, description: (tool.description ?? "").slice(0, 300) })),
+        tools: tools.map((tool) => ({
+          name: tool.name,
+          description: (tool.description ?? "").slice(0, 300),
+          ...(tool.annotations && { annotations: tool.annotations })
+        })),
+        ...(resources.length > 0 && { resources }),
+        ...(prompts.length > 0 && { prompts }),
         createdAt: row.createdAt,
         updatedAt: row.updatedAt
       })
@@ -2990,6 +3359,58 @@ export class DexAgent extends Agent<Env, DexState> {
     }
   }
 
+  private async readMcpResourceForTool(id: string, uri: string, signal: AbortSignal | undefined): Promise<ToolExecutionResult> {
+    const problem = await this.ensureMcpReady(id)
+    if (problem) return { output: [{ type: "text", text: problem }], isError: true }
+    try {
+      const response = await this.mcp.readResource({ serverId: id, uri }, { signal, timeout: 60_000 })
+      const text = (response.contents ?? [])
+        .map((item) => ("text" in item ? `[${item.uri}]\n${item.text}` : `[binary resource ${item.uri} (${item.mimeType ?? "unknown"})]`))
+        .join("\n\n")
+      return { output: [{ type: "text", text: text.slice(0, 40_000) || "(empty resource)" }] }
+    } catch (error) {
+      return { output: [{ type: "text", text: `MCP resource read failed: ${errorMessage(error)}` }], isError: true }
+    }
+  }
+
+  private async getMcpPromptForTool(id: string, name: string, args: Record<string, string> | undefined, signal: AbortSignal | undefined): Promise<ToolExecutionResult> {
+    const problem = await this.ensureMcpReady(id)
+    if (problem) return { output: [{ type: "text", text: problem }], isError: true }
+    try {
+      const response = await this.mcp.getPrompt({ serverId: id, name, ...(args && { arguments: args }) }, { signal, timeout: 60_000 })
+      const text = (response.messages ?? [])
+        .map((msg) => `${msg.role}: ${msg.content.type === "text" ? msg.content.text : `[${msg.content.type}]`}`)
+        .join("\n\n")
+      return { output: [{ type: "text", text: text.slice(0, 40_000) || "(empty prompt)" }] }
+    } catch (error) {
+      return { output: [{ type: "text", text: `MCP prompt lookup failed: ${errorMessage(error)}` }], isError: true }
+    }
+  }
+
+  /** Lists MCP resources across all ready servers (for `@` composer mentions and programmatic operations). */
+  @callable()
+  listMcpResources(): Array<McpResourceInfo & { readonly serverId: string; readonly serverName: string }> {
+    const out: Array<McpResourceInfo & { readonly serverId: string; readonly serverName: string }> = []
+    for (const server of this.state.mcp) {
+      for (const resource of server.resources ?? []) {
+        out.push({ ...resource, serverId: server.id, serverName: server.name })
+      }
+    }
+    return out
+  }
+
+  /** Reads one MCP resource by server ID and URI. */
+  @callable()
+  async readMcpResource(serverId: string, uri: string): Promise<{ uri: string; text: string }> {
+    const problem = await this.ensureMcpReady(serverId)
+    if (problem) throw new Error(problem)
+    const response = await this.mcp.readResource({ serverId, uri }, { timeout: 60_000 })
+    const text = (response.contents ?? [])
+      .map((item) => ("text" in item ? item.text : `[binary resource ${item.uri} (${item.mimeType ?? "unknown"})]`))
+      .join("\n\n")
+    return { uri, text: text.slice(0, 40_000) }
+  }
+
   // ── Local MCP servers (run on the MCP VM) ─────────────────────────────────
 
   private async localMcpEnv(row: McpRow): Promise<Record<string, string>> {
@@ -3007,32 +3428,33 @@ export class DexAgent extends Agent<Env, DexState> {
     const local = row.local!
     if (!this.vmHost.configured()) throw new Error("Local MCP servers run on a VM: connect boat.dev in Settings → Cloud VMs.")
     const vm = this.vmFor(MCP_VM)
-    const dir = `/home/user/mcp/${row.id}`
+    const stageDir = `/home/user/mcp/${row.id}`
     const health = `[ "$(curl -s -m 2 http://127.0.0.1:${local.port}/healthz)" = ok ]`
     const alive = await vm.exec(`${health} && echo up || echo down`, { actor: "system", title: `Check the ${row.name} MCP server` })
     if (!alive.output.includes("up")) {
       // Only the variables it declares: its own values, or a saved secret (Settings → Secrets) of the same name.
-      // Never everything: these are third-party packages, sharing one VM.
+      // Never everything: these are third-party packages, isolated per server under dedicated OS users.
       const own = await this.localMcpEnv(row)
       const saved = await this.accountSecrets.load()
       const env = Object.fromEntries(local.envNames.flatMap((name) => (own[name] ?? saved.get(name)) !== undefined ? [[name, own[name] ?? saved.get(name)!]] : []))
-      const script = [
-        "#!/usr/bin/env bash",
-        ...Object.entries(env).map(([name, value]) => `export ${name}=${shellQuote(value)}`),
-        // PyPI servers run with uvx: install uv the first time one is needed.
-        `if [[ ${shellQuote(local.command)} == uvx* ]] && ! command -v uvx >/dev/null; then curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null 2>&1; fi`,
-        'export PATH="$HOME/.local/bin:$PATH"',
-        `exec npx -y supergateway@${SUPERGATEWAY_VERSION} --stdio ${shellQuote(local.command)} --outputTransport streamableHttp --port ${local.port} --stateful --healthEndpoint /healthz --logLevel info`
-      ].join("\n")
-      await vm.writeFile(`${dir}/run.sh`, `${script}\n`, "system")
-      // Also clears credentials an older Dex left on this VM (it used to be set up like a chat's VM).
-      const scrub = `rm -f ${VM_ENV_FILE} ~/.config/gh/hosts.yml; git config --global --unset-all credential.https://github.com.helper 2>/dev/null`
-      await vm.spawn(`${scrub}; chmod 700 ${dir} && pkill -f "mcp/${row.id}/run.sh" ; bash ${dir}/run.sh > ${dir}/log 2>&1`, {
+      const spec = {
+        serverId: row.id,
+        command: local.command,
+        port: local.port,
+        supergatewayVersion: SUPERGATEWAY_VERSION,
+        env,
+        // Also clears credentials an older Dex left on this VM (it used to be set up like a chat's VM).
+        scrubCommand: `rm -f ${VM_ENV_FILE} ~/.config/gh/hosts.yml; git config --global --unset-all credential.https://github.com.helper 2>/dev/null`
+      }
+      await vm.writeFile(`${stageDir}/env`, buildMcpEnvFile(env), "system")
+      await vm.writeFile(`${stageDir}/run.sh`, buildMcpRunScript(spec), "system")
+      await vm.spawn(buildMcpSpawnCommand(spec, stageDir), {
         actor: "system",
         title: `Start the ${row.name} MCP server`
       })
       // The first start downloads the package; give it a couple of minutes.
-      const started = await vm.exec(`for i in $(seq 1 75); do ${health} && exit 0; sleep 2; done; echo "It didn't start. Its log:"; tail -n 40 ${dir}/log; exit 1`, {
+      const tailLog = buildMcpTailLogCommand(row.id, stageDir)
+      const started = await vm.exec(`for i in $(seq 1 75); do ${health} && exit 0; sleep 2; done; echo "It didn't start. Its log:"; ${tailLog}; exit 1`, {
         actor: "system",
         title: `Wait for the ${row.name} MCP server`,
         timeoutSeconds: 180
@@ -3048,11 +3470,13 @@ export class DexAgent extends Agent<Env, DexState> {
     return exposed.href
   }
 
-  /** Stops a local server's process (if the MCP VM is up; a stopped VM runs nothing). */
-  private async stopLocalMcp(row: McpRow) {
+  /** Stops a local server's process (and with `remove`, deletes its isolated OS user and directory). */
+  private async stopLocalMcp(row: McpRow, remove = false) {
     const vm = this.vms.get(MCP_VM)
     if (!vm || vm.current.status !== "running") return
-    await vm.exec(`pkill -f "mcp/${row.id}/run.sh"; pkill -f "port ${row.local!.port} "; true`, { actor: "system", title: `Stop the ${row.name} MCP server` }).catch(() => undefined)
+    await vm
+      .exec(buildMcpStopCommand(row.id, row.local!.port, remove), { actor: "system", title: `Stop the ${row.name} MCP server` })
+      .catch(() => undefined)
   }
 
   /** Add (no id) or edit a server, then connect it. Returns an `authUrl` when the server wants the user to sign in. */
@@ -3091,7 +3515,19 @@ export class DexAgent extends Agent<Env, DexState> {
     // It ran on the MCP VM before; now it's a URL.
     if (existing?.local) await this.stopLocalMcp(existing)
     const sealedHeaders = auth === "headers" ? await this.runtime.runPromise(Keys.use((keys) => keys.encrypt(JSON.stringify(headers)))) : null
-    const data: McpRowData = { name, url: url.href, transport, auth, headerNames: Object.keys(headers), defaultOn: Boolean(draft.defaultOn), prefix }
+    const approval: McpApproval = draft.approval && MCP_APPROVALS.has(draft.approval) ? draft.approval : (existing?.approval ?? "auto")
+    const deferTools = draft.deferTools !== undefined ? Boolean(draft.deferTools) : existing?.deferTools
+    const data: McpRowData = {
+      name,
+      url: url.href,
+      transport,
+      auth,
+      headerNames: Object.keys(headers),
+      defaultOn: Boolean(draft.defaultOn),
+      prefix,
+      ...(approval !== "auto" && { approval }),
+      ...(deferTools !== undefined && { deferTools })
+    }
     const now = Date.now()
     const id = existing?.id ?? this.newMcpId(name)
     this.ctx.storage.sql.exec(
@@ -3151,6 +3587,8 @@ export class DexAgent extends Agent<Env, DexState> {
     let port = existing?.local?.port ?? LOCAL_MCP_PORT
     while (ports.includes(port)) port++
     const sealedEnv = Object.keys(env).length ? await this.runtime.runPromise(Keys.use((keys) => keys.encrypt(JSON.stringify(env)))) : null
+    const approval: McpApproval = draft.approval && MCP_APPROVALS.has(draft.approval) ? draft.approval : (existing?.approval ?? "auto")
+    const deferTools = draft.deferTools !== undefined ? Boolean(draft.deferTools) : existing?.deferTools
     const data: McpRowData = {
       name,
       url: existing?.local ? existing.url : "",
@@ -3159,6 +3597,8 @@ export class DexAgent extends Agent<Env, DexState> {
       headerNames: [],
       defaultOn: Boolean(draft.defaultOn),
       prefix: this.mcpPrefix(name, existing?.id),
+      ...(approval !== "auto" && { approval }),
+      ...(deferTools !== undefined && { deferTools }),
       local: { command, port, envNames: declared, sealedEnv }
     }
     const now = Date.now()
@@ -3202,7 +3642,7 @@ export class DexAgent extends Agent<Env, DexState> {
   async deleteMcpServer(id: string) {
     await this.removeMcpServer(id).catch(() => undefined)
     const row = this.mcpRow(id)
-    if (row?.local) await this.stopLocalMcp(row)
+    if (row?.local) await this.stopLocalMcp(row, true)
     this.ctx.storage.sql.exec(`DELETE FROM dex_mcp WHERE id = ?`, id)
     this.mcpErrors.delete(id)
     this.mcpLastStatus.delete(id)
@@ -3379,10 +3819,16 @@ export class DexAgent extends Agent<Env, DexState> {
     }
     if (this.state.commandcode?.connected) {
       const money = (value: number) => `$${value < 100 ? value.toFixed(2) : Math.round(value)}`
-      for (const [window, ms, limit] of [["5 hours", 5 * 3_600_000, COMMANDCODE_LIMITS.fiveHours], ["7 days", 7 * DAY, COMMANDCODE_LIMITS.week], ["30 days", 30 * DAY, COMMANDCODE_LIMITS.month]] as const) {
-        const spent = this.ledger.modelSpend("commandcode", until - ms, until)
+      const windows = [
+        ["5 hours", 5 * 3_600_000, COMMANDCODE_LIMITS.fiveHours],
+        ["7 days", 7 * DAY, COMMANDCODE_LIMITS.week],
+        ["30 days", 30 * DAY, COMMANDCODE_LIMITS.month]
+      ] as const
+      const spends = this.ledger.modelSpends("commandcode", windows.map(([, ms]) => until - ms), until)
+      windows.forEach(([window, , limit], index) => {
+        const spent = spends[index] ?? 0
         meters.push({ provider: "commandcode", service: "Command Code", window, percent: (spent / limit) * 100, limited: false, resetsAt: null, detail: `${money(spent)} of $${limit}`, estimated: true })
-      }
+      })
     }
     const free = this.state.openrouter?.connected ? openrouter.account?.freeRequests : undefined
     if (free) {
@@ -3560,16 +4006,18 @@ export class DexAgent extends Agent<Env, DexState> {
 
   /** Stops a chat's working helpers (those on `vms`, or all), without reports; returns their VMs. */
   private async stopHelpers(chatId: string, vms?: ReadonlyArray<number>) {
-    const stopped: number[] = []
-    for (const helper of this.chatHelpers(chatId)) {
-      if (vms && !vms.includes(helper.vm)) continue
-      if (!(await this.isBusy(helper.id))) continue
-      this.silencedHelpers.add(helper.id)
-      await this.harness.session(helper.id).abort().catch(() => false)
-      this.setHelperStatus(helper.id, "stopped")
-      stopped.push(helper.vm)
-    }
-    return stopped.sort((a, b) => a - b)
+    const candidates = this.chatHelpers(chatId).filter((helper) => !vms || vms.includes(helper.vm))
+    if (!candidates.length) return []
+    const busyIds = new Set((await this.harness.sessions.list()).filter((info) => info.busy).map((info) => info.id))
+    const active = candidates.filter((helper) => busyIds.has(helper.id))
+    await Promise.all(
+      active.map(async (helper) => {
+        this.silencedHelpers.add(helper.id)
+        await this.harness.session(helper.id).abort().catch(() => false)
+        this.setHelperStatus(helper.id, "stopped")
+      })
+    )
+    return active.map((helper) => helper.vm).sort((a, b) => a - b)
   }
 
   /**
@@ -3602,14 +4050,16 @@ export class DexAgent extends Agent<Env, DexState> {
     const old = this.ctx.storage.sql
       .exec<{ snapshot: string }>(`SELECT snapshot FROM dex_vm_copies WHERE made_at < ?`, Date.now() - 30 * 60_000)
       .toArray()
-    for (const { snapshot } of old) {
-      try {
-        await this.runtime.runPromise(BoatClient.use((boat) => boat.deleteNamedSnapshot(snapshot)))
-        this.ctx.storage.sql.exec(`DELETE FROM dex_vm_copies WHERE snapshot = ?`, snapshot)
-      } catch (error) {
-        console.warn(`Couldn't delete the VM copy ${snapshot}: ${errorText(error)}`)
-      }
-    }
+    await Promise.all(
+      old.map(async ({ snapshot }) => {
+        try {
+          await this.runtime.runPromise(BoatClient.use((boat) => boat.deleteNamedSnapshot(snapshot)))
+          this.ctx.storage.sql.exec(`DELETE FROM dex_vm_copies WHERE snapshot = ?`, snapshot)
+        } catch (error) {
+          console.warn(`Couldn't delete the VM copy ${snapshot}: ${errorText(error)}`)
+        }
+      })
+    )
   }
 
   private vmFor(key: string): VmManager {
@@ -3624,8 +4074,14 @@ export class DexAgent extends Agent<Env, DexState> {
   /** A VM the Machine page asks about: an existing one, or one of a chat's (possibly not created yet). */
   private vmForUser(key: string): VmManager {
     if (this.vms.has(key)) return this.vmFor(key)
-    if (key !== SHARED_VM && this.hasSession(chatOfVm(key)) && vmKeyFor(chatOfVm(key), vmNumber(key)) === key) return this.vmFor(key)
+    if (key !== SHARED_VM && key !== MCP_VM && this.hasSession(chatOfVm(key)) && vmKeyFor(chatOfVm(key), vmNumber(key)) === key) return this.vmFor(key)
     throw new Error("No such VM")
+  }
+
+  /** A chat's VM (never the internal MCP host VM, whose disk stores local MCP server env secrets). */
+  private vmForChat(key: string): VmManager {
+    if (key === MCP_VM) throw new Error("The MCP host VM is managed by Dex and cannot be inspected or run directly.")
+    return this.vmForUser(key)
   }
 
   /** A chat's VMs that exist here (created, or loaded from storage), first VM first. */
@@ -3716,9 +4172,8 @@ export class DexAgent extends Agent<Env, DexState> {
 
   async vmIdleCheck() {
     await this.discardVmCopies()
-    let again = false
-    for (const vm of this.vms.values()) if (await vm.idleCheck()) again = true
-    if (again) await this.schedule(60, "vmIdleCheck")
+    const results = await Promise.all([...this.vms.values()].map((vm) => vm.idleCheck()))
+    if (results.some(Boolean)) await this.schedule(60, "vmIdleCheck")
   }
 
   @callable()
@@ -3729,7 +4184,9 @@ export class DexAgent extends Agent<Env, DexState> {
   /** A command the user runs from the Machine page terminal; output streams to every watcher. */
   @callable()
   async vmRun(key: string, command: string) {
-    const result = await this.vmForUser(key).exec(command, { actor: "user", timeoutSeconds: 600 })
+    const vm = this.vmForChat(key)
+    await Promise.all([this.secrets.prepare(chatOfVm(key)), this.accountSecrets.load()])
+    const result = await vm.exec(command, { actor: "user", timeoutSeconds: 600 })
     return { exitCode: result.exitCode, output: result.output.slice(-16_000) }
   }
 
@@ -3737,7 +4194,8 @@ export class DexAgent extends Agent<Env, DexState> {
   @callable()
   async vmPeek(key: string, view: VmPeekView, path = "~/work", lines = 200) {
     if (!VM_PEEK_VIEWS.includes(view)) throw new Error(`Unknown view ${view}.`)
-    const vm = this.vmForUser(key)
+    const vm = this.vmForChat(key)
+    await Promise.all([this.secrets.prepare(chatOfVm(key)), this.accountSecrets.load()])
     const at = String(path || "~/work").slice(0, 500)
     const result = await vm.peek(peekCommand(view, at, Math.min(2_000, Math.max(1, Math.round(lines)))))
     if (!result) return { running: false, status: vm.current.status, view }
@@ -3748,7 +4206,7 @@ export class DexAgent extends Agent<Env, DexState> {
   @callable()
   async vmFiles(key: string, view: VmFilesView, path = "~/work", offset = 0) {
     const command = vmFilesCommand(view, path, offset)
-    const vm = this.vmForUser(key)
+    const vm = this.vmForChat(key)
     await Promise.all([this.secrets.prepare(chatOfVm(key)), this.accountSecrets.load()])
     const result = await vm.peek(command, undefined, { maxOutput: 1_000_000, rawJson: true })
     if (!result) return { running: false as const, status: vm.current.status }
@@ -3762,6 +4220,7 @@ export class DexAgent extends Agent<Env, DexState> {
    */
   @callable()
   async vmDesktopUrl(key: string, mode: "stream" | "vnc" | "selkies"): Promise<string | null> {
+    if (key === MCP_VM) return null
     const vm = this.vms.get(key)
     if (!vm) return null
     if (mode === "selkies") return (await vm.desktopUpstream()) ? `/vm-desktop/${encodeURIComponent(key)}/` : null
@@ -3773,12 +4232,13 @@ export class DexAgent extends Agent<Env, DexState> {
    * cookie and password, which never reach a browser.
    */
   async vmDesktopUpstream(key: string, refresh = false): Promise<DesktopUpstream | null> {
+    if (key === MCP_VM) return null
     return (await this.vms.get(key)?.desktopUpstream(refresh)) ?? null
   }
 
   @callable()
   async vmExposePort(key: string, port: number, isPublic: boolean): Promise<string> {
-    return this.vmForUser(key).exposePort(port, isPublic, "user")
+    return this.vmForChat(key).exposePort(port, isPublic, "user")
   }
 
   // ── GitHub access for the VMs ─────────────────────────────────────────────
@@ -3895,6 +4355,9 @@ export class DexAgent extends Agent<Env, DexState> {
     const current = await this.savedGitHubCredentials()
     if (current?.token !== token) return
     if (this.secret("github_refresh") && (await this.renewGitHubToken())) return
+    // Re-check after renewal attempt: the user may have manually reconnected while renewal was in flight.
+    const latest = await this.savedGitHubCredentials()
+    if (latest?.token !== token) return
     this.markGitHubExpired(`GitHub turned the token down while ${doing}`)
   }
 
@@ -4068,16 +4531,22 @@ export class DexAgent extends Agent<Env, DexState> {
 
   // ── Projects ──────────────────────────────────────────────────────────────
 
-  private loadProjects(): ProjectProfile[] {
+  private loadProjects(inlineImage = false): ProjectProfile[] {
     return this.ctx.storage.sql
       .exec<AgentRow>(`SELECT * FROM dex_projects ORDER BY created_at, id`)
       .toArray()
-      .map((row) => ({ ...(JSON.parse(row.data) as ProjectDraft), id: row.id, createdAt: row.created_at, updatedAt: row.updated_at }))
+      .map((row) => this.toProject(row, inlineImage))
   }
 
-  private projectById(id: string): ProjectProfile | undefined {
+  private toProject(row: AgentRow, inlineImage = false): ProjectProfile {
+    const data = JSON.parse(row.data) as ProjectDraft
+    const image = data.image ? (inlineImage ? data.image : avatarUrl("project", row.id, data.image)) : null
+    return { ...data, image, id: row.id, createdAt: row.created_at, updatedAt: row.updated_at }
+  }
+
+  private projectById(id: string, inlineImage = false): ProjectProfile | undefined {
     const row = this.ctx.storage.sql.exec<AgentRow>(`SELECT * FROM dex_projects WHERE id = ?`, id).toArray()[0]
-    return row && { ...(JSON.parse(row.data) as ProjectDraft), id: row.id, createdAt: row.created_at, updatedAt: row.updated_at }
+    return row && this.toProject(row, inlineImage)
   }
 
   private projectForSession(sessionId: string): ProjectProfile | undefined {
@@ -4134,7 +4603,8 @@ export class DexAgent extends Agent<Env, DexState> {
       if (branch && !/^[\w./-]+$/.test(branch)) throw new Error(`"${branch}" isn't a valid branch name.`)
       repos.push({ url, branch, dir })
     }
-    const existing = draft.id ? this.projectById(draft.id) : undefined
+    const existing = draft.id ? this.projectById(draft.id, true) : undefined
+    const keepingAvatarUrl = isAvatarUrl(draft.image, "project")
     const clean: Omit<ProjectDraft, "id"> = {
       name,
       description: String(draft.description ?? "").trim().slice(0, 200),
@@ -4145,8 +4615,8 @@ export class DexAgent extends Agent<Env, DexState> {
       instructions: String(draft.instructions ?? "").slice(0, 20_000),
       starter: String(draft.starter ?? "").slice(0, 2_000),
       vmSize: draft.vmSize && VM_SIZES.has(draft.vmSize) ? draft.vmSize : null,
-      // Left out (an operation that doesn't touch it): keep the current picture.
-      image: draft.image === undefined ? (existing?.image ?? null) : isProjectImage(draft.image) ? draft.image : null
+      // Left out (or keeping its existing content-addressed URL): keep the current picture.
+      image: draft.image === undefined || keepingAvatarUrl ? (existing?.image ?? null) : isProjectImage(draft.image) ? draft.image : null
     }
     const now = Date.now()
     const id = existing?.id ?? `${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 32) || "project"}-${crypto.randomUUID().slice(0, 6)}`
@@ -4156,7 +4626,7 @@ export class DexAgent extends Agent<Env, DexState> {
       id, JSON.stringify(clean), existing?.createdAt ?? now, now
     )
     this.refreshProjects()
-    return { ...clean, id, createdAt: existing?.createdAt ?? now, updatedAt: now }
+    return { ...clean, image: avatarUrl("project", id, clean.image), id, createdAt: existing?.createdAt ?? now, updatedAt: now }
   }
 
   /** Deletes a project. Its chats and their VMs stay. */
@@ -4274,21 +4744,31 @@ export class DexAgent extends Agent<Env, DexState> {
   }
 
   /**
+   * Raw stored `data:image/...` URL and hash for one character or project, served by `GET /api/avatars/<kind>/<id>/<hash>`.
+   * Worker-only, never a callable.
+   */
+  avatarImage(kind: AvatarKind, id: string): { dataUrl: string; hash: string } | null {
+    const raw = kind === "character" ? this.characterById(id, true)?.image : this.projectById(id, true)?.image
+    if (!raw || !isProjectImage(raw)) return null
+    return { dataUrl: raw, hash: avatarHash(raw) }
+  }
+
+  /**
    * What the home-screen widgets show: each sidekick with their picture, whether they've said something you haven't
    * seen, and their latest words. Worker-only (GET /api/sidekicks), never a callable.
    */
-  widgetSnapshot() {
+  widgetSnapshot(includeImages = true) {
     const sessions = new Map(this.state.sessions.map((session) => [session.id, session]))
     return {
       unread: this.unreadCount(),
-      sidekicks: this.loadCharacters().map((character) => {
+      sidekicks: this.loadCharacters(includeImages).map((character) => {
         const session = sessions.get(character.sessionId)
         return {
           id: character.id,
           name: character.name,
           tagline: character.tagline,
           color: character.color,
-          image: character.image,
+          ...(includeImages ? { image: character.image } : {}),
           avatar: character.avatar,
           sessionId: character.sessionId,
           unread: session?.unread ?? false,
@@ -4372,6 +4852,8 @@ export class DexAgent extends Agent<Env, DexState> {
 
   @callable()
   async cancelScheduledPrompt(id: string) {
+    const match = this.getSchedules<ScheduledPayload>().find((schedule) => schedule.id === id && schedule.callback === SCHEDULE_CALLBACK)
+    if (!match) return false
     return this.cancelSchedule(id)
   }
 
@@ -4394,37 +4876,29 @@ export class DexAgent extends Agent<Env, DexState> {
       const direct = findImage({ entries: page.items }, ref)
       if (direct) return direct
     }
-    const stream = await this.harness.session(sessionId).events()
-    try {
-      return findImage(stream.snapshot, ref)
-    } finally {
-      await stream.stop().catch(() => undefined)
-    }
+    const entries = await this.harness.session(sessionId).messages()
+    return findImage({ entries }, ref)
   }
 
   /** A chat's latest messages as text, for operations that read chats. */
   async readTranscript(sessionId: string, limit: number) {
-    const stream = await this.harness.session(sessionId).events()
-    try {
-      const messages = stream.snapshot.entries.flatMap((entry) => entry.model ?? [])
-      return messages
-        .filter((message) => message.role === "user" || message.role === "assistant")
-        .slice(-limit)
-        .map((message) => {
-          if (message.role === "user") {
-            const raw = typeof message.content === "string" ? message.content : message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n")
-            // Attached files by name, not their contents.
-            const { text, files } = splitAttachments(raw)
-            const attached = files.length ? `${text ? "\n" : ""}[Attached: ${files.map((file) => file.name).join(", ")}]` : ""
-            return { role: "user", at: new Date(message.timestamp).toISOString(), text: `${text.slice(0, 4_000)}${attached}` }
-          }
-          const text = message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("\n")
-          const tools = message.content.flatMap((block) => (block.type === "toolCall" ? [block.name] : []))
-          return { role: "assistant", at: new Date(message.timestamp).toISOString(), text: text.slice(0, 8_000), ...(tools.length ? { tools } : {}) }
-        })
-    } finally {
-      await stream.stop().catch(() => undefined)
-    }
+    const entries = await this.harness.session(sessionId).messages()
+    const messages = entries.flatMap((entry) => entry.model ?? [])
+    return messages
+      .filter((message) => message.role === "user" || message.role === "assistant")
+      .slice(-limit)
+      .map((message) => {
+        if (message.role === "user") {
+          const raw = typeof message.content === "string" ? message.content : message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n")
+          // Attached files by name, not their contents.
+          const { text, files } = splitAttachments(raw)
+          const attached = files.length ? `${text ? "\n" : ""}[Attached: ${files.map((file) => file.name).join(", ")}]` : ""
+          return { role: "user", at: new Date(message.timestamp).toISOString(), text: `${text.slice(0, 4_000)}${attached}` }
+        }
+        const text = message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("\n")
+        const tools = message.content.flatMap((block) => (block.type === "toolCall" ? [block.name] : []))
+        return { role: "assistant", at: new Date(message.timestamp).toISOString(), text: text.slice(0, 8_000), ...(tools.length ? { tools } : {}) }
+      })
   }
 
   noteSessionParent(sessionId: string, parentId: string) {
@@ -4619,18 +5093,20 @@ export class DexAgent extends Agent<Env, DexState> {
     if (!this.media.configured) throw new Error("Media sharing isn't set up on this deployment (no MEDIA bucket).")
     const origin = this.appOrigin()
     if (!origin || !origin.startsWith("https://")) throw new Error("Dex needs a public https address to receive uploads; open it once from its deployed URL.")
+    const vm = this.vmForChat(vmKey)
     const upload = await this.media.createUpload(sessionId, path, title)
     const file = `'${path.replace(/'/g, `'\\''`)}'`
     const command = [
       `f=${file}`,
       `[ -f "$f" ] || { echo "No such file: $f" >&2; exit 2; }`,
-      `size=$(stat -c %s "$f")`,
+      `size=$(stat -Lc %s "$f")`,
       `[ "$size" -le ${MAX_MEDIA_BYTES} ] || { echo "Too big: $size bytes (max ${MAX_MEDIA_BYTES}). Compress it first, e.g. ffmpeg -i in.mp4 -c:v libx264 -crf 28 -preset fast -movflags +faststart out.mp4" >&2; exit 3; }`,
       // The token is single-use and spent by this request.
       `curl -sS --fail-with-body --max-time 560 -X PUT -H 'Content-Type: application/octet-stream' --data-binary @"$f" '${origin}/api/media/upload/${upload.token}'`,
       ...(removeAfter ? [`status=$?; rm -f "$f"; exit $status`] : [])
     ].join("\n")
-    const result = await this.vmFor(vmKey).exec(command, { actor, timeoutSeconds: 600 })
+    // Pass a clean title so the single-use upload token URL never enters dex_vm_activity.
+    const result = await vm.exec(command, { actor, title: `Share ${upload.name}`, timeoutSeconds: 600 })
     if (result.exitCode !== 0) throw new Error(result.output.trim().slice(-600) || "The upload failed.")
     const shared = this.media.get(upload.key)
     if (!shared) throw new Error("The upload didn't arrive.")
@@ -4761,7 +5237,8 @@ export class DexAgent extends Agent<Env, DexState> {
       `curl -sS --fail-with-body --max-time 560 -o "$f" ${quote(`${origin}/api/media/download/${token}`)}`,
       `ls -l "$f"`
     ].join("\n")
-    const result = await this.vmFor(vmKeyFor(sessionId, vm)).exec(command, { actor: "agent", timeoutSeconds: 600 })
+    // Pass a clean title so the single-use download token URL never enters dex_vm_activity.
+    const result = await this.vmForChat(vmKeyFor(sessionId, vm)).exec(command, { actor: "agent", title: `Download attachment ${file.name}`, timeoutSeconds: 600 })
     if (result.exitCode !== 0) throw new Error(result.output.trim().slice(-600) || "The download failed.")
     return { path: target, name: file.name, size: file.size, contentType: file.contentType }
   }
@@ -4782,11 +5259,16 @@ export class DexAgent extends Agent<Env, DexState> {
 
   // ── Sessions ──────────────────────────────────────────────────────────────
 
+  private sessionsValidAfter: number | null = null
+
   /** Whether a session issued at `issuedAt` (seconds) is still allowed. Called by the Worker on every sign-in check. */
   isSessionCurrent(issuedAt: number, workerBuild?: string): boolean {
     this.restartIfOutdated(workerBuild)
-    const row = this.ctx.storage.sql.exec<{ value: string }>(`SELECT value FROM dex_meta WHERE key = 'sessions_valid_after'`).toArray()[0]
-    return issuedAt > Number(row?.value ?? 0)
+    if (this.sessionsValidAfter === null) {
+      const row = this.ctx.storage.sql.exec<{ value: string }>(`SELECT value FROM dex_meta WHERE key = 'sessions_valid_after'`).toArray()[0]
+      this.sessionsValidAfter = Number(row?.value ?? 0)
+    }
+    return issuedAt > this.sessionsValidAfter
   }
 
   private restarting = false
@@ -4808,10 +5290,11 @@ export class DexAgent extends Agent<Env, DexState> {
   /** Ends every session on every device (a lost phone, a leaked password): they must sign in again. */
   @callable()
   async signOutEverywhere() {
-    const now = String(Math.floor(Date.now() / 1000))
+    const now = Math.floor(Date.now() / 1000)
+    this.sessionsValidAfter = now
     this.ctx.storage.sql.exec(
       `INSERT INTO dex_meta (key, value) VALUES ('sessions_valid_after', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-      now
+      String(now)
     )
     // Sockets authenticated before now close too; they can't reconnect with their old cookies.
     for (const connection of this.getConnections()) connection.close(4001, "Signed out everywhere")
@@ -4832,6 +5315,33 @@ export class DexAgent extends Agent<Env, DexState> {
   @callable()
   async resolvePendingAction(id: string, approve: boolean) {
     await this.access.resolve(id, approve)
+  }
+
+  // ── Inbound webhooks ──────────────────────────────────────────────────────
+
+  @callable()
+  async saveWebhook(draft: WebhookDraft): Promise<CreatedWebhook | { readonly webhook: WebhookInfo; readonly secret?: undefined }> {
+    return this.webhooks.save(draft)
+  }
+
+  @callable()
+  deleteWebhook(id: string) {
+    this.webhooks.remove(id)
+  }
+
+  @callable()
+  async rotateWebhookSecret(id: string): Promise<CreatedWebhook> {
+    return this.webhooks.rotateSecret(id)
+  }
+
+  @callable()
+  async testWebhook(id: string, payload?: string): Promise<{ readonly sessionId: string }> {
+    return this.webhooks.triggerTest(id, payload)
+  }
+
+  /** Worker-only entry point for `/api/hooks/<user>/<hookId>` (never a client callable). */
+  async handleWebhook(hookId: string, rawBody: string, headers: Readonly<Record<string, string | undefined>>) {
+    return this.webhooks.receive(hookId, rawBody, headers)
   }
 
   /**
@@ -4881,6 +5391,9 @@ export class DexAgent extends Agent<Env, DexState> {
       payload.sessionId && this.hasSession(payload.sessionId)
         ? payload.sessionId
         : (await this.createSession({ title: `⏰ ${payload.prompt.slice(0, 50)}` })).id
+    this.voiceCalls.delete(sessionId)
+    const row = this.ctx.storage.sql.exec<{ model: string }>(`SELECT model FROM dex_sessions WHERE id = ?`, sessionId).toArray()[0]
+    if (row && !this.catalog.findModel(row.model)) await this.configureSession(sessionId, {})
     const session = this.harness.session(sessionId)
     const receipt = await session.submit(`[Scheduled task] ${payload.prompt}`)
     await this.returnToInbox(sessionId)

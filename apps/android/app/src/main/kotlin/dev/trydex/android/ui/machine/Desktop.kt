@@ -87,7 +87,9 @@ fun rememberDesktopUrl(key: String, mode: DesktopMode, running: Boolean): Deskto
 /** A desktop URL as the WebView loads it: Dex's own paths resolve against the server; the watch view hides controls. */
 fun desktopAddress(url: String, session: DexSession?, watch: Boolean): String {
     val absolute = if (url.startsWith("/")) session?.serverUrl?.resolve(url)?.toString() ?: url else url
-    return if (watch && url.startsWith("/vm-desktop/")) "$absolute?view=watch" else absolute
+    if (!watch || !url.startsWith("/vm-desktop/")) return absolute
+    val sep = if ('?' in absolute) "&" else "?"
+    return "$absolute${sep}view=watch"
 }
 
 /**
@@ -136,6 +138,8 @@ fun DesktopWebView(url: String, generation: Int, control: Boolean, modifier: Mod
                     layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                     setBackgroundColor(AndroidColor.BLACK)
                     settings.javaScriptEnabled = true
+                    settings.allowFileAccess = false
+                    settings.allowContentAccess = false
                     settings.domStorageEnabled = true
                     settings.mediaPlaybackRequiresUserGesture = false
                     settings.loadWithOverviewMode = true
@@ -143,8 +147,16 @@ fun DesktopWebView(url: String, generation: Int, control: Boolean, modifier: Mod
                     CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
                     webChromeClient = WebChromeClient()
                     webViewClient = object : WebViewClient() {
-                        // Links inside the desktop page stay in it; nothing navigates the app.
-                        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest) = false
+                        // Only allow HTTP(S) navigations matching the current desktop origin or Dex's origin.
+                        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                            val target = request.url ?: return true
+                            val scheme = target.scheme?.lowercase()
+                            if (scheme != "https" && scheme != "http") return true
+                            val currentHost = runCatching { android.net.Uri.parse(view.url).host?.lowercase() }.getOrNull()
+                            val serverHost = session?.serverUrl?.host?.lowercase()
+                            val targetHost = target.host?.lowercase()
+                            return targetHost == null || (targetHost != currentHost && targetHost != serverHost)
+                        }
                     }
                     view = this
                 }

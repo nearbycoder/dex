@@ -20,9 +20,9 @@ export const Route = createFileRoute("/api/sidekicks")({
         if (!viewer) return Response.json({ error: "Sign in again" }, { status: 401, headers: noStore })
         const agent = await getAgentByName(env.DexAgent as unknown as DurableObjectNamespace<DexAgent>, viewer.id)
         try {
-          // `images=0` leaves the pictures out, for a widget that already has them.
-          const snapshot = await agent.widgetSnapshot()
+          // `images=0` leaves the pictures out at the DO so base64 PNGs never cross RPC (still stripped here for older DO builds).
           const images = new URL(request.url).searchParams.get("images") !== "0"
+          const snapshot = await agent.widgetSnapshot(images)
           return Response.json(images ? snapshot : { ...snapshot, sidekicks: snapshot.sidekicks.map(({ image: _image, ...rest }) => rest) }, { headers: noStore })
         } catch (cause) {
           // An agent still on the build from before this route: the sign-in check above restarts it, so ask again.

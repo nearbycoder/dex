@@ -89,10 +89,13 @@ export interface ExecOptions {
 }
 
 /**
- * The boat.dev key for this agent's requests, read on each one: the key its user connected in Settings, or for the
- * owner the deployment's BOAT_API_KEY. None: VMs aren't available to this user.
+ * The boat.dev token for this agent's requests, read on each one: the user's OAuth access token (auto-refreshed)
+ * or pasted API key, or for the owner the deployment's BOAT_API_KEY. None: VMs aren't available to this user.
  */
-export class BoatKey extends Context.Service<BoatKey, { readonly get: Effect.Effect<Option.Option<string>> }>()("dex/agent/BoatKey") {}
+export class BoatKey extends Context.Service<
+  BoatKey,
+  { readonly get: Effect.Effect<Option.Option<string>>; readonly refresh?: Effect.Effect<Option.Option<string>> }
+>()("dex/agent/BoatKey") {}
 
 /** boat.dev cloud VMs: lifecycle, commands, files, ports, and the live desktop. */
 export class BoatClient extends Context.Service<BoatClient, {
@@ -143,21 +146,32 @@ export class BoatClient extends Context.Service<BoatClient, {
         })
       })
 
-      const attempt = Effect.fnUntraced(function*(request: HttpClientRequest.HttpClientRequest) {
+      const attempt = Effect.fnUntraced(function*(request: HttpClientRequest.HttpClientRequest, timeoutMs = 30_000) {
         const key = yield* boatKey.get
         if (Option.isNone(key)) return yield* notConfigured
-        const response = yield* http.execute(request.pipe(HttpClientRequest.bearerToken(key.value))).pipe(
-          Effect.mapError((cause) => new BoatError({ code: "network", status: 0, message: `Could not reach boat.dev: ${cause}`, retryable: true }))
-        )
+        const executeWith = (token: string) =>
+          http.execute(request.pipe(HttpClientRequest.bearerToken(token))).pipe(
+            Effect.timeout(`${timeoutMs} millis`),
+            Effect.mapError((cause) => new BoatError({ code: "network", status: 0, message: `Could not reach boat.dev: ${cause}`, retryable: true }))
+          )
+        let response = yield* executeWith(key.value)
+        // If an OAuth access token expired right before the call, force one single-flight refresh and retry once.
+        if (response.status === 401 && boatKey.refresh) {
+          yield* response.text.pipe(Effect.ignore)
+          const fresh = yield* boatKey.refresh
+          if (Option.isSome(fresh) && fresh.value !== key.value) {
+            response = yield* executeWith(fresh.value)
+          }
+        }
         if (response.status >= 400) return yield* failFrom(response)
         return response
       })
 
       // boat.dev is one server, and Cloudflare's path to it occasionally times out: try twice more before giving up.
       // Running a command is the one request that isn't safe to repeat once it may have arrived.
-      const send = (request: HttpClientRequest.HttpClientRequest) => {
+      const send = (request: HttpClientRequest.HttpClientRequest, timeoutMs = 30_000) => {
         const repeatable = !(request.method === "POST" && request.url.endsWith("/commands"))
-        return attempt(request).pipe(
+        return attempt(request, timeoutMs).pipe(
           Effect.retry({
             times: 2,
             schedule: Schedule.exponential("750 millis"),
@@ -165,6 +179,9 @@ export class BoatClient extends Context.Service<BoatClient, {
           })
         )
       }
+
+      const sendVoid = (request: HttpClientRequest.HttpClientRequest) =>
+        send(request).pipe(Effect.flatMap((response) => response.text.pipe(Effect.ignore)))
 
       const json = <S extends Schema.Constraint>(schema: S) =>
         Effect.fnUntraced(function*(request: HttpClientRequest.HttpClientRequest) {
@@ -194,18 +211,20 @@ export class BoatClient extends Context.Service<BoatClient, {
 
         resume: (id, ttlSeconds) => sandbox(HttpClientRequest.post(url(`/sandboxes/${id}/resume`)).pipe(body({ ttlSeconds }))),
 
-        stop: (id) => send(HttpClientRequest.post(url(`/sandboxes/${id}/stop`)).pipe(body({}))).pipe(Effect.asVoid),
+        stop: (id) => sendVoid(HttpClientRequest.post(url(`/sandboxes/${id}/stop`)).pipe(body({}))),
 
         remove: (id) =>
-          send(HttpClientRequest.make("DELETE")(url(`/sandboxes/${id}`)).pipe(HttpClientRequest.setHeader("x-ascii-confirm-delete", id))).pipe(Effect.asVoid),
+          sendVoid(HttpClientRequest.make("DELETE")(url(`/sandboxes/${id}`)).pipe(HttpClientRequest.setHeader("x-ascii-confirm-delete", id))),
 
         extend: (id, ttlSeconds) => sandbox(HttpClientRequest.make("PATCH")(url(`/sandboxes/${id}`)).pipe(body({ ttlSeconds }))),
 
         exec: Effect.fnUntraced(function*(id: string, command: string, options: ExecOptions = {}) {
+          const timeoutSec = options.timeoutSeconds ?? 120
           const response = yield* send(
             HttpClientRequest.post(url(`/sandboxes/${id}/commands`)).pipe(
-              body({ command, cwd: options.cwd, timeoutSeconds: options.timeoutSeconds ?? 120, stream: true })
-            )
+              body({ command, cwd: options.cwd, timeoutSeconds: timeoutSec, stream: true })
+            ),
+            (timeoutSec + 60) * 1000
           )
           let result: CommandResult | undefined
           let failure: string | undefined
@@ -247,7 +266,7 @@ export class BoatClient extends Context.Service<BoatClient, {
           json(FileRead)(HttpClientRequest.get(url(`/sandboxes/${id}/files`)).pipe(HttpClientRequest.setUrlParams({ path, encoding }))),
 
         writeFile: (id, path, content, encoding = "utf8") =>
-          send(HttpClientRequest.put(url(`/sandboxes/${id}/files`)).pipe(body({ path, content, encoding }))).pipe(Effect.asVoid),
+          sendVoid(HttpClientRequest.put(url(`/sandboxes/${id}/files`)).pipe(body({ path, content, encoding }))),
 
         hostPort: (id, port, isPublic) =>
           json(PortHosted)(HttpClientRequest.post(url(`/sandboxes/${id}/host`)).pipe(body({ port, public: isPublic }))).pipe(Effect.map((hosted) => hosted.url)),
@@ -259,11 +278,10 @@ export class BoatClient extends Context.Service<BoatClient, {
           ),
 
         saveNamedSnapshot: (sandboxId, name) =>
-          send(HttpClientRequest.post(url("/named-snapshots")).pipe(body({ sandboxId, name }))).pipe(Effect.asVoid),
+          sendVoid(HttpClientRequest.post(url("/named-snapshots")).pipe(body({ sandboxId, name }))),
 
         deleteNamedSnapshot: (name) =>
-          send(HttpClientRequest.make("DELETE")(url(`/named-snapshots/${encodeURIComponent(name)}`))).pipe(
-            Effect.asVoid,
+          sendVoid(HttpClientRequest.make("DELETE")(url(`/named-snapshots/${encodeURIComponent(name)}`))).pipe(
             Effect.catchIf((error) => error.status === 404, () => Effect.void)
           ),
 

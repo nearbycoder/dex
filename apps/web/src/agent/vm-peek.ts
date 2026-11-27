@@ -10,27 +10,85 @@ export const VM_PEEK_VIEWS: ReadonlyArray<VmPeekView> = ["files", "file", "ports
 
 const MAX_FILE_CHARS = 64_000
 
+const quote = (text: string) => `'${text.replace(/'/g, `'\\''`)}'`
+
 /** A path for the shell: `~/…` stays relative to the home folder, everything else is single-quoted. */
 const shellPath = (path: string) => {
-  const quote = (text: string) => `'${text.replace(/'/g, `'\\''`)}'`
+  if (!path || path.length > 4096 || path.includes("\0")) throw new Error("Invalid path")
   if (path === "~") return `"$HOME"`
   if (path.startsWith("~/")) return `"$HOME"/${quote(path.slice(2))}`
   return quote(path)
 }
 
+/**
+ * Bounded Python helper for `files` and `file` peeks: avoids GNU `find` flag/predicate injection (e.g. `-delete`),
+ * blocks credential files and virtual device/FIFO reads, and bounds memory/output.
+ */
+const PEEK_PY = String.raw`
+import os, sys, stat, collections
+view, raw, lines = sys.argv[1], sys.argv[2], max(1, min(int(sys.argv[3]), 2000))
+path = os.path.abspath(os.path.expanduser(raw))
+def sensitive(p):
+    real = os.path.realpath(p)
+    parts = real.split(os.sep)
+    names = {os.path.basename(p), os.path.basename(real)}
+    secret_names = {'.netrc', '.npmrc', '.pypirc', '.git-credentials', 'credentials', 'credentials.json', 'application_default_credentials.json', 'id_rsa', 'id_ed25519', 'id_ecdsa', 'id_dsa', '.dex-gh-token'}
+    if any(x in ('.ssh', '.gnupg', '.aws', '.azure', '.kube') or x == '.env' or x.startswith('.env.') or x.startswith('.dex-env-') for x in parts): return True
+    if '.config' in parts and any(x in ('gh', 'gcloud', 'dex') for x in parts): return True
+    if names & secret_names: return True
+    if '.git' in parts and (names & {'config', 'credentials'}): return True
+    if real.startswith('/home/user/mcp/') or real == '/home/user/mcp' or real.startswith('/var/lib/dex-mcp/') or real == '/var/lib/dex-mcp': return True
+    if real.startswith('/tmp/.dex-') or (real.startswith('/tmp/dex-browse-') and real.endswith('.js')): return True
+    return False
+if view == 'files':
+    try:
+        with os.scandir(path) as it:
+            names = sorted((e.name for e in it))[:500]
+        for name in names:
+            p = os.path.join(path, name)
+            try:
+                s = os.stat(p, follow_symlinks=False)
+                t = 'd' if stat.S_ISDIR(s.st_mode) else 'l' if stat.S_ISLNK(s.st_mode) else 'f' if stat.S_ISREG(s.st_mode) else 'o'
+                print(f'{t}\t{s.st_size}\t{s.st_mtime}\t{name}')
+            except OSError:
+                pass
+    except OSError:
+        pass
+elif view == 'file':
+    if sensitive(path):
+        sys.stderr.write('Credential files cannot be inspected.\n')
+        sys.exit(1)
+    real = os.path.realpath(path)
+    if any(real == p or real.startswith(p + '/') for p in ('/dev', '/proc', '/sys')):
+        sys.stderr.write('Device and virtual system files cannot be inspected.\n')
+        sys.exit(1)
+    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+    with os.fdopen(fd, 'rb') as f:
+        s = os.fstat(f.fileno())
+        if not stat.S_ISREG(s.st_mode):
+            sys.stderr.write('Not a regular file.\n')
+            sys.exit(1)
+        if s.st_size > 262144:
+            f.seek(s.st_size - 262144)
+        data = f.read(262144)
+    text = data.decode('utf-8', errors='replace')
+    tail = collections.deque(text.splitlines(keepends=True), maxlen=lines)
+    sys.stdout.write(''.join(tail)[-64000:])
+`
+
 export const peekCommand = (view: VmPeekView, path: string, lines: number) => {
-  const at = shellPath(path)
+  if (!path || path.length > 4096 || path.includes("\0")) throw new Error("Invalid path")
+  const clampedLines = Math.max(1, Math.min(Math.trunc(Number.isFinite(lines) ? lines : 80), 2000))
   switch (view) {
     case "files":
-      return `find ${at} -mindepth 1 -maxdepth 1 -printf '%y\\t%s\\t%T@\\t%f\\n' 2>/dev/null | sort -t "$(printf '\\t')" -k4 | head -500`
     case "file":
-      return `tail -n ${lines} ${at}`
+      return `python3 -c ${quote(PEEK_PY)} ${quote(view)} ${quote(path)} ${clampedLines}`
     case "ports":
       return `ss -ltnpH 2>/dev/null`
     case "processes":
       return `ps -eo pid=,pcpu=,pmem=,etimes=,comm= --sort=-pcpu | head -30`
     case "git":
-      return `cd ${at} && git status --porcelain=v1 -b 2>&1 && echo '@@log@@' && git log -n 10 --format='%h%x09%an%x09%at%x09%s' 2>/dev/null`
+      return `cd -- ${shellPath(path)} && GIT_TERMINAL_PROMPT=0 GIT_CONFIG_NOSYSTEM=1 GIT_NO_LAZY_FETCH=1 git --no-optional-locks -c core.fsmonitor=false status --porcelain=v1 -b 2>&1 && echo '@@log@@' && GIT_TERMINAL_PROMPT=0 GIT_CONFIG_NOSYSTEM=1 git --no-optional-locks -c core.fsmonitor=false log -n 10 --format='%h%x09%an%x09%at%x09%s' 2>/dev/null`
   }
 }
 

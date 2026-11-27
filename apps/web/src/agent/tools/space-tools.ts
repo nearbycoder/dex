@@ -1,4 +1,4 @@
-import { Type } from "@earendil-works/pi-ai"
+import { Type } from "typebox"
 import { defineTool } from "@earendil-works/pi-durable"
 import type { ThinkingLevel } from "~/shared/models"
 import { START_THREAD_TOOL, type SpaceProfile, THREAD_STATUS_LABELS, type ThreadStatus } from "~/shared/spaces"

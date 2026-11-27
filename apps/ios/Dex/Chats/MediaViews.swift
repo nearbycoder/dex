@@ -67,22 +67,30 @@ struct StoredImageView: View {
     var body: some View {
         Group {
             if let image {
-                Button { zoomed = true } label: {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxWidth: 560, maxHeight: 420, alignment: .leading)
-                        .clipShape(.rect(cornerRadius: 14, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.quaternary))
+                ZStack(alignment: .topTrailing) {
+                    Button { zoomed = true } label: {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: 560, maxHeight: 420, alignment: .leading)
+                            .clipShape(.rect(cornerRadius: 14, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.quaternary))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(title ?? "Image")
+                    .accessibilityHint("Opens it full screen")
+                    .contextMenu {
+                        Button {
+                            Task { await AssetExporter.downloadAndSave(url: url, name: title, client: client) }
+                        } label: { Label("Save to Files", systemImage: "arrow.down.to.line") }
+                        Button { UIPasteboard.general.image = image } label: { Label("Copy", systemImage: "doc.on.doc") }
+                        ShareLink(item: Image(uiImage: image), preview: SharePreview(title ?? "Image", image: Image(uiImage: image)))
+                    }
+                    .fullScreenCover(isPresented: $zoomed) { ImageViewer(image: image, title: title) }
+
+                    AssetDownloadButton(url: url, title: title, compact: true)
+                        .padding(8)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel(title ?? "Image")
-                .accessibilityHint("Opens it full screen")
-                .contextMenu {
-                    Button { UIPasteboard.general.image = image } label: { Label("Copy", systemImage: "doc.on.doc") }
-                    ShareLink(item: Image(uiImage: image), preview: SharePreview(title ?? "Image", image: Image(uiImage: image)))
-                }
-                .fullScreenCover(isPresented: $zoomed) { ImageViewer(image: image, title: title) }
             } else if failed {
                 Label("Couldn't load \(title ?? ChatMedia.fileName(url.absoluteString))", systemImage: "photo.badge.exclamationmark")
                     .font(.footnote)
@@ -120,7 +128,16 @@ struct ImageViewer: View {
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Done") { dismiss() }.accessibilityIdentifier("media.viewer.done")
                     }
-                    ToolbarItem(placement: .topBarLeading) {
+                    ToolbarItemGroup(placement: .topBarLeading) {
+                        Button {
+                            do {
+                                let fileURL = try MediaLoader.shared.exportImage(image, name: title ?? "image")
+                                AssetExporter.saveToFiles(fileURL)
+                            } catch {}
+                        } label: {
+                            Label("Save to Files", systemImage: "arrow.down.to.line")
+                        }
+                        .accessibilityIdentifier("media.viewer.download")
                         ShareLink(item: Image(uiImage: image), preview: SharePreview(title ?? "Image", image: Image(uiImage: image)))
                     }
                 }
@@ -189,19 +206,36 @@ struct VideoPlayerCard: View {
     @State private var player: AVPlayer?
 
     var body: some View {
-        ZStack {
-            Color.black
-            if let player {
-                VideoPlayer(player: player)
-            } else {
-                ProgressView().tint(.white)
+        let displayName = title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? title! : ChatMedia.fileName(url.absoluteString)
+        VStack(spacing: 0) {
+            ZStack {
+                Color.black
+                if let player {
+                    VideoPlayer(player: player)
+                } else {
+                    ProgressView().tint(.white)
+                }
             }
+            .aspectRatio(16 / 9, contentMode: .fit)
+            HStack(spacing: 10) {
+                Image(systemName: "film")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(displayName)
+                    .font(.caption.weight(.medium))
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                AssetDownloadButton(url: url, title: displayName)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color(.secondarySystemBackground))
         }
-        .aspectRatio(16 / 9, contentMode: .fit)
         .frame(maxWidth: 560)
         .clipShape(.rect(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.quaternary))
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(title ?? "Video")
+        .accessibilityLabel(displayName)
         .accessibilityIdentifier("media.video")
         .task(id: url) {
             let item = AVPlayerItem(asset: MediaLoader.shared.asset(url, client: client))
@@ -258,10 +292,19 @@ struct AudioPlayerRow: View {
                     }
                 }
             }
+            AssetDownloadButton(url: url, title: title)
         }
         .padding(12)
         .frame(maxWidth: 560)
         .background(Color(.secondarySystemBackground), in: .rect(cornerRadius: 16, style: .continuous))
+        .contextMenu {
+            Button {
+                Task { await AssetExporter.downloadAndSave(url: url, name: title, client: client) }
+            } label: { Label("Save to Files", systemImage: "arrow.down.to.line") }
+            Button {
+                Task { await AssetExporter.downloadAndShare(url: url, name: title, client: client) }
+            } label: { Label("Share…", systemImage: "square.and.arrow.up") }
+        }
         .accessibilityIdentifier("media.audio")
         .task(id: url) { player = AVPlayer(playerItem: AVPlayerItem(asset: MediaLoader.shared.asset(url, client: client))) }
         .onReceive(NotificationCenter.default.publisher(for: AVPlayerItem.didPlayToEndTimeNotification)) { note in
@@ -403,6 +446,12 @@ struct ExternalVideoView: View {
                 .clipShape(.rect(cornerRadius: 14, style: .continuous))
             }
             .buttonStyle(.plain)
+            .overlay(alignment: .topTrailing) {
+                if source.isFile, let url = URL(string: source.url) {
+                    AssetDownloadButton(url: url, title: label, compact: true)
+                        .padding(10)
+                }
+            }
             .accessibilityLabel("Play \(label)")
             .accessibilityIdentifier("media.play")
         }
@@ -417,6 +466,8 @@ private extension ChatMedia.Source {
 struct EmbeddedPlayer: UIViewRepresentable {
     let url: URL
 
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.allowsInlineMediaPlayback = true
@@ -427,15 +478,24 @@ struct EmbeddedPlayer: UIViewRepresentable {
         view.scrollView.isScrollEnabled = false
         view.isOpaque = false
         view.backgroundColor = .black
+        context.coordinator.loadedUrl = url
         view.load(URLRequest(url: url))
         return view
     }
 
-    func updateUIView(_ view: WKWebView, context: Context) {}
+    func updateUIView(_ view: WKWebView, context: Context) {
+        guard context.coordinator.loadedUrl != url else { return }
+        context.coordinator.loadedUrl = url
+        view.load(URLRequest(url: url))
+    }
 
-    static func dismantleUIView(_ view: WKWebView, coordinator: ()) {
+    static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) {
         view.stopLoading()
         view.loadHTMLString("", baseURL: nil)
+    }
+
+    final class Coordinator {
+        var loadedUrl: URL?
     }
 }
 
@@ -444,7 +504,12 @@ struct EmbeddedPlayer: UIViewRepresentable {
 /// the window that asked, so each iPad window opens its own.
 enum InAppBrowser {
     static func open(_ url: URL) {
-        guard url.scheme == "http" || url.scheme == "https", let top = topController() else {
+        let scheme = url.scheme?.lowercased()
+        guard scheme == "http" || scheme == "https" else {
+            if scheme == "mailto" { UIApplication.shared.open(url) }
+            return
+        }
+        guard let top = topController() else {
             UIApplication.shared.open(url)
             return
         }
@@ -457,12 +522,110 @@ enum InAppBrowser {
     }
 
     /// The front-most controller of the active window (the one the tap came from).
-    private static func topController() -> UIViewController? {
+    static func topController() -> UIViewController? {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
         var top = (scene?.keyWindow ?? scene?.windows.first)?.rootViewController
         while let presented = top?.presentedViewController, !presented.isBeingDismissed { top = presented }
         return top
+    }
+}
+
+/// Native iOS export helpers: Save to Files (`UIDocumentPickerViewController`) and Share (`UIActivityViewController`).
+@MainActor
+enum AssetExporter {
+    static func saveToFiles(_ fileURL: URL) {
+        guard let top = InAppBrowser.topController() else { return }
+        let picker = UIDocumentPickerViewController(forExporting: [fileURL], asCopy: true)
+        top.present(picker, animated: true)
+    }
+
+    static func share(_ fileURL: URL) {
+        guard let top = InAppBrowser.topController() else { return }
+        let sheet = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
+        if let popover = sheet.popoverPresentationController {
+            popover.sourceView = top.view
+            popover.sourceRect = CGRect(x: top.view.bounds.midX, y: top.view.bounds.midY, width: 1, height: 1)
+            popover.permittedArrowDirections = []
+        }
+        top.present(sheet, animated: true)
+    }
+
+    static func downloadAndSave(url: URL, name: String?, client: DexClient) async {
+        do {
+            let local = try await MediaLoader.shared.download(url, suggestedName: name, client: client)
+            saveToFiles(local)
+        } catch {
+            client.notice = "Couldn't download \(name ?? ChatMedia.fileName(url.absoluteString)): \(error.localizedDescription)"
+        }
+    }
+
+    static func downloadAndShare(url: URL, name: String?, client: DexClient) async {
+        do {
+            let local = try await MediaLoader.shared.download(url, suggestedName: name, client: client)
+            share(local)
+        } catch {
+            client.notice = "Couldn't download \(name ?? ChatMedia.fileName(url.absoluteString)): \(error.localizedDescription)"
+        }
+    }
+}
+
+/// One-tap download button for audio clips, videos, images, and attached files.
+/// Tap downloads and opens iOS's native Save to Files picker; long-press also offers Share (AirDrop, Photos, etc.).
+struct AssetDownloadButton: View {
+    @Environment(DexClient.self) private var client
+    let url: URL
+    var title: String? = nil
+    var compact = false
+    @State private var downloading = false
+    @State private var done = false
+
+    var body: some View {
+        Button {
+            guard !downloading else { return }
+            downloading = true
+            Task {
+                defer { downloading = false }
+                do {
+                    let local = try await MediaLoader.shared.download(url, suggestedName: title, client: client)
+                    done = true
+                    AssetExporter.saveToFiles(local)
+                } catch {
+                    client.notice = "Couldn't download \(title ?? ChatMedia.fileName(url.absoluteString)): \(error.localizedDescription)"
+                }
+            }
+        } label: {
+            Group {
+                if downloading {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: done ? "checkmark" : "arrow.down.to.line")
+                        .font(compact ? .footnote.weight(.semibold) : .body.weight(.medium))
+                        .contentTransition(.symbolEffect(.replace))
+                }
+            }
+            .frame(width: compact ? 32 : 36, height: compact ? 32 : 36)
+            .foregroundStyle(compact ? .white : .primary)
+            .background(compact ? AnyShapeStyle(.black.opacity(0.62)) : AnyShapeStyle(.clear), in: .circle)
+        }
+        .buttonStyle(.plain)
+        .disabled(downloading)
+        .contextMenu {
+            Button {
+                Task { await AssetExporter.downloadAndSave(url: url, name: title, client: client) }
+            } label: { Label("Save to Files", systemImage: "arrow.down.to.line") }
+            Button {
+                Task { await AssetExporter.downloadAndShare(url: url, name: title, client: client) }
+            } label: { Label("Share…", systemImage: "square.and.arrow.up") }
+        }
+        .accessibilityLabel("Download \(title ?? ChatMedia.fileName(url.absoluteString))")
+        .accessibilityIdentifier("media.download")
+        .sensoryFeedback(.success, trigger: done) { _, new in new }
+        .task(id: done) {
+            guard done else { return }
+            try? await Task.sleep(for: .seconds(2))
+            done = false
+        }
     }
 }
 

@@ -29,7 +29,8 @@ export async function handleWorkspacePreview(request: Request, env: Env): Promis
   if (Number(request.headers.get("content-length") ?? 0) > MAX_BYTES * 3) return new Response("Too large to preview", { status: 413 })
   if (!(await activeViewer(request, env))) return new Response("Unauthorized", { status: 401 })
 
-  const html = (await request.formData()).get("html")
+  const form = await request.formData().catch(() => null)
+  const html = form?.get("html")
   if (typeof html !== "string" || html.length > MAX_BYTES) return new Response("Nothing to preview", { status: 400 })
   // So a game or demo with sound plays it on iPhone too (see shared/web-audio.ts).
   return new Response(withAudioUnlock(html), {

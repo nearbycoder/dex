@@ -99,12 +99,14 @@ export function useNavState(): Nav {
   // tap, a touch that doesn't move is replayed as a click (or focus) on whatever is under it.
   useEffect(() => {
     const EDGE = 24
+    const wide = matchMedia(WIDE)
     let start: { x: number; y: number; at: number; edge: boolean; moved: boolean } | null = null
     // The drawer moves during the swipe, but iOS plays a haptic only from the touch's end.
     let swiped = false
+    let attached = false
     const onStart = (event: TouchEvent) => {
       const touch = event.touches[0]
-      if (!touch || event.touches.length > 1 || matchMedia(WIDE).matches) return
+      if (!touch || event.touches.length > 1 || wide.matches) return
       const edge = touch.clientX < EDGE
       if (edge) event.preventDefault()
       start = { x: touch.clientX, y: touch.clientY, at: Date.now(), edge, moved: false }
@@ -147,13 +149,31 @@ export function useNavState(): Nav {
       clickable?.click()
       event.preventDefault()
     }
-    addEventListener("touchstart", onStart, { passive: false })
-    addEventListener("touchmove", onMove, { passive: true })
-    addEventListener("touchend", onEnd, { passive: false })
+    // Only attach non-passive touch listeners on phone-width viewports so wide screens scroll with zero main-thread blocking.
+    const sync = () => {
+      if (wide.matches) {
+        if (!attached) return
+        attached = false
+        start = null
+        removeEventListener("touchstart", onStart)
+        removeEventListener("touchmove", onMove)
+        removeEventListener("touchend", onEnd)
+      } else if (!attached) {
+        attached = true
+        addEventListener("touchstart", onStart, { passive: false })
+        addEventListener("touchmove", onMove, { passive: true })
+        addEventListener("touchend", onEnd, { passive: false })
+      }
+    }
+    sync()
+    wide.addEventListener("change", sync)
     return () => {
-      removeEventListener("touchstart", onStart)
-      removeEventListener("touchmove", onMove)
-      removeEventListener("touchend", onEnd)
+      wide.removeEventListener("change", sync)
+      if (attached) {
+        removeEventListener("touchstart", onStart)
+        removeEventListener("touchmove", onMove)
+        removeEventListener("touchend", onEnd)
+      }
     }
   }, [])
 

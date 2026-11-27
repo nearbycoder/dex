@@ -1,7 +1,7 @@
 import { attachmentSummary } from "~/shared/attachments"
 import { ArrowDown, ArrowUp, Check, ChevronUp, Hourglass, Pause, Pencil, Trash2, Zap } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
-import { useDex } from "~/client/lib/dex"
+import { useDexActions } from "~/client/lib/dex"
 import type { QueuedMessage } from "~/shared/protocol"
 import { withoutUiAction } from "~/shared/ui-action"
 
@@ -20,7 +20,7 @@ function QueueItem({
   count: number
   running: boolean
 }) {
-  const { stub } = useDex()
+  const { stub } = useDexActions()
   const [editing, setEditing] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const box = useRef<HTMLTextAreaElement>(null)

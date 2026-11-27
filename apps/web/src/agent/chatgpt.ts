@@ -2,7 +2,7 @@ import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.l
 import { createProvider } from "@earendil-works/pi-ai/models"
 import { Context, Effect, Layer, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
-import { modelsOf } from "~/shared/models"
+import { type DexModel, modelsOf } from "~/shared/models"
 
 /**
  * ChatGPT plan usage through Sign in with ChatGPT (https://developers.openai.com/siwc/token-sharing-open-source):
@@ -52,7 +52,10 @@ export interface ChatGPTPending {
  * before each model request (refreshing the token when it's near expiry), so a sign-in or sign-out in the UI
  * applies to the next request.
  */
-export const chatGPTProvider = (resolveToken: () => Promise<{ key: string; source: string } | undefined>) =>
+export const chatGPTProvider = (
+  resolveToken: () => Promise<{ key: string; source: string } | undefined>,
+  models: ReadonlyArray<DexModel> = modelsOf("chatgpt")
+) =>
   createProvider({
     id: CHATGPT_PI_PROVIDER_ID,
     name: "ChatGPT",
@@ -66,7 +69,7 @@ export const chatGPTProvider = (resolveToken: () => Promise<{ key: string; sourc
         }
       }
     },
-    models: modelsOf("chatgpt").map((model) => ({
+    models: models.map((model) => ({
       id: model.apiId,
       name: model.name,
       api: "openai-responses" as const,

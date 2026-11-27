@@ -50,11 +50,13 @@ export class UsageLedger {
     // Which subscription served each response (added with OpenCode Go; older rows are ClinePass's).
     const columns = sql.exec<{ name: string }>(`PRAGMA table_info(dex_usage_llm)`).toArray().map((column) => column.name)
     if (!columns.includes("provider")) sql.exec(`ALTER TABLE dex_usage_llm ADD COLUMN provider TEXT`)
+    sql.exec(`CREATE INDEX IF NOT EXISTS dex_usage_llm_provider_at ON dex_usage_llm (provider, at)`)
     sql.exec(`CREATE TABLE IF NOT EXISTS dex_vm_runs (
       id INTEGER PRIMARY KEY AUTOINCREMENT, sandbox_id TEXT NOT NULL, size TEXT NOT NULL,
       started_at INTEGER NOT NULL, ended_at INTEGER)`)
     sql.exec(`CREATE INDEX IF NOT EXISTS dex_vm_runs_open ON dex_vm_runs (sandbox_id, ended_at)`)
     sql.exec(`CREATE INDEX IF NOT EXISTS dex_vm_runs_range ON dex_vm_runs (started_at, ended_at)`)
+    sql.exec(`CREATE INDEX IF NOT EXISTS dex_vm_runs_ended ON dex_vm_runs (ended_at)`)
   }
 
   // ── Model responses ───────────────────────────────────────────────────────

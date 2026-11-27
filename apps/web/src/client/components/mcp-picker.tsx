@@ -1,6 +1,8 @@
 import { Link } from "@tanstack/react-router"
-import { Check, Plug, Settings2 } from "lucide-react"
+import { Check, LoaderCircle, Plug, RefreshCw, Settings2, ShieldAlert } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
+import { toast } from "sonner"
+import { useDexActions } from "~/client/lib/dex"
 import { MCP_STATUS_LABEL, type McpServerInfo, type McpStatus } from "~/shared/mcp"
 
 const DOT: Record<McpStatus, string> = {
@@ -26,8 +28,10 @@ export function McpPicker(props: {
   onChange: (ids: string[]) => void
   disabled?: boolean
 }) {
+  const { stub } = useDexActions()
   const [open, setOpen] = useState(false)
   const [upward, setUpward] = useState(true)
+  const [reconnecting, setReconnecting] = useState<string | null>(null)
   const root = useRef<HTMLDivElement>(null)
   const attached = props.servers.filter((server) => props.selected.includes(server.id))
 
@@ -89,14 +93,18 @@ export function McpPicker(props: {
             <ul className="scrollbar-thin max-h-72 overflow-y-auto py-1">
               {props.servers.map((server) => {
                 const selected = props.selected.includes(server.id)
+                const resourceCount = server.resources?.length ?? 0
+                const canReconnect = server.status === "failed" || server.status === "disconnected"
+                const approvalBadge =
+                  server.approval === "always" ? "Always ask" : server.approval === "writes" ? "Ask writes" : null
                 return (
-                  <li key={server.id}>
+                  <li key={server.id} className="flex items-center hover:bg-zinc-900">
                     <button
                       type="button"
                       role="menuitemcheckbox"
                       aria-checked={selected}
                       onClick={() => toggle(server.id)}
-                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left hover:bg-zinc-900"
+                      className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2 text-left"
                     >
                       <span
                         className={`flex size-4 shrink-0 items-center justify-center rounded border ${
@@ -106,13 +114,50 @@ export function McpPicker(props: {
                         {selected && <Check className="size-3" />}
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm text-zinc-100">{server.name}</span>
+                        <span className="flex items-center gap-1.5">
+                          <span className="truncate text-sm text-zinc-100">{server.name}</span>
+                          {approvalBadge && (
+                            <span
+                              title={`Tool approval: ${approvalBadge}`}
+                              className="inline-flex shrink-0 items-center gap-0.5 rounded bg-amber-950/60 px-1 py-0.5 text-[10px] text-amber-300 ring-1 ring-amber-800/40"
+                            >
+                              <ShieldAlert className="size-2.5" />
+                              {approvalBadge}
+                            </span>
+                          )}
+                        </span>
                         <span className="flex items-center gap-1.5 text-[11px] text-zinc-500">
                           <McpStatusDot status={server.status} />
-                          {server.status === "ready" ? `${server.tools.length} tools` : MCP_STATUS_LABEL[server.status]}
+                          {server.status === "ready"
+                            ? `${server.tools.length} ${server.tools.length === 1 ? "tool" : "tools"}${resourceCount > 0 ? ` · ${resourceCount} res` : ""}`
+                            : MCP_STATUS_LABEL[server.status]}
                         </span>
                       </span>
                     </button>
+                    {canReconnect && (
+                      <button
+                        type="button"
+                        disabled={reconnecting === server.id}
+                        title={`Reconnect ${server.name}`}
+                        aria-label={`Reconnect ${server.name}`}
+                        onClick={async (event) => {
+                          event.stopPropagation()
+                          setReconnecting(server.id)
+                          try {
+                            const res = await stub.connectMcpServer(server.id)
+                            if (res.ok) toast.success(`Reconnected ${server.name}`)
+                            else toast.error(res.error)
+                          } catch (cause) {
+                            toast.error(cause instanceof Error ? cause.message : `Failed to reconnect ${server.name}`)
+                          } finally {
+                            setReconnecting(null)
+                          }
+                        }}
+                        className="mr-2 shrink-0 rounded-md p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-emerald-300 disabled:opacity-50"
+                      >
+                        {reconnecting === server.id ? <LoaderCircle className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+                      </button>
+                    )}
                   </li>
                 )
               })}

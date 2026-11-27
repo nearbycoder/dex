@@ -144,6 +144,7 @@ struct FileDetailView: View {
             }
             ToolbarItemGroup(placement: .secondaryAction) {
                 if let url = model.exportURL {
+                    Button("Save to Files", systemImage: "arrow.down.circle") { AssetExporter.saveToFiles(url) }
                     ShareLink(item: url) { Label("Share", systemImage: "square.and.arrow.up") }
                 }
                 Button("Reload", systemImage: "arrow.clockwise") { Task { await model.reload(client: client) } }
@@ -172,11 +173,12 @@ struct FileDetailView: View {
     private func openLink(_ url: URL) {
         if url.scheme == nil || url.scheme == "file" {
             let base = (path as NSString).deletingLastPathComponent
-            router.openFile(Workspace.resolve(url.path().hasPrefix("/") ? url.path() : "\(base)/\(url.path())"))
+            let resolved = Workspace.resolve(url.path().hasPrefix("/") ? url.path() : "\(base)/\(url.path())")
+            if resolved.hasPrefix(Workspace.root + "/") { router.openFile(resolved) }
         } else if url.scheme == "dex" {
             _ = router.handle(url)
-        } else {
-            UIApplication.shared.open(url)
+        } else if let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" {
+            InAppBrowser.open(url)
         }
     }
 }

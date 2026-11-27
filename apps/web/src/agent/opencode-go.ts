@@ -6,11 +6,22 @@ import type { ProviderStreams } from "@earendil-works/pi-ai"
 import { createProvider } from "@earendil-works/pi-ai/models"
 import { Context, Effect, Layer, Option, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
-import { modelsOf } from "~/shared/models"
+import { type DexModel, modelsOf } from "~/shared/models"
 import type { OpenCodeLimits } from "~/shared/usage"
 
 export const OPENCODE_GO_PROVIDER_ID = "opencode-go"
 export const OPENCODE_GO_BASE_URL = "https://opencode.ai/inference/go"
+
+/** Only allow OpenCode's own HTTPS origins so a tampered catalog feed can never redirect API keys elsewhere. */
+export const isAllowedOpenCodeBaseUrl = (raw: string | undefined): boolean => {
+  if (!raw) return false
+  try {
+    const parsed = new URL(raw)
+    return parsed.protocol === "https:" && (parsed.hostname === "opencode.ai" || parsed.hostname.endsWith(".opencode.ai"))
+  } catch {
+    return false
+  }
+}
 
 /**
  * OpenCode Go asks clients to name themselves (not a generic SDK) and to send a stable id per conversation in
@@ -38,7 +49,10 @@ const withSession = (streams: ProviderStreams): ProviderStreams => {
  * OpenCode Go as a pi-ai provider. Each model is served on its own API style (see the catalog in shared/models.ts).
  * `resolveKey` runs before each model request, so a key connected or removed in the UI applies to the next request.
  */
-export const openCodeGoProvider = (resolveKey: () => Promise<{ key: string; source: string } | undefined>) =>
+export const openCodeGoProvider = (
+  resolveKey: () => Promise<{ key: string; source: string } | undefined>,
+  models: ReadonlyArray<DexModel> = modelsOf("opencode-go")
+) =>
   createProvider({
     id: OPENCODE_GO_PROVIDER_ID,
     name: "OpenCode Go",
@@ -52,12 +66,12 @@ export const openCodeGoProvider = (resolveKey: () => Promise<{ key: string; sour
         }
       }
     },
-    models: modelsOf("opencode-go").map((model) => ({
+    models: models.map((model) => ({
       id: model.apiId,
       name: model.name,
       api: model.api ?? "openai-completions",
       provider: OPENCODE_GO_PROVIDER_ID,
-      baseUrl: model.baseUrl ?? `${OPENCODE_GO_BASE_URL}/v1`,
+      baseUrl: isAllowedOpenCodeBaseUrl(model.baseUrl) ? model.baseUrl! : `${OPENCODE_GO_BASE_URL}/v1`,
       reasoning: true,
       input: [...model.input],
       cost: model.cost,
@@ -154,6 +168,7 @@ export class OpenCodeGoClient extends Context.Service<OpenCodeGoClient, {
       })
 
       const answers = Effect.fn("OpenCodeGoClient.answers")(function*(key: string, model: { readonly apiId: string; readonly baseUrl: string }) {
+        if (!isAllowedOpenCodeBaseUrl(model.baseUrl)) return false
         const response = yield* HttpClientRequest.post(`${model.baseUrl}/chat/completions`).pipe(
           HttpClientRequest.bearerToken(key),
           HttpClientRequest.setHeaders({ "user-agent": USER_AGENT, [SESSION_HEADER]: `dex-check-${crypto.randomUUID()}` }),

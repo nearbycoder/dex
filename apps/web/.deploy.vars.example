@@ -12,4 +12,7 @@ VAPID_PUBLIC_KEY=
 # proxied DNS record in its zone on your Cloudflare account (any target; an AAAA record to 100:: is the usual
 # placeholder). `npm run deploy` routes them to the Worker, and pages opened at any other address redirect to the main
 # one. Point your GitHub OAuth app's callback at https://<main domain>/auth/github.
+# Optional: Sign in with boat.dev OAuth app (create with `boat app create "Dex" --redirect-uri https://<domain>/auth/boat/connect/callback`).
+# Keep BOAT_CLIENT_SECRET in Cloudflare secrets (`wrangler secret put BOAT_CLIENT_SECRET`) when using a confidential app.
+BOAT_CLIENT_ID=
 CUSTOM_DOMAIN=

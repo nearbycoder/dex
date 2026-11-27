@@ -3,8 +3,8 @@ import { getAgentByName } from "agents"
 import { env } from "cloudflare:workers"
 import type { DexAgent } from "~/agent/dex-agent"
 import { parseAccessToken } from "~/agent/access"
-import { Keys } from "~/server/crypto"
-import { serverRuntime } from "~/server/runtime"
+import { isUserIdAllowed, rateLimitKey, readBoundedText } from "~/server/active-session"
+import { verifyHmac } from "~/server/crypto"
 
 const MAX_BODY_BYTES = 1_000_000
 
@@ -19,6 +19,9 @@ const unauthorized = () =>
     "www-authenticate": 'Bearer realm="dex"'
   })
 
+const tooManyAuthFailures = () =>
+  json(429, { jsonrpc: "2.0", id: null, error: { code: -32001, message: "Too many failed authentication attempts. Wait a minute and try again." } }, { "retry-after": "60" })
+
 /**
  * Dex's MCP endpoint (Streamable HTTP, stateless, JSON responses) for external agents. Requests carry an access
  * token made on the Access page: `Authorization: Bearer dexk.…`. The token's signature is checked here, so forged
@@ -31,20 +34,21 @@ export const Route = createFileRoute("/api/mcp")({
       POST: async ({ request }) => {
         const origin = request.headers.get("origin")
         if (origin && origin !== new URL(request.url).origin) return json(403, { error: "Cross-origin requests are not allowed" })
-        if (Number(request.headers.get("content-length") ?? 0) > MAX_BODY_BYTES) return json(413, { error: "Request too large" })
 
         const secret = /^Bearer\s+(\S+)$/i.exec(request.headers.get("authorization") ?? "")?.[1]
         const parsed = secret ? parseAccessToken(secret) : null
-        const valid = parsed ? await serverRuntime(env).runPromise(Keys.use((keys) => keys.verify(parsed.signed, parsed.tag))) : false
+        const authSecret = String((env as unknown as Record<string, unknown>).AUTH_SECRET ?? "")
+        const valid = parsed && isUserIdAllowed(env, parsed.userId)
+          ? await verifyHmac(authSecret, parsed.signed, parsed.tag)
+          : false
         if (!secret || !parsed || !valid) {
-          // Shared with password sign-in: guessing tokens is as slow as guessing passwords.
-          const { success } = await env.LOGIN_LIMITER.limit({ key: request.headers.get("cf-connecting-ip") ?? "unknown" })
-          if (!success) return json(429, { jsonrpc: "2.0", id: null, error: { code: -32001, message: "Too many failed authentication attempts. Wait a minute and try again." } }, { "retry-after": "60" })
+          const { success } = await env.LOGIN_LIMITER.limit({ key: rateLimitKey(request, "mcp") })
+          if (!success) return tooManyAuthFailures()
           return unauthorized()
         }
 
-        const text = await request.text()
-        if (text.length > MAX_BODY_BYTES) return json(413, { error: "Request too large" })
+        const text = await readBoundedText(request, MAX_BODY_BYTES)
+        if (text === "too-large") return json(413, { error: "Request too large" })
         let body: unknown
         try {
           body = JSON.parse(text)
@@ -55,7 +59,12 @@ export const Route = createFileRoute("/api/mcp")({
         const agent = await getAgentByName(env.DexAgent as unknown as DurableObjectNamespace<DexAgent>, parsed.userId)
         // `unknown` doesn't survive the RPC stub's typing; the shape is mcpRequest's return type.
         const response = (await agent.mcpRequest(secret, body as never)) as { status: number; body: unknown }
-        return response.status === 401 ? unauthorized() : json(response.status, response.body)
+        if (response.status === 401) {
+          const { success } = await env.LOGIN_LIMITER.limit({ key: rateLimitKey(request, "mcp") })
+          if (!success) return tooManyAuthFailures()
+          return unauthorized()
+        }
+        return json(response.status, response.body)
       },
       // Stateless: no server-initiated stream and no sessions to end.
       GET: () => json(405, { error: "Use POST" }, { allow: "POST" }),

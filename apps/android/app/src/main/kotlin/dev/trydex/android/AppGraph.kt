@@ -19,8 +19,12 @@ import dev.trydex.android.notifications.Notifier
 import dev.trydex.android.notifications.PushRegistrar
 import dev.trydex.android.notifications.PushStore
 import dev.trydex.android.notifications.PushTokens
+import android.webkit.CookieManager
+import android.webkit.WebStorage
 import dev.trydex.android.ui.chat.ScreenshotCache
+import dev.trydex.android.ui.library.clearMcpUiState
 import dev.trydex.android.ui.openui.UiStateCache
+import dev.trydex.android.ui.usage.clearUsageCache
 import dev.trydex.core.client.DexCookieInterceptor
 import dev.trydex.core.model.ModelRegistry
 import kotlinx.coroutines.CoroutineScope
@@ -47,14 +51,16 @@ class AppGraph(
     val preferences = Preferences(context, scope)
     val models = ModelRegistry()
 
-    /** For the socket and the API: no session cookie except what the client adds itself. */
+    /** For HTTP API calls (AgentConnection builds a readTimeout(0) copy for its WebSocket). */
     val http: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(0, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
         .pingInterval(25, TimeUnit.SECONDS)
         .build()
 
-    val repository = DexRepository(scope, http, sessionStore, LocalCache(cacheDir), models)
+    val cache = LocalCache(cacheDir)
+    val repository = DexRepository(scope, http, sessionStore, cache, models)
 
     /** The usage meter in the Chats bar and on Settings, fetched once for both. */
     val usage = UsageGlances(scope, repository)
@@ -67,6 +73,14 @@ class AppGraph(
                     drafts.clear()
                     UiStateCache.clear()
                     ScreenshotCache.clear()
+                    clearUsageCache()
+                    clearMcpUiState()
+                    runCatching {
+                        val cookies = CookieManager.getInstance()
+                        cookies.removeAllCookies(null)
+                        cookies.flush()
+                        WebStorage.getInstance().deleteAllData()
+                    }
                 }
             }
         }
@@ -88,10 +102,10 @@ class AppGraph(
     /** Voice calls with sidekicks: the device's recognition and speaker, and their voice (tiny-voca, kept loaded). */
     val voice: CallDevices = voice ?: AndroidCallDevices(context.applicationContext, http, { repository.session.value })
 
-    /** For media and images: adds the session cookie to Dex's own host only. */
+    /** For media and images: adds the session cookie per network hop to Dex's own origin only (never on redirects). */
     val mediaHttp: OkHttpClient = http.newBuilder()
         .readTimeout(60, TimeUnit.SECONDS)
-        .addInterceptor(DexCookieInterceptor { repository.session.value })
+        .addNetworkInterceptor(DexCookieInterceptor { repository.session.value })
         .build()
 
     val imageLoader: ImageLoader = ImageLoader.Builder(context)

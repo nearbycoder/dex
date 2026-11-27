@@ -255,6 +255,8 @@ object Evaluator {
         else -> node
     }
 
+    private const val MAX_EACH_ITEMS = 1_000
+
     private fun lazyBuiltin(name: String, args: List<Ast>, context: EvaluationContext, catalog: Catalog?): Any? {
         if (name != "Each") return null
         if (args.size < 3) return emptyList<Any?>()
@@ -265,7 +267,7 @@ object Evaluator {
             else -> null
         } ?: return emptyList<Any?>()
         val template = args[2]
-        return array.map { item ->
+        return array.take(MAX_EACH_ITEMS).map { item ->
             val substituted = substitute(template, variable, item)
             val child = context.copy(resolveRef = { ref -> if (ref == variable) item else context.resolveRef(ref) })
             val result = evaluate(substituted, child, catalog)

@@ -91,8 +91,14 @@ public struct TranscriptState: Sendable, Hashable, Codable {
                 switch output {
                 case .set(let text): tool.output = text
                 case .window(let trim, let append):
-                    let dropped = min(max(trim, 0), tool.output.utf16.count)
-                    tool.output = String(tool.output.utf16.dropFirst(dropped)).map { $0 + append } ?? append
+                    let utf16 = tool.output.utf16
+                    let dropped = min(max(trim, 0), utf16.count)
+                    var idx = utf16.index(utf16.startIndex, offsetBy: dropped)
+                    if idx < utf16.endIndex, idx.samePosition(in: tool.output) == nil {
+                        idx = utf16.index(after: idx)
+                    }
+                    let tail = idx.samePosition(in: tool.output).map { String(tool.output[$0...]) } ?? ""
+                    tool.output = tail + append
                 case nil: break
                 }
                 if let details { tool.details = details }
@@ -138,10 +144,17 @@ public struct TranscriptState: Sendable, Hashable, Codable {
             case .start(let index, let block), .block(let index, let block):
                 ensure(index); next.content[index] = block
             case .textDelta(let index, let delta):
-                if next.content.indices.contains(index), case .text(let text) = next.content[index] { next.content[index] = .text(text + delta) }
+                if next.content.indices.contains(index), case .text(var text) = next.content[index] {
+                    // Clear the slot before appending so Swift mutates the String buffer in place (O(L) instead of O(L^2)).
+                    next.content[index] = .text("")
+                    text.append(delta)
+                    next.content[index] = .text(text)
+                }
             case .thinkingDelta(let index, let delta):
-                if next.content.indices.contains(index), case .thinking(let text, let redacted) = next.content[index] {
-                    next.content[index] = .thinking(text + delta, redacted: redacted)
+                if next.content.indices.contains(index), case .thinking(var text, let redacted) = next.content[index] {
+                    next.content[index] = .thinking("", redacted: redacted)
+                    text.append(delta)
+                    next.content[index] = .thinking(text, redacted: redacted)
                 }
             case .toolCallDelta(let index, let path, let delta):
                 if next.content.indices.contains(index), case .toolCall(var call) = next.content[index] {

@@ -106,8 +106,10 @@ struct OUITextArea: View {
 
     var body: some View {
         let text = Binding<String>(get: { node.value.string ?? "" }, set: { card.document.setField(node.key, .string($0)) })
+        let rawRows = node.number("rows") ?? 3
+        let minRows = rawRows.isFinite ? min(max(2, Int(rawRows)), 12) : 3
         TextField(node.string("placeholder") ?? "", text: text, axis: .vertical)
-            .lineLimit(max(2, Int(node.number("rows") ?? 3))...12)
+            .lineLimit(minRows...12)
             .focused($focused)
             .modifier(OUIFieldBackground(error: node.fieldError != nil))
             .disabled(streaming)
@@ -219,11 +221,15 @@ struct OUISlider: View {
     @State private var dragging: Double?
 
     var body: some View {
-        let low = node.number("min") ?? 0
-        let high = max(node.number("max") ?? 100, low + 1)
-        let step = node.number("step") ?? (node.string("variant") == "discrete" ? 1 : 0)
-        let stored = node.value.array?.first?.number ?? node.value.number ?? node.props["defaultValue"]?.array?.first?.number ?? low
-        let value = dragging ?? stored
+        let rawLow = node.number("min") ?? 0
+        let low = rawLow.isFinite ? rawLow : 0
+        let rawHigh = node.number("max") ?? 100
+        let high = max(rawHigh.isFinite ? rawHigh : 100, low + 1)
+        let rawStep = node.number("step") ?? (node.string("variant") == "discrete" ? 1 : 0)
+        let step = rawStep.isFinite && rawStep > 0 ? min(rawStep, high - low) : 0
+        let rawStored = node.value.array?.first?.number ?? node.value.number ?? node.props["defaultValue"]?.array?.first?.number ?? low
+        let stored = rawStored.isFinite ? min(max(rawStored, low), high) : low
+        let value = dragging.map { min(max($0, low), high) } ?? stored
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(node.string("label") ?? node.string("name") ?? "").font(.subheadline).foregroundStyle(.secondary)

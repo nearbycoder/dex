@@ -106,11 +106,19 @@ public struct GitHubStatus: Codable, Sendable, Hashable {
 
 public struct BoatStatus: Codable, Sendable, Hashable {
     public var connected: Bool
-    /// `user` (a key this user connected) or `server` (the deployment's key, owner only).
+    /// `user` (an account or key this user connected) or `server` (the deployment's key, owner only).
     public var source: String?
     public var keyHint: String?
-    public init(connected: Bool = false, source: String? = nil, keyHint: String? = nil) {
+    public var via: String?
+    public var account: String?
+    public var oauthAvailable: Bool?
+    public var expired: Bool?
+    public var expiredAt: Double?
+    public var expiredReason: String?
+    public init(connected: Bool = false, source: String? = nil, keyHint: String? = nil, via: String? = nil, account: String? = nil, oauthAvailable: Bool? = nil, expired: Bool? = nil, expiredAt: Double? = nil, expiredReason: String? = nil) {
         self.connected = connected; self.source = source; self.keyHint = keyHint
+        self.via = via; self.account = account; self.oauthAvailable = oauthAvailable
+        self.expired = expired; self.expiredAt = expiredAt; self.expiredReason = expiredReason
     }
 }
 

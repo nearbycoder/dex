@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router"
 import { AlarmClock, AlarmClockOff, CheckCheck, CircleCheck, Inbox, Trash2, X } from "lucide-react"
 import { type ReactNode, useEffect, useRef, useState } from "react"
-import { useDex } from "~/client/lib/dex"
+import { useDexActions } from "~/client/lib/dex"
 import type { SessionMeta } from "~/shared/protocol"
 import { ask } from "./confirm-dialog"
 import { inboxState, snoozeOptions, when } from "./session-menu"
@@ -26,7 +26,7 @@ function Action({ icon, label, onClick, danger = false, active = false }: { icon
  * mark them read, or delete them. Each acts on every selected chat, then the selection clears.
  */
 export function SelectionBar({ sessions, activeId, onClear }: { sessions: ReadonlyArray<SessionMeta>; activeId: string | undefined; onClear: () => void }) {
-  const { stub } = useDex()
+  const { stub } = useDexActions()
   const navigate = useNavigate()
   const [snoozing, setSnoozing] = useState(false)
   const [working, setWorking] = useState(false)

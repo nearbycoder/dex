@@ -34,7 +34,9 @@ import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.material.icons.rounded.ArrowDownward
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Done
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Shield
 import androidx.compose.material3.AssistChip
@@ -129,6 +131,8 @@ fun MessageList(
     character: CharacterProfile? = null,
     /** What an empty chat says (a new space's: what to do first). */
     emptyHint: String? = null,
+    /** Resumes the chat after a failed or interrupted run without duplicating the user turn. */
+    onContinue: (() -> Unit)? = null,
 ) {
     val recorded = remember(transcript.entries) { recordedDisplayItems(transcript.entries) }
     val items = remember(recorded, transcript.streaming) { displayItems(recorded, transcript.streaming) }
@@ -159,7 +163,11 @@ fun MessageList(
             modifier = Modifier.fillMaxSize().testTag("messages"),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            transcript.error?.let { error -> item(key = "error", contentType = "error") { Centered { ErrorCard(error) } } }
+            transcript.error?.let { error ->
+                item(key = "error", contentType = "error") {
+                    Centered { ErrorCard(error, onContinue = if (!transcript.running) onContinue else null) }
+                }
+            }
             transcript.retry?.let { retry -> item(key = "retry", contentType = "retry") { Centered { Text("Retrying after an error: ${retry.error}", style = MaterialTheme.typography.bodySmall, color = DexTheme.colors.warning, modifier = Modifier.padding(start = 40.dp, top = 4.dp)) } } }
             if (transcript.running && items.lastOrNull() !is DisplayItem.Assistant) {
                 item(key = "working", contentType = "working") {
@@ -183,6 +191,7 @@ fun MessageList(
                         is DisplayItem.Assistant -> AssistantTurn(
                             sessionId, item.messages, item.streaming, active = transcript.running && item === last,
                             endedAt = item.endedAt, results = results, tools = if (item === last) transcript.tools else emptyMap(), onSend = onSend, character = character,
+                            onContinue = if (item === last && !transcript.running) onContinue else null,
                         )
                         is DisplayItem.Divider -> ContextDivider(item)
                     }
@@ -257,11 +266,20 @@ private fun RecoveredErrors(errors: List<String>) {
 
 /** A failure the reply ended on. */
 @Composable
-private fun ErrorCard(text: String) {
+private fun ErrorCard(text: String, onContinue: (() -> Unit)? = null) {
     Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            Modifier.padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Icon(Icons.Rounded.ErrorOutline, contentDescription = null, modifier = Modifier.size(18.dp))
-            Text(text, style = MaterialTheme.typography.bodyMedium)
+            Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            if (onContinue != null) {
+                TextButton(onClick = onContinue) {
+                    Text("Continue")
+                }
+            }
         }
     }
 }
@@ -393,17 +411,21 @@ private fun UiActionText(action: UiAction) {
     }
 }
 
-/** What was attached to one of your messages: its images as thumbnails, its other files as chips. */
+/** What was attached to one of your messages: its images as thumbnails, its other files as chips (tap to download). */
 @Composable
 private fun UserAttachments(sessionId: String?, images: List<ImageBlock>, files: List<AttachedFile>, spaced: Boolean) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val http = LocalApp.current.graph.mediaHttp
+    val scope = rememberCoroutineScope()
     // Each image has a tag naming it among the files; the thumbnails stand for those.
+    val imageFiles = files.filter { it.mimeType.startsWith("image/") && it.mimeType != "image/svg+xml" }
     val others = files.filter { !it.mimeType.startsWith("image/") || it.mimeType == "image/svg+xml" }
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
         modifier = Modifier.padding(bottom = if (spaced) 8.dp else 0.dp).testTag("user-attachments"),
     ) {
-        if (sessionId != null) for (image in images) {
+        if (sessionId != null) images.forEachIndexed { index, image ->
             val bitmap = rememberTranscriptBitmap(sessionId, image)
             Box(
                 Modifier.size(96.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest),
@@ -411,21 +433,69 @@ private fun UserAttachments(sessionId: String?, images: List<ImageBlock>, files:
             ) {
                 val loaded = bitmap?.getOrNull()
                 when {
-                    loaded != null -> Image(loaded, contentDescription = "Attached image", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                    loaded != null -> {
+                        Image(loaded, contentDescription = "Attached image", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                        Box(
+                            Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(4.dp)
+                                .size(26.dp)
+                                .clip(androidx.compose.foundation.shape.CircleShape)
+                                .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f))
+                                .clickable(onClickLabel = "Download image") {
+                                    val name = imageFiles.getOrNull(index)?.name ?: "image-${index + 1}.png"
+                                    scope.launch {
+                                        dev.trydex.android.data.AssetDownloader.saveBitmapToDevice(context, loaded.asAndroidBitmap(), name)
+                                            .onSuccess { android.widget.Toast.makeText(context, "Saved ${it.fileName} to Downloads/Dex", android.widget.Toast.LENGTH_SHORT).show() }
+                                            .onFailure { android.widget.Toast.makeText(context, it.message ?: "Couldn't save image", android.widget.Toast.LENGTH_SHORT).show() }
+                                    }
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(Icons.Rounded.Download, contentDescription = "Download image", tint = androidx.compose.ui.graphics.Color.White, modifier = Modifier.size(14.dp))
+                        }
+                    }
                     bitmap == null -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                     else -> Text("Image unavailable", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
         for (file in others) {
+            val downloadUrl = file.key?.let { dev.trydex.android.ui.components.dexUrl("/api/media/$it") }
+            var downloading by remember(file.key) { mutableStateOf(false) }
             Row(
-                Modifier.widthIn(max = 220.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
+                Modifier
+                    .widthIn(max = 240.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
+                    .then(
+                        if (downloadUrl != null) {
+                            Modifier.clickable(enabled = !downloading, onClickLabel = "Download ${file.name}") {
+                                downloading = true
+                                scope.launch {
+                                    dev.trydex.android.data.AssetDownloader.downloadToDevice(context, http, downloadUrl, file.name, file.mimeType)
+                                        .onSuccess { android.widget.Toast.makeText(context, "Saved ${it.fileName} to Downloads/Dex", android.widget.Toast.LENGTH_SHORT).show() }
+                                        .onFailure { android.widget.Toast.makeText(context, it.message ?: "Couldn't download ${file.name}", android.widget.Toast.LENGTH_SHORT).show() }
+                                    downloading = false
+                                }
+                            }
+                        } else {
+                            Modifier
+                        }
+                    )
                     .padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Icon(fileIcon(file.mimeType, file.name), contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(file.name, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(file.name, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                if (downloadUrl != null) {
+                    if (downloading) {
+                        CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.Rounded.Download, contentDescription = "Download ${file.name}", modifier = Modifier.size(15.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
             }
         }
     }
@@ -443,6 +513,7 @@ fun AssistantTurn(
     tools: Map<String, LiveTool>,
     onSend: (String) -> Unit,
     character: CharacterProfile? = null,
+    onContinue: (() -> Unit)? = null,
 ) {
     val app = LocalApp.current
     val openUrl = LocalOpenInBrowser.current
@@ -501,7 +572,7 @@ fun AssistantTurn(
                     else -> Unit
                 }
             }
-            if (failedLast && !active) ErrorCard(messages.last().errorMessage ?: "The model request failed.")
+            if (failedLast && !active) ErrorCard(messages.last().errorMessage ?: "The model request failed.", onContinue = onContinue)
             if (messages.lastOrNull()?.stopReason == "aborted") Text("Stopped.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -594,11 +665,17 @@ private data class TurnParts(
                 val url = media["url"].str ?: return@mapNotNull null
                 if (url in shownText) null else url to media["name"].str
             }
-            val confirmations = blocks.mapNotNull { step ->
-                val call = step.block as? ToolCallBlock ?: return@mapNotNull null
-                if (call.name != "app_call") return@mapNotNull null
-                val confirmation = results[call.id]?.details?.obj?.get("confirmation")?.obj ?: return@mapNotNull null
-                (confirmation["id"].str ?: return@mapNotNull null) to (confirmation["summary"].str ?: "")
+            val confirmations = blocks.flatMap { step ->
+                val call = step.block as? ToolCallBlock ?: return@flatMap emptyList()
+                if (call.name != "app_call" && call.name != "batch_tools" && "__" !in call.name) return@flatMap emptyList()
+                val details = results[call.id]?.details?.obj ?: return@flatMap emptyList()
+                val batch = (details["confirmations"] as? kotlinx.serialization.json.JsonArray)?.mapNotNull { el ->
+                    val obj = el.obj ?: return@mapNotNull null
+                    (obj["id"].str ?: return@mapNotNull null) to (obj["summary"].str ?: "")
+                }
+                if (!batch.isNullOrEmpty()) return@flatMap batch
+                val confirmation = details["confirmation"]?.obj ?: return@flatMap emptyList()
+                listOfNotNull(confirmation["id"].str?.let { it to (confirmation["summary"].str ?: "") })
             }
             val threads = blocks.mapNotNull { step ->
                 val call = step.block as? ToolCallBlock ?: return@mapNotNull null

@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react"
-import { useDex } from "~/client/lib/dex"
+import { useDexActions } from "~/client/lib/dex"
 import type { DirectorySkill } from "~/shared/skills"
 
 /** skills.sh results for `query` (2+ characters), debounced; stale answers never replace newer ones. */
 export function useSkillSearch(query: string, delay = 250) {
-  const { stub } = useDex()
+  const { stub } = useDexActions()
   const [state, setState] = useState<{ query: string; results: DirectorySkill[]; loading: boolean; error: string | null }>({
     query: "",
     results: [],

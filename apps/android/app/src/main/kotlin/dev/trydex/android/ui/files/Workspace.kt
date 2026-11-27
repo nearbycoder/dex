@@ -1,7 +1,9 @@
 package dev.trydex.android.ui.files
 
 import android.annotation.SuppressLint
+import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.background
@@ -40,6 +42,7 @@ import androidx.compose.material.icons.outlined.NoteAdd
 import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -69,6 +72,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -281,6 +285,34 @@ fun WorkspaceFileScreen(path: String) {
                 title = { Text(path, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 actions = {
                     if (current?.content != null) {
+                        val context = LocalContext.current
+                        var downloading by remember(path) { mutableStateOf(false) }
+                        IconButton(
+                            onClick = {
+                                downloading = true
+                                val text = draft.text.toString()
+                                val fileName = path.substringAfterLast('/').ifEmpty { "file.txt" }
+                                scope.launch {
+                                    dev.trydex.android.data.AssetDownloader.saveBytesToDevice(
+                                        context,
+                                        text.toByteArray(Charsets.UTF_8),
+                                        fileName,
+                                    )
+                                        .onSuccess {
+                                            android.widget.Toast.makeText(context, "Saved ${it.fileName} to Downloads/Dex", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                        .onFailure {
+                                            android.widget.Toast.makeText(context, it.message ?: "Couldn't download file", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                    downloading = false
+                                }
+                            },
+                            enabled = !downloading,
+                            modifier = Modifier.testTag("file-download"),
+                        ) {
+                            if (downloading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                            else Icon(Icons.Rounded.Download, contentDescription = "Download")
+                        }
                         FilledIconButton(onClick = {
                             saving = true
                             val text = draft.text.toString()
@@ -363,6 +395,7 @@ fun HtmlPreview(html: String, modifier: Modifier = Modifier) {
                 settings.allowContentAccess = false
                 settings.domStorageEnabled = false
                 settings.mediaPlaybackRequiresUserGesture = false
+                CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
                 setBackgroundColor(android.graphics.Color.WHITE)
                 webViewClient = object : WebViewClient() {
                     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
@@ -370,10 +403,23 @@ fun HtmlPreview(html: String, modifier: Modifier = Modifier) {
                         if (url.startsWith("http://") || url.startsWith("https://")) openInBrowser(url)
                         return true
                     }
+
+                    override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                        val host = request.url?.host?.lowercase() ?: return null
+                        if (host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "10.0.2.2" || host.endsWith(".local")) {
+                            return WebResourceResponse("text/plain", "utf-8", 403, "Forbidden", emptyMap(), java.io.ByteArrayInputStream(ByteArray(0)))
+                        }
+                        return null
+                    }
                 }
             }
         },
-        update = { view -> view.loadDataWithBaseURL("https://workspace-preview.invalid/", WebAudio.withAudioUnlock(shown), "text/html", "utf-8", null) },
+        update = { view ->
+            if (view.tag != shown) {
+                view.tag = shown
+                view.loadDataWithBaseURL("https://workspace-preview.invalid/", WebAudio.withAudioUnlock(shown), "text/html", "utf-8", null)
+            }
+        },
         onRelease = { it.destroy() },
         modifier = modifier.background(Color.White),
     )

@@ -703,6 +703,7 @@ export function EditorSkeleton({ kind }: { kind: EditorKind }) {
                 <FieldBones height={76} label="28%" />
                 <FieldBones height={236} label="25%" />
                 <FieldBones height={42} label="30%" />
+                <FieldBones height={42} label="34%" />
               </>
             )}
             {kind === "character" && (
@@ -772,8 +773,9 @@ export function EditorSkeleton({ kind }: { kind: EditorKind }) {
                 <TwoFields height={46} columns="sm:grid-cols-[1fr_2fr]" />
                 <FieldBones height={42} label="32%" />
                 <FieldBones height={70} label="20%" />
-                <LineBone size="sm" width="20%" />
-                <LineBone size="sm" width="36%" />
+                <FieldBones height={42} label="24%" />
+                <LineBone size="sm" width="24%" />
+                <LineBone size="sm" width="44%" />
               </>
             )}
           </div>
@@ -964,6 +966,21 @@ export function AccessSkeleton() {
             </div>
             <div className="flex items-center gap-3">
               <Bone className="h-[31px] w-36" />
+              <Bone className="ml-auto h-9 w-36 rounded-lg" />
+            </div>
+          </div>
+        </SectionBones>
+        <SectionBones title={72}>
+          <div className="space-y-3">
+            <div>
+              <LineBone size="xs" width="24%" />
+              <Bone className="mt-1 h-[38px] w-full rounded-lg" />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Bone className="h-[38px] w-full rounded-lg" />
+              <Bone className="h-[38px] w-full rounded-lg" />
+            </div>
+            <div className="flex">
               <Bone className="ml-auto h-9 w-36 rounded-lg" />
             </div>
           </div>

@@ -5,20 +5,30 @@
 // clearing the page cache first. API calls, sign-in, the agent socket, and the VM desktop are never cached.
 const CACHE = "dex-static-v2"
 const PAGES = "dex-pages-v1"
+const VOICE = "dex-voice"
 /**
  * Never served from the page cache: the landing page (it sends signed-in visitors on to their chats), sign-in flows,
- * APIs, the VM desktop page, and the offline screen.
+ * APIs, agent sockets, the VM desktop page, and the offline screen.
  */
-const UNCACHED_PAGES = /^\/($|(auth|api|vm-desktop|login|offline)(\/|$))/
+const UNCACHED_PAGES = /^\/($|(auth|api|agents|vm-desktop|login|offline)(\/|$))/
 const SHELL = ["/offline", "/favicon.svg", "/icon-192.png"]
+const SHELL_SET = new Set(SHELL)
+const offlineResponse = () => caches.match("/offline").then((r) => r || Response.error())
 
 /** Each deploy adds new fingerprinted files; keep the most recent ones so the cache doesn't grow forever. */
 const MAX_ENTRIES = 400
 const trim = async (cache) => {
   const keys = await cache.keys()
-  const extra = keys.length - MAX_ENTRIES
-  // Keys come back in insertion order, oldest first; the shell entries were added first, so skip those.
-  if (extra > 0) await Promise.all(keys.slice(SHELL.length, SHELL.length + extra).map((key) => cache.delete(key)))
+  let extra = keys.length - MAX_ENTRIES
+  if (extra <= 0) return
+  const removable = []
+  for (const key of keys) {
+    if (extra <= 0) break
+    if (SHELL_SET.has(new URL(key.url).pathname)) continue
+    removable.push(key)
+    extra--
+  }
+  if (removable.length) await Promise.all(removable.map((key) => cache.delete(key)))
 }
 
 self.addEventListener("install", (event) => {
@@ -29,7 +39,7 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE && key !== PAGES).map((key) => caches.delete(key))))
+      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE && key !== PAGES && key !== VOICE).map((key) => caches.delete(key))))
       .then(() => self.clients.claim())
   )
 })
@@ -41,14 +51,33 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return
 
   // Fingerprinted build output never changes under a URL: cache first.
-  if (url.pathname.startsWith("/assets/") || url.pathname.startsWith("/models/")) {
+  if (url.pathname.startsWith("/assets/")) {
     event.respondWith(
       caches.open(CACHE).then(async (cache) => {
         const hit = await cache.match(request)
         if (hit) return hit
         const response = await fetch(request)
-        if (response.ok) event.waitUntil(cache.put(request, response.clone()).then(() => trim(cache)))
+        if (response.ok) event.waitUntil(cache.put(request, response.clone()).then(() => trim(cache)).catch(() => {}))
         return response
+      })
+    )
+    return
+  }
+
+  // Unfingerprinted ONNX/VAD models: stale-while-revalidate so model updates still propagate.
+  if (url.pathname.startsWith("/models/")) {
+    event.respondWith(
+      caches.open(CACHE).then(async (cache) => {
+        const hit = await cache.match(request)
+        const refresh = fetch(request).then(async (response) => {
+          if (response.ok) await cache.put(request, response.clone()).catch(() => {})
+          return response
+        })
+        if (hit) {
+          event.waitUntil(refresh.catch(() => {}))
+          return hit
+        }
+        return refresh
       })
     )
     return
@@ -56,7 +85,7 @@ self.addEventListener("fetch", (event) => {
 
   if (request.mode !== "navigate") return
   if (UNCACHED_PAGES.test(url.pathname)) {
-    event.respondWith(fetch(request).catch(() => caches.match("/offline")))
+    event.respondWith(fetch(request).catch(offlineResponse))
     return
   }
   // App pages: the last copy now, a fresh one for next time.
@@ -64,7 +93,7 @@ self.addEventListener("fetch", (event) => {
   const refresh = fetch(request).then(async (response) => {
     const type = response.headers.get("content-type") ?? ""
     const cacheable = response.status === 200 && !response.redirected && type.includes("text/html") && !/no-store/.test(response.headers.get("cache-control") ?? "")
-    if (cacheable) await (await caches.open(PAGES)).put(key, response.clone())
+    if (cacheable) await (await caches.open(PAGES)).put(key, response.clone()).catch(() => {})
     return response
   })
   event.respondWith(
@@ -74,7 +103,7 @@ self.addEventListener("fetch", (event) => {
         event.waitUntil(refresh.catch(() => undefined))
         return hit
       }
-      return refresh.catch(() => caches.match("/offline"))
+      return refresh.catch(offlineResponse)
     })
   )
 })
@@ -112,9 +141,15 @@ self.addEventListener("push", (event) => {
   )
 })
 
-/** Focuses an open Dex window and takes it to `url`, or opens one. */
+/** Focuses an open Dex window and takes it to `url`, or opens one (same-origin only). */
 async function openDex(url) {
-  const target = new URL(url, self.location.origin).href
+  let resolved
+  try {
+    resolved = new URL(url, self.location.origin)
+  } catch {
+    resolved = new URL("/", self.location.origin)
+  }
+  const target = resolved.origin === self.location.origin ? resolved.href : `${self.location.origin}/`
   const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true })
   const existing = windows.find((client) => new URL(client.url).origin === self.location.origin)
   if (existing) {

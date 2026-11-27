@@ -3,6 +3,7 @@ package dev.trydex.openui
 /** A Pratt parser for OpenUI Lang expressions (parser/expressions.ts). */
 internal class ExpressionParser(private val tokens: List<Token>) {
     private var pos = 0
+    private var depth = 0
 
     private fun cur() = tokens.getOrElse(pos) { Token(T.EOF) }
     private fun adv(): Token = cur().also { pos++ }
@@ -25,9 +26,18 @@ internal class ExpressionParser(private val tokens: List<Token>) {
     fun parse(): Ast = expression(0)
 
     private fun expression(min: Int = 0): Ast {
-        var left = prefix()
-        while (infixPrecedence(cur()) > min) left = infix(left)
-        return left
+        if (depth >= MAX_DEPTH) {
+            pos = tokens.size
+            return Ast.Null
+        }
+        depth++
+        try {
+            var left = prefix()
+            while (infixPrecedence(cur()) > min) left = infix(left)
+            return left
+        } finally {
+            depth--
+        }
     }
 
     private fun prefix(): Ast {
@@ -179,6 +189,7 @@ internal class ExpressionParser(private val tokens: List<Token>) {
         const val MUL = 7
         const val UNARY = 8
         const val MEMBER = 9
+        const val MAX_DEPTH = 128
 
         fun parse(tokens: List<Token>): Ast = ExpressionParser(tokens).parse()
     }

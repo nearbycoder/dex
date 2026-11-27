@@ -90,6 +90,7 @@ class ChatViewModel(val sessionId: String, private val repository: DexRepository
     }
 
     fun stop() = act { repository.api.abort(sessionId) }
+    fun continueRun() = act { repository.api.continueSession(sessionId) }
     fun rename(title: String) = act { repository.api.renameSession(sessionId, title) }
     fun configure(model: String, thinking: dev.trydex.core.model.ThinkingLevel) = act { repository.api.configureSession(sessionId, model = model, thinking = thinking) }
     fun configureMcp(servers: List<String>) = act { repository.api.configureSession(sessionId, mcpServers = servers) }

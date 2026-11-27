@@ -116,6 +116,10 @@ import kotlin.math.min
 /** Reports by range, kept while the app runs so switching ranges shows the last one at once. */
 private val reports = mutableStateMapOf<String, UsageReport>()
 
+internal fun clearUsageCache() {
+    reports.clear()
+}
+
 private enum class UsageTab(val label: String) { Overview("Overview"), Models("Models"), Machines("Machines"), Cloudflare("Cloudflare") }
 
 /** A model subscription: which part of the report is theirs, and how their token costs are priced. */
@@ -415,7 +419,10 @@ private fun Overview(report: UsageReport, visible: List<Subscription>, clineConn
                         .semantics { contentDescription = "What the bill is made of: " + parts.joinToString { "${UsageFormat.series(it.first).label} ${Format.usd(it.second)}" } },
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    shown.forEach { (key, value) -> Box(Modifier.weight(value.toFloat()).fillMaxHeight().background(color(key))) }
+                    shown.forEach { (key, value) ->
+                        val weight = value.toFloat().takeIf { it.isFinite() && it > 0f }?.coerceAtLeast(0.001f) ?: 0.001f
+                        Box(Modifier.weight(weight).fillMaxHeight().background(color(key)))
+                    }
                 }
                 FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     parts.forEach { (key, value) ->

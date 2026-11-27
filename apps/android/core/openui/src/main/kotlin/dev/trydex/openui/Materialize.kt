@@ -22,6 +22,9 @@ internal object Materialize {
 
     private enum class Mode { Value, Expr }
 
+    private const val MAX_REF_EXPANSIONS = 5_000
+    private val expansionBudget = ThreadLocal<Int>()
+
     private fun resolveRef(name: String, ctx: MaterializeCtx, mode: Mode): Any? {
         if (name in ctx.visited || !ctx.syms.containsKey(name)) {
             ctx.unresolved += name
@@ -32,6 +35,10 @@ internal object Materialize {
         if (target is Ast.Comp && Builtins.isReserved(target.name)) {
             return Ast.RuntimeRef(name, if (target.name == Builtins.MUTATION) "mutation" else "query")
         }
+        val isRoot = ctx.visited.isEmpty()
+        val used = if (isRoot) 0 else (expansionBudget.get() ?: 0)
+        if (used >= MAX_REF_EXPANSIONS) return if (mode == Mode.Expr) Ast.Null else null
+        expansionBudget.set(used + 1)
         ctx.visited += name
         val previous = ctx.currentStatementId
         ctx.currentStatementId = name
@@ -42,6 +49,7 @@ internal object Materialize {
         } finally {
             ctx.currentStatementId = previous
             ctx.visited -= name
+            if (isRoot) expansionBudget.remove()
         }
     }
 

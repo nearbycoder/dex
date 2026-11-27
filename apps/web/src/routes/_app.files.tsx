@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router"
-import { ArrowLeft, Eye, File, FilePlus, PencilLine, RefreshCw, Save, SquareTerminal, Trash2 } from "lucide-react"
+import { ArrowLeft, Download, Eye, File, FilePlus, PencilLine, RefreshCw, Save, SquareTerminal, Trash2 } from "lucide-react"
 import { useCallback, useEffect, useId, useRef, useState } from "react"
 import { InfoTip } from "~/client/components/info-tip"
 import { Markdown } from "~/client/components/markdown"
@@ -156,6 +156,27 @@ function FilesPage() {
                         </button>
                       ))}
                     </div>
+                  )}
+                  {open.content !== null && (
+                    <button
+                      type="button"
+                      title="Download"
+                      onClick={() => {
+                        const fileName = open.path.split("/").pop() || "file.txt"
+                        const blob = new Blob([open.draft], { type: "text/plain;charset=utf-8" })
+                        const href = URL.createObjectURL(blob)
+                        const link = document.createElement("a")
+                        link.href = href
+                        link.download = fileName
+                        document.body.appendChild(link)
+                        link.click()
+                        link.remove()
+                        setTimeout(() => URL.revokeObjectURL(href), 1000)
+                      }}
+                      className="p-1.5 text-zinc-400 hover:text-zinc-100"
+                    >
+                      <Download className="size-4" />
+                    </button>
                   )}
                   {open.content !== null && (
                     <button

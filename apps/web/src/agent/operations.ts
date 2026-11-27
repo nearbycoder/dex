@@ -1,12 +1,13 @@
-import { Type } from "@earendil-works/pi-ai"
+import { Type } from "typebox"
 import type { Static, TSchema } from "typebox"
 import type { AccessRisk } from "~/shared/access"
 import { AGENT_COLORS, AGENT_ICONS, type AgentProfile } from "~/shared/agents"
 import type { CharacterProfile } from "~/shared/characters"
 import { CUSTOM_PATH_LIMIT, LOOK_PRESETS, MATERIALS, SHAPES, type SidekickLook, SKINS } from "~/shared/sidekick-look"
 import { MAX_SPACE_GOAL, MAX_SPACE_NAME, type SpaceProfile, spaceThreads, THREAD_STATUS_LABELS, threadStatus } from "~/shared/spaces"
-import { MODEL_PROVIDERS, MODELS, supportedThinkingLevels, THINKING_LEVELS, type ThinkingLevel } from "~/shared/models"
-import type { McpAuth, McpTransport } from "~/shared/mcp"
+import { MODEL_PROVIDERS, supportedThinkingLevels, THINKING_LEVELS, type ThinkingLevel } from "~/shared/models"
+import type { McpApproval, McpAuth, McpTransport } from "~/shared/mcp"
+import type { WebhookTarget } from "~/shared/webhooks"
 import { NOTIFY_KINDS, type NotifyKind } from "~/shared/notifications"
 import { githubFullName, normalizeRepoUrl, type ProjectProfile, type ProjectRepo } from "~/shared/projects"
 import { chatOfVm, connectedProviders, type DexState, type VmSize, VM_SIZES, vmNumber } from "~/shared/protocol"
@@ -39,9 +40,17 @@ export type Caller =
 export type OperationHost = Pick<
   DexAgent,
   | "createSession"
+  | "modelCatalog"
   | "refreshModelList"
   | "sendMessage"
   | "abort"
+  | "continueSession"
+  | "search"
+  | "listMcpResources"
+  | "readMcpResource"
+  | "saveWebhook"
+  | "deleteWebhook"
+  | "testWebhook"
   | "configureSession"
   | "renameSession"
   | "regenerateSessionTitle"
@@ -156,6 +165,8 @@ export const EXCLUDED: Readonly<Record<string, string>> = {
   saveVpn: "VPN configs hold a private key: they're entered only on the Secrets page, never through a chat or an external agent.",
   transcriptImage: "The chat page loading a screenshot it shows; chats and external agents read chats with app_read_session.",
   chatHistory: "The chat page loading the older messages it shows (before a summary); chats and external agents read chats with app_read_session.",
+  chatEntriesSince: "Incremental transcript catch-up for reconnecting app clients; chats and external agents read chats with app_read_session.",
+  rotateWebhookSecret: "Webhook signing secrets are managed and revealed only to the signed-in user on the Access page.",
   storeChatSecret: "Secrets come only from the user's password fields in the browser; no chat or external agent may set or read them.",
   disconnectBoat: "Credentials are managed only in Settings.",
   connectGitHub: "Credentials are entered only in Settings, never through a chat or an external agent.",
@@ -196,6 +207,7 @@ const agentFields = {
   model: Type.Optional(modelId),
   thinking: Type.Optional(thinking),
   mcp_servers: Type.Optional(Type.Array(id("MCP server id"), { maxItems: 20 })),
+  max_turns: Type.Optional(Type.Union([Type.Integer({ minimum: 1, maximum: 100 }), Type.Null()], { description: "Optional cap on tool rounds per run." })),
   icon,
   color
 }
@@ -337,6 +349,7 @@ const agentDraft = (args: Static<typeof createAgentParams>, existing?: AgentProf
   model: args.model ?? existing?.model ?? "",
   thinking: (args.thinking ?? existing?.thinking ?? "medium") as ThinkingLevel,
   mcpServers: args.mcp_servers ?? existing?.mcpServers ?? [],
+  ...(args.max_turns !== undefined ? { maxTurns: args.max_turns } : existing?.maxTurns !== undefined ? { maxTurns: existing.maxTurns } : {}),
   icon: (args.icon ?? existing?.icon ?? "bot") as AgentProfile["icon"],
   color: (args.color ?? existing?.color ?? "emerald") as AgentProfile["color"]
 })
@@ -771,7 +784,8 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
       if (args.refresh) await host.refreshModelList()
       const state = host.appState()
       const connected = connectedProviders(state)
-      return MODELS.map((model) => ({
+      const catalog = await host.modelCatalog()
+      return catalog.models.map((model) => ({
         id: model.id,
         name: model.name,
         provider: MODEL_PROVIDERS[model.provider].name,
@@ -974,7 +988,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     description:
       "Rename a chat, change its model, thinking level, MCP servers, or the VPN its VMs' browser goes through, mute its notifications, settle it (done for now; " +
       "it leaves the inbox until something new happens), or snooze it until a time (it comes back then).",
-    risk: "write",
+    risk: (args) => (args.mcp_servers !== undefined || args.vpn_id !== undefined ? "admin" : "write"),
     parameters: Type.Object({
       session_id: id("The chat's id."),
       title: Type.Optional(Type.String({ minLength: 1, maxLength: 120 })),
@@ -1101,7 +1115,15 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     parameters: createCharacterParams,
     covers: ["saveCharacter"],
     summarize: (args) => `Create sidekick ${quote(args.name)}`,
-    run: async (host, args) => characterSummary(await host.saveCharacter(characterDraft(args)))
+    run: async (host, args, caller) => {
+      const parent = caller.kind === "chat" ? caller.sessionId : null
+      if (parent && host.sessionDepth(parent) >= MAX_CHAT_DEPTH) {
+        throw new Error(`Chats started by chats can't start more chats (at most ${MAX_CHAT_DEPTH} levels).`)
+      }
+      const created = await host.saveCharacter(characterDraft(args))
+      if (parent) host.noteSessionParent(created.sessionId, parent)
+      return characterSummary(created)
+    }
   }),
   define({
     name: "app_update_sidekick",
@@ -1164,9 +1186,14 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
     }),
     covers: ["saveSpace"],
     summarize: (args) => `Create space ${quote(args.name)}`,
-    run: async (host, args) => {
+    run: async (host, args, caller) => {
+      const parent = caller.kind === "chat" ? caller.sessionId : null
+      if (parent && host.sessionDepth(parent) >= MAX_CHAT_DEPTH) {
+        throw new Error(`Chats started by chats can't start more chats (at most ${MAX_CHAT_DEPTH} levels).`)
+      }
       if (args.project_id && !host.appState().projects.some((project) => project.id === args.project_id)) throw new Error(`No project ${args.project_id}.`)
       const space = await host.saveSpace({ name: args.name, goal: args.goal, projectId: args.project_id ?? null })
+      if (parent) host.noteSessionParent(space.sessionId, parent)
       if (args.message?.trim()) await host.sendMessage(space.sessionId, args.message)
       return { ...spaceSummary(host.appState())(space), url: `/chat/${space.sessionId}` }
     }
@@ -1306,7 +1333,9 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
       transport: Type.Optional(Type.Union([Type.Literal("auto"), Type.Literal("streamable-http"), Type.Literal("sse")])),
       auth: Type.Optional(Type.Union([Type.Literal("none"), Type.Literal("headers"), Type.Literal("oauth")])),
       headers: Type.Optional(Type.Array(Type.Object({ name: Type.String({ minLength: 1, maxLength: 100 }), value: Type.String({ maxLength: 4_000 }) }), { maxItems: 10 })),
-      default_on: Type.Optional(Type.Boolean({ description: "Attach to new chats that don't use an agent." }))
+      default_on: Type.Optional(Type.Boolean({ description: "Attach to new chats that don't use an agent." })),
+      approval: Type.Optional(Type.Union([Type.Literal("auto"), Type.Literal("writes"), Type.Literal("always")], { description: "Confirmation policy for tool calls on this server." })),
+      defer_tools: Type.Optional(Type.Boolean({ description: "Load tool schemas on demand via tool_search to save prompt tokens." }))
     }),
     covers: ["saveMcpServer"],
     summarize: (args) =>
@@ -1322,7 +1351,9 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
         transport: (args.transport ?? "auto") as McpTransport,
         auth: (args.auth ?? (args.headers?.length ? "headers" : "none")) as McpAuth,
         headers: args.headers,
-        defaultOn: args.default_on ?? false
+        defaultOn: args.default_on ?? false,
+        ...(args.approval && { approval: args.approval as McpApproval }),
+        ...(args.defer_tools !== undefined && { deferTools: args.defer_tools })
       })
   }),
   define({
@@ -1564,7 +1595,7 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
   define({
     name: "app_update_push_device",
     description: `Change what a device is notified about (kinds: ${NOTIFY_KINDS.map((kind) => kind.id).join(", ")}) or whether it skips what's on screen.`,
-    risk: "write",
+    risk: (args) => (args.kinds !== undefined && args.kinds.length === 0 ? "admin" : "write"),
     parameters: Type.Object({
       device_id: id("The device's id."),
       kinds: Type.Optional(Type.Array(Type.Union(NOTIFY_KINDS.map((kind) => Type.Literal(kind.id))), { maxItems: NOTIFY_KINDS.length })),
@@ -1601,6 +1632,115 @@ export const OPERATIONS: ReadonlyArray<Operation> = [
       await host.pushUnsubscribe(args.device_id)
       return { removed: args.device_id }
     }
+  }),
+
+  // Search, continuation, MCP resources, and webhooks
+  define({
+    name: "app_continue_session",
+    description: "Resume an idle chat after a failed, interrupted, or turn-limited run without adding a new user message.",
+    risk: "write",
+    parameters: Type.Object({ session_id: id("The chat's id.") }),
+    covers: ["continueSession"],
+    summarize: (args, state) => `Continue chat ${quote(chatTitle(state, args.session_id))}`,
+    run: async (host, args) => host.continueSession(args.session_id)
+  }),
+  define({
+    name: "app_search",
+    description: "Full-text search across chats, workspace files, agents, spaces, sidekicks, and connected MCP servers.",
+    risk: "read",
+    parameters: Type.Object({
+      query: Type.String({ minLength: 1, maxLength: 200 }),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 50 }))
+    }),
+    covers: ["search"],
+    summarize: (args) => `Search Dex for ${quote(args.query, 60)}`,
+    run: async (host, args) => host.search(args.query, args.limit)
+  }),
+  define({
+    name: "app_list_mcp_resources",
+    description: "List MCP resources advertised across all connected MCP servers.",
+    risk: "read",
+    parameters: Type.Object({}),
+    covers: ["listMcpResources"],
+    summarize: () => "List MCP resources",
+    run: async (host) => host.listMcpResources()
+  }),
+  define({
+    name: "app_read_mcp_resource",
+    description: "Read one MCP resource by server_id and URI.",
+    risk: "read",
+    parameters: Type.Object({
+      server_id: id("The MCP server's id."),
+      uri: Type.String({ minLength: 1, maxLength: 1_000 })
+    }),
+    covers: ["readMcpResource"],
+    summarize: (args) => `Read MCP resource ${quote(args.uri, 80)}`,
+    run: async (host, args) => host.readMcpResource(args.server_id, args.uri)
+  }),
+  define({
+    name: "app_list_webhooks",
+    description: "List inbound signed webhooks (URL paths and targets; signing secrets are never returned).",
+    risk: "read",
+    parameters: Type.Object({}),
+    covers: [],
+    summarize: () => "List inbound webhooks",
+    run: async (host) => host.appState().webhooks ?? []
+  }),
+  define({
+    name: "app_save_webhook",
+    description: "Create or update an inbound signed webhook that delivers events into a chat, space, or agent.",
+    risk: "admin",
+    parameters: Type.Object({
+      webhook_id: Type.Optional(id("Give to update an existing webhook.")),
+      name: Type.String({ minLength: 1, maxLength: 60 }),
+      enabled: Type.Optional(Type.Boolean()),
+      target_kind: Type.Union([Type.Literal("session"), Type.Literal("space"), Type.Literal("agent")]),
+      target_id: id("The target chat, space, or agent id."),
+      prompt: Type.Optional(Type.String({ maxLength: 4_000, description: "Optional prompt template (supports {{event}} and {{payload}})." }))
+    }),
+    covers: ["saveWebhook"],
+    summarize: (args) => `${args.webhook_id ? "Update" : "Create"} inbound webhook ${quote(args.name)}`,
+    run: async (host, args) => {
+      const target: WebhookTarget =
+        args.target_kind === "session"
+          ? { kind: "session", sessionId: args.target_id }
+          : args.target_kind === "space"
+            ? { kind: "space", spaceId: args.target_id }
+            : { kind: "agent", agentId: args.target_id }
+      const saved = await host.saveWebhook({
+        id: args.webhook_id,
+        name: args.name,
+        enabled: args.enabled,
+        target,
+        prompt: args.prompt
+      })
+      // Never return the signing secret from an operation (see AGENTS.md).
+      return saved.webhook
+    }
+  }),
+  define({
+    name: "app_delete_webhook",
+    description: "Delete an inbound webhook.",
+    risk: "admin",
+    parameters: Type.Object({ webhook_id: id("The webhook's id.") }),
+    covers: ["deleteWebhook"],
+    summarize: (args, state) => `Delete webhook ${quote((state.webhooks ?? []).find((w) => w.id === args.webhook_id)?.name ?? args.webhook_id)}`,
+    run: async (host, args) => {
+      host.deleteWebhook(args.webhook_id)
+      return { deleted: args.webhook_id }
+    }
+  }),
+  define({
+    name: "app_test_webhook",
+    description: "Send a test event through an inbound webhook.",
+    risk: "write",
+    parameters: Type.Object({
+      webhook_id: id("The webhook's id."),
+      payload: Type.Optional(Type.String({ maxLength: 16_000 }))
+    }),
+    covers: ["testWebhook"],
+    summarize: (args, state) => `Test webhook ${quote((state.webhooks ?? []).find((w) => w.id === args.webhook_id)?.name ?? args.webhook_id)}`,
+    run: async (host, args) => host.testWebhook(args.webhook_id, args.payload)
   })
 ]
 

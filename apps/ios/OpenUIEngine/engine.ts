@@ -436,7 +436,7 @@ class Doc {
     this.actions = new Map()
     this.fields = new Map()
     this.formFields = new Map()
-    this.passwordFields = new Set()
+    // Keep passwordFields sticky across renders (e.g. inactive tabs) so a password input's value is never saved or sent.
     this.hydrate = []
     const tree = root && isElement(root) ? this.node(root, "root", { inForm: false }, loading) : null
     const hydrate = this.hydrate
@@ -602,7 +602,10 @@ class Doc {
     this.fields.set(path, entry)
     const read = () => (binding ? this.store.get(binding.target) : (this.getFieldValue(scope.formName, name) ?? props.value))
     const value = read()
-    if (type === "Input" && props.type === "password") this.passwordFields.add(name)
+    if (type === "Input" && props.type === "password") {
+      this.passwordFields.add(name)
+      if (binding?.target) this.passwordFields.add(binding.target)
+    }
     if (scope.inForm && rules.length && !this.streaming) this.addFormField(scope.formName, name, rules, read)
     out.f = { value: value ?? null, error: scope.inForm ? (this.formErrors[scope.formName ?? ""]?.[name] ?? null) : null }
   }

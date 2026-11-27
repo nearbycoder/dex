@@ -92,8 +92,9 @@ export function flattenPath(d: string, steps: (length: number) => number = (leng
       ry *= Math.sqrt(scale)
     }
     const sign = large === sweep ? -1 : 1
-    const numerator = rx * rx * ry * ry - rx * rx * y1 * y1 - ry * ry * x1 * x1
-    const factor = sign * Math.sqrt(Math.max(0, numerator / (rx * rx * y1 * y1 + ry * ry * x1 * x1)))
+    const denom = rx * rx * y1 * y1 + ry * ry * x1 * x1
+    const numerator = rx * rx * ry * ry - denom
+    const factor = denom > 0 ? sign * Math.sqrt(Math.max(0, numerator / denom)) : 0
     const cx1 = (factor * rx * y1) / ry
     const cy1 = (-factor * ry * x1) / rx
     const cx = cos * cx1 - sin * cy1 + (x + nx) / 2
@@ -184,6 +185,8 @@ export function flattenPath(d: string, steps: (length: number) => number = (leng
         finish()
         x = startX
         y = startY
+        // Close-path takes no trailing coordinates; clear command so trailing junk throws instead of looping forever.
+        command = ""
         break
       default:
         throw new Error(`Unknown path command "${command}"`)

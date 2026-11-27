@@ -81,10 +81,12 @@ class TrackPlayer(private val usage: Int = AudioAttributes.USAGE_VOICE_COMMUNICA
 
     private val check = object : Runnable {
         override fun run() {
-            // Pieces the track has reached: they've started.
+            // Pieces the track has reached: they've started; prune finished buffers even if level() isn't polled.
             val started = synchronized(lock) {
                 val head = headLocked()
-                pieces.filter { it.onStart != null && it.start <= head }.mapNotNull { piece -> piece.onStart.also { piece.onStart = null } }
+                val fired = pieces.filter { it.onStart != null && it.start <= head }.mapNotNull { piece -> piece.onStart.also { piece.onStart = null } }
+                while (pieces.isNotEmpty() && pieces.first().onStart == null && pieces.first().start + pieces.first().samples.size < head) pieces.removeFirst()
+                fired
             }
             started.forEach { it() }
             if (busy) main.postDelayed(this, CHECK_MS) else onIdle?.invoke()

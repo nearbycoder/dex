@@ -72,6 +72,7 @@ import dev.trydex.openui.Js
 import dev.trydex.openui.OpenUIError
 import dev.trydex.openui.OpenUIRuntime
 import dev.trydex.openui.ParseResult
+import dev.trydex.openui.ReactiveAssign
 import dev.trydex.openui.ToolError
 import dev.trydex.openui.ToolProvider
 import kotlinx.coroutines.CancellationException
@@ -88,11 +89,15 @@ private val TOOL_ERROR_PREFIX = Regex("^(Query|Mutation) \"([^\"]+)\" (returned 
 
 /** Each chat's saved card states (DexAgent.uiStates), loaded once per chat and kept current by this app's saves. */
 internal object UiStateCache {
-    private val states = HashMap<String, CompletableDeferred<MutableMap<String, Any?>>>()
+    private const val MAX_SESSIONS = 16
+    private val states = LinkedHashMap<String, CompletableDeferred<MutableMap<String, Any?>>>()
 
     suspend fun load(api: DexApi, sessionId: String): Map<String, Any?> {
         val existing = states[sessionId]
         if (existing != null) return existing.await()
+        if (states.size >= MAX_SESSIONS) {
+            states.keys.firstOrNull()?.let(states::remove)
+        }
         val deferred = CompletableDeferred<MutableMap<String, Any?>>()
         states[sessionId] = deferred
         val loaded = try {
@@ -119,13 +124,16 @@ internal object UiStateCache {
     }
 }
 
-/** Password inputs' names anywhere in the tree: their values are kept as secrets, never in state or messages. */
+/** Password inputs' names and `$var` bindings anywhere in the tree: their values are kept as secrets, never in state or messages. */
 fun passwordFields(root: ElementNode?): Set<String> {
     val names = HashSet<String>()
     fun walk(value: Any?) {
         when (value) {
             is ElementNode -> {
-                if (value.typeName == "Input" && value.props["type"] == "password") (value.props["name"] as? String)?.let(names::add)
+                if (value.typeName == "Input" && value.props["type"] == "password") {
+                    (value.props["name"] as? String)?.let(names::add)
+                    (value.props["value"] as? ReactiveAssign)?.target?.let(names::add)
+                }
                 value.props.values.forEach(::walk)
             }
             is List<*> -> value.forEach(::walk)
@@ -217,6 +225,8 @@ private class CardHost {
     var saveJob: Job? = null
     /** The program as it is now, for which queries read `.rows`. */
     var code: String = ""
+    /** Sticky across renders/tabs so hidden password inputs are never saved or sent unredacted. */
+    val seenPasswordFields = HashSet<String>()
 
     suspend fun ask(summary: String): Boolean {
         confirm?.second?.complete(false)
@@ -287,9 +297,38 @@ fun OpenUICard(sessionId: String, code: String, streaming: Boolean, card: String
             host.error = null
             scope.launch {
                 try {
-                    val fields = passwordFields(runtime.state.value.root)
-                    val formState = if (fields.isEmpty()) event.formState else withoutSecrets(event.formState, fields) { field, value -> api.storeChatSecret(sessionId, field, value) }
-                    onSend(modelMessage(event, formState))
+                    host.seenPasswordFields += passwordFields(runtime.state.value.root)
+                    val fields = host.seenPasswordFields.toSet()
+                    if (fields.isEmpty()) {
+                        onSend(modelMessage(event, event.formState))
+                    } else {
+                        val replacements = ArrayList<Pair<String, String>>()
+                        val storeAndTrack: suspend (String, String) -> String = { field, value ->
+                            val name = api.storeChatSecret(sessionId, field, value)
+                            replacements += value to "{{secret:$name}}"
+                            name
+                        }
+                        val formState = withoutSecrets(event.formState, fields, storeAndTrack)
+                        val scrubbedEvent = if (replacements.isEmpty()) {
+                            if (event.params.containsKey("context")) {
+                                event.copy(params = event.params + ("context" to withoutSecrets(event.params["context"], fields, storeAndTrack)))
+                            } else event
+                        } else {
+                            val sorted = replacements.sortedByDescending { it.first.length }
+                            fun scrub(text: String): String = sorted.fold(text) { acc, (secret, placeholder) -> acc.replace(secret, placeholder) }
+                            fun scrubValue(node: Any?): Any? = when (node) {
+                                is String -> scrub(node)
+                                is List<*> -> node.map(::scrubValue)
+                                is Map<*, *> -> LinkedHashMap<String, Any?>().apply { node.forEach { (k, v) -> put(k.toString(), scrubValue(v)) } }
+                                else -> node
+                            }
+                            event.copy(
+                                humanFriendlyMessage = scrub(event.humanFriendlyMessage),
+                                params = if (event.params.containsKey("context")) event.params + ("context" to scrubValue(event.params["context"])) else event.params,
+                            )
+                        }
+                        onSend(modelMessage(scrubbedEvent, formState))
+                    }
                 } catch (error: Exception) {
                     host.error = error.message ?: "That couldn't be sent."
                 }
@@ -314,9 +353,11 @@ fun OpenUICard(sessionId: String, code: String, streaming: Boolean, card: String
     val graphScope = app.graph.scope
     SideEffect {
         host.code = code
+        host.seenPasswordFields += passwordFields(state.root)
         runtime.onStateUpdate = { snapshot ->
             if (!state.streaming) {
-                val next = withoutPasswords(snapshot, passwordFields(runtime.state.value.root))
+                host.seenPasswordFields += passwordFields(runtime.state.value.root)
+                val next = withoutPasswords(snapshot, host.seenPasswordFields)
                 val json = Js.json(next)
                 if (json != host.lastSaved) {
                     host.lastSaved = json

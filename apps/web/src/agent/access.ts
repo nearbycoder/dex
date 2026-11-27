@@ -65,6 +65,8 @@ export interface AccessHost {
   sign(payload: string): Promise<string>
   /** Tells a chat what became of the admin operation it asked for (a message in that chat). */
   tellChat(sessionId: string, text: string): Promise<void>
+  /** Runs an approved MCP tool call after the user confirms its pending card. */
+  runMcpTool?: (serverId: string, tool: string, args: Record<string, unknown>) => Promise<{ ok: boolean; text: string }>
 }
 
 /** The outcome of an operation, ready for a tool result. */
@@ -152,6 +154,7 @@ const toPending = (row: PendingRow): PendingAction => ({
 export class AccessCenter {
   /** Recent calls from each chat's generated UI (its reads aren't audited, so they're counted here). */
   private readonly uiCalls = new Map<string, number[]>()
+  private auditInserts = 0
 
   constructor(private readonly host: AccessHost) {
     host.sql.exec(`CREATE TABLE IF NOT EXISTS dex_access_tokens (
@@ -261,7 +264,9 @@ export class AccessCenter {
       `INSERT INTO dex_audit (at, actor, actor_ref, actor_label, operation, summary, ok, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       Date.now(), actor, ref, label.slice(0, 120), operation, summary.slice(0, 300), error ? 0 : 1, error?.slice(0, 500) ?? null
     )
-    this.host.sql.exec(`DELETE FROM dex_audit WHERE id <= (SELECT id FROM dex_audit ORDER BY id DESC LIMIT 1 OFFSET 2000)`)
+    if (++this.auditInserts % 50 === 0) {
+      this.host.sql.exec(`DELETE FROM dex_audit WHERE id <= (SELECT id FROM dex_audit ORDER BY id DESC LIMIT 1 OFFSET 2000)`)
+    }
   }
 
   private summarize(operation: Operation, args: unknown) {
@@ -295,13 +300,23 @@ export class AccessCenter {
     }
     if (caller.kind === "chat") {
       if (this.recent(`chat:${caller.sessionId}`, 60_000) >= LIMITS.chatCallsPerMinute) return refused("Too many app operations from this chat; slow down.")
-      if (name === "app_create_session" && this.chatsRecently(3_600_000, name) >= LIMITS.chatSessionsPerHour) {
+      if (
+        (name === "app_create_session" || name === "app_create_space" || name === "app_create_sidekick") &&
+        this.chatsRecently(3_600_000, "app_create_session") + this.chatsRecently(3_600_000, "app_create_space") + this.chatsRecently(3_600_000, "app_create_sidekick") >= LIMITS.chatSessionsPerHour
+      ) {
         return refused(`Chats have started ${LIMITS.chatSessionsPerHour} chats in the last hour; ask the user before starting more.`)
       }
       if (name === "app_send_message" && this.chatsRecently(3_600_000, name) >= LIMITS.chatMessagesPerHour) {
         return refused("Chats have sent too many messages to other chats in the last hour.")
       }
-      if (risk === "admin") return this.requestConfirmation(caller.sessionId, operation, args, summary)
+      if (risk === "admin") {
+        const pendingRecent = this.host.sql
+          .exec<{ count: number }>(`SELECT COUNT(*) AS count FROM dex_pending WHERE session_id = ? AND created_at > ?`, caller.sessionId, Date.now() - 600_000)
+          .one().count
+        if (pendingRecent >= 10) return refused("Too many pending confirmation requests from this chat; wait for the user.")
+        this.audit(caller, name, `Requested confirmation: ${summary}`, null)
+        return this.requestConfirmation(caller.sessionId, operation, args, summary)
+      }
     }
     return this.run(operation, args, caller, summary)
   }
@@ -341,7 +356,7 @@ export class AccessCenter {
     return risk === "read" ? outcome : { ...outcome, changed: summary }
   }
 
-  private async run(operation: Operation, args: unknown, caller: Caller, summary: string, audited = true): Promise<OperationOutcome> {
+  private async run(operation: Operation, args: unknown, caller: Caller, summary: string, audited = true, publish = true): Promise<OperationOutcome> {
     try {
       const result = await operation.run(this.host.operations, args as never, caller)
       if (audited) this.audit(caller, operation.name, summary, null)
@@ -351,7 +366,7 @@ export class AccessCenter {
       if (audited) this.audit(caller, operation.name, summary, error)
       return { ok: false, error }
     } finally {
-      if (audited) this.refresh()
+      if (audited && publish) this.refresh()
     }
   }
 
@@ -368,14 +383,33 @@ export class AccessCenter {
     return { ok: "pending", pending: toPending(this.host.sql.exec<PendingRow>(`SELECT * FROM dex_pending WHERE id = ?`, id).one()) }
   }
 
+  /** Queues an MCP tool call for user confirmation in `sessionId` (reusing ConfirmCard and push approvals). */
+  requestMcpApproval(sessionId: string, serverId: string, tool: string, args: Record<string, unknown>, summary: string): OperationOutcome {
+    const pendingRecent = this.host.sql
+      .exec<{ count: number }>(`SELECT COUNT(*) AS count FROM dex_pending WHERE session_id = ? AND created_at > ?`, sessionId, Date.now() - 600_000)
+      .one().count
+    if (pendingRecent >= 10) return { ok: false, error: "Too many pending confirmation requests from this chat; wait for the user." }
+    const caller: Caller = { kind: "chat", sessionId }
+    this.audit(caller, `mcp:${tool}`, `Requested confirmation: ${summary}`, null)
+    const id = crypto.randomUUID()
+    this.host.sql.exec(
+      `INSERT INTO dex_pending (id, session_id, operation, args, summary, created_at, status) VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
+      id, sessionId, "mcp_tool", JSON.stringify({ serverId, tool, args }), summary, Date.now()
+    )
+    this.host.sql.exec(`DELETE FROM dex_pending WHERE created_at < ?`, Date.now() - 7 * 86_400_000)
+    this.refresh()
+    return { ok: "pending", pending: toPending(this.host.sql.exec<PendingRow>(`SELECT * FROM dex_pending WHERE id = ?`, id).one()) }
+  }
+
   /** The user's answer to a chat's request (only reachable from the signed-in app). */
   async resolve(id: string, approve: boolean) {
     const row = this.host.sql.exec<PendingRow>(`SELECT * FROM dex_pending WHERE id = ?`, id).toArray()[0]
     if (!row) throw new AccessError("That request is gone.")
     const pending = toPending(row)
     if (pending.status !== "pending") throw new AccessError(`That request was already ${pending.status}.`)
-    const operation = operationByName.get(row.operation)
-    if (!operation) throw new AccessError("That operation no longer exists.")
+    const isMcp = row.operation === "mcp_tool"
+    const operation = isMcp ? undefined : operationByName.get(row.operation)
+    if (!isMcp && !operation) throw new AccessError("That operation no longer exists.")
     const caller: Caller = { kind: "user", sessionId: row.session_id }
     if (!approve) {
       if (this.host.sql.exec(`UPDATE dex_pending SET status = 'declined' WHERE id = ? AND status = 'pending'`, id).rowsWritten !== 1) {
@@ -390,7 +424,28 @@ export class AccessCenter {
     if (this.host.sql.exec(`UPDATE dex_pending SET status = 'approved' WHERE id = ? AND status = 'pending'`, id).rowsWritten !== 1) {
       throw new AccessError("That request was already handled.")
     }
-    const outcome = await this.run(operation, JSON.parse(row.args), caller, row.summary)
+    if (isMcp) {
+      const payload = JSON.parse(row.args) as { serverId: string; tool: string; args: Record<string, unknown> }
+      let ok = false
+      let text = "MCP runner is unavailable."
+      if (this.host.runMcpTool) {
+        try {
+          const ran = await this.host.runMcpTool(payload.serverId, payload.tool, payload.args)
+          ok = ran.ok
+          text = ran.text
+        } catch (cause) {
+          ok = false
+          text = cause instanceof Error ? cause.message : String(cause)
+        }
+      }
+      this.audit(caller, `mcp:${payload.tool}`, row.summary, ok ? null : text)
+      const clipped = text.slice(0, 2_000)
+      this.host.sql.exec(`UPDATE dex_pending SET status = ?, result = ? WHERE id = ?`, ok ? "approved" : "failed", clipped, id)
+      this.refresh()
+      await this.host.tellChat(row.session_id, ok ? `[Confirmed] ${row.summary}. Result:\n${clipped}` : `[Confirmed, but it failed] ${row.summary}: ${clipped}`)
+      return
+    }
+    const outcome = await this.run(operation!, JSON.parse(row.args), caller, row.summary, true, false)
     const result = outcome.ok === true ? stringifyResult(outcome.result).slice(0, 2_000) : outcome.ok === false ? outcome.error : ""
     this.host.sql.exec(`UPDATE dex_pending SET status = ?, result = ? WHERE id = ?`, outcome.ok === true ? "approved" : "failed", result, id)
     this.refresh()

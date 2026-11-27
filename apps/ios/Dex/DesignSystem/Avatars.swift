@@ -42,10 +42,19 @@ enum AgentIcons {
 
 /// An agent's or project's icon on its color, or a project's picture.
 struct AgentAvatar: View {
+    @Environment(DexClient.self) private var client: DexClient?
     let icon: String
     let color: String
     var image: String? = nil
     var size: CGFloat = 32
+    @State private var loaded: MediaLoader.AvatarContent?
+    @State private var loadedKey: String?
+
+    private var remoteContent: MediaLoader.AvatarContent? {
+        guard let image, image.hasPrefix("/api/avatars/") else { return nil }
+        if loadedKey == image, let loaded { return loaded }
+        return MediaLoader.shared.cachedAvatar(image)
+    }
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
@@ -54,6 +63,20 @@ struct AgentAvatar: View {
                 Image(uiImage: picture)
                     .resizable()
                     .scaledToFit()
+                    .padding(size * 0.12)
+                    .background(Color(.secondarySystemBackground))
+            } else if let image, image.hasPrefix("data:image/svg+xml") {
+                SVGPicture(dataUrl: image)
+                    .padding(size * 0.12)
+                    .background(Color(.secondarySystemBackground))
+            } else if case .image(let picture) = remoteContent {
+                Image(uiImage: picture)
+                    .resizable()
+                    .scaledToFit()
+                    .padding(size * 0.12)
+                    .background(Color(.secondarySystemBackground))
+            } else if case .svg(let svgDataUrl) = remoteContent {
+                SVGPicture(dataUrl: svgDataUrl)
                     .padding(size * 0.12)
                     .background(Color(.secondarySystemBackground))
             } else {
@@ -68,6 +91,18 @@ struct AgentAvatar: View {
         .clipShape(shape)
         .overlay(shape.strokeBorder(.primary.opacity(0.08)))
         .accessibilityHidden(true)
+        .task(id: image) {
+            guard let image, image.hasPrefix("/api/avatars/"), let client else { return }
+            if let cached = MediaLoader.shared.cachedAvatar(image) {
+                loaded = cached
+                loadedKey = image
+                return
+            }
+            if let fetched = try? await MediaLoader.shared.avatar(image, client: client) {
+                loaded = fetched
+                loadedKey = image
+            }
+        }
     }
 
     @MainActor private static let imageCache: NSCache<NSString, UIImage> = {
@@ -94,6 +129,7 @@ struct AgentAvatar: View {
 /// whole), else a photo or their emoji (or initial) on their color, round, so a sidekick reads as someone rather than
 /// something.
 struct CharacterAvatar: View {
+    @Environment(DexClient.self) private var client: DexClient?
     let glyph: String
     let color: String
     var image: String? = nil
@@ -106,6 +142,8 @@ struct CharacterAvatar: View {
     var typing = false
     /// The face blinks now and then (a big one, on its own: not in lists).
     var live = false
+    @State private var loaded: UIImage?
+    @State private var loadedKey: String?
 
     init(glyph: String, color: String, image: String? = nil, look: Bool = false, parts: SidekickParts? = nil, size: CGFloat = 32, typing: Bool = false,
          live: Bool = false) {
@@ -118,6 +156,16 @@ struct CharacterAvatar: View {
                   size: size, typing: typing, live: live)
     }
 
+    private var resolvedPicture: UIImage? {
+        guard let image else { return nil }
+        if image.hasPrefix("data:") { return AgentAvatar.decode(image) }
+        if image.hasPrefix("/api/avatars/") {
+            if loadedKey == image, let loaded { return loaded }
+            if case .image(let cached) = MediaLoader.shared.cachedAvatar(image) { return cached }
+        }
+        return nil
+    }
+
     var body: some View {
         let tint = AgentColors.color(color)
         Group {
@@ -125,7 +173,7 @@ struct CharacterAvatar: View {
                 // Their face, whole (its corners and tips aren't cropped), drawn here.
                 SidekickArt(parts: parts, live: live)
                     .frame(width: size, height: size)
-            } else if let picture = image.flatMap(AgentAvatar.decode) {
+            } else if let picture = resolvedPicture {
                 if look {
                     // The agent's picture of their face (a shape a chat drew), whole.
                     Image(uiImage: picture)
@@ -168,6 +216,19 @@ struct CharacterAvatar: View {
             }
         }
         .accessibilityHidden(true)
+        .task(id: image) {
+            if look, let parts, parts.isDrawable { return }
+            guard let image, image.hasPrefix("/api/avatars/"), let client else { return }
+            if case .image(let cached) = MediaLoader.shared.cachedAvatar(image) {
+                loaded = cached
+                loadedKey = image
+                return
+            }
+            if case .image(let fetched) = try? await MediaLoader.shared.avatar(image, client: client) {
+                loaded = fetched
+                loadedKey = image
+            }
+        }
     }
 }
 

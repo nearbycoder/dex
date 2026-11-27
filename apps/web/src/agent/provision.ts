@@ -24,7 +24,9 @@ export const GITHUB_TOKEN_FILE = "/tmp/.dex-gh-token"
  * it writes the CLI's credentials itself. Then it checks the token reaches GitHub.
  */
 export const githubSignIn = (github: { readonly login: string; readonly name: string; readonly email: string }) =>
-  `if ! gh auth login --hostname github.com --git-protocol https --with-token < ${GITHUB_TOKEN_FILE}; then
+  `trap 'rm -f ${GITHUB_TOKEN_FILE}' EXIT
+   chmod 600 ${GITHUB_TOKEN_FILE} 2>/dev/null || true
+   if ! gh auth login --hostname github.com --git-protocol https --with-token < ${GITHUB_TOKEN_FILE}; then
      echo "Signing the GitHub CLI in directly instead"
      mkdir -p ~/.config/gh && (umask 077; printf 'github.com:\n    oauth_token: %s\n    user: %s\n    git_protocol: https\n' "$(cat ${GITHUB_TOKEN_FILE})" ${shellQuote(github.login)} > ~/.config/gh/hosts.yml)
    fi
@@ -57,20 +59,24 @@ export async function provisionVm(setup: VmSetupContext, plan: ProvisionPlan) {
   if (!project) return
   await setup.quiet(`mkdir -p ${PROJECT_ROOT}/.dex`)
 
-  for (const repo of project.repos) {
-    const label = repoLabel(repo.url)
-    const target = `${PROJECT_ROOT}/${repo.dir}`
-    setup.step(`Cloning ${label}`)
-    const clone = await setup.run(
-      `Clone ${label}${repo.branch ? ` (${repo.branch})` : ""} into ~/work/${repo.dir}`,
-      `if [ -d ${shellQuote(`${target}/.git`)} ]; then echo "Already cloned"; else git clone --filter=blob:none ${repo.branch ? `--branch ${shellQuote(repo.branch)} ` : ""}${shellQuote(repo.url)} ${shellQuote(target)}; fi`,
-      { timeoutSeconds: 600 }
+  if (project.repos.length > 0) {
+    setup.step(project.repos.length === 1 ? `Cloning ${repoLabel(project.repos[0]!.url)}` : `Cloning ${project.repos.length} repositories`)
+    await Promise.all(
+      project.repos.map(async (repo) => {
+        const label = repoLabel(repo.url)
+        const target = `${PROJECT_ROOT}/${repo.dir}`
+        const clone = await setup.run(
+          `Clone ${label}${repo.branch ? ` (${repo.branch})` : ""} into ~/work/${repo.dir}`,
+          `if [ -d ${shellQuote(`${target}/.git`)} ]; then echo "Already cloned"; else git clone --filter=blob:none ${repo.branch ? `--branch ${shellQuote(repo.branch)} ` : ""}${shellQuote(repo.url)} ${shellQuote(target)}; fi`,
+          { timeoutSeconds: 600 }
+        )
+        if (clone.exitCode !== 0) {
+          throw new Error(
+            `git clone of ${label} failed${plan.github ? "" : " (for a private repo, add a GitHub token in Settings)"}`
+          )
+        }
+      })
     )
-    if (clone.exitCode !== 0) {
-      throw new Error(
-        `git clone of ${label} failed${plan.github ? "" : " (for a private repo, add a GitHub token in Settings)"}`
-      )
-    }
   }
 
   const script = project.setupScript.trim()
@@ -84,11 +90,14 @@ export async function provisionVm(setup: VmSetupContext, plan: ProvisionPlan) {
   let offset = 0
   const deadline = Date.now() + SETUP_TIMEOUT_MS
   while (Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, POLL_MS))
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, POLL_MS)
+      setup.signal?.addEventListener("abort", () => { clearTimeout(timer); resolve() }, { once: true })
+    })
     if (setup.signal?.aborted) throw setup.signal.reason
-    // Byte offsets, so a partial line is never sent twice.
+    // Read exit status before stat so final log lines flushed just before setup.exit are never missed.
     const poll = await setup.quiet(
-      `cd ${PROJECT_ROOT}/.dex && size=$(stat -c %s setup.log 2>/dev/null || echo 0); echo "$size $(cat setup.exit 2>/dev/null)"; tail -c +${offset + 1} setup.log 2>/dev/null | head -c $((size - ${offset}))`,
+      `cd ${PROJECT_ROOT}/.dex && ex=$(cat setup.exit 2>/dev/null); size=$(stat -c %s setup.log 2>/dev/null || echo 0); echo "$size $ex"; tail -c +${offset + 1} setup.log 2>/dev/null | head -c $((size > ${offset} ? size - ${offset} : 0))`,
       { timeoutSeconds: 30 }
     )
     const stdout = poll.stdout ?? ""

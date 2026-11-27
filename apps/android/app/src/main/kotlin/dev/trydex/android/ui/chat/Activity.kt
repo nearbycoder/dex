@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -43,8 +44,10 @@ import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material.icons.outlined.Build
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ChecklistRtl
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -60,16 +63,20 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
@@ -93,6 +100,7 @@ import dev.trydex.core.model.ToolResultMessage
 import dev.trydex.core.model.Tools
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -363,10 +371,46 @@ internal fun rememberTranscriptBitmap(sessionId: String, image: ImageBlock): Res
 @Composable
 private fun Screenshot(sessionId: String, image: ImageBlock) {
     val bitmap = rememberTranscriptBitmap(sessionId, image)
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var saving by remember(image.ref, image.data.hashCode()) { mutableStateOf(false) }
+    var saved by remember(image.ref, image.data.hashCode()) { mutableStateOf(false) }
     Box(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp).clip(RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
         val loaded = bitmap?.getOrNull()
         when {
-            loaded != null -> Image(loaded, contentDescription = "VM screenshot", contentScale = ContentScale.FillWidth, modifier = Modifier.fillMaxWidth())
+            loaded != null -> {
+                Image(loaded, contentDescription = "VM screenshot", contentScale = ContentScale.FillWidth, modifier = Modifier.fillMaxWidth())
+                Surface(
+                    onClick = {
+                        if (saving) return@Surface
+                        saving = true
+                        scope.launch {
+                            val name = image.ref?.let { "screenshot-${it.take(8)}.png" } ?: "screenshot.png"
+                            dev.trydex.android.data.AssetDownloader.saveBitmapToDevice(context, loaded.asAndroidBitmap(), name)
+                                .onSuccess {
+                                    saved = true
+                                    android.widget.Toast.makeText(context, "Saved ${it.fileName} to Downloads/Dex", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                                .onFailure {
+                                    android.widget.Toast.makeText(context, it.message ?: "Couldn't save screenshot", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            saving = false
+                        }
+                    },
+                    shape = CircleShape,
+                    color = Color.Black.copy(alpha = 0.65f),
+                    contentColor = Color.White,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(8.dp).size(32.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        when {
+                            saving -> CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
+                            saved -> Icon(Icons.Rounded.Check, contentDescription = "Saved screenshot", modifier = Modifier.size(16.dp))
+                            else -> Icon(Icons.Rounded.Download, contentDescription = "Download screenshot", modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+            }
             bitmap == null -> Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(MaterialTheme.colorScheme.surfaceContainerHighest), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(Modifier.size(24.dp))
             }

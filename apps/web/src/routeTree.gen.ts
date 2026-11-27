@@ -44,6 +44,7 @@ import { Route as AppSpacesSpaceIdRouteImport } from './routes/_app.spaces.$spac
 import { Route as ApiMediaSplatRouteImport } from './routes/api.media.$'
 import { Route as ApiPushActionRouteImport } from './routes/api.push.action'
 import { Route as ApiVoicePhonemesRouteImport } from './routes/api.voice.phonemes'
+import { Route as AuthBoatConnectRouteImport } from './routes/auth.boat.connect'
 import { Route as AuthGithubCallbackRouteImport } from './routes/auth.github.callback'
 import { Route as AuthGithubConnectRouteImport } from './routes/auth.github.connect'
 import { Route as AuthGithubStartRouteImport } from './routes/auth.github.start'
@@ -51,8 +52,11 @@ import { Route as AuthNativeFinishRouteImport } from './routes/auth.native.finis
 import { Route as AuthNativeRefreshRouteImport } from './routes/auth.native.refresh'
 import { Route as AuthNativeStartRouteImport } from './routes/auth.native.start'
 import { Route as AuthNativeTokenRouteImport } from './routes/auth.native.token'
+import { Route as ApiHooksUserHookIdRouteImport } from './routes/api.hooks.$user.$hookId'
 import { Route as ApiVoiceModelFileRouteImport } from './routes/api.voice.model.$file'
+import { Route as AuthBoatConnectCallbackRouteImport } from './routes/auth.boat.connect.callback'
 import { Route as AuthGithubConnectCallbackRouteImport } from './routes/auth.github.connect.callback'
+import { Route as ApiAvatarsKindIdHashRouteImport } from './routes/api.avatars.$kind.$id.$hash'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -228,6 +232,11 @@ const ApiVoicePhonemesRoute = ApiVoicePhonemesRouteImport.update({
   path: '/api/voice/phonemes',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthBoatConnectRoute = AuthBoatConnectRouteImport.update({
+  id: '/auth/boat/connect',
+  path: '/auth/boat/connect',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthGithubCallbackRoute = AuthGithubCallbackRouteImport.update({
   id: '/auth/github/callback',
   path: '/auth/github/callback',
@@ -263,10 +272,20 @@ const AuthNativeTokenRoute = AuthNativeTokenRouteImport.update({
   path: '/auth/native/token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiHooksUserHookIdRoute = ApiHooksUserHookIdRouteImport.update({
+  id: '/api/hooks/$user/$hookId',
+  path: '/api/hooks/$user/$hookId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiVoiceModelFileRoute = ApiVoiceModelFileRouteImport.update({
   id: '/api/voice/model/$file',
   path: '/api/voice/model/$file',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AuthBoatConnectCallbackRoute = AuthBoatConnectCallbackRouteImport.update({
+  id: '/callback',
+  path: '/callback',
+  getParentRoute: () => AuthBoatConnectRoute,
 } as any)
 const AuthGithubConnectCallbackRoute =
   AuthGithubConnectCallbackRouteImport.update({
@@ -274,6 +293,11 @@ const AuthGithubConnectCallbackRoute =
     path: '/callback',
     getParentRoute: () => AuthGithubConnectRoute,
   } as any)
+const ApiAvatarsKindIdHashRoute = ApiAvatarsKindIdHashRouteImport.update({
+  id: '/api/avatars/$kind/$id/$hash',
+  path: '/api/avatars/$kind/$id/$hash',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -303,6 +327,7 @@ export interface FileRoutesByFullPath {
   '/api/media/$': typeof ApiMediaSplatRoute
   '/api/push/action': typeof ApiPushActionRoute
   '/api/voice/phonemes': typeof ApiVoicePhonemesRoute
+  '/auth/boat/connect': typeof AuthBoatConnectRouteWithChildren
   '/auth/github/callback': typeof AuthGithubCallbackRoute
   '/auth/github/connect': typeof AuthGithubConnectRouteWithChildren
   '/auth/github/start': typeof AuthGithubStartRoute
@@ -317,8 +342,11 @@ export interface FileRoutesByFullPath {
   '/projects/': typeof AppProjectsIndexRoute
   '/sidekicks/': typeof AppSidekicksIndexRoute
   '/skills/': typeof AppSkillsIndexRoute
+  '/api/hooks/$user/$hookId': typeof ApiHooksUserHookIdRoute
   '/api/voice/model/$file': typeof ApiVoiceModelFileRoute
+  '/auth/boat/connect/callback': typeof AuthBoatConnectCallbackRoute
   '/auth/github/connect/callback': typeof AuthGithubConnectCallbackRoute
+  '/api/avatars/$kind/$id/$hash': typeof ApiAvatarsKindIdHashRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -348,6 +376,7 @@ export interface FileRoutesByTo {
   '/api/media/$': typeof ApiMediaSplatRoute
   '/api/push/action': typeof ApiPushActionRoute
   '/api/voice/phonemes': typeof ApiVoicePhonemesRoute
+  '/auth/boat/connect': typeof AuthBoatConnectRouteWithChildren
   '/auth/github/callback': typeof AuthGithubCallbackRoute
   '/auth/github/connect': typeof AuthGithubConnectRouteWithChildren
   '/auth/github/start': typeof AuthGithubStartRoute
@@ -362,8 +391,11 @@ export interface FileRoutesByTo {
   '/projects': typeof AppProjectsIndexRoute
   '/sidekicks': typeof AppSidekicksIndexRoute
   '/skills': typeof AppSkillsIndexRoute
+  '/api/hooks/$user/$hookId': typeof ApiHooksUserHookIdRoute
   '/api/voice/model/$file': typeof ApiVoiceModelFileRoute
+  '/auth/boat/connect/callback': typeof AuthBoatConnectCallbackRoute
   '/auth/github/connect/callback': typeof AuthGithubConnectCallbackRoute
+  '/api/avatars/$kind/$id/$hash': typeof ApiAvatarsKindIdHashRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -395,6 +427,7 @@ export interface FileRoutesById {
   '/api/media/$': typeof ApiMediaSplatRoute
   '/api/push/action': typeof ApiPushActionRoute
   '/api/voice/phonemes': typeof ApiVoicePhonemesRoute
+  '/auth/boat/connect': typeof AuthBoatConnectRouteWithChildren
   '/auth/github/callback': typeof AuthGithubCallbackRoute
   '/auth/github/connect': typeof AuthGithubConnectRouteWithChildren
   '/auth/github/start': typeof AuthGithubStartRoute
@@ -409,8 +442,11 @@ export interface FileRoutesById {
   '/_app/projects/': typeof AppProjectsIndexRoute
   '/_app/sidekicks/': typeof AppSidekicksIndexRoute
   '/_app/skills/': typeof AppSkillsIndexRoute
+  '/api/hooks/$user/$hookId': typeof ApiHooksUserHookIdRoute
   '/api/voice/model/$file': typeof ApiVoiceModelFileRoute
+  '/auth/boat/connect/callback': typeof AuthBoatConnectCallbackRoute
   '/auth/github/connect/callback': typeof AuthGithubConnectCallbackRoute
+  '/api/avatars/$kind/$id/$hash': typeof ApiAvatarsKindIdHashRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -442,6 +478,7 @@ export interface FileRouteTypes {
     | '/api/media/$'
     | '/api/push/action'
     | '/api/voice/phonemes'
+    | '/auth/boat/connect'
     | '/auth/github/callback'
     | '/auth/github/connect'
     | '/auth/github/start'
@@ -456,8 +493,11 @@ export interface FileRouteTypes {
     | '/projects/'
     | '/sidekicks/'
     | '/skills/'
+    | '/api/hooks/$user/$hookId'
     | '/api/voice/model/$file'
+    | '/auth/boat/connect/callback'
     | '/auth/github/connect/callback'
+    | '/api/avatars/$kind/$id/$hash'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -487,6 +527,7 @@ export interface FileRouteTypes {
     | '/api/media/$'
     | '/api/push/action'
     | '/api/voice/phonemes'
+    | '/auth/boat/connect'
     | '/auth/github/callback'
     | '/auth/github/connect'
     | '/auth/github/start'
@@ -501,8 +542,11 @@ export interface FileRouteTypes {
     | '/projects'
     | '/sidekicks'
     | '/skills'
+    | '/api/hooks/$user/$hookId'
     | '/api/voice/model/$file'
+    | '/auth/boat/connect/callback'
     | '/auth/github/connect/callback'
+    | '/api/avatars/$kind/$id/$hash'
   id:
     | '__root__'
     | '/'
@@ -533,6 +577,7 @@ export interface FileRouteTypes {
     | '/api/media/$'
     | '/api/push/action'
     | '/api/voice/phonemes'
+    | '/auth/boat/connect'
     | '/auth/github/callback'
     | '/auth/github/connect'
     | '/auth/github/start'
@@ -547,8 +592,11 @@ export interface FileRouteTypes {
     | '/_app/projects/'
     | '/_app/sidekicks/'
     | '/_app/skills/'
+    | '/api/hooks/$user/$hookId'
     | '/api/voice/model/$file'
+    | '/auth/boat/connect/callback'
     | '/auth/github/connect/callback'
+    | '/api/avatars/$kind/$id/$hash'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -565,6 +613,7 @@ export interface RootRouteChildren {
   ApiMediaSplatRoute: typeof ApiMediaSplatRoute
   ApiPushActionRoute: typeof ApiPushActionRoute
   ApiVoicePhonemesRoute: typeof ApiVoicePhonemesRoute
+  AuthBoatConnectRoute: typeof AuthBoatConnectRouteWithChildren
   AuthGithubCallbackRoute: typeof AuthGithubCallbackRoute
   AuthGithubConnectRoute: typeof AuthGithubConnectRouteWithChildren
   AuthGithubStartRoute: typeof AuthGithubStartRoute
@@ -572,7 +621,9 @@ export interface RootRouteChildren {
   AuthNativeRefreshRoute: typeof AuthNativeRefreshRoute
   AuthNativeStartRoute: typeof AuthNativeStartRoute
   AuthNativeTokenRoute: typeof AuthNativeTokenRoute
+  ApiHooksUserHookIdRoute: typeof ApiHooksUserHookIdRoute
   ApiVoiceModelFileRoute: typeof ApiVoiceModelFileRoute
+  ApiAvatarsKindIdHashRoute: typeof ApiAvatarsKindIdHashRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -822,6 +873,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiVoicePhonemesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth/boat/connect': {
+      id: '/auth/boat/connect'
+      path: '/auth/boat/connect'
+      fullPath: '/auth/boat/connect'
+      preLoaderRoute: typeof AuthBoatConnectRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth/github/callback': {
       id: '/auth/github/callback'
       path: '/auth/github/callback'
@@ -871,6 +929,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthNativeTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/hooks/$user/$hookId': {
+      id: '/api/hooks/$user/$hookId'
+      path: '/api/hooks/$user/$hookId'
+      fullPath: '/api/hooks/$user/$hookId'
+      preLoaderRoute: typeof ApiHooksUserHookIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/voice/model/$file': {
       id: '/api/voice/model/$file'
       path: '/api/voice/model/$file'
@@ -878,12 +943,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiVoiceModelFileRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth/boat/connect/callback': {
+      id: '/auth/boat/connect/callback'
+      path: '/callback'
+      fullPath: '/auth/boat/connect/callback'
+      preLoaderRoute: typeof AuthBoatConnectCallbackRouteImport
+      parentRoute: typeof AuthBoatConnectRoute
+    }
     '/auth/github/connect/callback': {
       id: '/auth/github/connect/callback'
       path: '/callback'
       fullPath: '/auth/github/connect/callback'
       preLoaderRoute: typeof AuthGithubConnectCallbackRouteImport
       parentRoute: typeof AuthGithubConnectRoute
+    }
+    '/api/avatars/$kind/$id/$hash': {
+      id: '/api/avatars/$kind/$id/$hash'
+      path: '/api/avatars/$kind/$id/$hash'
+      fullPath: '/api/avatars/$kind/$id/$hash'
+      preLoaderRoute: typeof ApiAvatarsKindIdHashRouteImport
+      parentRoute: typeof rootRouteImport
     }
   }
 }
@@ -940,6 +1019,18 @@ const AppRouteChildren: AppRouteChildren = {
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
+interface AuthBoatConnectRouteChildren {
+  AuthBoatConnectCallbackRoute: typeof AuthBoatConnectCallbackRoute
+}
+
+const AuthBoatConnectRouteChildren: AuthBoatConnectRouteChildren = {
+  AuthBoatConnectCallbackRoute: AuthBoatConnectCallbackRoute,
+}
+
+const AuthBoatConnectRouteWithChildren = AuthBoatConnectRoute._addFileChildren(
+  AuthBoatConnectRouteChildren,
+)
+
 interface AuthGithubConnectRouteChildren {
   AuthGithubConnectCallbackRoute: typeof AuthGithubConnectCallbackRoute
 }
@@ -965,6 +1056,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiMediaSplatRoute: ApiMediaSplatRoute,
   ApiPushActionRoute: ApiPushActionRoute,
   ApiVoicePhonemesRoute: ApiVoicePhonemesRoute,
+  AuthBoatConnectRoute: AuthBoatConnectRouteWithChildren,
   AuthGithubCallbackRoute: AuthGithubCallbackRoute,
   AuthGithubConnectRoute: AuthGithubConnectRouteWithChildren,
   AuthGithubStartRoute: AuthGithubStartRoute,
@@ -972,7 +1064,9 @@ const rootRouteChildren: RootRouteChildren = {
   AuthNativeRefreshRoute: AuthNativeRefreshRoute,
   AuthNativeStartRoute: AuthNativeStartRoute,
   AuthNativeTokenRoute: AuthNativeTokenRoute,
+  ApiHooksUserHookIdRoute: ApiHooksUserHookIdRoute,
   ApiVoiceModelFileRoute: ApiVoiceModelFileRoute,
+  ApiAvatarsKindIdHashRoute: ApiAvatarsKindIdHashRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

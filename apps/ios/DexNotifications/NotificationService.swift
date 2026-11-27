@@ -13,24 +13,25 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
     private struct Pending {
         var content: UNMutableNotificationContent
         var deliver: (UNNotificationContent) -> Void
+        var task: Task<Void, Never>?
     }
 
     private let pending = OSAllocatedUnfairLock<Pending?>(uncheckedState: nil)
-    private var task: Task<Void, Never>?
 
     override func didReceive(_ request: UNNotificationRequest, withContentHandler contentHandler: @escaping (UNNotificationContent) -> Void) {
         guard let content = request.content.mutableCopy() as? UNMutableNotificationContent else { return contentHandler(request.content) }
         guard content.userInfo["kind"] as? String == "sidekick", let sessionId = content.userInfo["sessionId"] as? String, !sessionId.isEmpty else {
             return contentHandler(content)
         }
-        pending.withLockUnchecked { $0 = Pending(content: content, deliver: contentHandler) }
-        task = Task { [weak self] in
+        let task = Task { [weak self] in
             let sender = await Senders.sidekick(sessionId: sessionId)
             await self?.finish(from: sender, sessionId: sessionId)
         }
+        pending.withLockUnchecked { $0 = Pending(content: content, deliver: contentHandler, task: task) }
     }
 
     override func serviceExtensionTimeWillExpire() {
+        let task = pending.withLockUnchecked { $0?.task }
         task?.cancel()
         deliver { $0 }
     }
@@ -82,11 +83,15 @@ enum Senders {
 
     static func sidekick(sessionId: String) async -> Sender? {
         let share = WidgetShare.load()
+        guard let credentials = share?.credentials, !credentials.isExpired() else {
+            store.clear()
+            return nil
+        }
         // What's kept, when it has this sidekick and pictures as recent as the app's; else a fetch.
         if let kept = store.load(), let sidekick = kept.sidekicks.first(where: { $0.sessionId == sessionId }), store.picturesAreRecent(tag: share?.pictures) {
             return sender(sidekick)
         }
-        guard case .ready(let snapshot, _) = await WidgetFeed.load(store: store, credentials: share?.credentials, pictures: share?.pictures),
+        guard case .ready(let snapshot, _) = await WidgetFeed.load(store: store, credentials: credentials, pictures: share?.pictures),
               let sidekick = snapshot.sidekicks.first(where: { $0.sessionId == sessionId }) else { return nil }
         return sender(sidekick)
     }

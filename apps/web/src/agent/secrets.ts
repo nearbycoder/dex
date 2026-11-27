@@ -26,6 +26,8 @@ export interface SecretHost {
 export class SecretVault {
   /** Decrypted values by chat, loaded before a tool runs, so masking streamed output can be synchronous. */
   private readonly loaded = new Map<string, Map<string, string>>()
+  /** Longest-first entries per chat for `mask()` so shorter substrings don't break masking of longer secrets. */
+  private readonly maskOrder = new Map<string, Array<readonly [string, string]>>()
 
   constructor(private readonly host: SecretHost) {
     host.sql.exec(`CREATE TABLE IF NOT EXISTS dex_chat_secrets (
@@ -40,6 +42,7 @@ export class SecretVault {
       sessionId, name, await this.host.encrypt(value), Date.now()
     )
     this.loaded.delete(sessionId)
+    this.maskOrder.delete(sessionId)
     return name
   }
 
@@ -53,6 +56,7 @@ export class SecretVault {
   forget(sessionId: string) {
     this.host.sql.exec(`DELETE FROM dex_chat_secrets WHERE session_id = ?`, sessionId)
     this.loaded.delete(sessionId)
+    this.maskOrder.delete(sessionId)
   }
 
   /** Loads a chat's values for `fill` and `mask`. */
@@ -64,6 +68,10 @@ export class SecretVault {
     const values = new Map<string, string>()
     for (const [name, value] of decrypted) if (value) values.set(name, value)
     this.loaded.set(sessionId, values)
+    this.maskOrder.set(
+      sessionId,
+      [...values.entries()].filter(([, value]) => value.length >= 4).sort((a, b) => b[1].length - a[1].length)
+    )
     return values
   }
 
@@ -99,10 +107,10 @@ export class SecretVault {
 
   /** Text with any secret value of the chat replaced by its placeholder. Uses values loaded by `prepare`. */
   mask(sessionId: string, text: string) {
-    const values = this.loaded.get(sessionId)
-    if (!values?.size || !text) return text
+    const ordered = this.maskOrder.get(sessionId)
+    if (!ordered?.length || !text) return text
     let masked = text
-    for (const [name, value] of values) if (value.length >= 4) masked = masked.split(value).join(`{{secret:${name}}}`)
+    for (const [name, value] of ordered) masked = masked.split(value).join(`{{secret:${name}}}`)
     return masked
   }
 }
@@ -120,6 +128,8 @@ export const VM_ENV_FILE = "/home/user/.config/dex/env"
  */
 export class AccountSecrets {
   private cache: Map<string, string> | null = null
+  private maskOrder: Array<readonly [string, string]> | null = null
+  private listCache: Array<{ name: string; note: string; updatedAt: number }> | null = null
 
   constructor(private readonly host: SecretHost & { publish: (secrets: Array<{ name: string; note: string; updatedAt: number }>) => void }) {
     host.sql.exec(`CREATE TABLE IF NOT EXISTS dex_account_secrets (
@@ -127,10 +137,13 @@ export class AccountSecrets {
   }
 
   list() {
-    return this.host.sql
-      .exec<{ name: string; note: string; updated_at: number }>(`SELECT name, note, updated_at FROM dex_account_secrets ORDER BY name`)
-      .toArray()
-      .map((row) => ({ name: row.name, note: row.note, updatedAt: row.updated_at }))
+    if (!this.listCache) {
+      this.listCache = this.host.sql
+        .exec<{ name: string; note: string; updated_at: number }>(`SELECT name, note, updated_at FROM dex_account_secrets ORDER BY name`)
+        .toArray()
+        .map((row) => ({ name: row.name, note: row.note, updatedAt: row.updated_at }))
+    }
+    return this.listCache
   }
 
   refresh() {
@@ -149,6 +162,8 @@ export class AccountSecrets {
       String(this.version() + 1)
     )
     this.cache = null
+    this.maskOrder = null
+    this.listCache = null
     this.refresh()
   }
 
@@ -185,6 +200,7 @@ export class AccountSecrets {
     const values = new Map<string, string>()
     for (const [name, value] of decrypted) if (value) values.set(name, value)
     this.cache = values
+    this.maskOrder = [...values.entries()].filter(([, value]) => value.length >= 4).sort((a, b) => b[1].length - a[1].length)
     return values
   }
 
@@ -196,9 +212,9 @@ export class AccountSecrets {
 
   /** Text with any account secret value replaced by `$NAME`. Uses values loaded by `load`. */
   mask(text: string) {
-    if (!this.cache?.size || !text) return text
+    if (!this.maskOrder?.length || !text) return text
     let masked = text
-    for (const [name, value] of this.cache) if (value.length >= 4) masked = masked.split(value).join(`$${name}`)
+    for (const [name, value] of this.maskOrder) masked = masked.split(value).join(`$${name}`)
     return masked
   }
 }

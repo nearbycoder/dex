@@ -3,12 +3,40 @@ export type McpAuth = "none" | "headers" | "oauth"
 
 export type McpTransport = "auto" | "streamable-http" | "sse"
 
+/** When a chat needs your confirmation before calling a tool on this MCP server. */
+export type McpApproval = "auto" | "writes" | "always"
+
+export const MCP_APPROVAL_LABEL: Record<McpApproval, string> = {
+  auto: "Auto-allow all",
+  writes: "Ask before writes",
+  always: "Always ask"
+}
+
 /** The connection's state, as the Agents SDK reports it, or `disconnected` when it holds no connection. */
 export type McpStatus = "connecting" | "authenticating" | "connected" | "discovering" | "ready" | "failed" | "disconnected"
+
+export interface McpToolAnnotations {
+  readonly readOnlyHint?: boolean
+  readonly destructiveHint?: boolean
+  readonly idempotentHint?: boolean
+}
 
 export interface McpToolInfo {
   readonly name: string
   readonly description: string
+  readonly annotations?: McpToolAnnotations
+}
+
+export interface McpResourceInfo {
+  readonly uri: string
+  readonly name: string
+  readonly description?: string
+  readonly mimeType?: string
+}
+
+export interface McpPromptInfo {
+  readonly name: string
+  readonly description?: string
 }
 
 /** A connected (or connecting) MCP server, as the UI sees it. Header values never leave the agent. */
@@ -26,9 +54,17 @@ export interface McpServerInfo {
   readonly defaultOn: boolean
   /** Tool names in chats are `<prefix>__<tool>`. */
   readonly prefix: string
+  /** Approval policy for tool calls on this server (defaults to `"auto"` on older servers). */
+  readonly approval?: McpApproval
+  /** Load this server's tool schemas on demand via `tool_search` (saves prompt tokens when many servers are attached). */
+  readonly deferTools?: boolean
   readonly status: McpStatus
   readonly error: string | null
   readonly tools: ReadonlyArray<McpToolInfo>
+  /** MCP resources advertised by the server (readable by the model and `@`-mentionable in chats). */
+  readonly resources?: ReadonlyArray<McpResourceInfo>
+  /** MCP prompt templates advertised by the server. */
+  readonly prompts?: ReadonlyArray<McpPromptInfo>
   readonly createdAt: number
   readonly updatedAt: number
 }
@@ -48,6 +84,8 @@ export interface McpServerDraft {
    */
   readonly local?: { readonly command: string; readonly env?: ReadonlyArray<{ readonly name: string; readonly value: string }> }
   readonly defaultOn: boolean
+  readonly approval?: McpApproval
+  readonly deferTools?: boolean
 }
 
 /** `authUrl`: send the user there to sign in; the server is ready once they come back. */

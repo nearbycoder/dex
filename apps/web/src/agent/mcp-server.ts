@@ -77,7 +77,12 @@ async function handleOne(message: unknown, access: AccessCenter, token: AccessTo
 export async function handleMcpBody(body: unknown, access: AccessCenter, token: AccessToken) {
   if (Array.isArray(body)) {
     if (body.length > 20) return fail(null, -32600, "Batch too large")
-    const responses = (await Promise.all(body.map((message) => handleOne(message, access, token)))).filter((response) => response !== null)
+    // Sequential so per-minute rate limits and audit counts are enforced accurately across batch entries.
+    const responses: Array<NonNullable<Awaited<ReturnType<typeof handleOne>>>> = []
+    for (const message of body) {
+      const response = await handleOne(message, access, token)
+      if (response !== null) responses.push(response)
+    }
     return responses.length ? responses : null
   }
   return handleOne(body, access, token)

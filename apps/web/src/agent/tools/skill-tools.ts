@@ -1,4 +1,4 @@
-import { Type } from "@earendil-works/pi-ai"
+import { Type } from "typebox"
 import { defineTool } from "@earendil-works/pi-durable"
 
 const text = (value: string) => [{ type: "text" as const, text: value }]

@@ -209,14 +209,51 @@ export interface ModelCatalog {
   readonly models: ReadonlyArray<DexModel>
 }
 
-/** Every model that can run now. The same array is updated in place by `setModelCatalog`, so importers see changes. */
+/** An immutable, per-agent view of the model catalog so multiple Durable Objects in one Worker isolate never overwrite each other. */
+export interface ModelCatalogView {
+  readonly models: ReadonlyArray<DexModel>
+  readonly modelsOf: (provider: ModelProvider) => DexModel[]
+  readonly findModel: (id: string) => DexModel | undefined
+  readonly defaultModelId: () => string
+  readonly providerOf: (id: string) => ModelProvider
+  readonly counterpart: (id: string, provider: ModelProvider) => DexModel | undefined
+  readonly usableModel: (id: string, connected: Readonly<Record<ModelProvider, boolean>>) => string
+}
+
+const providerFallback = (id: string): ModelProvider =>
+  id.startsWith("opencode-go/") ? "opencode-go" : id.startsWith("chatgpt/") ? "chatgpt" : id.startsWith("commandcode/") ? "commandcode" : id.startsWith("openrouter/") ? "openrouter" : "clinepass"
+
+export function createModelCatalog(list: ReadonlyArray<DexModel> = BUILT_IN_MODELS): ModelCatalogView {
+  const filtered = list.filter((model) => model.maker in MODEL_MAKERS && model.provider in MODEL_PROVIDERS)
+  const models: ReadonlyArray<DexModel> = filtered.length > 0 ? filtered : BUILT_IN_MODELS
+  const map = new Map<string, DexModel>(models.map((model) => [model.id, model]))
+  const find = (id: string) => map.get(id)
+  const byProvider = (provider: ModelProvider) => models.filter((model) => model.provider === provider)
+  const defId = () => (find(DEFAULT_MODEL_ID) ? DEFAULT_MODEL_ID : (models[0]?.id ?? DEFAULT_MODEL_ID))
+  const provOf = (id: string): ModelProvider => find(id)?.provider ?? providerFallback(id)
+  const matchOther = (id: string, provider: ModelProvider) => {
+    const model = find(id)
+    if (!model || model.provider === provider) return model
+    const slug = model.apiId.replace(/^cline-pass\//, "")
+    return models.find((candidate) => candidate.provider === provider && candidate.apiId.replace(/^cline-pass\//, "") === slug)
+  }
+  const usable = (id: string, connected: Readonly<Record<ModelProvider, boolean>>): string => {
+    if (connected[provOf(id)]) return id
+    const other = (Object.keys(connected) as ModelProvider[]).find((provider) => connected[provider])
+    if (!other) return id
+    return (matchOther(id, other) ?? models.find((model) => model.provider === other))?.id ?? id
+  }
+  return { models, modelsOf: byProvider, findModel: find, defaultModelId: defId, providerOf: provOf, counterpart: matchOther, usableModel: usable }
+}
+
+/** Every model that can run now (browser client singleton). Updated in place by `setModelCatalog`. */
 const current: DexModel[] = [...BUILT_IN_MODELS]
 const byId = new Map<string, DexModel>(current.map((model) => [model.id, model]))
 let currentUpdatedAt = 0
 export const MODELS: ReadonlyArray<DexModel> = current
 
 /**
- * Installs a refreshed list, unless one checked more recently is already in place (agents can share a runtime).
+ * Installs a refreshed list on the browser client, unless one checked more recently is already in place.
  * Models from a maker or provider this build doesn't know (a newer agent's list in an older app) are left out.
  */
 export function setModelCatalog(catalog: Pick<ModelCatalog, "models" | "updatedAt">): boolean {
@@ -252,9 +289,7 @@ export const findModel = (id: string) => byId.get(id)
 export const defaultModelId = () => (findModel(DEFAULT_MODEL_ID) ? DEFAULT_MODEL_ID : (MODELS[0]?.id ?? DEFAULT_MODEL_ID))
 
 /** Which subscription a chat's model runs on (a stored id that's no longer listed goes by its prefix, else ClinePass). */
-export const providerOf = (id: string): ModelProvider =>
-  findModel(id)?.provider ??
-  (id.startsWith("opencode-go/") ? "opencode-go" : id.startsWith("chatgpt/") ? "chatgpt" : id.startsWith("commandcode/") ? "commandcode" : id.startsWith("openrouter/") ? "openrouter" : "clinepass")
+export const providerOf = (id: string): ModelProvider => findModel(id)?.provider ?? providerFallback(id)
 
 /** The same model on the other provider, when it offers it (switching providers keeps a chat's model). */
 export const counterpart = (id: string, provider: ModelProvider) => {

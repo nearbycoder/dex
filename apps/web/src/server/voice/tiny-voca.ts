@@ -15,7 +15,11 @@ const MAX_TOKENS = 512 - 12
 
 /** A file from the pinned revision. It never changes, so Cloudflare's cache keeps it. */
 export const fetchModelFile = (path: string) =>
-  fetch(`${BASE}/${path}`, { headers: { "user-agent": "dex/1.0" }, cf: { cacheTtl: 365 * 86_400, cacheEverything: true } })
+  fetch(`${BASE}/${path}`, {
+    headers: { "user-agent": "dex/1.0" },
+    signal: AbortSignal.timeout(30_000),
+    cf: { cacheTtl: 365 * 86_400, cacheEverything: true }
+  })
 
 let dizione: Promise<Dizione> | undefined
 
@@ -23,7 +27,10 @@ let dizione: Promise<Dizione> | undefined
 const phonemizer = () => {
   dizione ??= loadDizione(async (name) => {
     const response = await fetchModelFile(`phonemizer/${name}`)
-    if (!response.ok) throw new Error(`tiny-voca phonemizer/${name}: ${response.status}`)
+    if (!response.ok) {
+      void response.body?.cancel()
+      throw new Error(`tiny-voca phonemizer/${name}: ${response.status}`)
+    }
     return new Uint8Array(await response.arrayBuffer())
   }).catch((error: unknown) => {
     dizione = undefined

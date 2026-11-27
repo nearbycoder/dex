@@ -123,6 +123,9 @@ struct SignedInView: View {
             if let url = Notifications.shared.takePending() { _ = router.handle(url) }
         }
         .onDisappear { client?.stop() }
+        .onChange(of: model.credentials) { _, fresh in
+            if let fresh { client?.updateCredentials(fresh) }
+        }
         .onChange(of: scenePhase) { _, phase in client?.setVisible(phase == .active) }
         // dex:// links: widgets, notifications, other apps.
         .onOpenURL { url in _ = router.handle(url) }

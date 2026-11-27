@@ -159,6 +159,10 @@ internal object McpSignIns {
             }
         }
     }
+    fun clear() {
+        waiting.clear()
+        outcome = null
+    }
 }
 
 /** An editor's error carried over to the server it created (saved, but it couldn't connect). */
@@ -166,12 +170,23 @@ private object McpEditorCarry {
     private val errors = mutableMapOf<String, String>()
     fun put(id: String, error: String) { errors[id] = error }
     fun take(id: String): String? = errors.remove(id)
+    fun clear() { errors.clear() }
+}
+
+internal fun clearMcpUiState() {
+    McpSignIns.clear()
+    McpEditorCarry.clear()
 }
 
 /** Opens a connect result's sign-in page, if it has one. */
 private fun followConnect(result: McpConnectResult, fallbackId: String, server: McpServerInfo?, openInBrowser: (String) -> Unit): Boolean {
     val url = result.authUrl ?: return false
     if (!result.ok) return false
+    val parsed = runCatching { android.net.Uri.parse(url) }.getOrNull() ?: return false
+    val scheme = parsed.scheme?.lowercase()
+    val host = parsed.host?.lowercase()
+    val allowed = scheme == "https" || (scheme == "http" && (host == "localhost" || host == "127.0.0.1" || host == "::1"))
+    if (!allowed) return false
     McpSignIns.started(result.id ?: fallbackId, authenticating = server == null || server.status == McpStatus.Authenticating)
     openInBrowser(url)
     return true

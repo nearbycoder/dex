@@ -22,7 +22,8 @@ const blank = (model: string, thinking: AgentDraft["thinking"]): AgentDraft => (
   starter: "",
   model,
   thinking,
-  mcpServers: []
+  mcpServers: [],
+  maxTurns: null
 })
 
 const field = "w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-base text-zinc-100 placeholder:text-zinc-600 focus:border-emerald-600 focus:outline-none md:text-sm"
@@ -236,6 +237,27 @@ function AgentEditor() {
               onChange={(event) => update({ starter: event.target.value })}
               placeholder="Review https://github.com/OWNER/REPO/pull/"
               className={field}
+            />
+          </Field>
+
+          <Field
+            label="Max tool turns per run"
+            hint="Optional guardrail capping how many tool-calling turns this agent can take per reply (1–100). Leave empty for no limit."
+          >
+            <input
+              type="number"
+              min={1}
+              max={100}
+              inputMode="numeric"
+              value={draft.maxTurns ?? ""}
+              onChange={(event) => {
+                const raw = event.target.value.trim()
+                if (!raw) return update({ maxTurns: null })
+                const parsed = Number.parseInt(raw, 10)
+                if (Number.isFinite(parsed)) update({ maxTurns: Math.min(100, Math.max(1, parsed)) })
+              }}
+              placeholder="Unlimited"
+              className={`${field} max-w-44`}
             />
           </Field>
 

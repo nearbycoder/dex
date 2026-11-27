@@ -178,14 +178,53 @@ object Voices {
 
     /** The reply after your latest message, as a call reads it: its text so far, and whether it's over (voice-call.tsx). */
     fun latestReply(transcript: TranscriptState): CallReply? {
-        val items = displayItems(transcript)
-        val lastUser = items.indexOfLast { it is DisplayItem.User }
-        val reply = items.drop(lastUser + 1).firstOrNull { it is DisplayItem.Assistant } as? DisplayItem.Assistant ?: return null
-        val text = reply.messages
+        // Scan only entries after the last user message (instead of rebuilding DisplayItems for the whole history on every streamed token).
+        var startEntry = 0
+        var startMessage = 0
+        outer@ for (entryIndex in transcript.entries.indices.reversed()) {
+            val entry = transcript.entries[entryIndex]
+            if (entry.kind == "pi.reset" || entry.kind == "pi.compaction") continue
+            val models = entry.model ?: continue
+            for (msgIndex in models.indices.reversed()) {
+                if (models[msgIndex] is UserMessage) {
+                    startEntry = entryIndex
+                    startMessage = msgIndex + 1
+                    break@outer
+                }
+            }
+        }
+        val messages = ArrayList<AssistantMessage>(4)
+        var firstId: String? = null
+        var dividerSeen = false
+        for (entryIndex in startEntry until transcript.entries.size) {
+            val entry = transcript.entries[entryIndex]
+            if (entry.kind == "pi.reset" || entry.kind == "pi.compaction") {
+                if (messages.isNotEmpty()) { dividerSeen = true; break }
+                continue
+            }
+            val models = entry.model ?: continue
+            val from = if (entryIndex == startEntry) startMessage else 0
+            for (msgIndex in from until models.size) {
+                val msg = models[msgIndex]
+                if (msg is AssistantMessage) {
+                    if (firstId == null) firstId = "${entry.id}:$msgIndex"
+                    messages += msg
+                }
+            }
+        }
+        var isStreaming = false
+        val streaming = transcript.streaming
+        if (streaming != null && !dividerSeen) {
+            if (firstId == null) firstId = "streaming"
+            messages += streaming
+            isStreaming = true
+        }
+        if (messages.isEmpty()) return null
+        val text = messages
             .map { message -> message.content.filterIsInstance<TextBlock>().joinToString("") { it.text } }
             .filter { it.isNotEmpty() }
             .joinToString("\n\n")
-        return CallReply(reply.messages.firstOrNull()?.timestamp?.toString() ?: reply.id, text, !transcript.running && !reply.streaming)
+        return CallReply(messages.first().timestamp.toString(), text, !transcript.running && !isStreaming)
     }
 }
 

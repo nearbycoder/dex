@@ -6,6 +6,7 @@ import ai.onnxruntime.OrtSession
 import dev.trydex.core.model.PhonemesResponse
 import dev.trydex.core.model.Utterance
 import dev.trydex.core.model.Voice
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -25,15 +26,14 @@ class TinyVocaModel(file: File) : AutoCloseable {
 
     fun synthesize(utterance: Utterance, voice: Voice, speed: Float = 1f): FloatArray {
         val count = utterance.ids.size.toLong()
-        val inputs = mapOf(
-            "tokens" to OnnxTensor.createTensor(environment, LongBuffer.wrap(utterance.ids.toLongArray()), longArrayOf(1, count)),
-            "stress" to OnnxTensor.createTensor(environment, LongBuffer.wrap(utterance.stress.toLongArray()), longArrayOf(1, count)),
-            "voice" to OnnxTensor.createTensor(environment, LongBuffer.wrap(longArrayOf(voice.index.toLong())), longArrayOf(1)),
-            "speed" to scalar(speed),
-            "pitch_shift" to scalar(0f),
-            "pitch_range" to scalar(1f),
-        )
+        val inputs = LinkedHashMap<String, OnnxTensor>(6)
         try {
+            inputs["tokens"] = OnnxTensor.createTensor(environment, LongBuffer.wrap(utterance.ids.toLongArray()), longArrayOf(1, count))
+            inputs["stress"] = OnnxTensor.createTensor(environment, LongBuffer.wrap(utterance.stress.toLongArray()), longArrayOf(1, count))
+            inputs["voice"] = OnnxTensor.createTensor(environment, LongBuffer.wrap(longArrayOf(voice.index.toLong())), longArrayOf(1))
+            inputs["speed"] = scalar(speed)
+            inputs["pitch_shift"] = scalar(0f)
+            inputs["pitch_range"] = scalar(1f)
             session.run(inputs).use { result ->
                 val audio = result.get("audio").orElseThrow { IllegalStateException("The voice model gave no audio.") } as OnnxTensor
                 val buffer = audio.floatBuffer
@@ -82,6 +82,8 @@ class TinyVoca(
             loaded = withContext(Dispatchers.Default) {
                 try {
                     TinyVocaModel(file)
+                } catch (error: CancellationException) {
+                    throw error
                 } catch (error: Exception) {
                     // A damaged file goes, so the next call downloads it again.
                     file.delete()

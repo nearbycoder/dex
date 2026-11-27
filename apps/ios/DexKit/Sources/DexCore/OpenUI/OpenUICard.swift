@@ -223,8 +223,39 @@ public final class OpenUICard {
         error = nil
         do {
             let fields = document.passwordFields
-            let state = fields.isEmpty ? event.formState : try await Self.withoutSecrets(event.formState ?? .null, fields: fields, store: host.storeSecret)
-            try await host.send(Self.modelMessage(event, formState: state))
+            if fields.isEmpty {
+                try await host.send(Self.modelMessage(event, formState: event.formState))
+                return
+            }
+            var replacements: [(secret: String, placeholder: String)] = []
+            let storeAndTrack: (String, String) async throws -> String = { field, value in
+                let name = try await self.host.storeSecret(field, value)
+                replacements.append((value, "{{secret:\(name)}}"))
+                return name
+            }
+            let state = try await Self.withoutSecrets(event.formState ?? .null, fields: fields, store: storeAndTrack)
+            var cleanedEvent = event
+            if !replacements.isEmpty {
+                let sorted = replacements.sorted { $0.secret.count > $1.secret.count }
+                func scrub(_ text: String) -> String {
+                    sorted.reduce(text) { acc, pair in acc.replacingOccurrences(of: pair.secret, with: pair.placeholder) }
+                }
+                func scrubValue(_ value: JSONValue) -> JSONValue {
+                    switch value {
+                    case .string(let s): .string(scrub(s))
+                    case .array(let items): .array(items.map(scrubValue))
+                    case .object(let object): .object(object.mapValues(scrubValue))
+                    default: value
+                    }
+                }
+                cleanedEvent.humanFriendlyMessage = scrub(cleanedEvent.humanFriendlyMessage)
+                if let context = cleanedEvent.params["context"] {
+                    cleanedEvent.params["context"] = scrubValue(context)
+                }
+            } else if let context = cleanedEvent.params["context"] {
+                cleanedEvent.params["context"] = try await Self.withoutSecrets(context, fields: fields, store: storeAndTrack)
+            }
+            try await host.send(Self.modelMessage(cleanedEvent, formState: state))
         } catch {
             self.error = error.localizedDescription
         }

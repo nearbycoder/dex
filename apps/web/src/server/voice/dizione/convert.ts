@@ -28,10 +28,30 @@ export const isArpabet = (symbols: readonly string[]) => symbols.length > 0 && s
 
 const vowelLetters = (run: string) => [...run].filter((c) => VOWEL_LETTERS.has(c)).join("")
 
+const FROM_TEXT_WS = /[\t\n\v\f\r\x1c-\x1f \x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/u
+
+/** Fast path for pre-validated single-space lexicon entries (e.g. `"h ə l ˈoʊ"`). */
+export function fromLexiconText(text: string): Phones {
+  const phones: [string, number][] = []
+  let start = 0
+  const n = text.length
+  while (start < n) {
+    let end = text.indexOf(" ", start)
+    if (end < 0) end = n
+    if (end > start) {
+      const ch = text[start]!
+      const stress = ch === "ˈ" ? 1 : ch === "ˌ" ? 2 : 0
+      phones.push([stress ? text.slice(start + 1, end) : text.slice(start, end), stress])
+    }
+    start = end + 1
+  }
+  return phones
+}
+
 /** `"h ə l ˈoʊ"` -> phones; raises on a symbol outside the inventory. */
 export function fromText(text: string): Phones {
   const phones: [string, number][] = []
-  for (const unit of text.split(/[\t\n\v\f\r\x1c-\x1f \x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/u)) {
+  for (const unit of text.split(FROM_TEXT_WS)) {
     if (!unit) continue
     const stress = unit[0] === "ˈ" ? 1 : unit[0] === "ˌ" ? 2 : 0
     const phone = stress ? unit.slice(1) : unit

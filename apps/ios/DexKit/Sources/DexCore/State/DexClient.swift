@@ -6,11 +6,19 @@ import Observation
 @MainActor
 @Observable
 public final class DexClient {
-    public let credentials: Credentials?
+    public private(set) var credentials: Credentials?
     public let connection: AgentConnection
     public let cache: LocalCache?
     public var viewer: Viewer? { credentials?.user }
     public var server: URL? { credentials?.server }
+
+    /// Updates the session credentials in place after a token refresh so live HTTP/upload calls and future reconnects
+    /// use the new token without tearing down the window.
+    public func updateCredentials(_ fresh: Credentials) {
+        guard credentials == nil || (credentials?.user.id == fresh.user.id && credentials?.server == fresh.server) else { return }
+        credentials = fresh
+        if let wsFactory = transportFactory as? WebSocketTransportFactory { wsFactory.updateToken(fresh.token) }
+    }
 
     /// The latest synced state, or the copy kept on the device until the socket connects.
     public var state: DexState? { connection.state }
@@ -21,6 +29,7 @@ public final class DexClient {
     /// A message for the user that no screen claimed (shown as a banner).
     public var notice: String?
 
+    @ObservationIgnored private let transportFactory: AgentTransportFactory
     @ObservationIgnored private var subscriptions: [AgentConnection.Subscription] = []
     @ObservationIgnored private var visible = true
     @ObservationIgnored private var chatOnScreen = true
@@ -40,6 +49,7 @@ public final class DexClient {
 
     public init(credentials: Credentials?, factory: AgentTransportFactory, cache: LocalCache?) {
         self.credentials = credentials
+        self.transportFactory = factory
         self.cache = cache
         let userId = credentials?.user.id
         let cached = userId.flatMap { cache?.loadState(userId: $0) }
@@ -50,7 +60,14 @@ public final class DexClient {
     }
 
     public func start() { connection.start() }
-    public func stop() { connection.stop() }
+    public func stop() {
+        saveStateTask?.cancel()
+        saveStateTask = nil
+        for feed in feeds.values { feed.cancelPendingWrites() }
+        activeChat?.deactivate()
+        activeChat = nil
+        connection.stop()
+    }
 
     private func connected() {
         reportPresence()
@@ -295,6 +312,11 @@ public final class ChatFeed {
         client?.connection.send(.unsubscribe)
     }
 
+    func cancelPendingWrites() {
+        saveTask?.cancel()
+        saveTask = nil
+    }
+
     /// Applies a message about this chat (also used by tests).
     public func receive(_ message: ServerMessage) {
         transcript.apply(message)
@@ -358,6 +380,7 @@ public final class ChatFeed {
     }
 
     public func abort() async throws { try await client?.run("abort", .string(sessionId)) }
+    public func continueSession() async throws { try await client?.run("continueSession", .string(sessionId)) }
     public func editQueued(_ id: String, text: String) async throws { try await client?.run("editQueued", .string(sessionId), .string(id), .string(text)) }
     public func removeQueued(_ id: String) async throws { try await client?.run("removeQueued", .string(sessionId), .string(id)) }
     public func moveQueued(_ id: String, to index: Int) async throws { try await client?.run("moveQueued", .string(sessionId), .string(id), .number(Double(index))) }

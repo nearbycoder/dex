@@ -288,7 +288,12 @@ export const sameLook = (a: SidekickLook | null | undefined, b: SidekickLook | n
   a!.shape === b!.shape &&
   a!.skin === b!.skin &&
   lookMaterial(a) === lookMaterial(b) &&
-  (a!.shape !== "custom" || a!.custom?.path === b!.custom?.path)
+  (a!.shape !== "custom" ||
+    (a!.custom?.path === b!.custom?.path &&
+      a!.custom?.eyes.x === b!.custom?.eyes.x &&
+      a!.custom?.eyes.y === b!.custom?.eyes.y &&
+      a!.custom?.eyes.spacing === b!.custom?.eyes.spacing &&
+      a!.custom?.eyes.scale === b!.custom?.eyes.scale))
 
 export const randomLook = (random = Math.random): SidekickLook => {
   const any = <T>(options: ReadonlyArray<T>) => options[Math.floor(random() * options.length)]!

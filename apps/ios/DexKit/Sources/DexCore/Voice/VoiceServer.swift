@@ -90,7 +90,14 @@ public struct VoiceServer: Sendable {
         var request = DexHTTP.request(server.appending(path: "api/voice/phonemes"), token: token)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(["text": String(text.utf16.prefix(VoiceText.maxSpokenCharacters)) ?? text])
+        let clipped: String = {
+            let utf16 = text.utf16
+            guard utf16.count > VoiceText.maxSpokenCharacters else { return text }
+            var end = utf16.index(utf16.startIndex, offsetBy: VoiceText.maxSpokenCharacters)
+            if end > utf16.startIndex, end.samePosition(in: text) == nil { end = utf16.index(before: end) }
+            return end.samePosition(in: text).map { String(text[..<$0]) } ?? String(text.prefix(VoiceText.maxSpokenCharacters))
+        }()
+        request.httpBody = try JSONEncoder().encode(["text": clipped])
         var attempt = 0
         while true {
             let (body, response): (Data, URLResponse)

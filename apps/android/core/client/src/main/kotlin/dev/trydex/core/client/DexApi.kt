@@ -111,6 +111,7 @@ class DexApi(private val rpc: AgentRpc) {
     suspend fun regenerateSessionTitle(sessionId: String): String = typed(String.serializer(), "regenerateSessionTitle", sessionId, timeout = 60_000)
     suspend fun deleteSession(sessionId: String) { raw("deleteSession", sessionId) }
     suspend fun abort(sessionId: String) { raw("abort", sessionId) }
+    suspend fun continueSession(sessionId: String) { raw("continueSession", sessionId) }
     suspend fun setSessionMuted(sessionId: String, muted: Boolean) { raw("setSessionMuted", sessionId, muted) }
 
     /** You've seen this chat's latest (presence does it too; this is the backup when a chat opens). */

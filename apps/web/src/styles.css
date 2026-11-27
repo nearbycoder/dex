@@ -154,7 +154,8 @@ label,
   .dex-sidebar {
     overflow-y: auto;
   }
-  .dex-sidebar > nav {
+  .dex-sidebar > div:has(> nav),
+  .dex-sidebar nav {
     flex: none;
     overflow: visible;
   }
@@ -181,18 +182,24 @@ button:not(.w-full, [data-no-press]):active:not(:disabled) {
   transform: scale(0.97);
 }
 
-/* Skeleton bones (client/components/skeleton.tsx): a soft sweep of light while content loads. */
+/* Skeleton bones (client/components/skeleton.tsx): a GPU-composited sweep of light while content loads. */
 .dex-bone {
-  background: linear-gradient(90deg, rgb(39 39 42 / 0.75) 30%, rgb(63 63 70 / 0.75) 50%, rgb(39 39 42 / 0.75) 70%);
-  background-size: 300% 100%;
+  position: relative;
+  overflow: hidden;
+  background: rgb(39 39 42 / 0.75);
+}
+.dex-bone::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 20%, rgb(63 63 70 / 0.75) 50%, transparent 80%);
+  transform: translateX(-100%);
   animation: dex-shimmer 1.6s ease-in-out infinite;
+  will-change: transform;
 }
 @keyframes dex-shimmer {
-  from {
-    background-position: 100% 0;
-  }
   to {
-    background-position: 0 0;
+    transform: translateX(100%);
   }
 }
 

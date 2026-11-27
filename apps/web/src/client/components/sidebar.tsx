@@ -17,13 +17,14 @@ import {
   PanelLeftClose,
   Plug,
   Plus,
+  Search,
   Settings,
   Sparkles,
   SlidersHorizontal,
   X
 } from "lucide-react"
-import { type MouseEvent, type ReactNode, type RefObject, type TouchEvent, useEffect, useMemo, useRef, useState } from "react"
-import { forgetSavedState, useDex } from "~/client/lib/dex"
+import { memo, type MouseEvent, type ReactNode, type RefObject, type TouchEvent, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { forgetSavedState, shallowEqual, useDexActions, useDexConnected, useDexSelector } from "~/client/lib/dex"
 import { haptic } from "~/client/lib/haptics"
 import { timeAgo } from "~/client/lib/format"
 import { useNav } from "~/client/lib/mobile-nav"
@@ -31,15 +32,16 @@ import { UpdateButton } from "~/client/lib/updates"
 import { findModel } from "~/shared/models"
 import { AGENT_COLORS } from "~/shared/agents"
 import type { CharacterProfile } from "~/shared/characters"
-import { connectedProviders, type SessionMeta } from "~/shared/protocol"
+import { connectedProviders, type DexState, type SessionMeta } from "~/shared/protocol"
 import { AgentAvatar, CharacterAvatar } from "./agent-avatar"
+import { openCommandPalette } from "./command-palette"
 import { mcpNeedsAttention } from "./mcp-picker"
 import { ModelLogo } from "./model-logo"
 import { inboxState, SessionMenu, type SessionMenuHandle, snoozedLabel, useNaming } from "./session-menu"
 import { SelectionBar } from "./selection-bar"
 import { ChatListSkeleton } from "./skeleton"
 import { SpaceGlyph } from "./space-panel"
-import { type SpaceProfile, spaceThreads, threadStatus } from "~/shared/spaces"
+import { type SpaceProfile, threadStatus } from "~/shared/spaces"
 import { UsageGlanceLink, UsageSettingsIcon } from "./usage-glance"
 import { useNow } from "./vm-status"
 
@@ -76,10 +78,37 @@ function useUnreadBadge(count: number) {
 
 export function Sidebar() {
   const { drawerOpen: open, closeDrawer: onClose, collapsed, toggleCollapsed, holdOpen } = useNav()
-  const { state, viewer, connected } = useDex()
+  const { viewer } = useDexActions()
+  const connected = useDexConnected()
+  const hasState = useDexSelector((s) => Boolean(s))
+  const sessions = useDexSelector((s) => s?.sessions)
+  const agents = useDexSelector((s) => s?.agents)
+  const projects = useDexSelector((s) => s?.projects)
+  const characters = useDexSelector((s) => s?.characters)
+  const spaces = useDexSelector((s) => s?.spaces)
+  const pending = useDexSelector((s) => s?.access.pending)
+  const vmConfigured = useDexSelector((s) => Boolean(s?.vmConfigured))
+  const vmSummary = useDexSelector(
+    (s) => ({
+      total: s?.vms.length ?? 0,
+      running: s?.vms.filter((vm) => vm.status === "running").length ?? 0,
+      changing: s?.vms.some((vm) => vm.status === "starting" || vm.status === "stopping") ?? false
+    }),
+    shallowEqual
+  )
+  const mcpAttention = useDexSelector((s) => s?.mcp.some(mcpNeedsAttention) ?? false)
+  const clineMissing = useDexSelector((s) => (s ? !Object.values(connectedProviders(s)).some(Boolean) : false))
   // A space's threads report to its chat, so only the space's own chat counts toward unread.
-  const coordinators = new Set(state?.spaces?.map((space) => space.sessionId))
-  useUnreadBadge(state?.sessions.filter((session) => session.unread && (!session.spaceId || coordinators.has(session.id))).length ?? 0)
+  const unreadCount = useMemo(() => {
+    if (!sessions) return 0
+    const coordinators = new Set(spaces?.map((space) => space.sessionId))
+    let count = 0
+    for (const session of sessions) {
+      if (session.unread && (!session.spaceId || coordinators.has(session.id))) count++
+    }
+    return count
+  }, [spaces, sessions])
+  useUnreadBadge(unreadCount)
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const params = useParams({ strict: false })
@@ -87,21 +116,22 @@ export function Sidebar() {
   const settingsMode = inSettingsArea(pathname)
   const now = useNow(30_000)
 
-  const agentsById = useMemo(() => new Map(state?.agents.map((agent) => [agent.id, agent])), [state?.agents])
-  const projectsById = useMemo(() => new Map(state?.projects.map((project) => [project.id, project])), [state?.projects])
+  const agentsById = useMemo(() => new Map(agents?.map((agent) => [agent.id, agent])), [agents])
+  const projectsById = useMemo(() => new Map(projects?.map((project) => [project.id, project])), [projects])
+  const inboxSessions = useMemo(
+    () => sessions?.filter((session) => !session.characterId && !session.spaceId) ?? [],
+    [sessions]
+  )
 
   // Where "Chats" goes back to: the chat you were last in.
   const lastChat = useRef<string | null>(null)
   if (activeId) lastChat.current = activeId
 
   const chatList = useRef<HTMLElement>(null)
-  const selection = useChatSelection(chatList, activeId, state?.sessions, settingsMode)
+  const selection = useChatSelection(chatList, activeId, sessions, settingsMode)
 
-  const running = state?.vms.filter((vm) => vm.status === "running").length ?? 0
-  const vmChanging = state?.vms.some((vm) => vm.status === "starting" || vm.status === "stopping") ?? false
-  const mcpAttention = state?.mcp.some(mcpNeedsAttention) ?? false
-  // No model subscription at all: nothing can answer.
-  const clineMissing = state ? !Object.values(connectedProviders(state)).some(Boolean) : false
+  const running = vmSummary.running
+  const vmChanging = vmSummary.changing
 
   // Switching sidebars keeps the phone drawer open, so you can go on from there.
   const openSettings = () => {
@@ -110,11 +140,11 @@ export function Sidebar() {
   }
   const backToChats = () => {
     holdOpen()
-    const chat = lastChat.current && state?.sessions.some((session) => session.id === lastChat.current) ? lastChat.current : null
+    const chat = lastChat.current && sessions?.some((session) => session.id === lastChat.current) ? lastChat.current : null
     void (chat ? navigate({ to: "/chat/$sessionId", params: { sessionId: chat } }) : navigate({ to: "/chat" }))
   }
 
-  const waiting = state?.access.pending.filter((action) => action.status === "pending" && Date.now() - action.createdAt < 3_600_000).length ?? 0
+  const waiting = pending?.filter((action) => action.status === "pending" && Date.now() - action.createdAt < 3_600_000).length ?? 0
 
   const settingsLinks: Array<{ to: string; label: string; icon: ReactNode; hint?: ReactNode; show?: boolean }> = [
     {
@@ -128,18 +158,18 @@ export function Sidebar() {
       to: "/machine",
       label: "Machines",
       icon: <Monitor className="size-4" />,
-      show: state?.vmConfigured ?? false,
+      show: vmConfigured,
       hint: (running > 0 || vmChanging) && (
         <Hint
           count={running}
           dot={vmChanging ? "animate-pulse bg-amber-500" : running ? "bg-emerald-500" : "bg-zinc-700"}
-          title={`${running} running of ${state?.vms.length ?? 0}`}
+          title={`${running} running of ${vmSummary.total}`}
         />
       )
     },
     { to: "/projects", label: "Projects", icon: <FolderGit2 className="size-4" /> },
     { to: "/agents", label: "Agents", icon: <Bot className="size-4" /> },
-    { to: "/sidekicks", label: "Sidekicks", icon: <Drama className="size-4" />, hint: <Hint count={state?.characters.length} /> },
+    { to: "/sidekicks", label: "Sidekicks", icon: <Drama className="size-4" />, hint: <Hint count={characters?.length} /> },
     { to: "/skills", label: "Skills", icon: <Sparkles className="size-4" /> },
     {
       to: "/mcp",
@@ -217,47 +247,51 @@ export function Sidebar() {
           </div>
         ) : (
           <div key="chats" className="flex min-h-0 flex-1 animate-fade flex-col">
-            <div className="px-3">
+            <div className="flex items-center gap-1.5 px-3">
               <Link
                 to="/chat"
                 onClick={onClose}
-                className="flex items-center gap-2 rounded-lg border border-zinc-800 px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-900"
+                className="flex flex-1 items-center gap-2 rounded-lg border border-zinc-800 px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-900"
               >
                 <MessageSquarePlus className="size-4" /> New chat
               </Link>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose()
+                  openCommandPalette()
+                }}
+                title="Search chats, files & tools (⌘K)"
+                aria-label="Search (⌘K)"
+                className="flex items-center gap-1 rounded-lg border border-zinc-800 px-2.5 py-2 text-xs text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100"
+              >
+                <Search className="size-4" />
+                <span className="hidden font-mono text-[10px] text-zinc-500 lg:inline">⌘K</span>
+              </button>
             </div>
             <nav ref={chatList} className="scrollbar-thin mt-4 flex-1 space-y-0.5 overflow-y-auto px-3">
-              {state && <Characters characters={state.characters} sessions={state.sessions} activeId={activeId} onPick={onClose} />}
-              {state && <Spaces spaces={state.spaces ?? []} sessions={state.sessions} pending={state.access.pending} activeId={activeId} onPick={onClose} />}
+              {hasState && sessions && characters && <Characters characters={characters} sessions={sessions} activeId={activeId} onPick={onClose} />}
+              {hasState && sessions && pending && <Spaces spaces={spaces ?? []} sessions={sessions} pending={pending} activeId={activeId} onPick={onClose} />}
               <div className="px-2 pb-1 text-[11px] font-medium tracking-wide text-zinc-600 uppercase" title="Shift-click chats to select several">
                 Chats
               </div>
-              {!state && <ChatListSkeleton />}
-              {state && (
+              {!hasState && <ChatListSkeleton />}
+              {hasState && (
                 <ChatGroups
                   // A character's conversations live under them, and a space's chats under the space, not in the inbox.
-                  sessions={state.sessions.filter((session) => !session.characterId && !session.spaceId)}
+                  sessions={inboxSessions}
                   now={now}
                   activeId={activeId}
+                  agentsById={agentsById}
+                  projectsById={projectsById}
+                  selectedIds={selection.ids}
+                  onSelect={selection.click}
                   onPick={onClose}
-                  renderRow={(session, group) => (
-                    <ChatRow
-                      key={session.id}
-                      session={session}
-                      group={group}
-                      agent={session.agentId ? agentsById.get(session.agentId) : undefined}
-                      project={session.projectId ? projectsById.get(session.projectId) : undefined}
-                      active={session.id === activeId}
-                      selected={selection.ids.has(session.id)}
-                      onSelect={selection.click}
-                      onPick={onClose}
-                    />
-                  )}
                 />
               )}
             </nav>
-            {state && selection.ids.size > 0 && (
-              <SelectionBar sessions={state.sessions.filter((session) => selection.ids.has(session.id))} activeId={activeId} onClear={selection.clear} />
+            {hasState && sessions && selection.ids.size > 0 && (
+              <SelectionBar sessions={sessions.filter((session) => selection.ids.has(session.id))} activeId={activeId} onClear={selection.clear} />
             )}
           </div>
         )}
@@ -285,7 +319,16 @@ export function Sidebar() {
               <div className="flex size-6 items-center justify-center rounded-full bg-zinc-800 text-xs">{viewer.name[0]}</div>
             )}
             <span className="truncate text-sm text-zinc-400">{viewer.login}</span>
-            <form method="post" action="/auth/logout" onSubmit={forgetSavedState} className="ml-auto">
+            <form
+              method="post"
+              action="/auth/logout"
+              onSubmit={(event) => {
+                event.preventDefault()
+                const form = event.currentTarget
+                void forgetSavedState().finally(() => form.submit())
+              }}
+              className="ml-auto"
+            >
               <button type="submit" title="Sign out" className="rounded p-1 text-zinc-500 hover:text-zinc-200">
                 <LogOut className="size-4" />
               </button>
@@ -301,7 +344,7 @@ export function Sidebar() {
  * Sidekicks, pinned above the chats: each opens their conversation. Shown once you have one; until then a single
  * quiet row offers to make one.
  */
-function Characters({
+const Characters = memo(function Characters({
   characters,
   sessions,
   activeId,
@@ -385,13 +428,13 @@ function Characters({
       })}
     </div>
   )
-}
+})
 
 /**
  * Spaces, under the sidekicks: each opens its coordinator's chat and says how its threads are doing. With none yet, a
  * quiet row offers to start one.
  */
-function Spaces({
+const Spaces = memo(function Spaces({
   spaces,
   sessions,
   pending,
@@ -419,6 +462,19 @@ function Spaces({
       </Link>
     </div>
   )
+  const { byId, threadsBySpace } = useMemo(() => {
+    const byId = new Map<string, SessionMeta>()
+    const threadsBySpace = new Map<string, SessionMeta[]>()
+    for (const session of sessions) {
+      byId.set(session.id, session)
+      if (session.spaceId) {
+        const list = threadsBySpace.get(session.spaceId)
+        if (list) list.push(session)
+        else threadsBySpace.set(session.spaceId, [session])
+      }
+    }
+    return { byId, threadsBySpace }
+  }, [sessions])
   if (spaces.length === 0) {
     return (
       <div className="mb-4">
@@ -437,13 +493,14 @@ function Spaces({
       </div>
     )
   }
-  const active = activeId ? sessions.find((session) => session.id === activeId)?.spaceId : undefined
+  const active = activeId ? byId.get(activeId)?.spaceId : undefined
   return (
     <div className="mb-4">
       {header}
       {spaces.map((space) => {
-        const coordinator = sessions.find((session) => session.id === space.sessionId)
-        const statuses = spaceThreads(space, sessions).map((thread) => threadStatus(thread, pending))
+        const coordinator = byId.get(space.sessionId)
+        const threads = (threadsBySpace.get(space.id) ?? []).filter((session) => session.id !== space.sessionId)
+        const statuses = threads.map((thread) => threadStatus(thread, pending))
         const working = statuses.filter((status) => status === "working").length
         const needsYou = statuses.filter((status) => status === "needs_you").length
         const summary = [needsYou ? `${needsYou} need${needsYou === 1 ? "s" : ""} you` : "", working ? `${working} working` : ""].filter(Boolean).join(" · ")
@@ -473,10 +530,10 @@ function Spaces({
       })}
     </div>
   )
-}
+})
 
 /** One chat in the sidebar: title, its agent / project / model, and when it last did something (or when it wakes). */
-function ChatRow({
+const ChatRow = memo(function ChatRow({
   session,
   group,
   agent,
@@ -488,8 +545,8 @@ function ChatRow({
 }: {
   session: SessionMeta
   group: ChatGroup
-  agent: NonNullable<ReturnType<typeof useDex>["state"]>["agents"][number] | undefined
-  project: NonNullable<ReturnType<typeof useDex>["state"]>["projects"][number] | undefined
+  agent: DexState["agents"][number] | undefined
+  project: DexState["projects"][number] | undefined
   active: boolean
   selected: boolean
   onSelect: (event: MouseEvent, sessionId: string) => boolean
@@ -579,7 +636,7 @@ function ChatRow({
       />
     </div>
   )
-}
+})
 
 /**
  * Picking several chats at once, the way a file list does: shift-click selects every chat between the last one clicked
@@ -589,15 +646,22 @@ function ChatRow({
 function useChatSelection(list: RefObject<HTMLElement | null>, activeId: string | undefined, sessions: ReadonlyArray<SessionMeta> | undefined, off: boolean) {
   const [ids, setIds] = useState<ReadonlySet<string>>(() => new Set())
   const anchor = useRef<string | null>(null)
-  const clear = () => setIds(new Set())
+  const idsSizeRef = useRef(0)
+  idsSizeRef.current = ids.size
+  const activeIdRef = useRef(activeId)
+  activeIdRef.current = activeId
+  const clear = useCallback(() => setIds((current) => (current.size === 0 ? current : new Set())), [])
 
   // Chats deleted elsewhere drop out; the settings sidebar has no chats to pick.
   useEffect(() => {
     if (off) return clear()
     if (!sessions) return
-    const known = new Set(sessions.map((session) => session.id))
-    setIds((current) => ([...current].every((id) => known.has(id)) ? current : new Set([...current].filter((id) => known.has(id)))))
-  }, [sessions, off])
+    setIds((current) => {
+      if (current.size === 0) return current
+      const known = new Set(sessions.map((session) => session.id))
+      return [...current].every((id) => known.has(id)) ? current : new Set([...current].filter((id) => known.has(id)))
+    })
+  }, [sessions, off, clear])
 
   useEffect(() => {
     if (ids.size === 0) return
@@ -607,32 +671,35 @@ function useChatSelection(list: RefObject<HTMLElement | null>, activeId: string 
     }
     document.addEventListener("keydown", key)
     return () => document.removeEventListener("keydown", key)
-  }, [ids.size])
+  }, [ids.size, clear])
 
-  const click = (event: MouseEvent, id: string) => {
-    if (event.shiftKey) {
-      const order = [...(list.current?.querySelectorAll<HTMLElement>("[data-chat-row]") ?? [])].map((row) => row.dataset.chatRow ?? "")
-      const to = order.indexOf(id)
-      const from = order.indexOf(anchor.current ?? activeId ?? id)
-      const range = order.slice(Math.min(from < 0 ? to : from, to), Math.max(from < 0 ? to : from, to) + 1)
-      setIds((current) => new Set(event.metaKey || event.ctrlKey ? [...current, ...range] : range))
-      if (from < 0) anchor.current = id
-      return true
-    }
-    // ⌘-click on its own still opens a new tab; it only toggles once you're picking.
-    if ((event.metaKey || event.ctrlKey) && ids.size > 0) {
-      setIds((current) => {
-        const next = new Set(current)
-        if (!next.delete(id)) next.add(id)
-        return next
-      })
+  const click = useCallback(
+    (event: MouseEvent, id: string) => {
+      if (event.shiftKey) {
+        const order = [...(list.current?.querySelectorAll<HTMLElement>("[data-chat-row]") ?? [])].map((row) => row.dataset.chatRow ?? "")
+        const to = order.indexOf(id)
+        const from = order.indexOf(anchor.current ?? activeIdRef.current ?? id)
+        const range = order.slice(Math.min(from < 0 ? to : from, to), Math.max(from < 0 ? to : from, to) + 1)
+        setIds((current) => new Set(event.metaKey || event.ctrlKey ? [...current, ...range] : range))
+        if (from < 0) anchor.current = id
+        return true
+      }
+      // ⌘-click on its own still opens a new tab; it only toggles once you're picking.
+      if ((event.metaKey || event.ctrlKey) && idsSizeRef.current > 0) {
+        setIds((current) => {
+          const next = new Set(current)
+          if (!next.delete(id)) next.add(id)
+          return next
+        })
+        anchor.current = id
+        return true
+      }
       anchor.current = id
-      return true
-    }
-    anchor.current = id
-    if (ids.size > 0) clear()
-    return false
-  }
+      if (idsSizeRef.current > 0) clear()
+      return false
+    },
+    [list, clear]
+  )
 
   return { ids, click, clear }
 }
@@ -718,26 +785,58 @@ function GroupHeader({ label, count, open, onToggle, icon }: { label: string; co
  * The chat list as an inbox: chats needing you first, then Snoozed (until each one's time) and Settled (done for
  * now), both collapsible. A chat leaves those groups by itself when something new happens in it or its snooze ends.
  */
-function ChatGroups({
+const ChatGroups = memo(function ChatGroups({
   sessions,
   now,
   activeId,
-  renderRow
+  agentsById,
+  projectsById,
+  selectedIds,
+  onSelect,
+  onPick
 }: {
   sessions: ReadonlyArray<SessionMeta>
   now: number
   activeId: string | undefined
+  agentsById: ReadonlyMap<string, DexState["agents"][number]>
+  projectsById: ReadonlyMap<string, DexState["projects"][number]>
+  selectedIds: ReadonlySet<string>
+  onSelect: (event: MouseEvent, sessionId: string) => boolean
   onPick: () => void
-  renderRow: (session: SessionMeta, group: ChatGroup) => ReactNode
 }) {
   const [snoozedOpen, setSnoozedOpen] = useGroupOpen("snoozed")
   const [settledOpen, setSettledOpen] = useGroupOpen("settled")
-  const inbox = sessions.filter((session) => inboxState(session, now) === "inbox")
-  const snoozed = sessions.filter((session) => inboxState(session, now) === "snoozed").sort((a, b) => (a.snoozedUntil ?? 0) - (b.snoozedUntil ?? 0))
-  const settled = sessions.filter((session) => inboxState(session, now) === "settled").sort((a, b) => (b.settledAt ?? 0) - (a.settledAt ?? 0))
+  const { inbox, snoozed, settled } = useMemo(() => {
+    const inbox: SessionMeta[] = []
+    const snoozed: SessionMeta[] = []
+    const settled: SessionMeta[] = []
+    for (const session of sessions) {
+      const state = inboxState(session, now)
+      if (state === "inbox") inbox.push(session)
+      else if (state === "snoozed") snoozed.push(session)
+      else settled.push(session)
+    }
+    snoozed.sort((a, b) => (a.snoozedUntil ?? 0) - (b.snoozedUntil ?? 0))
+    settled.sort((a, b) => (b.settledAt ?? 0) - (a.settledAt ?? 0))
+    return { inbox, snoozed, settled }
+  }, [sessions, now])
   // The open chat stays visible even if its group is collapsed.
   const showSnoozed = snoozedOpen || snoozed.some((session) => session.id === activeId)
   const showSettled = settledOpen || settled.some((session) => session.id === activeId)
+
+  const renderRow = (session: SessionMeta, group: ChatGroup) => (
+    <ChatRow
+      key={session.id}
+      session={session}
+      group={group}
+      agent={session.agentId ? agentsById.get(session.agentId) : undefined}
+      project={session.projectId ? projectsById.get(session.projectId) : undefined}
+      active={session.id === activeId}
+      selected={selectedIds.has(session.id)}
+      onSelect={onSelect}
+      onPick={onPick}
+    />
+  )
 
   return (
     <>
@@ -776,4 +875,4 @@ function ChatGroups({
       )}
     </>
   )
-}
+})

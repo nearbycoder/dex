@@ -208,6 +208,8 @@ final class WidgetSync {
     /// Signed out: the widgets lose the session, and forget what they kept the next time they look.
     func signedOut() {
         guard enabled else { return }
+        pending?.cancel()
+        pending = nil
         WidgetShare.update {
             $0.credentials = nil
             $0.pictures = nil

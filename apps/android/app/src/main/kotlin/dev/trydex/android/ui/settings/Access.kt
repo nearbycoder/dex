@@ -314,7 +314,14 @@ fun CopyField(label: String, value: String, secret: Boolean = false) {
                 )
                 TextButton(onClick = {
                     scope.launch {
-                        clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(label, value)))
+                        val clip = ClipData.newPlainText(label, value).apply {
+                            if (secret) {
+                                description.extras = android.os.PersistableBundle().apply {
+                                    putBoolean(android.content.ClipDescription.EXTRA_IS_SENSITIVE, true)
+                                }
+                            }
+                        }
+                        clipboard.setClipEntry(ClipEntry(clip))
                         copied = true
                         delay(1_500)
                         copied = false

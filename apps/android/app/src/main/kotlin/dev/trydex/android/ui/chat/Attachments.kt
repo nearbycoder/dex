@@ -123,7 +123,19 @@ class AttachmentDrafts(
             context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null }
         }.getOrNull()
         if (size != null && size > AttachmentLimits.UPLOAD_BYTES) error("$name is too large (limit ${AttachmentLimits.UPLOAD_BYTES / 1024 / 1024} MB).")
-        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: error("Couldn't read $name.")
+        val bytes = context.contentResolver.openInputStream(uri)?.use { stream ->
+            val out = ByteArrayOutputStream()
+            val buf = ByteArray(16_384)
+            var total = 0L
+            while (true) {
+                val read = stream.read(buf)
+                if (read <= 0) break
+                total += read
+                if (total > AttachmentLimits.UPLOAD_BYTES) error("$name is too large (limit ${AttachmentLimits.UPLOAD_BYTES / 1024 / 1024} MB).")
+                out.write(buf, 0, read)
+            }
+            out.toByteArray()
+        } ?: error("Couldn't read $name.")
         val type = context.contentResolver.getType(uri)
             ?: MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase())
             ?: "application/octet-stream"
@@ -144,7 +156,7 @@ class AttachmentDrafts(
             val longest = maxOf(info.size.width, info.size.height)
             if (longest > MAX_PIXELS) {
                 val scale = MAX_PIXELS.toFloat() / longest
-                decoder.setTargetSize((info.size.width * scale).toInt(), (info.size.height * scale).toInt())
+                decoder.setTargetSize((info.size.width * scale).toInt().coerceAtLeast(1), (info.size.height * scale).toInt().coerceAtLeast(1))
             }
             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
         }

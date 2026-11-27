@@ -219,6 +219,7 @@ fun ChatScreen(id: String) {
                                 onSend = model::send,
                                 character = character,
                                 emptyHint = if (space != null) dev.trydex.core.model.Spaces.EMPTY_HINT else null,
+                                onContinue = if (connected) model::continueRun else null,
                                 modifier = Modifier.fillMaxSize(),
                                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                             )

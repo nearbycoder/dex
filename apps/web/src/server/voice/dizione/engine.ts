@@ -3,7 +3,7 @@
 // the dictionary, regular endings and compounds of dictionary words, "-leigh" and "-virus" words, then the model.
 
 import { Aligner } from "./align.ts"
-import { convert, fromText, settleStress } from "./convert.ts"
+import { convert, fromLexiconText, fromText, settleStress } from "./convert.ts"
 import { TABLES } from "./data.ts"
 import { Model } from "./g2p.ts"
 import { Homographs } from "./homographs.ts"
@@ -83,7 +83,7 @@ export class Phonemizer {
     const exception = this.exceptions.get(word)
     if (exception) return this.entry(word, exception)
     const text = this.lexicon.get(word)
-    return text !== undefined ? fromText(text) : null
+    return text !== undefined ? fromLexiconText(text) : null
   }
 
   /** A dictionary word that may be half of a compound: one also listed with a regular ending. */
@@ -96,7 +96,7 @@ export class Phonemizer {
   private guess(word: string): Phones {
     if (this.model === null) return this.spell(word)
     const spelling = this.model.spellable(word)
-    const symbols = this.model.predict(spelling)
+    const symbols = this.model.predict(spelling, true)
     // An r with no vowel beside it is a syllable: write it as one ("okafor").
     const stressed = (symbol: string | undefined) => symbol !== undefined && "012".includes(symbol[symbol.length - 1]!) && symbol !== ""
     symbols.forEach((symbol, k) => {
@@ -142,7 +142,12 @@ export class Phonemizer {
   /** The pronunciation of one spelling in lower case and where it came from. */
   private word(word: string): readonly [Phones, string] {
     const cached = this.cache.get(word)
-    if (cached) return cached
+    if (cached) {
+      // Refresh recency for LRU eviction.
+      this.cache.delete(word)
+      this.cache.set(word, cached)
+      return cached
+    }
     let phones = this.known(word)
     let source = "dictionary"
     if (phones === null) {
@@ -217,18 +222,37 @@ export class Phonemizer {
   }
 
   private name(words: readonly Word[], index: number): number {
+    if (words[index]!.phones !== null || words[index]!.spell) return 0
     for (let size = Math.min(this.nameLength, words.length - index); size > 1; size--) {
-      const span = words.slice(index, index + size)
-      if (this.names.has(span.map((w) => w.text).join(" ")) && span.every((w) => w.phones === null && !w.spell) && !span.slice(1).some((w) => w.attach)) return size
+      let ok = true
+      let key = words[index]!.text
+      for (let k = 1; k < size; k++) {
+        const w = words[index + k]!
+        if (w.phones !== null || w.spell || w.attach) {
+          ok = false
+          break
+        }
+        key += " " + w.text
+      }
+      if (ok && this.names.has(key)) return size
     }
     return 0
   }
 
   private phrase(words: readonly Word[], index: number): number {
+    if (words[index]!.phones !== null || words[index]!.spell) return 0
     for (let size = Math.min(this.phraseLength, words.length - index); size > 1; size--) {
-      const span = words.slice(index, index + size)
-      if (span.slice(1).every((w) => w.phones === null && !w.spell && !w.attach) && span[0]!.phones === null && !span[0]!.spell
-          && this.phrases.has(span.map((w) => w.text).join(" "))) return size
+      let ok = true
+      let key = words[index]!.text
+      for (let k = 1; k < size; k++) {
+        const w = words[index + k]!
+        if (w.phones !== null || w.spell || w.attach) {
+          ok = false
+          break
+        }
+        key += " " + w.text
+      }
+      if (ok && this.phrases.has(key)) return size
     }
     return 0
   }

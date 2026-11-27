@@ -1,4 +1,4 @@
-import { Type } from "@earendil-works/pi-ai"
+import { Type } from "typebox"
 import { defineTool } from "@earendil-works/pi-durable"
 import { MAX_VMS_PER_CHAT } from "~/shared/protocol"
 import type { SharedMedia } from "../media"

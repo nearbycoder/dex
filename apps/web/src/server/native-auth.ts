@@ -1,5 +1,6 @@
 import { Clock, Effect, Option, Schema } from "effect"
 import { Base64Url } from "effect/encoding"
+import { readBoundedText } from "./active-session"
 import { Keys } from "./crypto"
 import { isSecureRequest, readCookie, serializeCookie, clearCookie } from "./cookies"
 import { SESSION_TTL_SECONDS, Sessions, type SessionUser, tokenIssuedAt } from "./session"
@@ -100,8 +101,18 @@ const sha256 = (text: string) =>
   )
 
 /** `POST /auth/native/token` `{ code, verifier }` → `{ token, user, expiresAt }`. */
-export const exchangeNativeCode = Effect.fn("nativeAuth.exchange")(function*(request: Request) {
-  const body = yield* Effect.promise(() => request.json<{ code?: unknown; verifier?: unknown } | null>().catch(() => null))
+export const exchangeNativeCode = Effect.fn("nativeAuth.exchange")(function*(
+  request: Request,
+  checkCurrent?: (user: SessionUser, issuedAt: number) => Promise<"ok" | "revoked" | "unavailable">
+) {
+  const raw = yield* Effect.promise(() => readBoundedText(request, 8192).catch(() => ""))
+  if (raw === "too-large") return json(413, { error: "Request too large" })
+  let body: { code?: unknown; verifier?: unknown } | null = null
+  try {
+    body = JSON.parse(raw) as { code?: unknown; verifier?: unknown } | null
+  } catch {
+    body = null
+  }
   const code = typeof body?.code === "string" && body.code.length <= 4096 ? body.code : ""
   const verifier = typeof body?.verifier === "string" ? body.verifier : ""
   if (!code || !VERIFIER.test(verifier)) return json(400, { error: "code and verifier are required" })
@@ -111,10 +122,15 @@ export const exchangeNativeCode = Effect.fn("nativeAuth.exchange")(function*(req
   const now = yield* Clock.currentTimeMillis
   if (sealed.value.exp < now) return json(400, { error: "That sign-in code expired. Sign in again." })
   if ((yield* sha256(verifier)) !== sealed.value.challenge) return json(400, { error: "That sign-in code isn't valid" })
-  const user = yield* (yield* Sessions).verify(sealed.value.token)
-  if (Option.isNone(user)) return json(400, { error: "That sign-in code isn't valid" })
-  const expiresAt = (tokenIssuedAt(sealed.value.token) + SESSION_TTL_SECONDS) * 1000
-  return json(200, { token: sealed.value.token, user: user.value, expiresAt })
+  const verified = yield* (yield* Sessions).verifyWithIssuedAt(sealed.value.token)
+  if (Option.isNone(verified)) return json(400, { error: "That sign-in code isn't valid" })
+  if (checkCurrent) {
+    const state = yield* Effect.promise(() => checkCurrent(verified.value.user, verified.value.issuedAt))
+    if (state === "unavailable") return json(503, { error: "Dex is restarting. Try again in a moment." })
+    if (state === "revoked") return json(400, { error: "That sign-in code is no longer valid. Sign in again." })
+  }
+  const expiresAt = (verified.value.issuedAt + SESSION_TTL_SECONDS) * 1000
+  return json(200, { token: sealed.value.token, user: verified.value.user, expiresAt })
 })
 
 /**

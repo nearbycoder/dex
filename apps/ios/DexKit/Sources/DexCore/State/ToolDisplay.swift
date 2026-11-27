@@ -122,12 +122,20 @@ public enum ToolDisplay: Sendable, Equatable {
 }
 
 public extension ReplyLayout {
-    /// Admin operations this reply asked for (app_call calls answered with a pending confirmation).
+    /// Admin operations and MCP tool approvals this reply asked for (direct or nested inside batch_tools).
     func confirmations(results: [String: ToolResultMessage]) -> [(id: String, summary: String)] {
-        toolCalls.compactMap { call in
-            guard call.name == "app_call", let confirmation = results[call.id]?.details?["confirmation"],
-                  let id = confirmation["id"]?.string else { return nil }
-            return (id, confirmation["summary"]?.string ?? "")
+        toolCalls.flatMap { call -> [(id: String, summary: String)] in
+            guard call.name == "app_call" || call.name == "batch_tools" || call.name.contains("__"),
+                  let details = results[call.id]?.details else { return [] }
+            if let list = details["confirmations"]?.array {
+                let items = list.compactMap { item -> (id: String, summary: String)? in
+                    guard let id = item["id"]?.string else { return nil }
+                    return (id, item["summary"]?.string ?? "")
+                }
+                if !items.isEmpty { return items }
+            }
+            guard let confirmation = details["confirmation"], let id = confirmation["id"]?.string else { return [] }
+            return [(id, confirmation["summary"]?.string ?? "")]
         }
     }
 

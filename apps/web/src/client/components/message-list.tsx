@@ -1,18 +1,22 @@
 import type { AssistantMessage, ToolResultMessage } from "@earendil-works/pi-ai"
+import { useVirtualizer } from "@tanstack/react-virtual"
 import { Link } from "@tanstack/react-router"
-import { AlarmClock, AlertTriangle, ArrowDown, Brain, ChevronRight, Clock, ListChecks, LoaderCircle, MousePointerClick } from "lucide-react"
+import { AlarmClock, AlertTriangle, ArrowDown, Brain, ChevronRight, Clock, ListChecks, LoaderCircle, MousePointerClick, Paperclip, RotateCw } from "lucide-react"
 import { useParams } from "@tanstack/react-router"
+import { toast } from "sonner"
 import type { AttachedFile } from "~/shared/attachments"
 import { FileIcon } from "~/client/components/file-icon"
 import { lazy, memo, type ReactNode, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { type DisplayItem, displayItemsWithStreaming, type LiveTool, recordedDisplayItems, toolResults, type TranscriptState } from "~/client/lib/transcript"
+import { splitMentionContext } from "~/shared/mentions"
 import { invokedSkill } from "~/shared/skills"
 import { parseUiAction } from "~/shared/ui-action"
 import { splitUiNotes } from "~/shared/ui-notes"
 import { parseSpaceUpdates, START_THREAD_TOOL } from "~/shared/spaces"
 import { Collapse } from "./collapse"
 import { ConfirmCard } from "./confirm-card"
-import { MediaPlayer, videoSource } from "./media"
+import { Download } from "lucide-react"
+import { AssetDownloadLink, mediaDownloadHref, MediaPlayer, videoSource } from "./media"
 import { SpaceUpdates, ThreadCard } from "./space-panel"
 import { Markdown } from "./markdown"
 import { summarize, ToolCard, toolActivity, TranscriptImage } from "./tool-card"
@@ -78,7 +82,7 @@ const plural = (count: number, one: string, many = `${one}s`) => `${count} ${cou
  * Everything the model did on the way to its answer, as one row: a status line that follows the current step (and
  * rotates while it thinks), counts, and time. Tap to see every thought, note, and tool call in order.
  */
-function Activity(props: {
+const Activity = memo(function Activity(props: {
   steps: ReadonlyArray<Step>
   /** Still on the work (no answer text yet). */
   active: boolean
@@ -97,11 +101,11 @@ function Activity(props: {
   const calls = steps.flatMap((step) => (step.block.type === "toolCall" ? [step.block] : []))
   const thoughts = steps.filter((step) => step.block.type === "thinking").length
   const failed = calls.filter((call) => results.get(call.id)?.isError).length
-  const current = [...calls].reverse().find((call) => !results.has(call.id))
+  const current = calls.findLast((call) => !results.has(call.id))
 
   // What's really happening: the running tool and its arguments; else the latest line of the model's thinking or
   // notes; else the tool it just ran.
-  const latest = [...steps].reverse().find((step) => (step.block.type === "thinking" ? step.block.thinking.trim() : step.block.type !== "text" || step.block.text.trim()))
+  const latest = steps.findLast((step) => (step.block.type === "thinking" ? step.block.thinking.trim() : step.block.type !== "text" || step.block.text.trim()))
   const status = !active ? `Worked for ${duration((props.endedAt ?? now) - props.startedAt)}` : current ? toolActivity(current.name) : "Thinking"
   const detail = !active
     ? ""
@@ -168,18 +172,21 @@ function Activity(props: {
       </Collapse>
     </div>
   )
-}
+})
 
 /** One reply: its work folded into an activity row, then what it shows you (answer text and UI cards). */
 const AssistantTurn = memo(AssistantTurnView, (prev, next) => {
-  // A finished reply never changes: skip it entirely while a newer one streams, however long the chat.
+  // A finished reply never changes unless one of its own tool results arrives later: skip it while newer replies stream.
   if (prev.active || next.active || prev.streaming || next.streaming) return false
-  return (
-    prev.endedAt === next.endedAt &&
-    prev.onSend === next.onSend &&
-    prev.messages.length === next.messages.length &&
-    prev.messages.every((message, index) => message === next.messages[index])
-  )
+  if (prev.endedAt !== next.endedAt || prev.onSend !== next.onSend || prev.onContinue !== next.onContinue || prev.messages.length !== next.messages.length) return false
+  if (!prev.messages.every((message, index) => message === next.messages[index])) return false
+  if (prev.results === next.results) return true
+  for (const message of prev.messages) {
+    for (const block of message.content) {
+      if (block.type === "toolCall" && prev.results.get(block.id) !== next.results.get(block.id)) return false
+    }
+  }
+  return true
 })
 
 function AssistantTurnView(props: {
@@ -190,6 +197,7 @@ function AssistantTurnView(props: {
   results: Map<string, ToolResultMessage>
   tools: Readonly<Record<string, LiveTool>>
   onSend: (text: string) => void
+  onContinue?: () => Promise<void>
 }) {
   const { messages } = props
   const blocks: Step[] = messages.flatMap((message, m) =>
@@ -230,10 +238,15 @@ function AssistantTurnView(props: {
     const details = props.results.get(step.block.id)?.details as { thread?: { id: string; title: string } } | undefined
     return details?.thread ? [details.thread] : []
   })
-  // Admin operations the chat asked for stay in view until you answer them.
+  // Admin operations and MCP tool approvals (direct or nested inside batch_tools) stay in view until answered.
   const confirmations = blocks.flatMap((step) => {
-    if (step.block.type !== "toolCall" || step.block.name !== "app_call") return []
-    const details = props.results.get(step.block.id)?.details as { confirmation?: { id: string; summary: string } } | undefined
+    if (step.block.type !== "toolCall") return []
+    const { name } = step.block
+    if (name !== "app_call" && name !== "batch_tools" && !name.includes("__")) return []
+    const details = props.results.get(step.block.id)?.details as
+      | { confirmation?: { id: string; summary: string }; confirmations?: ReadonlyArray<{ id: string; summary: string }> }
+      | undefined
+    if (details?.confirmations?.length) return [...details.confirmations]
     return details?.confirmation ? [details.confirmation] : []
   })
 
@@ -279,7 +292,7 @@ function AssistantTurnView(props: {
             <Suspense key={step.key} fallback={<div className="my-3 h-24 animate-pulse rounded-xl bg-zinc-900" />}>
               <OpenUIBlock
                 code={block.arguments.code as string}
-                streaming={props.streaming}
+                streaming={step.live}
                 card={block.id}
                 onSend={props.onSend}
               />
@@ -288,7 +301,9 @@ function AssistantTurnView(props: {
         }
         return null
       })}
-      {failedLast && !props.active && <ErrorNote className="my-2" text={final.errorMessage ?? "The model request failed."} />}
+      {failedLast && !props.active && (
+        <ErrorNote className="my-2" text={final.errorMessage ?? "The model request failed."} onContinue={props.onContinue} />
+      )}
       {final?.stopReason === "aborted" && <div className="my-1 text-xs text-zinc-500">Stopped.</div>}
     </div>
   )
@@ -299,7 +314,8 @@ function AssistantTurnView(props: {
  * what you did in the chat's UI since your last message shown as a note rather than as your words.
  */
 function UserText({ text: raw }: { text: string }) {
-  const { notes, text } = splitUiNotes(raw)
+  const { notes, text: withoutNotes } = splitUiNotes(raw)
+  const { text, contexts } = splitMentionContext(withoutNotes)
   const action = parseUiAction(text)
   const skill = action ? null : invokedSkill(text)
   const at = skill ? text.indexOf(`/${skill}`) : -1
@@ -338,6 +354,20 @@ function UserText({ text: raw }: { text: string }) {
       ) : (
         text
       )}
+      {contexts.length > 0 && (
+        <span className="mt-2 flex flex-wrap gap-1 whitespace-normal">
+          {contexts.map((ctx) => (
+            <span
+              key={ctx.label}
+              title="Context resolved automatically from @mention"
+              className="inline-flex max-w-full items-center gap-1 rounded-md bg-emerald-950/60 px-1.5 py-0.5 text-[11px] text-emerald-300 ring-1 ring-emerald-800/40"
+            >
+              <Paperclip className="size-3 shrink-0" />
+              <span className="truncate">{ctx.label}</span>
+            </span>
+          ))}
+        </span>
+      )}
     </>
   )
 }
@@ -364,7 +394,18 @@ function UserAttachments({
     <div className={`flex flex-wrap items-start gap-1.5 whitespace-normal ${spaced ? "mb-2" : ""}`}>
       {images.map((image, index) =>
         image.data ? (
-          <img key={index} src={`data:${image.mimeType};base64,${image.data}`} alt="Attached image" className={thumb} />
+          <span key={index} className="relative inline-block">
+            <img src={`data:${image.mimeType};base64,${image.data}`} alt="Attached image" className={thumb} />
+            <span className="absolute top-1 right-1">
+              <AssetDownloadLink
+                url={`data:${image.mimeType};base64,${image.data}`}
+                title={imageFiles[index]?.name ?? `image-${index + 1}.${image.mimeType.split("/")[1] ?? "png"}`}
+                label=""
+                compact
+                className="inline-flex items-center justify-center rounded-md bg-black/65 p-1 text-zinc-100 ring-1 ring-white/15 backdrop-blur hover:bg-black/85"
+              />
+            </span>
+          </span>
         ) : image.ref && chatId ? (
           <TranscriptImage
             key={index}
@@ -377,18 +418,29 @@ function UserAttachments({
         ) : null
       )}
       {others.map((file, index) => {
-        const chip = "flex max-w-56 items-center gap-1.5 rounded-lg bg-zinc-900/80 px-2 py-1.5 text-xs text-zinc-300"
+        const chip = "flex max-w-60 items-center gap-1.5 rounded-lg bg-zinc-900/80 px-2 py-1.5 text-xs text-zinc-300"
         const content = (
           <>
             <FileIcon mimeType={file.mimeType} name={file.name} className="size-3.5 shrink-0 text-zinc-400" />
             <span className="min-w-0 truncate">{file.name}</span>
           </>
         )
-        // A stored file opens (media plays, anything else downloads).
+        // A stored file can be previewed or downloaded directly in one tap.
         return file.key ? (
-          <a key={`file-${index}`} href={`/api/media/${file.key}`} target="_blank" rel="noreferrer" title={file.name} className={`${chip} hover:bg-zinc-800`}>
-            {content}
-          </a>
+          <span key={`file-${index}`} className="inline-flex max-w-64 items-center overflow-hidden rounded-lg bg-zinc-900/80 text-xs text-zinc-300">
+            <a href={`/api/media/${file.key}`} target="_blank" rel="noreferrer" title={file.name} className="flex min-w-0 items-center gap-1.5 px-2 py-1.5 hover:bg-zinc-800">
+              {content}
+            </a>
+            <a
+              href={mediaDownloadHref(`/api/media/${file.key}`, file.name)}
+              download={file.name}
+              title={`Download ${file.name}`}
+              aria-label={`Download ${file.name}`}
+              className="flex shrink-0 items-center border-l border-zinc-800 px-2 py-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+            >
+              <Download className="size-3.5" />
+            </a>
+          </span>
         ) : (
           <span key={`file-${index}`} title={file.name} className={chip}>
             {content}
@@ -484,6 +536,7 @@ export const MessageList = memo(function MessageList({
   transcript,
   onSend,
   onLoadEarlier,
+  onContinue,
   pending = [],
   speaker
 }: {
@@ -491,6 +544,8 @@ export const MessageList = memo(function MessageList({
   onSend: (text: string) => void
   /** Loads the chat's older messages (shown while `transcript.earlier`). */
   onLoadEarlier?: () => Promise<void>
+  /** Resumes the chat from the last failed or interrupted run without adding a new user turn. */
+  onContinue?: () => Promise<void>
   /** Messages just sent that the agent hasn't recorded yet, shown at once (see the chat page). */
   pending?: readonly string[]
   /** Who answers, when it isn't Dex (a character): their face beside replies, and their greeting first. */
@@ -524,7 +579,7 @@ export const MessageList = memo(function MessageList({
     if (!element || !inner) return
     const observer = new ResizeObserver(() => {
       const distance = element.scrollHeight - element.scrollTop - element.clientHeight
-      if (Date.now() - clickedAt.current < 1_000) {
+      if (Date.now() - clickedAt.current < 400) {
         pinned.current = distance < 80
         setAtBottom(distance < 120)
       } else if (pinned.current) {
@@ -582,6 +637,58 @@ export const MessageList = memo(function MessageList({
     if (wantsUi && !import.meta.env.SSR) void import("./openui-block")
   }, [wantsUi])
 
+  // Virtualize marathon chats (60+ turns) so DOM node count stays flat while short chats avoid measurement overhead.
+  const virtualized = items.length >= 60
+  const virtualizer = useVirtualizer({
+    count: virtualized ? items.length : 0,
+    getScrollElement: () => scroller.current,
+    estimateSize: () => 180,
+    overscan: 8,
+    gap: 20
+  })
+
+  const renderItem = (item: DisplayItem, index: number) => {
+    const isLast = index === items.length - 1
+    // Historical turns skip off-screen browser layout & paint via content-visibility while preserving scroll accuracy.
+    const historical = !virtualized && !isLast ? "[content-visibility:auto] [contain-intrinsic-size:auto_120px]" : ""
+    switch (item.kind) {
+      case "user":
+        return (
+          <div key={item.id} className={historical}>
+            <UserRow item={item} />
+          </div>
+        )
+      case "assistant": {
+        // Keep a stable React key across streaming ("streaming") -> committed ("42:0") so turns never unmount/remount.
+        const prevAnchor = index > 0 ? items[index - 1]!.id : "start"
+        const turnKey = `assistant-after-${prevAnchor}`
+        return (
+          <div key={turnKey} className={`flex animate-rise gap-3 ${historical}`}>
+            {speaker ? (
+              <span className="mt-0.5 shrink-0" title={speaker.name}>
+                {transcript.running && isLast ? (speaker.working ?? speaker.avatar) : speaker.avatar}
+              </span>
+            ) : (
+              <img src="/favicon.svg" alt="Dex" className="mt-0.5 size-6 shrink-0" />
+            )}
+            <AssistantTurn
+              messages={item.messages}
+              streaming={item.streaming}
+              active={transcript.running && isLast}
+              endedAt={item.endedAt}
+              results={results}
+              tools={isLast ? transcript.tools : EMPTY_TOOLS}
+              onSend={onSend}
+              onContinue={isLast && !transcript.running ? onContinue : undefined}
+            />
+          </div>
+        )
+      }
+      case "divider":
+        return <ContextDivider key={item.id} label={item.label} summary={item.summary} />
+    }
+  }
+
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div
@@ -596,7 +703,16 @@ export const MessageList = memo(function MessageList({
           setAtBottom(distance < 120)
         }}
       >
-        <div ref={content} onClickCapture={() => (clickedAt.current = Date.now())} className="mx-auto max-w-3xl space-y-5 px-4 py-6">
+        <div
+          ref={content}
+          onClickCapture={(event) => {
+            // Only interactive toggles (accordions, disclosures) suppress auto-scroll; selecting text or empty clicks don't.
+            if (event.target instanceof Element && event.target.closest("button, summary, [role='button']")) {
+              clickedAt.current = Date.now()
+            }
+          }}
+          className="mx-auto max-w-3xl space-y-5 px-4 py-6"
+        >
           {transcript.earlier && onLoadEarlier && (
             <div className="flex flex-col items-center gap-1">
               <button
@@ -617,37 +733,26 @@ export const MessageList = memo(function MessageList({
               <div className="min-w-0 flex-1 pt-0.5 text-sm leading-relaxed whitespace-pre-wrap text-zinc-200 [overflow-wrap:anywhere]">{speaker.greeting}</div>
             </div>
           )}
-          {items.map((item, index) => {
-            switch (item.kind) {
-              case "user":
-                return <UserRow key={item.id} item={item} />
-              case "assistant": {
-                const isLast = index === items.length - 1
+          {virtualized ? (
+            <div style={{ height: virtualizer.getTotalSize(), position: "relative", width: "100%" }}>
+              {virtualizer.getVirtualItems().map((vItem) => {
+                const item = items[vItem.index]
+                if (!item) return null
                 return (
-                  <div key={item.id} className="flex animate-rise gap-3">
-                    {speaker ? (
-                      <span className="mt-0.5 shrink-0" title={speaker.name}>
-                        {transcript.running && isLast ? (speaker.working ?? speaker.avatar) : speaker.avatar}
-                      </span>
-                    ) : (
-                      <img src="/favicon.svg" alt="Dex" className="mt-0.5 size-6 shrink-0" />
-                    )}
-                    <AssistantTurn
-                      messages={item.messages}
-                      streaming={item.streaming}
-                      active={transcript.running && isLast}
-                      endedAt={item.endedAt}
-                      results={results}
-                      tools={isLast ? transcript.tools : EMPTY_TOOLS}
-                      onSend={onSend}
-                    />
+                  <div
+                    key={vItem.key}
+                    data-index={vItem.index}
+                    ref={virtualizer.measureElement}
+                    style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${vItem.start}px)` }}
+                  >
+                    {renderItem(item, vItem.index)}
                   </div>
                 )
-              }
-              case "divider":
-                return <ContextDivider key={item.id} label={item.label} summary={item.summary} />
-            }
-          })}
+              })}
+            </div>
+          ) : (
+            items.map((item, index) => renderItem(item, index))
+          )}
           {pending.map((text, index) => (
             <div key={`pending-${index}`} className="flex animate-rise justify-end">
               <div className="max-w-[85%] rounded-2xl rounded-br-md bg-zinc-800/70 px-4 py-2.5 text-sm whitespace-pre-wrap text-zinc-300 [overflow-wrap:anywhere]">
@@ -675,7 +780,7 @@ export const MessageList = memo(function MessageList({
               Retrying after an error: {transcript.retry.error}
             </div>
           )}
-          {transcript.error && <ErrorNote text={transcript.error} />}
+          {transcript.error && <ErrorNote text={transcript.error} onContinue={!transcript.running ? onContinue : undefined} />}
         </div>
       </div>
       {!atBottom && (
@@ -729,19 +834,42 @@ function RecoveredErrors({ errors }: { errors: readonly string[] }) {
  * A failed request, in the chat's column: providers' errors carry long unbroken JSON and URLs, so it wraps anywhere,
  * and a long one shows its first lines until opened.
  */
-function ErrorNote({ text, className = "" }: { text: string; className?: string }) {
+function ErrorNote({ text, className = "", onContinue }: { text: string; className?: string; onContinue?: () => Promise<void> }) {
   const [open, setOpen] = useState(false)
+  const [retrying, setRetrying] = useState(false)
   const long = text.length > 240
   return (
     <div className={`flex min-w-0 items-start gap-2 rounded-lg border border-red-900/60 bg-red-950/40 px-3 py-2 text-xs text-red-300 ${className}`}>
       <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
       <div className="min-w-0 flex-1">
         <p className={`[overflow-wrap:anywhere] whitespace-pre-wrap ${long && !open ? "line-clamp-3" : ""}`}>{text}</p>
-        {long && (
-          <button type="button" onClick={() => setOpen(!open)} className="mt-1 text-red-400/80 hover:text-red-200">
-            {open ? "Show less" : "Show all"}
-          </button>
-        )}
+        <div className="mt-1.5 flex flex-wrap items-center gap-3">
+          {onContinue && (
+            <button
+              type="button"
+              disabled={retrying}
+              onClick={async () => {
+                setRetrying(true)
+                try {
+                  await onContinue()
+                } catch (cause) {
+                  toast.error(cause instanceof Error ? cause.message : "Could not continue this run")
+                } finally {
+                  setRetrying(false)
+                }
+              }}
+              className="inline-flex items-center gap-1 rounded-md border border-red-800/70 bg-red-900/40 px-2 py-0.5 text-[11px] font-medium text-red-100 hover:bg-red-900/70 disabled:opacity-50"
+            >
+              {retrying ? <LoaderCircle className="size-3 animate-spin" /> : <RotateCw className="size-3" />}
+              Continue
+            </button>
+          )}
+          {long && (
+            <button type="button" onClick={() => setOpen(!open)} className="text-red-400/80 hover:text-red-200">
+              {open ? "Show less" : "Show all"}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )

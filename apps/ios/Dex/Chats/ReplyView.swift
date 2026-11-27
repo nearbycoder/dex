@@ -190,13 +190,21 @@ struct ActivityRow: View {
     @State private var open = false
 
     var body: some View {
-        // Only a reply that's still going has a clock to tick.
-        TimelineView(.periodic(from: .now, by: running || endedAt == nil ? 1 : 3600)) { context in
-            let now = context.date.timeIntervalSince1970 * 1000
-            let status = layout.status(results: results, startedAt: startedAt, endedAt: endedAt, now: now)
-            let failed = layout.failedCount(results: results)
-            let counts = layout.counts(results: results, startedAt: startedAt, now: now)
-            VStack(alignment: .leading, spacing: 0) {
+        // Only a reply that's still going needs a live ticking clock; completed rows skip TimelineView overhead.
+        if running || endedAt == nil {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                content(now: context.date.timeIntervalSince1970 * 1000)
+            }
+        } else {
+            content(now: endedAt ?? startedAt)
+        }
+    }
+
+    private func content(now: Double) -> some View {
+        let status = layout.status(results: results, startedAt: startedAt, endedAt: endedAt, now: now)
+        let failed = layout.failedCount(results: results)
+        let counts = layout.counts(results: results, startedAt: startedAt, now: now)
+        return VStack(alignment: .leading, spacing: 0) {
                 Button {
                     withAnimation(.snappy) { open.toggle() }
                 } label: {
@@ -253,7 +261,6 @@ struct ActivityRow: View {
             }
             .background(Color(.secondarySystemBackground).opacity(0.75), in: .rect(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.quaternary))
-        }
     }
 
     private func title(_ status: (title: String, detail: String, monospaced: Bool)) -> some View {

@@ -103,7 +103,8 @@ export class MediaCenter {
   async createUpload(sessionId: string, path: string, title?: string) {
     const media = mediaTypeOf(path)
     if (!media) throw new Error("Only videos (mp4, mov, webm), audio (mp3, m4a, wav, ogg), and images (png, jpg, gif, webp) can be shared.")
-    const extension = path.split(".").pop()!.toLowerCase()
+    const cleanPath = path.split(/[?#]/, 1)[0]!
+    const extension = /\.([a-z0-9]{1,10})$/i.exec(cleanPath)?.[1]?.toLowerCase() ?? "bin"
     const key = `${encodeUserId(this.host.userId())}/${crypto.randomUUID()}.${extension}`
     const random = base64url(crypto.getRandomValues(new Uint8Array(32)))
     const signed = `${TOKEN_PREFIX}.${encodeUserId(this.host.userId())}.${random}`

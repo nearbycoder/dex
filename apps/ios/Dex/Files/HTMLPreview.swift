@@ -23,7 +23,9 @@ struct HTMLPreview: UIViewRepresentable {
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.navigationDelegate = context.coordinator
         view.uiDelegate = context.coordinator
+        #if DEBUG
         view.isInspectable = true
+        #endif
         // A spinner until the page has drawn: a slow page (its scripts, its fonts) was a blank white screen meanwhile.
         let spinner = UIActivityIndicatorView(style: .medium)
         spinner.hidesWhenStopped = true
@@ -71,7 +73,7 @@ struct HTMLPreview: UIViewRepresentable {
     /// `<html>`, else the doctype (never before it, which would put the page in quirks mode), else at the very start.
     static func withColorScheme(_ html: String) -> String {
         let meta = #"<meta name="color-scheme" content="light dark">"#
-        for pattern in ["<head[^>]*>", "<html[^>]*>", "<!doctype[^>]*>"] {
+        for pattern in [#"<head\b[^>]*>"#, #"<html\b[^>]*>"#, #"<!doctype\b[^>]*>"#] {
             if let range = html.range(of: pattern, options: [.regularExpression, .caseInsensitive]) {
                 return String(html[..<range.upperBound]) + meta + String(html[range.upperBound...])
             }
@@ -88,9 +90,15 @@ struct HTMLPreview: UIViewRepresentable {
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { spinner?.stopAnimating() }
 
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
-            // The page's own loads (and its frames) are fine; a link you tap leaves for the browser.
-            guard action.navigationType == .linkActivated, action.targetFrame?.isMainFrame != false, let url = action.request.url else { return .allow }
-            if url.scheme == "http" || url.scheme == "https" { await UIApplication.shared.open(url) }
+            // Subframes and the initial inline document load (`about:blank`) are allowed; main-frame navigations
+            // (including script redirects) cannot hijack the preview WebView.
+            guard action.targetFrame?.isMainFrame != false else { return .allow }
+            guard let url = action.request.url else { return .allow }
+            let scheme = url.scheme?.lowercased()
+            if scheme == "about" || scheme == "blob" { return .allow }
+            if action.navigationType == .linkActivated, scheme == "http" || scheme == "https" {
+                await UIApplication.shared.open(url)
+            }
             return .cancel
         }
 

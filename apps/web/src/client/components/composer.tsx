@@ -3,6 +3,7 @@ import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "re
 import { type DraftAttachment, uploadAttachment } from "~/client/lib/attachments"
 import { ATTACHMENT_LIMITS, type ChatAttachment } from "~/shared/attachments"
 import { FileIcon } from "~/client/components/file-icon"
+import { MentionMenu, type MentionMenuHandle } from "./mention-menu"
 import { SkillMenu, type SkillMenuHandle } from "./skill-menu"
 
 /** Files attached in the composer: each uploads (to be prepared for the model) as soon as it's added. */
@@ -158,6 +159,16 @@ export function Composer(props: {
     if (slash === undefined) setMenuClosed(false)
   }, [slash])
 
+  // `@` at the start or after whitespace opens the context mention picker (files, MCP resources, projects, chats).
+  const mentionMatch = !menuOpen ? /(?:^|\s)@([^\s@]*)$/.exec(text) : null
+  const mentionQuery = mentionMatch?.[1]
+  const [mentionClosed, setMentionClosed] = useState(false)
+  const mentionMenu = useRef<MentionMenuHandle>(null)
+  const mentionOpen = mentionQuery !== undefined && !mentionClosed && !props.disabled
+  useEffect(() => {
+    if (mentionQuery === undefined) setMentionClosed(false)
+  }, [mentionQuery])
+
   useEffect(() => {
     if (!props.draft) return
     replaceText(props.draft.text)
@@ -217,6 +228,19 @@ export function Composer(props: {
           }}
         />
       )}
+      {mentionOpen && (
+        <MentionMenu
+          ref={mentionMenu}
+          query={mentionQuery}
+          onClose={() => setMentionClosed(true)}
+          onPick={(insert) => {
+            const current = ref.current?.value ?? text
+            const updated = current.replace(/(^|\s)@[^\s@]*$/, `$1${insert} `)
+            replaceText(updated)
+            ref.current?.focus()
+          }}
+        />
+      )}
       {props.header}
       {(drafts.length > 0 || skipped > 0) && (
         <div className="space-y-1.5 px-3 pt-3">
@@ -258,6 +282,9 @@ export function Composer(props: {
         onKeyDown={(event) => {
           if (menuOpen && !event.nativeEvent.isComposing && menu.current?.handleKey(event)) {
             event.preventDefault()
+            return
+          }
+          if (mentionOpen && !event.nativeEvent.isComposing && mentionMenu.current?.onKeyDown(event)) {
             return
           }
           if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {

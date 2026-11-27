@@ -47,9 +47,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalView
@@ -160,14 +160,14 @@ fun IconLabel(icon: ImageVector, text: String, modifier: Modifier = Modifier) {
 /** A small status dot; pulsing while something is in progress. */
 @Composable
 fun StatusDot(color: Color, pulsing: Boolean = false, size: Dp = 8.dp, label: String? = null) {
-    val alpha = if (pulsing) {
+    val alphaState = if (pulsing) {
         val transition = rememberInfiniteTransition(label = "pulse")
-        transition.animateFloat(1f, 0.35f, infiniteRepeatable(tween(800), RepeatMode.Reverse), label = "pulse").value
-    } else 1f
+        transition.animateFloat(1f, 0.35f, infiniteRepeatable(tween(800), RepeatMode.Reverse), label = "pulse")
+    } else null
     Box(
         Modifier
             .size(size)
-            .alpha(alpha)
+            .then(if (alphaState != null) Modifier.graphicsLayer { alpha = alphaState.value } else Modifier)
             .clip(CircleShape)
             .background(color)
             .then(if (label != null) Modifier.semantics { contentDescription = label } else Modifier),
@@ -232,12 +232,12 @@ enum class Tone { Warning, Info, Success, Error }
 @Composable
 fun Bone(width: Dp = Dp.Unspecified, height: Dp = 14.dp, modifier: Modifier = Modifier, fraction: Float? = null) {
     val transition = rememberInfiniteTransition(label = "bone")
-    val alpha by transition.animateFloat(0.45f, 0.9f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "bone")
+    val alphaState = transition.animateFloat(0.45f, 0.9f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "bone")
     val base = if (fraction != null) modifier.fillMaxWidth(fraction) else if (width != Dp.Unspecified) modifier.width(width) else modifier.fillMaxWidth()
     Box(
         base
             .height(height)
-            .alpha(alpha)
+            .graphicsLayer { alpha = alphaState.value }
             .clip(RoundedCornerShape(height / 2))
             .background(MaterialTheme.colorScheme.surfaceContainerHighest),
     )

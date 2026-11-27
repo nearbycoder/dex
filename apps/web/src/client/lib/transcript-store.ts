@@ -74,12 +74,23 @@ export function saveTranscript(sessionId: string, transcript: TranscriptState) {
   )
 }
 
-/** Forgets every kept chat (signing out). */
-export function clearTranscripts() {
+/** Forgets every kept chat (signing out). Closes the DB handle first so deleteDatabase isn't blocked. */
+export async function clearTranscripts(): Promise<void> {
+  userId = null
   for (const timer of pending.values()) clearTimeout(timer)
   pending.clear()
   const closing = opened
   opened = null
-  void closing?.then((db) => db?.close())
-  if (typeof indexedDB !== "undefined") indexedDB.deleteDatabase(DB)
+  if (closing) {
+    const db = await closing.catch(() => null)
+    db?.close()
+  }
+  if (typeof indexedDB !== "undefined") {
+    await new Promise<void>((resolve) => {
+      const req = indexedDB.deleteDatabase(DB)
+      req.onsuccess = () => resolve()
+      req.onerror = () => resolve()
+      req.onblocked = () => resolve()
+    })
+  }
 }

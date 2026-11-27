@@ -39,10 +39,18 @@ const DEBOUNCE_MS = 80
 
 const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
 
-export const hapticsEnabled = () => typeof localStorage === "undefined" || localStorage.getItem(STORAGE_KEY) !== "off"
+export const hapticsEnabled = () => {
+  try {
+    return typeof localStorage === "undefined" || localStorage.getItem(STORAGE_KEY) !== "off"
+  } catch {
+    return true
+  }
+}
 
 export function setHapticsEnabled(enabled: boolean) {
-  localStorage.setItem(STORAGE_KEY, enabled ? "on" : "off")
+  try {
+    localStorage.setItem(STORAGE_KEY, enabled ? "on" : "off")
+  } catch {}
   dispatchEvent(new Event(CHANGE_EVENT))
 }
 

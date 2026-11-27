@@ -61,7 +61,8 @@ class BackgroundCheckWorker(context: Context, params: WorkerParameters) : Corout
         if (!prefs.notifications) return Result.success()
         // The app is open: its own socket notifies.
         if (repository.connected.value) return Result.success()
-        val cache = LocalCache(File(applicationContext.filesDir, "dex-cache"))
+        val cache = graph.cache
+        val gen = cache.currentGeneration()
         val before = cache.loadState(user)
         val fresh = withAgent(graph) { _, state -> state } ?: return Result.retry()
         // With push, the agent notified this device already.
@@ -72,7 +73,7 @@ class BackgroundCheckWorker(context: Context, params: WorkerParameters) : Corout
                 }
             }
         }
-        cache.saveState(user, fresh)
+        cache.saveState(user, fresh, gen)
         WidgetSync.fromState(applicationContext, fresh)
         return Result.success()
     }
@@ -92,7 +93,8 @@ class NotificationActionReceiver : BroadcastReceiver() {
         val pending = goAsync()
         graph.scope.launch {
             try {
-                withAgent(graph) { api, _ -> api.setSessionMuted(sessionId, true) }
+                // Keep well inside BroadcastReceiver's ~10s goAsync() ANR window.
+                runCatching { withAgent(graph, timeoutMs = 8_000) { api, _ -> api.setSessionMuted(sessionId, true) } }
                 tag?.let { NotificationManagerCompat.from(context).cancel(it, 0) }
             } finally {
                 pending.finish()

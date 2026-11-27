@@ -2,7 +2,7 @@ import { useNavigate, useParams } from "@tanstack/react-router"
 import { AlarmClock, AlarmClockOff, CheckCheck, CircleDot, Inbox, MoreHorizontal, Sparkles, Trash2 } from "lucide-react"
 import { type ReactNode, type Ref, useEffect, useImperativeHandle, useRef, useState, useSyncExternalStore } from "react"
 import { createPortal } from "react-dom"
-import { useDex } from "~/client/lib/dex"
+import { useDexActions } from "~/client/lib/dex"
 import type { SessionMeta } from "~/shared/protocol"
 import { ask } from "./confirm-dialog"
 
@@ -105,7 +105,7 @@ export function SessionMenu({
   label?: string
   handle?: Ref<SessionMenuHandle>
 }) {
-  const { stub } = useDex()
+  const { stub } = useDexActions()
   const navigate = useNavigate()
   const params = useParams({ strict: false })
   const [open, setOpen] = useState(false)

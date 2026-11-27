@@ -33,7 +33,10 @@ public struct PKCE: Sendable, Hashable {
 
     public init() {
         var bytes = [UInt8](repeating: 0, count: 48)
-        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        if SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) != errSecSuccess {
+            var rng = SystemRandomNumberGenerator()
+            for index in bytes.indices { bytes[index] = UInt8.random(in: 0...255, using: &rng) }
+        }
         self.init(verifier: Data(bytes).base64URLEncoded)
     }
 
@@ -76,12 +79,21 @@ public struct AuthClient: Sendable {
         self.session = session
     }
 
+    private static func isLocalHost(_ host: String) -> Bool {
+        let lower = host.lowercased()
+        if lower == "localhost" || lower == "127.0.0.1" || lower == "::1" || lower.hasSuffix(".local") { return true }
+        let octets = lower.split(separator: ".").compactMap { Int($0) }
+        guard octets.count == 4, octets.allSatisfy({ (0...255).contains($0) }) else { return false }
+        return octets[0] == 127 || octets[0] == 10 || (octets[0] == 192 && octets[1] == 168) || (octets[0] == 172 && (16...31).contains(octets[1]))
+    }
+
     /// Turns what someone typed into a server address: https by default, http only for local development.
     public static func normalize(_ input: String) -> URL? {
         var text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
         if !text.contains("://") {
-            let local = text.hasPrefix("localhost") || text.hasPrefix("127.0.0.1") || text.hasPrefix("192.168.") || text.hasSuffix(".local")
+            let probe = URLComponents(string: "https://" + text)
+            let local = probe?.host.map(isLocalHost) ?? false
             text = (local ? "http://" : "https://") + text
         }
         guard var components = URLComponents(string: text), let scheme = components.scheme?.lowercased(), scheme == "https" || scheme == "http",
@@ -170,7 +182,13 @@ public struct KeychainItem<Value: Codable & Sendable>: Sendable {
     @discardableResult
     public func save(_ value: Value) -> Bool {
         guard let data = try? JSONEncoder().encode(value) else { return false }
-        SecItemDelete(query as CFDictionary)
+        let updates: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        ]
+        let updated = SecItemUpdate(query as CFDictionary, updates as CFDictionary)
+        if updated == errSecSuccess { return true }
+        if updated != errSecItemNotFound { SecItemDelete(query as CFDictionary) }
         var item = query
         item[kSecValueData as String] = data
         item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly

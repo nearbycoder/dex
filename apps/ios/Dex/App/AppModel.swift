@@ -139,6 +139,9 @@ final class AppModel {
         cache.clear()
         signInMessage = message
         phase = .signedOut
+        URLCache.shared.removeAllCachedResponses()
+        MediaLoader.shared.clear()
+        try? FileManager.default.removeItem(at: FileManager.default.temporaryDirectory.appending(path: "DexExport"))
         WKWebsiteDataStore.default().removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) {}
         Notifications.shared.clearAll()
         WidgetSync.shared.signedOut()

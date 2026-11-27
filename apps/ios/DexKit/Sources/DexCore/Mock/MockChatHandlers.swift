@@ -63,6 +63,11 @@ extension MockAgent {
             self.publishQueue(id)
             return .null
         }
+        register("continueSession") { [unowned self] args, _ in
+            guard let id = args.string(0) else { return .null }
+            self.deliver("Continuing…", files: [], to: id)
+            return .null
+        }
         register("listQueue") { [unowned self] args, _ in
             let id = args.string(0) ?? ""
             return ["items": try JSONValue(encoding: self.queues[id] ?? []), "held": .bool(self.heldQueues.contains(id))]

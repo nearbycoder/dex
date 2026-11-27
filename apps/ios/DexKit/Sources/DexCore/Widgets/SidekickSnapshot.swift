@@ -177,8 +177,12 @@ public struct WidgetStore: Sendable {
     public let root: URL
 
     public init(root: URL) {
-        self.root = root
-        try? FileManager.default.createDirectory(at: root.appending(path: "pictures"), withIntermediateDirectories: true)
+        var base = root
+        self.root = base
+        try? FileManager.default.createDirectory(at: base.appending(path: "pictures"), withIntermediateDirectories: true)
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? base.setResourceValues(values)
     }
 
     /// The store in this process's Application Support folder (the widget extension's; the app doesn't keep one).

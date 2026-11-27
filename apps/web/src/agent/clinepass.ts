@@ -2,7 +2,7 @@ import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completio
 import { createProvider } from "@earendil-works/pi-ai/models"
 import { Context, Effect, Layer, Option, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
-import { modelsOf } from "~/shared/models"
+import { type DexModel, modelsOf } from "~/shared/models"
 
 export const CLINEPASS_PROVIDER_ID = "clinepass"
 export const CLINEPASS_BASE_URL = "https://api.cline.bot/api/v1"
@@ -12,7 +12,10 @@ export const CLINEPASS_BASE_URL = "https://api.cline.bot/api/v1"
  * API. `resolveKey` runs before each model request, so a key connected or
  * removed in the UI applies to the next request.
  */
-export const clinePassProvider = (resolveKey: () => Promise<{ key: string; source: string } | undefined>) =>
+export const clinePassProvider = (
+  resolveKey: () => Promise<{ key: string; source: string } | undefined>,
+  models: ReadonlyArray<DexModel> = modelsOf("clinepass")
+) =>
   createProvider({
     id: CLINEPASS_PROVIDER_ID,
     name: "ClinePass",
@@ -26,7 +29,7 @@ export const clinePassProvider = (resolveKey: () => Promise<{ key: string; sourc
         }
       }
     },
-    models: modelsOf("clinepass").map((model) => ({
+    models: models.map((model) => ({
       id: model.id,
       name: model.name,
       api: "openai-completions" as const,

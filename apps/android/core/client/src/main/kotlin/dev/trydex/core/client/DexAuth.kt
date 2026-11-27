@@ -70,9 +70,11 @@ object DexAuth {
 
     /** The sign-in code from a `dex://auth/callback?code=…` link, or null if it isn't one. */
     fun callbackCode(uri: String): String? {
-        val match = Regex("^dex://auth/callback\\?(.*)$").find(uri) ?: return null
-        return match.groupValues[1].split('&').map { it.split('=', limit = 2) }.firstOrNull { it[0] == "code" }
-            ?.getOrNull(1)?.let { java.net.URLDecoder.decode(it, Charsets.UTF_8) }
+        val noFragment = uri.substringBefore('#')
+        val match = Regex("^dex://auth/callback\\?(.*)$").find(noFragment) ?: return null
+        val encoded = match.groupValues[1].split('&').map { it.split('=', limit = 2) }.firstOrNull { it[0] == "code" }
+            ?.getOrNull(1)?.takeIf { it.isNotEmpty() } ?: return null
+        return runCatching { java.net.URLDecoder.decode(encoded, Charsets.UTF_8) }.getOrNull()
     }
 
     /**
@@ -88,8 +90,15 @@ object DexAuth {
         return url.newBuilder().encodedPath("/").query(null).fragment(null).build()
     }
 
-    private fun isLocal(host: String) =
-        host == "localhost" || host == "127.0.0.1" || host == "10.0.2.2" || host.startsWith("192.168.") || host.startsWith("10.") || host.endsWith(".local")
+    private fun isLocal(host: String): Boolean {
+        val lower = host.lowercase()
+        if (lower == "localhost" || lower == "127.0.0.1" || lower == "::1" || lower == "10.0.2.2" || lower.endsWith(".local")) return true
+        val parts = lower.split('.')
+        if (parts.size != 4) return false
+        val octets = parts.map { it.toIntOrNull() ?: return false }
+        if (octets.any { it !in 0..255 }) return false
+        return octets[0] == 127 || octets[0] == 10 || (octets[0] == 192 && octets[1] == 168) || (octets[0] == 172 && octets[1] in 16..31)
+    }
 
     @Serializable
     private data class TokenResponse(val token: String, val user: DexUser, val expiresAt: Long)

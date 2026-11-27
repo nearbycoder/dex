@@ -16,6 +16,11 @@ struct OUIChartData {
     var names: [String] = []
     var points: [Point] = []
 
+    private static func finite(_ value: Double?) -> Double {
+        guard let value, value.isFinite else { return 0 }
+        return value
+    }
+
     init(labels: OpenUIValue?, series: OpenUIValue?) {
         let labels = labels?.array?.map { $0.text ?? "" } ?? []
         let raw = series?.array ?? []
@@ -27,7 +32,7 @@ struct OUIChartData {
                 categories.append(category)
                 for (index, name) in names.enumerated() {
                     let cell = index + 1 < cells.count ? cells[index + 1] : .null
-                    points.append(Point(id: points.count, category: category, series: name, value: cell.number ?? 0))
+                    points.append(Point(id: points.count, category: category, series: name, value: Self.finite(cell.number)))
                 }
             }
             return
@@ -38,7 +43,7 @@ struct OUIChartData {
         for (index, label) in labels.enumerated() {
             for node in nodes {
                 guard let name = node.string("category"), let values = node.props["values"]?.array, index < values.count else { continue }
-                points.append(Point(id: points.count, category: label, series: name, value: values[index].number ?? 0))
+                points.append(Point(id: points.count, category: label, series: name, value: Self.finite(values[index].number)))
             }
         }
     }
@@ -48,9 +53,9 @@ struct OUIChartData {
         let labels = labels?.array ?? []
         let values = values?.array ?? []
         if !labels.isEmpty, !values.isEmpty {
-            return labels.enumerated().map { index, label in (label.text ?? "", index < values.count ? values[index].number ?? 0 : 0) }
+            return labels.enumerated().map { index, label in (label.text ?? "", index < values.count ? Self.finite(values[index].number) : 0) }
         }
-        return labels.compactMap(\.node).map { ($0.string("category") ?? "", $0.number("value") ?? 0) }
+        return labels.compactMap(\.node).map { ($0.string("category") ?? "", Self.finite($0.number("value"))) }
     }
 }
 
@@ -77,7 +82,9 @@ struct OUICartesianChart: View {
         let palette = OUIPalette(names: data.names, dark: colorScheme == .dark)
         let horizontal = node.type == "HorizontalBarChart"
         let stacked = node.string("variant") == "stacked"
-        let height = CGFloat(node.number("height") ?? (horizontal ? max(160, Double(data.categories.count) * (stacked ? 34 : 22 * Double(max(data.names.count, 1)) + 14)) : 210))
+        let rawHeight = node.number("height").flatMap { $0.isFinite ? $0 : nil }
+        let defaultHeight = horizontal ? max(160, Double(data.categories.count) * (stacked ? 34 : 22 * Double(max(data.names.count, 1)) + 14)) : 210
+        let height = CGFloat(min(max(rawHeight ?? defaultHeight, 80), 800))
         if !data.points.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 chart(data, palette: palette, horizontal: horizontal, stacked: stacked)
@@ -330,7 +337,10 @@ struct OUIPieChart: View {
                 .frame(height: semi ? 100 : 200, alignment: .top)
                 .clipped()
                 .frame(maxWidth: .infinity)
-                OUILegend(items: slices.map { ($0.label, palette.color($0.label), total > 0 ? "\(Int((max($0.value, 0) / total * 100).rounded()))%" : nil) })
+                OUILegend(items: slices.map { slice in
+                    let pct = total.isFinite && total > 0 ? (max(slice.value, 0) / total * 100).rounded() : nil
+                    return (slice.label, palette.color(slice.label), pct.flatMap { $0.isFinite ? "\(Int($0))%" : nil })
+                })
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(slices.map { "\($0.label) \(OpenUIValue.number($0.value).text ?? "")" }.joined(separator: ", "))
@@ -394,7 +404,10 @@ struct OUIStackedBarChart: View {
                 }
                 .frame(height: 16)
                 .clipShape(.capsule)
-                OUILegend(items: slices.map { ($0.label, palette.color($0.label), "\(Int((max($0.value, 0) / total * 100).rounded()))%") })
+                OUILegend(items: slices.map { slice in
+                    let pct = total.isFinite && total > 0 ? (max(slice.value, 0) / total * 100).rounded() : nil
+                    return (slice.label, palette.color(slice.label), pct.flatMap { $0.isFinite ? "\(Int($0))%" : nil })
+                })
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(slices.map { "\($0.label) \(OpenUIValue.number($0.value).text ?? "")" }.joined(separator: ", "))
@@ -427,8 +440,9 @@ struct OUIScatterChart: View {
             names.append(name)
             for point in props["points"]?.array ?? [] {
                 let values = point.node?.props ?? point.object ?? [:]
-                guard let x = values["x"]?.number, let y = values["y"]?.number else { continue }
-                dots.append(Dot(id: dots.count, series: name, x: x, y: y, z: values["z"]?.number))
+                guard let x = values["x"]?.number, x.isFinite, let y = values["y"]?.number, y.isFinite else { continue }
+                let z = values["z"]?.number.flatMap { $0.isFinite ? $0 : nil }
+                dots.append(Dot(id: dots.count, series: name, x: x, y: y, z: z))
             }
         }
         let palette = OUIPalette(names: names, dark: colorScheme == .dark)

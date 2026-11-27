@@ -1,5 +1,6 @@
 import DexCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// A short result under a form: green for done, red for a problem, orange for a warning.
 struct InlineMessage: View {
@@ -52,7 +53,14 @@ struct CopyRow: View {
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Button {
-                    UIPasteboard.general.string = value
+                    if secret {
+                        UIPasteboard.general.setItems(
+                            [[UTType.plainText.identifier: value]],
+                            options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(120)]
+                        )
+                    } else {
+                        UIPasteboard.general.string = value
+                    }
                     copied = true
                 } label: {
                     Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")

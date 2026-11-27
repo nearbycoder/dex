@@ -46,10 +46,22 @@ public enum ChatMedia {
 
     /// `/api/media/…` URLs (relative, or on the Dex server) as their key; nil for anything else.
     public static func ownKey(_ url: String, server: URL? = nil) -> String? {
-        var path = url
-        if let origin = server.map(origin), url.hasPrefix(origin) { path = String(url.dropFirst(origin.count)) }
+        let path: String
+        if url.hasPrefix("/"), !url.hasPrefix("//") {
+            path = url
+        } else if let server, let parsed = URL(string: url), DexHTTP.sameOrigin(parsed, server) {
+            path = parsed.path(percentEncoded: true)
+        } else {
+            return nil
+        }
         guard path.hasPrefix(prefix) else { return nil }
-        return path.dropFirst(prefix.count).split(whereSeparator: { $0 == "?" || $0 == "#" }).first.map(String.init)
+        guard let key = path.dropFirst(prefix.count).split(whereSeparator: { $0 == "?" || $0 == "#" }).first.map(String.init),
+              !key.isEmpty, !key.contains("\\") else { return nil }
+        let lower = key.lowercased()
+        guard !lower.contains("%2f"), !lower.contains("%2e"), !lower.contains("%5c") else { return nil }
+        let segments = key.split(separator: "/", omittingEmptySubsequences: false)
+        guard !segments.isEmpty, segments.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else { return nil }
+        return key
     }
 
     /// `https://host[:port]` of a server URL.

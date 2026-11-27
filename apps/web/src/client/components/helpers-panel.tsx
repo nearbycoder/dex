@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router"
 import { Bot, Check, ChevronUp, LayoutGrid, LoaderCircle, MonitorUp, Square, X } from "lucide-react"
 import { type ReactNode, useEffect, useState } from "react"
-import { useDex } from "~/client/lib/dex"
+import { shallowEqual, useDexActions, useDexSelector } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
 import { useLatestActivity } from "~/client/lib/vm-activity"
 import { type VmHelperInfo, vmKeyFor } from "~/shared/protocol"
@@ -33,10 +33,13 @@ const STATUS: Record<VmHelperInfo["status"], { label: string; icon: ReactNode }>
  * been going, and what it did last on its VM; open its VM, stop it, or watch them all in the control panel.
  */
 export function HelpersPanel({ sessionId }: { sessionId: string }) {
-  const { state, stub } = useDex()
+  const { stub } = useDexActions()
   const [open, setOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const helpers = (state?.vmHelpers ?? []).filter((helper) => helper.chatId === sessionId).sort((a, b) => a.vm - b.vm)
+  const helpers = useDexSelector(
+    (state) => (state?.vmHelpers ?? []).filter((helper) => helper.chatId === sessionId).sort((a, b) => a.vm - b.vm),
+    shallowEqual
+  )
   const working = helpers.filter((helper) => helper.status === "working")
   const latest = useLatestActivity(working.map((helper) => vmKeyFor(sessionId, helper.vm)))
   // Elapsed durations only appear inside the expanded list.

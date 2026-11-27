@@ -77,6 +77,7 @@ class AgentConnection(
     private val minDelayMs: Long = 1_000,
     private val maxDelayMs: Long = 10_000,
 ) {
+    private val wsClient: OkHttpClient = client.newBuilder().readTimeout(0, java.util.concurrent.TimeUnit.SECONDS).build()
     private val connectionId = UUID.randomUUID().toString()
 
     private val _status = MutableStateFlow<ConnectionStatus>(ConnectionStatus.Stopped)
@@ -181,21 +182,23 @@ class AgentConnection(
             .header("Cookie", "${DexAuth.SESSION_COOKIE}=$token")
             .header("User-Agent", DexAuth.USER_AGENT)
             .build()
-        socket = client.newWebSocket(request, Listener())
+        socket = wsClient.newWebSocket(request, Listener())
     }
 
     private inner class Listener : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
-            if (webSocket !== socket) return
-            open = true
-            openedAt = clock()
-            opened.value = true
+            synchronized(lock) {
+                if (webSocket !== socket || !running) return
+                open = true
+                openedAt = clock()
+                opened.value = true
+            }
             // Calls made while the socket was down go now.
             for ((id, call) in pending) if (!call.sent.get()) transmit(id, call)
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
-            if (webSocket !== socket) return
+            if (synchronized(lock) { webSocket !== socket || !running }) return
             handle(text)
         }
 
@@ -204,14 +207,14 @@ class AgentConnection(
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-            if (webSocket !== socket) return
+            if (synchronized(lock) { webSocket !== socket }) return
             closed(code, reason.ifEmpty { null })
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-            if (webSocket !== socket) return
             val code = response?.code
             response?.close()
+            if (synchronized(lock) { webSocket !== socket }) return
             if (code == 401 || code == 403) {
                 // The Worker refused the session: it expired or was revoked.
                 signedOut(everywhere = false)
@@ -345,6 +348,12 @@ class AgentConnection(
      * timeout), like the web client's buffered sends. Throws [RpcException] with the agent's message on failure.
      */
     suspend fun call(method: String, args: List<JsonElement>, timeoutMs: Long = DEFAULT_TIMEOUT_MS): JsonElement? {
+        if (!running && !open) {
+            val status = _status.value
+            if (status is ConnectionStatus.SignedOut || status == ConnectionStatus.Stopped) {
+                throw RpcException("Not connected to Dex.", method)
+            }
+        }
         val id = UUID.randomUUID().toString()
         val call = Pending(method, CompletableDeferred())
         // Args go in before pending so an onOpen flush on another thread always sees them.

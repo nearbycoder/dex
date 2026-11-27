@@ -40,7 +40,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             DexRoot(graph = graph, links = links, signIn = signIn, pip = pip, inPip = inPip, openInBrowser = ::openInBrowser)
         }
-        handle(intent)
+        if (savedInstanceState == null) handle(intent)
         pip.onChange = ::updatePipParams
     }
 
@@ -68,6 +68,9 @@ class MainActivity : ComponentActivity() {
 
     /** Opens a page in a Custom Tab: the same browser that holds Dex's sign-in, for GitHub and MCP sign-ins. */
     fun openInBrowser(url: String) {
+        val uri = runCatching { url.trim().toUri() }.getOrNull() ?: return
+        val schemeName = uri.scheme?.lowercase()
+        if (schemeName != "https" && schemeName != "http") return
         runCatching {
             // In the app's light or dark, not only the system's (Settings → Appearance can differ).
             val scheme = when (graph.preferences.prefs.value.appearance) {
@@ -75,9 +78,9 @@ class MainActivity : ComponentActivity() {
                 "dark" -> CustomTabsIntent.COLOR_SCHEME_DARK
                 else -> CustomTabsIntent.COLOR_SCHEME_SYSTEM
             }
-            CustomTabsIntent.Builder().setShowTitle(true).setColorScheme(scheme).build().launchUrl(this, url.toUri())
+            CustomTabsIntent.Builder().setShowTitle(true).setColorScheme(scheme).build().launchUrl(this, uri)
         }.onFailure {
-            runCatching { startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) }
+            runCatching { startActivity(Intent(Intent.ACTION_VIEW, uri)) }
         }
     }
 

@@ -453,6 +453,7 @@ class FakeDex(private val chunkMs: Long = 30, private val clock: () -> Long = Sy
             null
         }
         "abort" -> { chats[args.s(0)]?.abort(); null }
+        "continueSession" -> { chats[args.s(0)]?.send("Continue"); null }
         "listQueue" -> chats[args.s(0)]?.queueJson()
         "editQueued" -> { chats[args.s(0)]?.edit(args.s(1), args.s(2)); null }
         "removeQueued" -> { chats[args.s(0)]?.removeQueued(args.s(1)); null }

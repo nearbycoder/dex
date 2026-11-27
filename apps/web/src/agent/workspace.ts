@@ -40,13 +40,18 @@ export interface BashResult {
  */
 export class Workspace {
   constructor(private readonly sql: SqlStorage) {
-    sql.exec(`CREATE TABLE IF NOT EXISTS dex_files (path TEXT PRIMARY KEY, content BLOB NOT NULL, mtime INTEGER NOT NULL)`)
+    sql.exec(`CREATE TABLE IF NOT EXISTS dex_files (path TEXT PRIMARY KEY, content BLOB NOT NULL, mtime INTEGER NOT NULL, size INTEGER NOT NULL DEFAULT 0)`)
+    const columns = sql.exec<{ name: string }>(`PRAGMA table_info(dex_files)`).toArray().map((c) => c.name)
+    if (!columns.includes("size")) {
+      sql.exec(`ALTER TABLE dex_files ADD COLUMN size INTEGER NOT NULL DEFAULT 0`)
+      sql.exec(`UPDATE dex_files SET size = length(content)`)
+    }
   }
 
   list(): WorkspaceFile[] {
     return this.sql
       .exec<{ path: string; size: number; mtime: number }>(
-        `SELECT path, length(content) AS size, mtime FROM dex_files ORDER BY path`
+        `SELECT path, size, mtime FROM dex_files ORDER BY path`
       )
       .toArray()
   }
@@ -65,16 +70,30 @@ export class Workspace {
     const bytes = typeof content === "string" ? encoder.encode(content) : content
     if (bytes.length > MAX_FILE_BYTES) throw new Error(`File too large (${bytes.length} bytes; limit ${MAX_FILE_BYTES})`)
     const resolved = resolveWorkspacePath(path)
-    const existing = this.sql.exec<{ size: number }>(`SELECT length(content) AS size FROM dex_files WHERE path = ?`, resolved).toArray()[0]?.size ?? 0
+    if (resolved === WORKSPACE_ROOT) throw new Error(`Cannot write a file at ${WORKSPACE_ROOT}; choose a path inside it.`)
+    // Prevent file/directory collisions that would break InMemoryFs hydration in bash().
+    const childPrefix = `${resolved.replace(/[\\%_]/g, "\\$&")}/%`
+    if (this.sql.exec(`SELECT 1 FROM dex_files WHERE path LIKE ? ESCAPE '\\' LIMIT 1`, childPrefix).toArray().length > 0) {
+      throw new Error(`Cannot write ${resolved}: a directory with files already exists at that path.`)
+    }
+    const segments = resolved.slice(WORKSPACE_ROOT.length + 1).split("/")
+    for (let i = 1; i < segments.length; i++) {
+      const ancestor = `${WORKSPACE_ROOT}/${segments.slice(0, i).join("/")}`
+      if (this.sql.exec(`SELECT 1 FROM dex_files WHERE path = ? LIMIT 1`, ancestor).toArray().length > 0) {
+        throw new Error(`Cannot write ${resolved}: ${ancestor} is an existing file.`)
+      }
+    }
+    const existing = this.sql.exec<{ size: number }>(`SELECT size FROM dex_files WHERE path = ?`, resolved).toArray()[0]?.size ?? 0
     if (this.totalBytes() - existing + bytes.length > MAX_WORKSPACE_BYTES) {
       throw new Error(`Workspace is full (limit ${MAX_WORKSPACE_BYTES / 1024 / 1024} MB)`)
     }
     this.sql.exec(
-      `INSERT INTO dex_files (path, content, mtime) VALUES (?, ?, ?)
-       ON CONFLICT(path) DO UPDATE SET content = excluded.content, mtime = excluded.mtime`,
+      `INSERT INTO dex_files (path, content, mtime, size) VALUES (?, ?, ?, ?)
+       ON CONFLICT(path) DO UPDATE SET content = excluded.content, mtime = excluded.mtime, size = excluded.size`,
       resolved,
       bytes,
-      Date.now()
+      Date.now(),
+      bytes.length
     )
   }
 
@@ -86,7 +105,7 @@ export class Workspace {
   }
 
   private totalBytes(): number {
-    return this.sql.exec<{ total: number | null }>(`SELECT sum(length(content)) AS total FROM dex_files`).one().total ?? 0
+    return this.sql.exec<{ total: number | null }>(`SELECT sum(size) AS total FROM dex_files`).one().total ?? 0
   }
 
   async bash(command: string, options: { signal?: AbortSignal; cwd?: string } = {}): Promise<BashResult> {

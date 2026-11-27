@@ -3,7 +3,7 @@ import { BarChart3, ChevronRight } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import { useCachedFetch } from "~/client/lib/cache"
-import { useDex } from "~/client/lib/dex"
+import { useDexActions, useDexConnected, useDexSelector } from "~/client/lib/dex"
 import type { UsageGlance, UsageMeter } from "~/shared/usage"
 
 const tokenCount = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 })
@@ -26,10 +26,16 @@ const tone = (meter: UsageMeter) => (meter.limited || meter.percent >= 100 ? "#e
  * and when a chat finishes. Undefined until it loads, and on an agent that predates `usageGlance`.
  */
 export function useUsageGlance() {
-  const { stub, connected, state } = useDex()
+  const { stub } = useDexActions()
+  const connected = useDexConnected()
   const load = useCallback(() => stub.usageGlance() as Promise<UsageGlance>, [stub])
   const { data, refresh } = useCachedFetch("usage-glance", load, connected)
-  const working = state?.sessions.filter((session) => session.busy).length ?? 0
+  const working = useDexSelector((state) => {
+    if (!state) return 0
+    let count = 0
+    for (const session of state.sessions) if (session.busy) count++
+    return count
+  })
   useEffect(() => {
     if (!connected) return
     const tick = () => document.visibilityState === "visible" && void refresh()

@@ -5,6 +5,9 @@ const TIMEOUT_MS = 10_000
 const PAGES = 5
 const CACHE_MS = 5 * 60_000
 
+const GH_SEG = /^(?!\.+$)[\w.-]{1,100}$/
+const GH_REPO = /^(?!\.+$)[\w.-]{1,100}\/(?!\.+$)[\w.-]{1,100}$/
+
 /** GitHub turned the connected account's token down (revoked, expired, or the app's access removed). */
 class GitHubRejected extends Error {}
 
@@ -88,14 +91,21 @@ export class GitHubRepos {
       signal: AbortSignal.timeout(TIMEOUT_MS)
     })
     if (response.status === 401) {
+      void response.body?.cancel()
       if (token) {
         this.rejected(token)
         throw new GitHubRejected("GitHub didn't accept the connected account: reconnect it in Settings.")
       }
       throw new Error("GitHub turned the request down.")
     }
-    if (response.status === 403 || response.status === 429) throw new Error(`GitHub is rate limiting${token ? "" : " anonymous searches; connect GitHub in Settings for more"}. Try again in a minute.`)
-    if (!response.ok) throw new Error(`GitHub returned ${response.status}.`)
+    if (response.status === 403 || response.status === 429) {
+      void response.body?.cancel()
+      throw new Error(`GitHub is rate limiting${token ? "" : " anonymous searches; connect GitHub in Settings for more"}. Try again in a minute.`)
+    }
+    if (!response.ok) {
+      void response.body?.cancel()
+      throw new Error(`GitHub returned ${response.status}.`)
+    }
     return (await response.json()) as T
   }
 
@@ -122,7 +132,7 @@ export class GitHubRepos {
    */
   async search(query: string, owner?: string): Promise<GitHubRepo[]> {
     const q = query.trim().toLowerCase().slice(0, 100)
-    const only = owner && /^[\w.-]{1,100}$/.test(owner) ? owner.toLowerCase() : null
+    const only = owner && GH_SEG.test(owner) ? owner.toLowerCase() : null
     let auth = await this.auth()
     // A rejected connection still finds public repos (anonymously) while it waits for a reconnect.
     const mine = auth
@@ -164,7 +174,7 @@ export class GitHubRepos {
 
   /** A repo's branches, its default first. */
   async branches(fullName: string): Promise<string[]> {
-    if (!/^[\w.-]+\/[\w.-]+$/.test(fullName)) return []
+    if (!GH_REPO.test(fullName)) return []
     const auth = await this.auth()
     const load = (token: string | null) =>
       Promise.all([this.get<RawRepo>(`/repos/${fullName}`, token), this.get<Array<{ name: string }>>(`/repos/${fullName}/branches?per_page=100`, token)])
@@ -182,7 +192,7 @@ export class GitHubRepos {
    * GitHub avatar. Private repos go through the connection. Files too big to keep are skipped.
    */
   async iconCandidates(fullName: string): Promise<ProjectImageCandidate[]> {
-    if (!/^[\w.-]+\/[\w.-]+$/.test(fullName)) return []
+    if (!GH_REPO.test(fullName)) return []
     const auth = await this.auth()
     let token = auth?.token ?? null
     const repo = await this.get<RawRepo>(`/repos/${fullName}`, token).catch((error: unknown) => {

@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router"
 import { Download, LoaderCircle, Plus, Sparkles } from "lucide-react"
 import { forwardRef, type KeyboardEvent, type ReactNode, useEffect, useImperativeHandle, useState } from "react"
-import { useDex } from "~/client/lib/dex"
+import { useDexActions, useDexSelector } from "~/client/lib/dex"
 import { useSkillSearch } from "~/client/lib/skills"
 import { type DirectorySkill, formatInstalls, type SkillInfo } from "~/shared/skills"
 
@@ -24,9 +24,9 @@ export const SkillMenu = forwardRef<SkillMenuHandle, { query: string; onPick: (n
   { query, onPick, onClose },
   ref
 ) {
-  const { state, stub } = useDex()
+  const { stub } = useDexActions()
+  const skills = useDexSelector((state) => state?.skills) ?? []
   const q = query.toLowerCase()
-  const skills = state?.skills ?? []
   const installed = skills
     .filter((skill) => skill.id.includes(q))
     .sort((a, b) => Number(b.id.startsWith(q)) - Number(a.id.startsWith(q)) || a.id.localeCompare(b.id))

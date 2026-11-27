@@ -46,6 +46,7 @@ export interface SkillHost {
   readonly githubToken: () => Promise<string | null>
 }
 
+const GH_REPO = /^(?!\.+$)[\w.-]{1,100}\/(?!\.+$)[\w.-]{1,100}$/
 const UTF8 = new TextEncoder()
 const bytes = (value: string) => UTF8.encode(value).length
 const encodePath = (path: string) => path.split("/").map(encodeURIComponent).join("/")
@@ -243,13 +244,16 @@ export class SkillCenter {
       headers: { accept: "application/json", "user-agent": "Dex (skills search)" },
       signal: AbortSignal.timeout(8_000)
     })
-    if (!response.ok) throw new Error(`skills.sh search failed (${response.status}).`)
+    if (!response.ok) {
+      void response.body?.cancel()
+      throw new Error(`skills.sh search failed (${response.status}).`)
+    }
     const body = (await response.json()) as { skills?: Array<Record<string, unknown>> }
     const results = (body.skills ?? [])
       .flatMap((entry): DirectorySkill[] => {
         const source = typeof entry.source === "string" ? entry.source : ""
         const skillId = typeof entry.skillId === "string" ? entry.skillId : ""
-        if (!/^[\w.-]+\/[\w.-]+$/.test(source) || !skillId) return []
+        if (!GH_REPO.test(source) || !skillId) return []
         return [
           {
             id: `${source}/${skillId}`,
@@ -268,14 +272,17 @@ export class SkillCenter {
 
   /** Reads a skill from its GitHub repo: finds its SKILL.md and the text files beside it. */
   async fetch(source: string, skillId: string): Promise<Fetched> {
-    if (!/^[\w.-]+\/[\w.-]+$/.test(source)) throw new Error(`Not a GitHub repo: ${source}`)
+    if (!GH_REPO.test(source)) throw new Error(`Not a GitHub repo: ${source}`)
     if (!/^[\w.:@ -]{1,100}$/.test(skillId)) throw new Error(`Not a skill name: ${skillId}`)
     const token = await this.host.githubToken()
     const headers: Record<string, string> = { accept: "application/vnd.github+json", "user-agent": "Dex (skills)", ...(token ? { authorization: `Bearer ${token}` } : {}) }
     const treeResponse = await fetch(`https://api.github.com/repos/${source}/git/trees/HEAD?recursive=1`, { headers, signal: AbortSignal.timeout(10_000) })
-    if (treeResponse.status === 404) throw new Error(`Couldn't find ${source} on GitHub${token ? "" : " (connect GitHub in Settings for private repos)"}.`)
-    if (treeResponse.status === 403 || treeResponse.status === 429) throw new Error(`GitHub is rate limiting Dex right now${token ? "" : "; connecting GitHub in Settings raises the limit"}.`)
-    if (!treeResponse.ok) throw new Error(`GitHub returned ${treeResponse.status} for ${source}.`)
+    if (!treeResponse.ok) {
+      void treeResponse.body?.cancel()
+      if (treeResponse.status === 404) throw new Error(`Couldn't find ${source} on GitHub${token ? "" : " (connect GitHub in Settings for private repos)"}.`)
+      if (treeResponse.status === 403 || treeResponse.status === 429) throw new Error(`GitHub is rate limiting Dex right now${token ? "" : "; connecting GitHub in Settings raises the limit"}.`)
+      throw new Error(`GitHub returned ${treeResponse.status} for ${source}.`)
+    }
     const tree = (await treeResponse.json()) as { tree?: Array<{ path: string; type: string; size?: number }> }
     const blobs = (tree.tree ?? []).filter((entry) => entry.type === "blob")
     const raw = async (path: string) => {
@@ -283,7 +290,10 @@ export class SkillCenter {
         headers: token ? { authorization: `Bearer ${token}` } : {},
         signal: AbortSignal.timeout(10_000)
       })
-      if (!response.ok) throw new Error(`Couldn't read ${path} from ${source} (${response.status}).`)
+      if (!response.ok) {
+        void response.body?.cancel()
+        throw new Error(`Couldn't read ${path} from ${source} (${response.status}).`)
+      }
       return response.text()
     }
 
@@ -301,13 +311,18 @@ export class SkillCenter {
       .sort((a, b) => depth(a.path) - depth(b.path))[0]
     let markdown: string | undefined
     if (!manifest) {
-      for (const candidate of manifests.slice(0, 40)) {
-        const text = await raw(candidate.path)
-        const name = parseSkillMarkdown(text).fields.name?.toLowerCase()
-        if (name === wanted || (name && skillSlug(name) === slug)) {
-          manifest = candidate
-          markdown = text
-          break
+      const candidates = manifests.slice(0, 40)
+      for (let i = 0; i < candidates.length && !manifest; i += 8) {
+        const batch = candidates.slice(i, i + 8)
+        const texts = await Promise.all(batch.map((candidate) => raw(candidate.path)))
+        for (let j = 0; j < batch.length; j++) {
+          const text = texts[j]!
+          const name = parseSkillMarkdown(text).fields.name?.toLowerCase()
+          if (name === wanted || (name && skillSlug(name) === slug)) {
+            manifest = batch[j]
+            markdown = text
+            break
+          }
         }
       }
     }

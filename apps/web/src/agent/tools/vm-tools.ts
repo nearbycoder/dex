@@ -1,4 +1,4 @@
-import { Type } from "@earendil-works/pi-ai"
+import { Type } from "typebox"
 import { defineTool, type ToolRegistration } from "@earendil-works/pi-durable"
 import { browseReady } from "../browse"
 import type { SearchResult } from "../chatgpt-search"
@@ -110,6 +110,7 @@ const runBrowse = async (
   await vm.writeFile(script, options.code, "agent", signal)
   const vpn = await prepareVpn(secrets, chatId, vm, signal)
   const marker = `@@dex-browse-${id}@@`
+  const endMarker = `@@dex-browse-end-${id}@@`
   const command = [
     // The code may hold filled-in secrets: gone however this ends.
     `trap 'rm -f ${script} ${result}' EXIT`,
@@ -120,7 +121,8 @@ const runBrowse = async (
     `status=$?`,
     `rm -f ${script}`,
     ...(options.screenshot ? [`browse screenshot --tab="$tab" --output=${images}-tab.png > /dev/null 2>&1 && echo ${images}-tab.png >> ${result}`] : []),
-    `echo ${marker}; echo "$status"; cat ${result}`
+    // Cap echoed output to 60 KB and place the exit marker at the very end so large results never truncate the markers.
+    `echo ${marker}; tail -c 60000 ${result}; printf '\\n%s:%s\\n' ${endMarker} "$status"`
   ].join("\n")
   const ran = await vm.exec(command, {
     actor: "agent",
@@ -130,16 +132,19 @@ const runBrowse = async (
     timeoutSeconds: Math.min(600, timeoutSeconds + 200),
     signal
   })
-  const at = ran.output.lastIndexOf(marker)
-  if (at < 0) return { ran: false, output: ran.output }
-  const [status = "", ...lines] = ran.output.slice(at + marker.length).replace(/^\r?\n/, "").split("\n")
+  const endAt = ran.output.lastIndexOf(`${endMarker}:`)
+  if (endAt < 0) return { ran: false, output: ran.output }
+  const statusLine = ran.output.slice(endAt + endMarker.length + 1).split("\n", 1)[0] ?? ""
+  const startAt = ran.output.lastIndexOf(marker, endAt)
+  const rawBody = startAt >= 0 ? ran.output.slice(startAt + marker.length, endAt) : ran.output.slice(0, endAt)
+  const lines = rawBody.replace(/^\r?\n/, "").split("\n")
   // `browse execute` exits 0 when the code succeeded and 1 when it threw; anything else is browse failing.
   return {
     ran: true,
-    status: status.trim() === "0" ? 0 : Number(status.trim()) || -1,
+    status: statusLine.trim() === "0" ? 0 : Number(statusLine.trim()) || -1,
     body: lines.filter((line) => !line.trim().startsWith(images)).join("\n").trim(),
     images: lines.map((line) => line.trim()).filter((line) => line.startsWith(images)),
-    vpn: vpnNote(ran.output.slice(0, at))
+    vpn: vpnNote(startAt >= 0 ? ran.output.slice(0, startAt) : "")
   }
 }
 
@@ -336,8 +341,8 @@ export const vmTools = (vms: ChatVms, secrets: VmSecrets) => {
           if (x === undefined || y === undefined) throw new Error(`${args.action} needs ${what}.`)
           return `X=$(map ${int(x, 10_000)}); Y=$(map ${int(y, 10_000)})`
         }
-        // Screenshot pixels to screen pixels (see DESKTOP_PRELUDE: L is the screen's longer side).
-        const lines = [`map() { awk -v v="$1" -v l="$L" 'BEGIN { s = (l > 1280) ? l / 1280 : 1; printf "%d", v * s + 0.5 }'; }`]
+        // Screenshot pixels to screen pixels (see DESKTOP_PRELUDE: L is the screen's longer side), pure bash arithmetic.
+        const lines = [`map() { if [ "$L" -gt 1280 ]; then echo $(( ($1 * L + 640) / 1280 )); else echo "$1"; fi; }`]
         let title: string = args.action
         let env: string | null = null
         switch (args.action) {
@@ -369,10 +374,10 @@ export const vmTools = (vms: ChatVms, secrets: VmSecrets) => {
             break
           case "type": {
             if (!args.text) throw new Error("type needs text.")
-            // Double-quoted for bash; secret placeholders become variables the command defines (see VmSecrets).
+            // Pipe via stdin (`--file -`) so filled-in secrets never appear in xdotool's argv (`ps`).
             const quoted = args.text.replace(/[\\"$`]/g, (char) => `\\${char}`)
             await secrets.prepare(chatId, vm.key)
-            const resolved = await secrets.command(chatId, `xdotool type --delay 12 -- "${quoted}"`)
+            const resolved = await secrets.command(chatId, `printf '%s' "${quoted}" | xdotool type --delay 12 --file -`)
             lines.push(resolved.command)
             env = resolved.env
             title = `type ${JSON.stringify(args.text.length > 40 ? `${args.text.slice(0, 40)}…` : args.text)}`

@@ -671,14 +671,16 @@ private fun CharacterMemory(character: CharacterProfile) {
     var loaded by rememberSaveable(character.id) { mutableStateOf("") }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(character.id, connected) {
+    var reload by remember { mutableStateOf(0) }
+    LaunchedEffect(character.id, connected, reload) {
         if (text != null || !connected) return@LaunchedEffect
+        error = null
         attempt { repository.api.characterMemory(character.id) }
             .onSuccess {
                 text = it
                 loaded = it
             }
-            .onFailure { text = "" }
+            .onFailure { error = it.message ?: "Couldn't load memory." }
     }
 
     SectionCard(
@@ -688,7 +690,14 @@ private fun CharacterMemory(character: CharacterProfile) {
     ) {
         val value = text
         if (value == null) {
-            Bone(height = 120.dp, fraction = 1f)
+            if (error != null) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(error!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { reload++ }) { Text("Retry") }
+                }
+            } else {
+                Bone(height = 120.dp, fraction = 1f)
+            }
         } else {
             OutlinedTextField(
                 value = value,

@@ -97,6 +97,12 @@ data class BoatStatus(
     val connected: Boolean = false,
     val source: String? = null,
     val keyHint: String? = null,
+    val via: String? = null,
+    val account: String? = null,
+    val oauthAvailable: Boolean = false,
+    val expired: Boolean = false,
+    val expiredAt: Long? = null,
+    val expiredReason: String? = null,
 )
 
 @Serializable

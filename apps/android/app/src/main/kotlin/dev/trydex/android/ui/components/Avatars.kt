@@ -95,13 +95,14 @@ fun AgentAvatar(icon: String, color: String, size: Dp = 32.dp, image: String? = 
     val radius = (size.value * 0.28f).roundToInt().dp
     val shape = RoundedCornerShape(radius)
     if (!image.isNullOrEmpty()) {
+        val model = if (image.startsWith("/")) dexUrl(image) else image
         Box(
             modifier.size(size).clip(shape).background(MaterialTheme.colorScheme.surfaceContainerHighest)
                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
                 .padding(max(1f, (size.value * 0.14f)).dp),
             contentAlignment = Alignment.Center,
         ) {
-            AsyncImage(model = image, contentDescription = null, contentScale = ContentScale.Fit)
+            AsyncImage(model = model, contentDescription = null, contentScale = ContentScale.Fit)
         }
         return
     }
@@ -122,15 +123,26 @@ fun CharacterAvatar(character: CharacterProfile, size: Dp = 32.dp, modifier: Mod
     val (background, foreground) = Catalogs.AGENT_COLORS[character.color] ?: Catalogs.agentColor("violet")
     character.look?.let { raw ->
         val look = SidekickLooks.clean(raw)
-        val picture = remember(raw, character.image) { character.image?.takeUnless { SidekickArt.draws(raw) }?.let(SidekickArt::picture)?.asImageBitmap() }
-        if (picture != null) Image(picture, contentDescription = null, contentScale = ContentScale.Fit, modifier = modifier.size(size))
-        else SidekickFace(look, size, modifier, live)
+        val rawImage = character.image
+        if (!rawImage.isNullOrEmpty() && !SidekickArt.draws(raw)) {
+            if (rawImage.startsWith("/")) {
+                AsyncImage(model = dexUrl(rawImage), contentDescription = null, contentScale = ContentScale.Fit, modifier = modifier.size(size))
+                return
+            }
+            val picture = remember(raw, rawImage) { SidekickArt.picture(rawImage)?.asImageBitmap() }
+            if (picture != null) {
+                Image(picture, contentDescription = null, contentScale = ContentScale.Fit, modifier = modifier.size(size))
+                return
+            }
+        }
+        SidekickFace(look, size, modifier, live)
         return
     }
     val image = character.image
     if (!image.isNullOrEmpty()) {
+        val model = if (image.startsWith("/")) dexUrl(image) else image
         Box(modifier.size(size).clip(CircleShape).background(Color(background)).border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)) {
-            AsyncImage(model = image, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.size(size))
+            AsyncImage(model = model, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.size(size))
         }
         return
     }

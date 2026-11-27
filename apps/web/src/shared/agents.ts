@@ -56,6 +56,8 @@ export interface AgentProfile {
   readonly thinking: ThinkingLevel
   /** MCP servers attached to chats started with this agent. */
   readonly mcpServers: ReadonlyArray<string>
+  /** Optional cap on tool rounds per run (prevents runaway loops on background/scheduled runs). */
+  readonly maxTurns?: number | null
   readonly createdAt: number
   readonly updatedAt: number
 }
@@ -63,6 +65,7 @@ export interface AgentProfile {
 export type AgentDraft = Omit<AgentProfile, "id" | "createdAt" | "updatedAt" | "mcpServers"> & {
   readonly id?: string
   readonly mcpServers?: ReadonlyArray<string>
+  readonly maxTurns?: number | null
 }
 
 /** Seeded once for every new Dex. Each is an ordinary agent: edit or delete it freely. */

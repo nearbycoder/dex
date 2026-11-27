@@ -288,7 +288,11 @@ private fun Paragraph(node: Paragraph, context: MarkdownContext) {
     }
     if (parts.hasOther) InlineText(node, context, context.style, skipMedia = true)
     parts.images.forEach { (src, alt) ->
-        AsyncImage(model = src, contentDescription = alt, modifier = Modifier.fillMaxWidth().heightIn(max = 480.dp).clip(RoundedCornerShape(12.dp)))
+        val resolved = dexUrl(src)
+        Box(Modifier.fillMaxWidth()) {
+            AsyncImage(model = resolved, contentDescription = alt, modifier = Modifier.fillMaxWidth().heightIn(max = 480.dp).clip(RoundedCornerShape(12.dp)))
+            AssetDownloadButton(resolved, alt.ifEmpty { "image" }, overlay = true, modifier = Modifier.align(Alignment.TopEnd).padding(8.dp))
+        }
     }
     parts.players.forEach { (source, title) -> context.media(source, title) }
 }

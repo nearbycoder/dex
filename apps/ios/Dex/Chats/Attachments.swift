@@ -321,15 +321,63 @@ struct UserAttachmentsView: View {
                 }
             }
             ForEach(Array(others.enumerated()), id: \.offset) { _, file in
-                Label(file.name, systemImage: fileSymbol(mimeType: file.mimeType, name: file.name))
-                    .font(.caption)
-                    .lineLimit(1)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(.white.opacity(0.18), in: .rect(cornerRadius: 8, style: .continuous))
+                AttachedFileChip(file: file)
             }
         }
         .accessibilityIdentifier("chat.attachments")
+    }
+}
+
+/// An attached file chip; stored files (`file.key`) download straight to Files on tap.
+private struct AttachedFileChip: View {
+    @Environment(DexClient.self) private var client
+    let file: AttachedFile
+    @State private var downloading = false
+
+    private var mediaURL: URL? {
+        guard let key = file.key else { return nil }
+        return ChatMedia.absolute("/api/media/\(key)", server: client.server)
+    }
+
+    var body: some View {
+        let content = HStack(spacing: 6) {
+            Image(systemName: fileSymbol(mimeType: file.mimeType, name: file.name))
+            Text(file.name).lineLimit(1)
+            if mediaURL != nil {
+                if downloading {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    Image(systemName: "arrow.down.to.line").font(.caption2.weight(.semibold))
+                }
+            }
+        }
+        .font(.caption)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(.white.opacity(0.18), in: .rect(cornerRadius: 8, style: .continuous))
+
+        if let url = mediaURL {
+            Button {
+                guard !downloading else { return }
+                downloading = true
+                Task {
+                    defer { downloading = false }
+                    await AssetExporter.downloadAndSave(url: url, name: file.name, client: client)
+                }
+            } label: { content }
+            .buttonStyle(.plain)
+            .contextMenu {
+                Button {
+                    Task { await AssetExporter.downloadAndSave(url: url, name: file.name, client: client) }
+                } label: { Label("Save to Files", systemImage: "arrow.down.to.line") }
+                Button {
+                    Task { await AssetExporter.downloadAndShare(url: url, name: file.name, client: client) }
+                } label: { Label("Share…", systemImage: "square.and.arrow.up") }
+            }
+            .accessibilityLabel("Download \(file.name)")
+        } else {
+            content
+        }
     }
 }
 
@@ -349,6 +397,18 @@ private struct AttachedImage: View {
                         .clipShape(.rect(cornerRadius: 10, style: .continuous))
                 }
                 .buttonStyle(.plain)
+                .contextMenu {
+                    Button {
+                        if let file = try? MediaLoader.shared.exportImage(loaded, name: image.ref.map { "image-\($0.prefix(8)).png" } ?? "image.png") {
+                            AssetExporter.saveToFiles(file)
+                        }
+                    } label: { Label("Save to Files", systemImage: "folder.badge.plus") }
+                    Button {
+                        if let file = try? MediaLoader.shared.exportImage(loaded, name: image.ref.map { "image-\($0.prefix(8)).png" } ?? "image.png") {
+                            AssetExporter.share(file)
+                        }
+                    } label: { Label("Share…", systemImage: "square.and.arrow.up") }
+                }
                 .accessibilityLabel("Attached image")
                 .fullScreenCover(isPresented: $zoomed) { ImageViewer(image: loaded, title: "Image") }
             } else {

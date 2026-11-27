@@ -1,4 +1,4 @@
-import type { SnapshotEvent } from "@earendil-works/pi-durable"
+import type { SnapshotEvent } from "~/shared/protocol"
 
 /** Images bigger than this (base64 characters) are left out of transcripts sent to the browser. */
 const LARGE = 4_000

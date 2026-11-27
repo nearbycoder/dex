@@ -6,6 +6,16 @@ import { skeletonPreview } from "./skeleton-preview"
  * back to a page shows what it had at once and refreshes it in the background.
  */
 const cache = new Map<string, unknown>()
+const MAX_CACHE_ENTRIES = 64
+
+const cacheSet = (key: string, value: unknown) => {
+  cache.delete(key)
+  cache.set(key, value)
+  if (cache.size > MAX_CACHE_ENTRIES) {
+    const oldest = cache.keys().next().value
+    if (oldest !== undefined) cache.delete(oldest)
+  }
+}
 
 export const clearPageCache = () => cache.clear()
 
@@ -16,18 +26,24 @@ type Updater<T> = T | ((current: T | undefined) => T)
  * `data` is undefined until the first load for this key, which is when a page shows its skeleton.
  */
 export function useCachedFetch<T>(key: string | null, load: () => Promise<T>, enabled: boolean) {
-  const [data, setState] = useState<T | undefined>(() => (key ? (cache.get(key) as T | undefined) : undefined))
+  const [entry, setEntry] = useState<{ readonly key: string | null; readonly value: T | undefined }>(() => ({
+    key,
+    value: key ? (cache.get(key) as T | undefined) : undefined
+  }))
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const current = useRef(key)
   // Monotonic sequence so an older overlapping fetch never overwrites a newer response or optimistic update.
   const seq = useRef(0)
 
+  // Avoid a 1-frame flash of the previous key's data when `key` changes.
+  const data = entry.key === key ? entry.value : key ? (cache.get(key) as T | undefined) : undefined
+
   useEffect(() => {
     current.current = key
     seq.current++
     setLoading(false)
-    setState(key ? (cache.get(key) as T | undefined) : undefined)
+    setEntry({ key, value: key ? (cache.get(key) as T | undefined) : undefined })
     setError(null)
   }, [key])
 
@@ -35,11 +51,11 @@ export function useCachedFetch<T>(key: string | null, load: () => Promise<T>, en
     (next: Updater<T>) => {
       if (!key) return
       const value = typeof next === "function" ? (next as (current: T | undefined) => T)(cache.get(key) as T | undefined) : next
-      cache.set(key, value)
+      cacheSet(key, value)
       if (current.current === key) {
         seq.current++
         setLoading(false)
-        setState(value)
+        setEntry({ key, value })
       }
     },
     [key]
@@ -53,8 +69,8 @@ export function useCachedFetch<T>(key: string | null, load: () => Promise<T>, en
     try {
       const value = await load()
       if (id !== seq.current) return
-      cache.set(key, value)
-      if (current.current === key) setState(value)
+      cacheSet(key, value)
+      if (current.current === key) setEntry({ key, value })
     } catch (cause) {
       if (id === seq.current && current.current === key) setError(cause instanceof Error ? cause.message : String(cause))
     } finally {

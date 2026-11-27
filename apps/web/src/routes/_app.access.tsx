@@ -3,6 +3,7 @@ import { Bot, Check, Copy, KeyRound, LoaderCircle, MousePointerClick, Plug, Shie
 import { useEffect, useState } from "react"
 import { AccessSkeleton } from "~/client/components/skeleton"
 import { Page, Section } from "~/client/components/ui"
+import { WebhooksSection } from "~/client/components/webhooks-section"
 import { useDex } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
 import { ACCESS_RISKS, type AccessRisk, type CreatedAccessToken } from "~/shared/access"
@@ -244,6 +245,8 @@ function AccessPage() {
             )}
           </div>
         </Section>
+
+        <WebhooksSection origin={origin} />
 
         <Section title="Activity" info="Every app operation run by a chat, an external agent, or a button in a chat's UI, newest first.">
           {access.audit.length === 0 ? (

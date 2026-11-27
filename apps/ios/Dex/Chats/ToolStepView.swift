@@ -274,6 +274,33 @@ struct ScreenshotView: View {
                         .clipShape(.rect(cornerRadius: 10, style: .continuous))
                 }
                 .buttonStyle(.plain)
+                .overlay(alignment: .topTrailing) {
+                    Button {
+                        if let file = try? MediaLoader.shared.exportImage(image, name: ref.map { "screenshot-\($0.prefix(8)).png" } ?? "screenshot.png") {
+                            AssetExporter.saveToFiles(file)
+                        }
+                    } label: {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.title3)
+                            .symbolRenderingMode(.palette)
+                            .foregroundStyle(.white, .black.opacity(0.6))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(8)
+                    .accessibilityLabel("Download screenshot")
+                }
+                .contextMenu {
+                    Button {
+                        if let file = try? MediaLoader.shared.exportImage(image, name: ref.map { "screenshot-\($0.prefix(8)).png" } ?? "screenshot.png") {
+                            AssetExporter.saveToFiles(file)
+                        }
+                    } label: { Label("Save to Files", systemImage: "folder.badge.plus") }
+                    Button {
+                        if let file = try? MediaLoader.shared.exportImage(image, name: ref.map { "screenshot-\($0.prefix(8)).png" } ?? "screenshot.png") {
+                            AssetExporter.share(file)
+                        }
+                    } label: { Label("Share…", systemImage: "square.and.arrow.up") }
+                }
                 .accessibilityLabel("VM screenshot")
                 .accessibilityIdentifier("chat.screenshot")
                 .fullScreenCover(isPresented: $zoomed) { ImageViewer(image: image, title: "Screenshot") }

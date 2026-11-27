@@ -30,7 +30,7 @@ const page = (watchOnly: boolean) => `<!doctype html><html lang="en"><head><meta
  * The client decodes video in workers it makes from blob: and data: URLs and reaches back only to this origin.
  * Framed only by Dex.
  */
-const pagePolicy = (host: string) =>
+const pagePolicy = (url: URL) =>
   [
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' blob: data:",
@@ -39,10 +39,11 @@ const pagePolicy = (host: string) =>
     "img-src 'self' data: blob:",
     "media-src 'self' blob:",
     "font-src 'self' data:",
-    `connect-src 'self' wss://${host} ws://${host}`,
+    `connect-src 'self' ${url.protocol === "https:" ? `wss://${url.host}` : `ws://${url.host} wss://${url.host}`}`,
     "frame-ancestors 'self'",
     "object-src 'none'",
-    "base-uri 'self'"
+    "base-uri 'self'",
+    "form-action 'none'"
   ].join("; ")
 
 /**
@@ -50,11 +51,13 @@ const pagePolicy = (host: string) =>
  * so a VM can't serve pages of its own under Dex's origin.
  */
 const RELAYED = /^api\/(websockets|status|switch|upload|files(\/.*)?|print(\/.*)?)$/
+const UNSAFE_PATH = /%2e|%2f|%5c|%00|\\/i
 
 /**
  * Whatever the VM answers (outside the stream) is inert on Dex's origin: the VM runs whatever the agent runs, and a
  * prompt-injected agent could replace Selkies with its own server. No scripts, no framing, no sniffing; files are
- * downloads. The Selkies client only reads these with fetch, which these headers don't affect.
+ * downloads. Only safe entity headers are copied from the upstream response, preventing headers like
+ * Clear-Site-Data, WWW-Authenticate, Set-Cookie, NEL, or Report-To from affecting Dex's origin.
  */
 const INERT = {
   "content-security-policy": "sandbox; default-src 'none'; frame-ancestors 'none'",
@@ -62,10 +65,15 @@ const INERT = {
   "cross-origin-resource-policy": "same-origin",
   "cache-control": "no-store"
 }
-const UPSTREAM_DROPPED = ["set-cookie", "location", "refresh", "link", "access-control-allow-origin", "access-control-allow-credentials", "access-control-allow-headers", "access-control-allow-methods", "access-control-expose-headers", "content-security-policy", "content-security-policy-report-only", "x-frame-options"]
+const UPSTREAM_ALLOWED = ["content-type", "content-length", "content-disposition", "etag", "last-modified", "accept-ranges", "content-range", "vary"]
 
-/** Headers the browser sent that must not go to the VM: Dex's own cookie and anything naming Dex's host. */
-const DROPPED = ["cookie", "authorization", "host", "origin", "referer", "cf-connecting-ip", "x-forwarded-for", "x-real-ip"]
+/** Headers the browser sent that must not go to the VM: Dex's own cookie and anything naming Dex's host or client IP. */
+const DROPPED = [
+  "cookie", "authorization", "host", "origin", "referer",
+  "cf-connecting-ip", "cf-ray", "cf-ipcountry", "cf-visitor", "true-client-ip",
+  "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "x-real-ip",
+  "sec-fetch-site", "sec-fetch-mode", "sec-fetch-dest", "sec-fetch-user"
+]
 
 const agentFor = (env: Env, userId: string) => getAgentByName(env.DexAgent as unknown as DurableObjectNamespace<DexAgent>, userId)
 
@@ -93,7 +101,7 @@ export async function handleVmDesktop(request: Request, env: Env): Promise<Respo
       headers: {
         "content-type": "text/html; charset=utf-8",
         "cache-control": "no-store",
-        "content-security-policy": pagePolicy(url.host),
+        "content-security-policy": pagePolicy(url),
         "x-content-type-options": "nosniff",
         "referrer-policy": "same-origin"
       }
@@ -101,11 +109,14 @@ export async function handleVmDesktop(request: Request, env: Env): Promise<Respo
   }
 
   const upgrade = request.headers.get("upgrade")?.toLowerCase() === "websocket"
-  if (!RELAYED.test(path) || (path === "api/websockets") !== upgrade) return new Response("Not found", { status: 404 })
+  if (UNSAFE_PATH.test(path) || rest.some((seg) => seg === "." || seg === "..") || !RELAYED.test(path) || (path === "api/websockets") !== upgrade) {
+    return new Response("Not found", { status: 404 })
+  }
 
   const agent = await agentFor(env, viewer.id)
   const relay = async (upstream: DesktopUpstream) => {
     const target = new URL(`/${path}${url.search}`, upstream.origin)
+    if (target.origin !== upstream.origin) return new Response("Not found", { status: 404 })
     const headers = new Headers(request.headers)
     for (const name of DROPPED) headers.delete(name)
     for (const [name, value] of Object.entries(upstream.headers)) headers.set(name, value)
@@ -134,11 +145,13 @@ export async function handleVmDesktop(request: Request, env: Env): Promise<Respo
       void response.body?.cancel()
       return new Response("The desktop stream sent a redirect", { status: 502 })
     }
-    const relayed = new Response(response.body, response)
-    for (const name of UPSTREAM_DROPPED) relayed.headers.delete(name)
-    for (const [name, value] of Object.entries(INERT)) relayed.headers.set(name, value)
-    if (path.startsWith("api/files") || path.startsWith("api/print")) relayed.headers.set("content-disposition", "attachment")
-    return relayed
+    const headers = new Headers(INERT)
+    for (const name of UPSTREAM_ALLOWED) {
+      const value = response.headers.get(name)
+      if (value !== null) headers.set(name, value)
+    }
+    if (path.startsWith("api/files") || path.startsWith("api/print")) headers.set("content-disposition", "attachment")
+    return new Response(response.body, { status: response.status, headers })
   } catch (error) {
     // e.g. the agent is still on the build from before this deploy, which has no vmDesktopUpstream yet.
     console.error("VM desktop relay failed:", error instanceof Error ? error.message : String(error))

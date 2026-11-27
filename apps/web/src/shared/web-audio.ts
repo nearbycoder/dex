@@ -39,7 +39,7 @@ export const AUDIO_UNLOCK_SCRIPT = `<script>
  */
 export function withAudioUnlock(html: string): string {
   if (html.includes("__dexUnlock")) return html
-  for (const tag of [/<head[^>]*>/i, /<html[^>]*>/i, /<!doctype[^>]*>/i]) {
+  for (const tag of [/<head\b[^>]*>/i, /<html\b[^>]*>/i, /<!doctype\b[^>]*>/i]) {
     const match = tag.exec(html)
     if (match) return html.slice(0, match.index + match[0].length) + AUDIO_UNLOCK_SCRIPT + html.slice(match.index + match[0].length)
   }

@@ -81,6 +81,10 @@ struct SidekickQuery: EntityQuery {
     func defaultResult() async -> SidekickEntity? { await all().first }
 
     private func all() async -> [SidekickEntity] {
+        guard let credentials = WidgetShare.load()?.credentials, !credentials.isExpired() else {
+            WidgetData.store.clear()
+            return []
+        }
         let snapshot: SidekickSnapshot? = if let kept = WidgetData.store.load(), !kept.sidekicks.isEmpty {
             kept
         } else if case .ready(let fresh, _) = await WidgetData.refresh() {

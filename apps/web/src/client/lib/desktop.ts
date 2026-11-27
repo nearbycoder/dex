@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { useDex } from "./dex"
+import { useDexActions } from "./dex"
 
 /**
  * boat's Stream player needs MediaStreamTrackGenerator (Chromium only) and hangs elsewhere, notably on
@@ -30,7 +30,7 @@ export const saveDesktopMode = (mode: DesktopMode) => {
 
 /** The desktop page to frame for a VM, fetched while it runs (Selkies may first need setting up, ~30s once). */
 export function useDesktopUrl(vmKey: string, mode: DesktopMode, running: boolean) {
-  const { stub } = useDex()
+  const { stub } = useDexActions()
   const [url, setUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)

@@ -68,6 +68,7 @@ class QueryManager(private val provider: ToolProvider?, private val scope: Corou
     private val queries = LinkedHashMap<String, QueryEntry>()
     private val mutations = LinkedHashMap<String, MutationEntry>()
     private val cache = HashMap<String, CacheEntry>()
+    private val fetchJobs = HashSet<Job>()
     private var disposed = false
     private var generation = 0
 
@@ -134,7 +135,7 @@ class QueryManager(private val provider: ToolProvider?, private val scope: Corou
         entry.inFlight = true
         q.loading = true
         rebuild()
-        scope.launch {
+        val job = scope.launch {
             try {
                 val data = provider.callTool(toolName, args)
                 if (disposed) return@launch
@@ -161,7 +162,7 @@ class QueryManager(private val provider: ToolProvider?, private val scope: Corou
                 if (current != null && current.cacheKey == key) {
                     current.loading = false
                     rebuild()
-                    if (current.needsRefetch) {
+                    if (current.needsRefetch && !disposed) {
                         current.needsRefetch = false
                         fetch(current.cacheKey, statementId)
                     }
@@ -170,6 +171,8 @@ class QueryManager(private val provider: ToolProvider?, private val scope: Corou
                 }
             }
         }
+        fetchJobs += job
+        job.invokeOnCompletion { fetchJobs -= job }
     }
 
     private fun cleanup(key: String) {
@@ -218,7 +221,7 @@ class QueryManager(private val provider: ToolProvider?, private val scope: Corou
                 if (interval > 0) {
                     q.timer = scope.launch {
                         while (isActive) {
-                            delay((interval * 1000).toLong().coerceAtLeast(250))
+                            delay((interval * 1000).toLong().coerceAtLeast(1_000))
                             if (disposed || provider == null) break
                             if (cache[q.cacheKey]?.inFlight != true) fetch(q.cacheKey, node.statementId)
                         }
@@ -305,6 +308,8 @@ class QueryManager(private val provider: ToolProvider?, private val scope: Corou
     fun dispose() {
         disposed = true
         generation++
+        fetchJobs.toList().forEach { it.cancel() }
+        fetchJobs.clear()
         for (q in queries.values) {
             q.timer?.cancel()
             q.timer = null

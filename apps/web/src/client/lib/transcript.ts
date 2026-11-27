@@ -1,9 +1,9 @@
 import type { AssistantMessage, ToolCall, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai"
 // Relative, with .ts: the Android goldens (apps/android/tools/goldens) run this file in Node, which has no ~ alias.
 import { type AttachedFile, splitAttachments } from "../../shared/attachments.ts"
-import type { AgentEvent, EntryRecord, SnapshotEvent } from "@earendil-works/pi-durable"
+import type { EntryRecord } from "@earendil-works/pi-durable"
 import type { ChatArtifact } from "~/shared/media"
-import type { QueuedMessage } from "~/shared/protocol"
+import type { AgentEvent, QueuedMessage, SnapshotEvent } from "../../shared/protocol.ts"
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null
 
@@ -94,23 +94,34 @@ export const withEarlier = (state: TranscriptState, older: ReadonlyArray<EntryRe
   return { ...state, entries: [...fresh, ...state.entries], earlier: more }
 }
 
+/** Newer entries (`chatEntriesSince`'s) merged cleanly after what's already shown on reconnect. */
+export const withNewer = (state: TranscriptState, newer: ReadonlyArray<EntryRecord>): TranscriptState => {
+  if (newer.length === 0) return state
+  const existing = new Set(state.entries.map((entry) => entry.id))
+  const fresh = newer.filter((entry) => !existing.has(entry.id))
+  if (fresh.length === 0) return state
+  return { ...state, entries: [...state.entries, ...fresh], loaded: true }
+}
+
 const appendEntry = (entries: ReadonlyArray<EntryRecord>, entry: EntryRecord) =>
   entries.some((existing) => existing.id === entry.id) ? entries : [...entries, entry]
 
+const UNSAFE_KEYS = new Set<string | number>(["__proto__", "constructor", "prototype"])
+
 /** Returns a shallow path-cloned copy of `target` with `delta` appended at `path`, creating objects on the way. */
 const appendAtPath = (target: ToolCall["arguments"], path: ReadonlyArray<string | number>, delta: string): ToolCall["arguments"] => {
-  if (path.length === 0) return target
+  if (path.length === 0 || path.some((key) => UNSAFE_KEYS.has(key))) return target
   const root: Record<string | number, unknown> = { ...target }
   let node: Record<string | number, unknown> = root
   for (let i = 0; i < path.length - 1; i++) {
     const key = path[i]!
-    const next = node[key]
+    const next = Object.hasOwn(node, key) ? node[key] : undefined
     const copy = (Array.isArray(next) ? [...next] : isObject(next) ? { ...next } : {}) as Record<string | number, unknown>
     node[key] = copy
     node = copy
   }
   const last = path[path.length - 1]!
-  const current = node[last]
+  const current = Object.hasOwn(node, last) ? node[last] : undefined
   node[last] = (typeof current === "string" ? current : "") + delta
   return root as ToolCall["arguments"]
 }
@@ -260,6 +271,10 @@ const summaryText = (entry: EntryRecord) => {
   return (/<summary>\n?([\s\S]*?)\n?<\/summary>\s*$/.exec(text)?.[1] ?? text).trim()
 }
 
+// Per-entry memoization for user/divider items so `memo(UserRow)` keeps stable references when new entries arrive.
+const userItemCache = new WeakMap<UserMessage, Extract<DisplayItem, { kind: "user" }>>()
+const dividerItemCache = new WeakMap<EntryRecord, Extract<DisplayItem, { kind: "divider" }>>()
+
 /** Display items for recorded entries only; memoize on `entries` so streaming deltas don't rebuild the whole chat. */
 export const recordedDisplayItems = (entries: ReadonlyArray<EntryRecord>): DisplayItem[] => {
   const items: DisplayItem[] = []
@@ -279,17 +294,27 @@ export const recordedDisplayItems = (entries: ReadonlyArray<EntryRecord>): Displ
   for (const entry of entries) {
     // A summary's text (and a reset's handoff) is a user message for the model, not something you said.
     if (entry.kind === "pi.reset" || entry.kind === "pi.compaction") {
-      const summary = summaryText(entry)
-      const label = entry.kind === "pi.reset" ? "Context reset" : "Earlier messages summarized"
+      let divider = dividerItemCache.get(entry)
+      if (!divider) {
+        const summary = summaryText(entry)
+        const label = entry.kind === "pi.reset" ? "Context reset" : "Earlier messages summarized"
+        divider = { kind: "divider", id: String(entry.id), label, ...(summary && { summary }) }
+        dividerItemCache.set(entry, divider)
+      }
       currentMessages = null
-      items.push({ kind: "divider", id: String(entry.id), label, ...(summary && { summary }) })
+      items.push(divider)
       continue
     }
     for (const [index, message] of (entry.model ?? []).entries()) {
       const id = `${entry.id}:${index}`
       if (message.role === "user") {
         currentMessages = null
-        items.push({ kind: "user", id, ...userText(message) })
+        let userItem = userItemCache.get(message)
+        if (!userItem || userItem.id !== id) {
+          userItem = { kind: "user", id, ...userText(message) }
+          userItemCache.set(message, userItem)
+        }
+        items.push(userItem)
       } else if (message.role === "assistant") {
         addAssistant(id, message)
       } else if (message.role === "toolResult") {

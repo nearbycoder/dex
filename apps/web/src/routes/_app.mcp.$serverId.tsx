@@ -6,7 +6,7 @@ import { EditorSkeleton } from "~/client/components/skeleton"
 import { InfoTip } from "~/client/components/info-tip"
 import { useDex } from "~/client/lib/dex"
 import { AUTH_ICON, AUTH_LABEL, followConnect } from "~/client/lib/mcp"
-import { MCP_STATUS_LABEL, type McpAuth, type McpServerDraft, type McpTransport } from "~/shared/mcp"
+import { MCP_APPROVAL_LABEL, MCP_STATUS_LABEL, type McpApproval, type McpAuth, type McpServerDraft, type McpTransport } from "~/shared/mcp"
 import { MCP_TEMPLATES } from "~/shared/mcp-templates"
 import { ask } from "~/client/components/confirm-dialog"
 
@@ -82,6 +82,8 @@ function McpEditor() {
         transport: existing.transport,
         auth: existing.auth,
         defaultOn: existing.defaultOn,
+        approval: existing.approval ?? "auto",
+        deferTools: Boolean(existing.deferTools),
         headers: existing.headerNames.map((name) => ({ name, value: "", saved: true })),
         kind: existing.local ? "local" : "remote",
         command: existing.local?.command ?? "",
@@ -96,6 +98,8 @@ function McpEditor() {
         transport: "auto",
         auth: template?.auth ?? prefill.auth ?? "none",
         defaultOn: false,
+        approval: "auto",
+        deferTools: false,
         headers: [{ name: template?.header?.name ?? prefill.header ?? "Authorization", value: "", saved: false }],
         kind: prefill.command ? "local" : "remote",
         command: prefill.command ?? "",
@@ -163,7 +167,10 @@ function McpEditor() {
         {existing && (
           <p className="mt-1 flex items-center gap-1.5 text-sm text-zinc-400">
             <McpStatusDot status={existing.status} /> {MCP_STATUS_LABEL[existing.status]}
-            {existing.status === "ready" && ` · ${existing.tools.length} tools`}
+            {existing.status === "ready" &&
+              ` · ${existing.tools.length} ${existing.tools.length === 1 ? "tool" : "tools"}${
+                existing.resources?.length ? ` · ${existing.resources.length} ${existing.resources.length === 1 ? "resource" : "resources"}` : ""
+              }${existing.prompts?.length ? ` · ${existing.prompts.length} ${existing.prompts.length === 1 ? "prompt" : "prompts"}` : ""}`}
           </p>
         )}
 
@@ -379,20 +386,95 @@ function McpEditor() {
             </details>
           )}
 
-          <label className="flex cursor-pointer items-start gap-3">
-            <input
-              type="checkbox"
-              checked={draft.defaultOn}
-              onChange={(event) => update({ defaultOn: event.target.checked })}
-              className="mt-0.5 size-4 accent-emerald-600"
-            />
-            <span>
-              <span className="flex items-center gap-1 text-sm text-zinc-200">
-                On for new chats
-                <InfoTip>Attach it to new chats that don't use an agent. Agents choose their own servers.</InfoTip>
+          <Field
+            label="Tool approval"
+            hint="Auto-allow runs tools immediately. Ask before writes pauses for your confirmation on tools that modify state. Always ask confirms every call."
+          >
+            <div className="grid grid-cols-3 gap-1 rounded-lg border border-zinc-800 bg-zinc-950 p-1">
+              {(["auto", "writes", "always"] as const satisfies readonly McpApproval[]).map((policy) => (
+                <button
+                  key={policy}
+                  type="button"
+                  aria-pressed={(draft.approval ?? "auto") === policy}
+                  onClick={() => update({ approval: policy })}
+                  className={`rounded-md px-2 py-1.5 text-xs sm:text-sm ${
+                    (draft.approval ?? "auto") === policy ? "bg-zinc-800 text-zinc-100" : "text-zinc-500 hover:text-zinc-200"
+                  }`}
+                >
+                  {MCP_APPROVAL_LABEL[policy]}
+                </button>
+              ))}
+            </div>
+          </Field>
+
+          <div className="space-y-3">
+            <label className="flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                checked={draft.defaultOn}
+                onChange={(event) => update({ defaultOn: event.target.checked })}
+                className="mt-0.5 size-4 accent-emerald-600"
+              />
+              <span>
+                <span className="flex items-center gap-1 text-sm text-zinc-200">
+                  On for new chats
+                  <InfoTip>Attach it to new chats that don't use an agent. Agents choose their own servers.</InfoTip>
+                </span>
               </span>
-            </span>
-          </label>
+            </label>
+
+            <label className="flex cursor-pointer items-start gap-3">
+              <input
+                type="checkbox"
+                checked={Boolean(draft.deferTools)}
+                onChange={(event) => update({ deferTools: event.target.checked })}
+                className="mt-0.5 size-4 accent-emerald-600"
+              />
+              <span>
+                <span className="flex items-center gap-1 text-sm text-zinc-200">
+                  Load tool schemas on demand (tool_search)
+                  <InfoTip>
+                    Keeps this server's tool definitions out of the system prompt until the model searches for them. Also enabled automatically whenever a chat has 12+ MCP tools.
+                  </InfoTip>
+                </span>
+              </span>
+            </label>
+          </div>
+
+          {existing && ((existing.resources?.length ?? 0) > 0 || (existing.prompts?.length ?? 0) > 0) && (
+            <div className="space-y-3 rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-4">
+              {(existing.resources?.length ?? 0) > 0 && (
+                <div>
+                  <div className="mb-1.5 text-xs font-medium tracking-wide text-zinc-400 uppercase">
+                    Resources ({existing.resources!.length}) — type <code className="text-emerald-400">@</code> in chat to mention
+                  </div>
+                  <ul className="space-y-1 text-xs">
+                    {existing.resources!.slice(0, 12).map((res) => (
+                      <li key={res.uri} className="flex items-baseline gap-2 truncate">
+                        <span className="shrink-0 font-medium text-zinc-200">{res.name}</span>
+                        <span className="truncate font-mono text-[11px] text-zinc-500">{res.uri}</span>
+                      </li>
+                    ))}
+                    {existing.resources!.length > 12 && <li className="text-zinc-500">+{existing.resources!.length - 12} more</li>}
+                  </ul>
+                </div>
+              )}
+              {(existing.prompts?.length ?? 0) > 0 && (
+                <div>
+                  <div className="mb-1.5 text-xs font-medium tracking-wide text-zinc-400 uppercase">Prompts ({existing.prompts!.length})</div>
+                  <ul className="space-y-1 text-xs">
+                    {existing.prompts!.slice(0, 12).map((prompt) => (
+                      <li key={prompt.name} className="flex items-baseline gap-2 truncate">
+                        <span className="shrink-0 font-mono text-zinc-200">{prompt.name}</span>
+                        {prompt.description && <span className="truncate text-zinc-500">{prompt.description}</span>}
+                      </li>
+                    ))}
+                    {existing.prompts!.length > 12 && <li className="text-zinc-500">+{existing.prompts!.length - 12} more</li>}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
 
           {error && <p className="text-sm break-words text-red-400">{error}</p>}
 

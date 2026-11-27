@@ -18,7 +18,7 @@ import type { VoiceCall } from "~/client/voice/call"
 import { Bone, ChatSkeleton, VmFilesSkeleton } from "~/client/components/skeleton"
 import { type OpenUIHost, OpenUIHostContext } from "~/client/lib/openui-host"
 import { ChatSecretsContext } from "~/client/lib/chat-secrets"
-import { useDex, useTranscript } from "~/client/lib/dex"
+import { shallowEqual, useDexActions, useDexConnected, useDexSelector, useTranscript } from "~/client/lib/dex"
 import { MenuButton } from "~/client/lib/mobile-nav"
 import { MODEL_PROVIDERS, providerOf } from "~/shared/models"
 import { chatOfVm, connectedProviders } from "~/shared/protocol"
@@ -34,23 +34,38 @@ const VmFilesPanel = lazy<typeof import("~/client/components/vm-files")["default
 
 function Chat() {
   const { sessionId } = Route.useParams()
-  const { state, stub, connected } = useDex()
+  const { stub } = useDexActions()
+  const connected = useDexConnected()
+  const hasState = useDexSelector((s) => Boolean(s))
+  const session = useDexSelector((s) => s?.sessions.find((candidate) => candidate.id === sessionId))
   const { transcript, loadEarlier } = useTranscript(sessionId)
-  const session = state?.sessions.find((candidate) => candidate.id === sessionId)
   const [editing, setEditing] = useState<string | null>(null)
   const [filesSession, setFilesSession] = useState<string | null>(null)
   const filesOpen = filesSession === sessionId
   const closeFiles = useCallback(() => setFilesSession(null), [])
   const naming = useNaming(sessionId)
-  const agent = session?.agentId ? state?.agents.find((candidate) => candidate.id === session.agentId) : undefined
-  const project = session?.projectId ? state?.projects.find((candidate) => candidate.id === session.projectId) : undefined
-  const character = session?.characterId ? state?.characters.find((candidate) => candidate.id === session.characterId) : undefined
+  const agentId = session?.agentId ?? null
+  const projectId = session?.projectId ?? null
+  const characterId = session?.characterId ?? null
+  const agent = useDexSelector((s) => (agentId ? s?.agents.find((candidate) => candidate.id === agentId) : undefined))
+  const project = useDexSelector((s) => (projectId ? s?.projects.find((candidate) => candidate.id === projectId) : undefined))
+  const character = useDexSelector((s) => (characterId ? s?.characters.find((candidate) => candidate.id === characterId) : undefined))
+  const vmConfigured = useDexSelector((s) => Boolean(s?.vmConfigured))
+  const hasPushDevices = useDexSelector((s) => (s?.push.devices.length ?? 0) > 0)
+  const mcp = useDexSelector((s) => s?.mcp)
+  const vpns = useDexSelector((s) => s?.vpns)
+  const modelProvider = session ? providerOf(session.model) : null
+  const modelProviderConnected = useDexSelector((s) => (!s || !modelProvider ? true : connectedProviders(s)[modelProvider]))
   // A character's conversation from before they started over: still theirs, no longer the one in the sidebar.
   const earlier = Boolean(character && character.sessionId !== sessionId)
   const navigate = useNavigate()
   // A space's coordinator (this page then has its threads beside it) or one of its threads.
   const spaceOf = useSpaceOf(session)
   const coordinating = spaceOf?.coordinator ? spaceOf.space : undefined
+  const coordinatingProjectId = coordinating?.projectId ?? null
+  const coordinatingProjectName = useDexSelector((s) =>
+    coordinatingProjectId ? (s?.projects.find((candidate) => candidate.id === coordinatingProjectId)?.name ?? null) : null
+  )
   const inSpace = spaceOf && !spaceOf.coordinator ? spaceOf.space : undefined
   const [panel, setPanel] = useState<{ sessionId: string; thread: string | null } | null>(null)
   const panelOpen = Boolean(coordinating) && panel?.sessionId === sessionId
@@ -66,6 +81,7 @@ function Chat() {
     [sessionId, navigate]
   )
   // Kept stable across state updates, so finished replies don't re-render.
+  const lookKey = useMemo(() => JSON.stringify(character?.look ?? null), [character?.look])
   const speaker = useMemo<Speaker | undefined>(
     () =>
       character
@@ -78,13 +94,13 @@ function Chat() {
           }
         : coordinating && { name: coordinating.name, avatar: <SpaceGlyph size={24} /> },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [character?.name, character?.avatar, character?.image, character?.color, character?.greeting, JSON.stringify(character?.look ?? null), coordinating?.name, coordinating?.goal]
+    [character?.name, character?.avatar, character?.image, character?.color, character?.greeting, lookKey, coordinating?.name, coordinating?.goal]
   )
 
   // What you just sent shows at once while the agent records it (a round trip, longer when it's waking up). Each
   // pending message is matched to the next message the agent records, not by text: skills and secrets change it.
   const [pending, setPending] = useState<{ text: string; after: number; at: number }[]>([])
-  const userCount = transcript.entries.filter((entry) => entry.kind === "pi.user").length
+  const userCount = useMemo(() => transcript.entries.filter((entry) => entry.kind === "pi.user").length, [transcript.entries])
   const live = useRef({ running: transcript.running, queued: transcript.queue.length, userCount })
   live.current = { running: transcript.running, queued: transcript.queue.length, userCount }
   useEffect(() => setPending([]), [sessionId])
@@ -119,6 +135,9 @@ function Chat() {
     [stub, sessionId]
   )
   const pendingTexts = useMemo(() => pending.map((item) => item.text), [pending])
+  const continueRun = useCallback(async () => {
+    await stub.continueSession(sessionId)
+  }, [stub, sessionId])
   // A voice call with this chat's sidekick: what you say is sent marked as spoken, so they answer to be heard.
   const [call, setCall] = useState<{ sessionId: string; call: VoiceCall } | null>(null)
   const activeCall = call?.sessionId === sessionId ? call.call : null
@@ -132,8 +151,22 @@ function Chat() {
   const [draft, setDraft] = useState<{ text: string; key: number } | undefined>()
   const storeSecret = useCallback((field: string, value: string) => stub.storeChatSecret(sessionId, field, value), [stub, sessionId])
   // Generated UIs in this chat: their operations, and their saved filters and choices.
+  // Only fetch saved UI state when the chat actually contains a `render_ui` card (skips a DO RPC on ordinary chats).
+  const hasRenderUi = useMemo(
+    () =>
+      transcript.entries.some(
+        (entry) =>
+          entry.model?.some(
+            (message) =>
+              message.role === "assistant" &&
+              message.content.some((block) => block.type === "toolCall" && block.name === "render_ui")
+          ) ?? false
+      ) || Boolean(transcript.streaming?.content.some((block) => block.type === "toolCall" && block.name === "render_ui")),
+    [transcript.entries, transcript.streaming]
+  )
   const [uiStates, setUiStates] = useState<{ readonly sessionId: string; readonly states: Record<string, unknown> } | null>(null)
   useEffect(() => {
+    if (!hasRenderUi) return
     let current = true
     stub
       .uiStates(sessionId)
@@ -144,7 +177,7 @@ function Chat() {
     return () => {
       current = false
     }
-  }, [stub, sessionId])
+  }, [stub, sessionId, hasRenderUi])
   const uiHost = useMemo<OpenUIHost>(
     () => ({
       scope: sessionId,
@@ -164,11 +197,13 @@ function Chat() {
     [transcript.artifacts, transcript.savingArtifacts, stub, sessionId]
   )
 
-  const vm = state?.vmConfigured ? state.vms.find((candidate) => candidate.key === sessionId) : undefined
-  // A chat can run several VMs at once; with more than one, its machine button opens the control panel of all of them.
-  const chatVms = state?.vmConfigured ? state.vms.filter((candidate) => chatOfVm(candidate.key) === sessionId) : []
+  const chatVms = useDexSelector(
+    (s) => (s?.vmConfigured ? s.vms.filter((candidate) => chatOfVm(candidate.key) === sessionId) : []),
+    shallowEqual
+  )
+  const vm = useMemo(() => chatVms.find((candidate) => candidate.key === sessionId), [chatVms, sessionId])
 
-  if (state && !session) {
+  if (hasState && !session) {
     return <div className="flex flex-1 items-center justify-center text-sm text-zinc-500">This chat no longer exists.</div>
   }
 
@@ -283,7 +318,7 @@ function Chat() {
               )}
             </button>
           )}
-          {session && state?.vmConfigured && !coordinating && (
+          {session && vmConfigured && !coordinating && (
             <button type="button" title="Browse this session’s VM files" aria-label="Open VM files" aria-expanded={filesOpen} onClick={() => setFilesSession(filesOpen ? null : sessionId)} className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs hover:bg-zinc-900 ${filesOpen ? "text-emerald-400" : "text-zinc-400 hover:text-zinc-100"}`}>
               <FolderOpen className="size-4" /><span className="hidden sm:inline">Files</span>
             </button>
@@ -362,7 +397,7 @@ function Chat() {
             </button>
           )}
           {/* Only once some device has notifications on: mute this chat's. */}
-          {session && !character && (state?.push.devices.length ?? 0) > 0 && (
+          {session && !character && hasPushDevices && (
             <button
               type="button"
               onClick={() => void stub.setSessionMuted(sessionId, !session.muted)}
@@ -415,11 +450,19 @@ function Chat() {
               ) : coordinating && transcript.entries.length === 0 && pendingTexts.length === 0 && !transcript.running ? (
                 <SpaceIntro
                   space={coordinating}
-                  projectName={coordinating.projectId ? (state?.projects.find((candidate) => candidate.id === coordinating.projectId)?.name ?? null) : null}
+                  projectName={coordinatingProjectName}
                   onPick={(text) => setDraft({ text, key: Date.now() })}
                 />
               ) : (
-                <MessageList key={sessionId} transcript={transcript} onSend={send} onLoadEarlier={loadEarlier} pending={pendingTexts} speaker={speaker} />
+                <MessageList
+                  key={sessionId}
+                  transcript={transcript}
+                  onSend={send}
+                  onLoadEarlier={loadEarlier}
+                  onContinue={connected ? continueRun : undefined}
+                  pending={pendingTexts}
+                  speaker={speaker}
+                />
               )}
             </SpaceSelectContext.Provider>
           </ChatArtifactsContext.Provider>
@@ -429,7 +472,7 @@ function Chat() {
       {activeCall && character && <VoiceCallPanel call={activeCall} character={character} transcript={transcript} onEnd={() => setCall(null)} />}
 
       <div className="mx-auto w-full max-w-3xl px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:px-4 md:pb-[max(1rem,env(safe-area-inset-bottom))]">
-        {state && session && !connectedProviders(state)[providerOf(session.model)] && (
+        {hasState && session && !modelProviderConnected && (
           <Link to="/settings" className="mb-2 flex items-center gap-2 text-xs text-amber-300 hover:underline">
             <KeyRound className="size-3.5" /> Connect {MODEL_PROVIDERS[providerOf(session.model)].name} to get answers, or pick another model
           </Link>
@@ -453,7 +496,11 @@ function Chat() {
           onStop={() => void stub.abort(sessionId)}
           draft={draft}
           placeholder={
-            transcript.running ? "Queue a follow-up…" : coordinating ? `Tell ${coordinating.name} what to work on…` : `Message ${character?.name ?? "Dex"}, or / for skills…`
+            transcript.running
+              ? "Queue a follow-up…"
+              : coordinating
+                ? `Tell ${coordinating.name} what to work on…`
+                : `Message ${character?.name ?? "Dex"}, / skills, @ context…`
           }
           toolbar={
             session && (
@@ -461,12 +508,12 @@ function Chat() {
                 <ModelPicker model={session.model} thinking={session.thinking} onChange={(value) => void stub.configureSession(sessionId, value)} />
                 {/* Takes effect from the next model request, also mid-run. */}
                 <McpPicker
-                  servers={state?.mcp ?? []}
+                  servers={mcp ?? []}
                   selected={session.mcpServers}
                   onChange={(mcpServers) => void stub.configureSession(sessionId, { mcpServers })}
                 />
                 {/* An agent from before VPNs has no list. The VM's browser switches right away. */}
-                {state?.vpns && <VpnPicker vpns={state.vpns} selected={session.vpnId ?? null} onChange={(vpnId) => void stub.configureSession(sessionId, { vpnId })} />}
+                {vpns && <VpnPicker vpns={vpns} selected={session.vpnId ?? null} onChange={(vpnId) => void stub.configureSession(sessionId, { vpnId })} />}
               </div>
             )
           }

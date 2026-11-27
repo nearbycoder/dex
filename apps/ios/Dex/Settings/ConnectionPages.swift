@@ -294,22 +294,92 @@ struct ChatGPTConnectSection: View {
 
 /// boat.dev: the account chats' VMs run (and bill) on, the default VM size, and when idle VMs stop.
 struct CloudVMsPage: View {
+    @Environment(AppModel.self) private var model
     @Environment(DexClient.self) private var client
     @State private var minutes = 5
+    @State private var useKey = false
+    @State private var connecting = false
+    @State private var message: (tone: InlineMessage.Tone, text: String)?
+    @State private var confirmDisconnect = false
 
     var body: some View {
         if let state = client.state {
+            let boat = state.boat
+            let oauth = boat.oauthAvailable ?? false
             Form {
-                KeyConnectSection(
-                    id: "boat", title: "boat.dev", connected: state.boat.connected,
-                    status: state.boat.source == "user" ? state.boat.keyHint ?? "Connected" : "This deployment's account",
-                    statusIsHint: state.boat.source == "user",
-                    placeholder: state.boat.source == "user" ? "New boat.dev API key" : "boat.dev API key",
-                    footer: "To switch accounts, delete your VMs first: they live in the account that made them.",
-                    onConnect: { key in ConnectResult.from(try await client.run("connectBoat", .string(key), timeout: 60)) },
-                    onDisconnect: state.boat.source == "user" ? { ConnectResult.from(try await client.run("disconnectBoat")) } : nil
-                ) {
-                    Text("Create an API key in your boat.dev account. Chats' VMs run on it, so boat.dev bills it for the time they run (they stop after a few idle minutes). Dex checks the key, then stores it encrypted in your agent.")
+                if !oauth || useKey || (boat.connected && (boat.source == "server" || boat.via != "oauth")) {
+                    KeyConnectSection(
+                        id: "boat", title: "boat.dev", connected: boat.connected,
+                        status: boat.source == "user" ? boat.keyHint ?? "Connected" : "This deployment's account",
+                        statusIsHint: boat.source == "user",
+                        placeholder: boat.source == "user" ? "New boat.dev API key" : "boat.dev API key",
+                        footer: "To switch accounts, delete your VMs first: they live in the account that made them.",
+                        onConnect: { key in ConnectResult.from(try await client.run("connectBoat", .string(key), timeout: 60)) },
+                        onDisconnect: boat.source == "user" ? { ConnectResult.from(try await client.run("disconnectBoat")) } : nil
+                    ) {
+                        Text("Create an API key in your boat.dev account. Chats' VMs run on it, so boat.dev bills it for the time they run (they stop after a few idle minutes). Dex checks the key, then stores it encrypted in your agent.")
+                    }
+                    if oauth && (!boat.connected || boat.source == "server") {
+                        Section {
+                            Button(useKey ? "Sign in with boat.dev instead" : "Sign in with your own boat.dev account") {
+                                useKey = false
+                                startBoatOAuth()
+                            }
+                            .accessibilityIdentifier("boat.useOAuth")
+                        }
+                    }
+                } else if boat.connected {
+                    if boat.expired == true {
+                        Section {
+                            Label("boat.dev stopped accepting this connection\(boat.expiredAt.map { " " + Date(timeIntervalSince1970: $0 / 1000).formatted(.relative(presentation: .named)) } ?? "") (revoked or expired). Reconnect to resume starting VMs.", systemImage: "exclamationmark.triangle.fill")
+                                .font(.footnote)
+                                .foregroundStyle(.orange)
+                            if let reason = boat.expiredReason {
+                                Text("\(reason).").font(.caption).foregroundStyle(.secondary)
+                            }
+                            Button("Reconnect") { startBoatOAuth() }
+                                .prominentButton()
+                                .accessibilityIdentifier("boat.reconnectExpired")
+                        }
+                    }
+                    Section {
+                        HStack(spacing: 10) {
+                            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                            Text(boat.account ?? boat.keyHint ?? "boat.dev account").accessibilityIdentifier("boat.status")
+                            Spacer()
+                            Text("via boat.dev").font(.footnote).foregroundStyle(.secondary)
+                        }
+                        Button("Reconnect") { startBoatOAuth() }
+                            .accessibilityIdentifier("boat.reconnect")
+                        Button("Disconnect", role: .destructive) { confirmDisconnect = true }
+                            .accessibilityIdentifier("boat.disconnect")
+                    } header: {
+                        Text("boat.dev")
+                    } footer: {
+                        Text("Tokens rotate automatically every hour. Disconnecting revokes Dex's access at boat.dev.")
+                    }
+                } else {
+                    Section {
+                        Button {
+                            startBoatOAuth()
+                        } label: {
+                            Label("Sign in with boat.dev", systemImage: "desktopcomputer")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .prominentButton()
+                        .controlSize(.large)
+                        .disabled(connecting)
+                        .accessibilityIdentifier("boat.connectOAuth")
+                        Button("Use an API key instead") { useKey = true }
+                            .accessibilityIdentifier("boat.useKey")
+                    } header: {
+                        Text("boat.dev")
+                    } footer: {
+                        Text("Sign in with your boat.dev account—no API key to copy. Tokens are stored encrypted in your agent and rotate automatically.")
+                    }
+                }
+                if let message {
+                    Section { InlineMessage(tone: message.tone, text: message.text) }
                 }
                 Section {
                     ExternalLink(title: "Open boat.dev", url: "https://boat.dev")
@@ -340,6 +410,34 @@ struct CloudVMsPage: View {
             .navigationTitle("Cloud VMs")
             .onAppear { minutes = state.settings.vmMinutes }
             .onChange(of: state.settings.vmMinutes) { _, value in minutes = value }
+            .confirmationDialog("Disconnect boat.dev?", isPresented: $confirmDisconnect, titleVisibility: .visible) {
+                Button("Disconnect", role: .destructive) {
+                    client.perform {
+                        let outcome = ConnectResult.from(try await client.run("disconnectBoat", timeout: 30))
+                        if !outcome.ok, let error = outcome.error { message = (.error, error) }
+                    }
+                }
+            } message: {
+                Text("Disconnecting revokes Dex's access at boat.dev. Delete any active VMs first.")
+            }
+            .sheet(isPresented: $connecting) {
+                if let credentials = model.credentials {
+                    GitHubConnectSheet(
+                        server: credentials.server,
+                        token: credentials.token,
+                        startPath: "auth/boat/connect",
+                        errorParam: "boat_error",
+                        serviceName: "boat.dev"
+                    ) { outcome in
+                        connecting = false
+                        switch outcome {
+                        case .connected: message = (.ok, "boat.dev is connected. New VMs run on your account.")
+                        case .failed(let text): message = (.error, text)
+                        case .cancelled: break
+                        }
+                    }
+                }
+            }
             .task(id: minutes) {
                 // Saved after you stop tapping.
                 guard minutes != client.state?.settings.vmMinutes else { return }
@@ -350,5 +448,17 @@ struct CloudVMsPage: View {
         } else {
             FormSkeleton().navigationTitle("Cloud VMs")
         }
+    }
+
+    private func startBoatOAuth() {
+        message = nil
+        if model.mockAgent != nil {
+            client.perform {
+                let result = ConnectResult.from(try await client.run("connectBoat", "boat_mock_oauth_key"))
+                message = result.ok ? (.ok, "boat.dev is connected. New VMs run on your account.") : (.error, result.error ?? "")
+            }
+            return
+        }
+        connecting = true
     }
 }

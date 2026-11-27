@@ -73,7 +73,15 @@ public func splitAttachments(_ text: String) -> (text: String, files: [AttachedF
         for pair in AttachmentPatterns.attribute.matches(in: attributes, range: NSRange(location: 0, length: attributeSource.length)) {
             values[attributeSource.substring(with: pair.range(at: 1))] = unescapeAttribute(attributeSource.substring(with: pair.range(at: 2)))
         }
-        return AttachedFile(name: values["name"] ?? "file", mimeType: values["type"] ?? "application/octet-stream", key: values["key"])
+        let rawKey = values["key"]
+        let safeKey = rawKey.flatMap { key -> String? in
+            let segments = key.split(separator: "/", omittingEmptySubsequences: false)
+            guard !segments.isEmpty, segments.allSatisfy({ seg in
+                !seg.isEmpty && seg != "." && seg != ".." && seg.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "." || $0 == "-" || $0 == "_") }
+            }) else { return nil }
+            return key
+        }
+        return AttachedFile(name: values["name"] ?? "file", mimeType: values["type"] ?? "application/octet-stream", key: safeKey)
     }
     let rest = AttachmentPatterns.tag.stringByReplacingMatches(in: text, range: NSRange(location: 0, length: source.length), withTemplate: "")
     let collapsed = AttachmentPatterns.blankLines.stringByReplacingMatches(in: rest, range: NSRange(location: 0, length: (rest as NSString).length), withTemplate: "\n\n")
@@ -124,8 +132,9 @@ public enum AttachmentUploader {
     /// One `file` field, as a browser's FormData sends it.
     static func multipart(boundary: String, data: Data, name: String, mimeType: String) -> Data {
         let safeName = name.replacingOccurrences(of: "\"", with: "'").replacingOccurrences(of: "\r", with: "").replacingOccurrences(of: "\n", with: "")
+        let safeType = mimeType.replacingOccurrences(of: "\r", with: "").replacingOccurrences(of: "\n", with: "").trimmingCharacters(in: .whitespaces)
         var body = Data()
-        body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"\(safeName)\"\r\nContent-Type: \(mimeType)\r\n\r\n".utf8))
+        body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"\(safeName)\"\r\nContent-Type: \(safeType.isEmpty ? "application/octet-stream" : safeType)\r\n\r\n".utf8))
         body.append(data)
         body.append(Data("\r\n--\(boundary)--\r\n".utf8))
         return body

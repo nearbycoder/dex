@@ -36,7 +36,11 @@ const safeToReload = () => {
   return (
     !editing &&
     /^\/chat(\/|$)/.test(location.pathname) &&
-    ![...document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("textarea, input:not([type=hidden])")].some((field) => field.value.trim() !== "")
+    ![
+      ...document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
+        "textarea, input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]):not([type=reset])"
+      )
+    ].some((field) => field.value.trim() !== "")
   )
 }
 
@@ -66,13 +70,21 @@ export async function applyUpdate({ ifSafe = false } = {}) {
  */
 if (typeof window !== "undefined") {
   addEventListener("vite:preloadError", (event) => {
-    if (sessionStorage.getItem("dex-chunk-reload")) return
-    sessionStorage.setItem("dex-chunk-reload", String(Date.now()))
+    try {
+      if (sessionStorage.getItem("dex-chunk-reload")) return
+      sessionStorage.setItem("dex-chunk-reload", String(Date.now()))
+    } catch {}
     event.preventDefault()
     void applyUpdate()
   })
   // A page that loads fine clears the guard for next time.
-  addEventListener("load", () => setTimeout(() => sessionStorage.removeItem("dex-chunk-reload"), 10_000))
+  addEventListener("load", () =>
+    setTimeout(() => {
+      try {
+        sessionStorage.removeItem("dex-chunk-reload")
+      } catch {}
+    }, 10_000)
+  )
 }
 
 /** The build the Worker has, once it differs from the one this page is running; null while they match. */

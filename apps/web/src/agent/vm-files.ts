@@ -73,14 +73,25 @@ def root(folder):
     out = git(folder, 'rev-parse', '--show-toplevel')
     return os.fsdecode(out.rstrip(b'\n')) if out else None
 def sensitive(p):
-    parts = os.path.realpath(p).split(os.sep)
-    return any(x in ('.ssh', '.gnupg', '.aws', '.azure', '.kube') or x == '.env' or x.startswith('.env.') or x.startswith('.dex-env-') for x in parts) or any(x in parts for x in ('gh', 'gcloud')) and '.config' in parts or os.path.basename(p) in ('.netrc', '.npmrc', '.pypirc', '.git-credentials', 'credentials', 'credentials.json', 'application_default_credentials.json', 'id_rsa', 'id_ed25519') or '.git' in parts and os.path.basename(p) in ('config', 'credentials') or os.path.realpath(p).endswith('/.config/dex/env')
+    real = os.path.realpath(p)
+    parts = real.split(os.sep)
+    names = {os.path.basename(p), os.path.basename(real)}
+    secret_names = {'.netrc', '.npmrc', '.pypirc', '.git-credentials', 'credentials', 'credentials.json', 'application_default_credentials.json', 'id_rsa', 'id_ed25519', 'id_ecdsa', 'id_dsa', '.dex-gh-token'}
+    if any(x in ('.ssh', '.gnupg', '.aws', '.azure', '.kube') or x == '.env' or x.startswith('.env.') or x.startswith('.dex-env-') for x in parts): return True
+    if '.config' in parts and any(x in ('gh', 'gcloud', 'dex') for x in parts): return True
+    if names & secret_names: return True
+    if '.git' in parts and (names & {'config', 'credentials'}): return True
+    if real.startswith('/home/user/mcp/') or real == '/home/user/mcp' or real.startswith('/var/lib/dex-mcp/') or real == '/var/lib/dex-mcp': return True
+    if real.startswith('/tmp/.dex-') or (real.startswith('/tmp/dex-browse-') and real.endswith('.js')): return True
+    return False
 def text(data):
     if b'\0' in data: return None
     try: return codecs.getincrementaldecoder('utf-8')().decode(data, final=False)
     except UnicodeDecodeError: return None
-def changes(repo):
-    out = git(repo, '-c', 'core.quotepath=false', 'status', '--porcelain=v1', '-z', '--untracked-files=all')
+def changes(repo, rel=None):
+    args = ['-c', 'core.quotepath=false', 'status', '--porcelain=v1', '-z', '--untracked-files=all']
+    if rel is not None: args += ['--', rel]
+    out = git(repo, *args)
     if out is None: raise ValueError('Cannot read Git changes.')
     tokens, result = iter(out.split(b'\0')), []
     for token in tokens:
@@ -143,9 +154,13 @@ def inspect():
     before, kind, truncated = None, None, len(data)>LIMIT
     if repo:
         rel = os.path.relpath(path, repo)
-        # Limit status to this path; renames can still compare against the original HEAD name.
-        candidates = changes(repo)
+        # Scope status to this single path so clicking a file in a large repo doesn't scan the entire working tree.
+        candidates = changes(repo, rel)
         change = next((c for c in candidates if c['path'] == path), None)
+        # Only fall back to full repo status for staged additions, where git needs both paths to detect a rename.
+        if change and change['status'] == 'added':
+            full = changes(repo)
+            change = next((c for c in full if c['path'] == path), change)
         kind = change['status'] if change else None
         old = os.path.relpath(change['previousPath'], repo) if change and change['previousPath'] else rel
         if not sensitive(os.path.join(repo, old)):

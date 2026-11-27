@@ -33,9 +33,9 @@ public final class OpenUIRuntime {
         }
         let format: @convention(block) (String, Double) -> String = { kind, value in
             switch kind {
-            case "ago": Format.ago(value)
-            case "dateTime": Format.dateTime(value)
-            case "bytes": Format.bytes(Int(value))
+            case "ago": value.isFinite ? Format.ago(value) : ""
+            case "dateTime": value.isFinite ? Format.dateTime(value) : ""
+            case "bytes": value.isFinite ? Format.bytes(Int(max(0, min(value, Double(Int.max / 2))))) : ""
             default: ""
             }
         }
@@ -103,9 +103,10 @@ public final class OpenUIRuntime {
 
     private func schedule(timer id: Int, after milliseconds: Double, repeats: Bool) {
         timers[id]?.cancel()
+        let clamped = milliseconds.isFinite ? min(max(milliseconds, 1), 86_400_000) : 1_000
         timers[id] = Task { [weak self] in
             repeat {
-                try? await Task.sleep(for: .milliseconds(max(milliseconds, 1)))
+                try? await Task.sleep(for: .milliseconds(clamped))
                 guard !Task.isCancelled, let self else { return }
                 if !repeats { self.timers[id] = nil }
                 self.engine.invokeMethod("fireTimer", withArguments: [id])

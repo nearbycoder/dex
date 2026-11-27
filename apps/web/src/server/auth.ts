@@ -9,7 +9,7 @@ import { SESSION_COOKIE, SESSION_TTL_SECONDS, Sessions, SessionUser } from "./se
 const STATE_COOKIE = "dex_oauth_state"
 
 const redirect = (location: string, cookies: ReadonlyArray<string> = []) => {
-  const headers = new Headers({ location })
+  const headers = new Headers({ location, "cache-control": "no-store" })
   for (const cookie of cookies) headers.append("set-cookie", cookie)
   return new Response(null, { status: 302, headers })
 }
@@ -72,7 +72,10 @@ export const finishGitHubLogin = Effect.fn("auth.finishGitHubLogin")(function*(r
 
   const { allowedUsers } = yield* AppConfig
   const github = yield* GitHubOAuth
-  return yield* github.complete({ code, redirectUri: callbackUrl(request), keep: keep && ((token, profile) => keep(token, userId(profile.login))) }).pipe(
+  // Only query the user's DO for allowlisted accounts; otherwise a random GitHub user could instantiate a new DO.
+  const keepAllowed = keep && ((token: string, profile: { login: string }) =>
+    allowedUsers.includes(profile.login.toLowerCase()) ? keep(token, userId(profile.login)) : Promise.resolve(false))
+  return yield* github.complete({ code, redirectUri: callbackUrl(request), keep: keepAllowed }).pipe(
     Effect.flatMap((profile) => {
       if (!allowedUsers.includes(profile.login.toLowerCase())) {
         return Effect.succeed(loginError(`@${profile.login} is not on this Dex's allowlist`, [clearState]))
@@ -97,9 +100,12 @@ export const devLogin = Effect.fn("auth.devLogin")(function*(request: Request) {
 
 export const passwordLogin = Effect.fn("auth.passwordLogin")(function*(request: Request) {
   const { ownerPassword, allowedUsers } = yield* AppConfig
-  if (Option.isNone(ownerPassword)) return new Response("Password sign-in is disabled", { status: 404 })
+  if (Option.isNone(ownerPassword)) return new Response("Password sign-in is disabled", { status: 404, headers: { "cache-control": "no-store" } })
+  const declared = Number(request.headers.get("content-length") ?? 0)
+  if (declared > 4096) return loginError("Wrong password")
   const form = yield* Effect.promise(() => request.formData().catch(() => new FormData()))
   const given = form.get("password")
+  if (typeof given === "string" && given.length > 2048) return loginError("Wrong password")
   // Compare HMACs so the check takes the same time however much of the password matches.
   const keys = yield* Keys
   const [expected, actual] = yield* Effect.all([

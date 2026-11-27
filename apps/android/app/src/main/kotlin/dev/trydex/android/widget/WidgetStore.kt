@@ -21,16 +21,17 @@ class WidgetStore(private val dir: File) {
     private fun pictureFile(id: String) = File(dir, "pictures/${safe(id)}")
     private fun hashFile(id: String) = File(dir, "pictures/${safe(id)}.sha")
 
-    fun load(): WidgetSnapshot? = runCatching {
-        snapshotFile.takeIf { it.exists() }?.readText()?.let { DexJson.decodeFromString(WidgetSnapshot.serializer(), it) }
-    }.getOrNull()
+    fun load(): WidgetSnapshot? = synchronized(ioLock) {
+        runCatching {
+            snapshotFile.takeIf { it.exists() }?.readText()?.let { DexJson.decodeFromString(WidgetSnapshot.serializer(), it) }
+        }.getOrNull()
+    }
 
     /**
      * Keeps [snapshot]. With [imagesIncluded], a sidekick without a picture has none (its file goes); without (asked
      * with `images=0`), the pictures already here stay. Returns whether anything a widget shows changed.
      */
-    @Synchronized
-    fun save(snapshot: WidgetSnapshot, imagesIncluded: Boolean): Boolean {
+    fun save(snapshot: WidgetSnapshot, imagesIncluded: Boolean): Boolean = synchronized(ioLock) {
         dir.mkdirs()
         File(dir, "pictures").mkdirs()
         var changed = false
@@ -68,7 +69,7 @@ class WidgetStore(private val dir: File) {
             changed = true
         }
         if (imagesIncluded) writeTextAtomic(File(dir, "full-at"), System.currentTimeMillis().toString())
-        return changed
+        changed
     }
 
     private fun writeTextAtomic(file: File, text: String) {
@@ -91,6 +92,23 @@ class WidgetStore(private val dir: File) {
 
     fun hasPicture(id: String) = pictureFile(id).exists()
 
+    /**
+     * When `DexState` carries content-addressed `/api/avatars/...` URLs instead of inline base64 data URLs,
+     * checks whether any sidekick's picture URL changed or is missing on disk so widgets know to fetch fresh bytes.
+     */
+    fun needsPictureFetch(snapshot: WidgetSnapshot): Boolean = synchronized(ioLock) {
+        val currentDigest = sha(snapshot.sidekicks.joinToString("\n") { "${it.id}:${it.image.orEmpty()}" })
+        val digestFile = File(dir, "urls.sha")
+        val savedDigest = runCatching { digestFile.takeIf { it.exists() }?.readText() }.getOrNull()
+        if (savedDigest != currentDigest) {
+            dir.mkdirs()
+            writeTextAtomic(digestFile, currentDigest)
+            File(dir, "full-at").delete()
+            return true
+        }
+        snapshot.sidekicks.any { it.image != null && !hasPicture(it.id) }
+    }
+
     /** When pictures were last fetched with the snapshot (0 if never). */
     val fullAt: Long get() = runCatching { File(dir, "full-at").readText().toLong() }.getOrDefault(0)
 
@@ -99,9 +117,8 @@ class WidgetStore(private val dir: File) {
     /** Their face, round on their color, [size] pixels across. */
     fun face(sidekick: WidgetSidekick, size: Int): Bitmap = Faces.round(picture(sidekick.id), sidekick.color, sidekick.face, size)
 
-    @Synchronized
     fun clear() {
-        dir.deleteRecursively()
+        synchronized(ioLock) { dir.deleteRecursively() }
     }
 
     private fun safe(id: String) = id.replace(SAFE_CHARS, "_").take(80)
@@ -110,6 +127,7 @@ class WidgetStore(private val dir: File) {
 
     companion object {
         private val SAFE_CHARS = Regex("[^A-Za-z0-9_-]")
+        private val ioLock = Any()
     }
 }
 

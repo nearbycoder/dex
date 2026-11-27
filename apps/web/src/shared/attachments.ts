@@ -85,13 +85,15 @@ export interface AttachedFile {
 
 const TAG = /<attachment ((?:[a-z]+="[^"]*"\s*)+)(?:\/>|>\n?[\s\S]*?\n?<\/attachment>)/g
 const ATTRIBUTE = /([a-z]+)="([^"]*)"/g
+const SAFE_MEDIA_KEY = /^[A-Za-z0-9_-]+\/[0-9a-f-]{36}\.[a-z0-9]{1,10}$/
 
 /** A message's text without its attachment tags, and the files they name. */
 export function splitAttachments(text: string): { text: string; files: AttachedFile[] } {
   const files: AttachedFile[] = []
   const rest = text.replace(TAG, (_match, attributes: string) => {
     const values = Object.fromEntries([...attributes.matchAll(ATTRIBUTE)].map(([, key, value]) => [key, unescapeAttribute(value!)]))
-    files.push({ name: values.name ?? "file", mimeType: values.type ?? "application/octet-stream", ...(values.key && { key: values.key }) })
+    const key = values.key && SAFE_MEDIA_KEY.test(values.key) ? values.key : undefined
+    files.push({ name: values.name ?? "file", mimeType: values.type ?? "application/octet-stream", ...(key && { key }) })
     return ""
   })
   return { text: files.length ? rest.replace(/\n{3,}/g, "\n\n").trim() : text, files }

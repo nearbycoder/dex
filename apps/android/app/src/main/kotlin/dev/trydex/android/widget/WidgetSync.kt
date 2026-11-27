@@ -56,11 +56,19 @@ object WidgetSync {
         }
     }
 
-    /** The app's state changed: the widgets show it (pictures included), without asking the server. */
+    /** The app's state changed: update the widgets; if state uses `/api/avatars/` URLs, keep cached bitmaps and fetch when pictures change. */
     suspend fun fromState(context: Context, state: DexState) {
         if (!hasWidgets(context)) return
-        val changed = withContext(Dispatchers.IO) { WidgetStore(context).save(WidgetSnapshot.from(state), imagesIncluded = true) }
+        val snapshot = WidgetSnapshot.from(state)
+        val hasUrlImages = state.characters.any { it.image?.startsWith("/") == true }
+        val (changed, needsFetch) = withContext(Dispatchers.IO) {
+            val store = WidgetStore(context)
+            val updated = store.save(snapshot, imagesIncluded = !hasUrlImages)
+            val refetch = hasUrlImages && store.needsPictureFetch(snapshot)
+            updated to refetch
+        }
         if (changed) redraw(context)
+        if (needsFetch) refreshSoon(context)
     }
 
     /** Asks the server for the latest (the app may be closed). */

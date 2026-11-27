@@ -520,8 +520,9 @@ private fun ProjectPicture(draft: ProjectProfile, onChange: (String?) -> Unit) {
             }
             val image = draft.image
             if (image != null && candidates.none { it.dataUrl == image }) {
+                val model = if (image.startsWith("/")) dev.trydex.android.ui.components.dexUrl(image) else image
                 PictureTile("Current picture", selected = true, onClick = null, tag = "picture-current") {
-                    AsyncImage(model = image, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.padding(6.dp))
+                    AsyncImage(model = model, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.padding(6.dp))
                 }
             }
             candidates.forEach { candidate ->

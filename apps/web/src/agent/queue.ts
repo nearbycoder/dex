@@ -64,6 +64,17 @@ export class MessageQueue {
     this.sql.exec(`UPDATE dex_queue SET text = ? WHERE id = ?`, text, id)
   }
 
+  /** Reads a message without removing it (caller calls `remove` once delivery succeeds). */
+  peek(sessionId: string, id: string): { id: string; text: string; attachments: ChatAttachment[] } {
+    const row = this.find(sessionId, id)
+    return { id: row.id, text: row.text, attachments: parseAttachments(row.attachments) }
+  }
+
+  /** Removes a previously peeked message. */
+  remove(sessionId: string, id: string) {
+    this.sql.exec(`DELETE FROM dex_queue WHERE session_id = ? AND id = ?`, sessionId, id)
+  }
+
   /** Takes a message out of the queue (to send it, or to delete it) and returns it. */
   take(sessionId: string, id: string): { text: string; attachments: ChatAttachment[] } {
     const row = this.find(sessionId, id)
@@ -73,6 +84,15 @@ export class MessageQueue {
 
   has(sessionId: string): boolean {
     return this.sql.exec(`SELECT 1 FROM dex_queue WHERE session_id = ? LIMIT 1`, sessionId).toArray().length > 0
+  }
+
+  /** Peeks at the next message in line without deleting it, if any. */
+  peekNext(sessionId: string): { id: string; text: string; attachments: ChatAttachment[] } | null {
+    const row = this.sql
+      .exec<Row>(`SELECT * FROM dex_queue WHERE session_id = ? ORDER BY position, created_at LIMIT 1`, sessionId)
+      .toArray()[0]
+    if (!row) return null
+    return { id: row.id, text: row.text, attachments: parseAttachments(row.attachments) }
   }
 
   /** Takes the next message in line, if any. */

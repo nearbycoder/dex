@@ -403,22 +403,28 @@ fun SliderView(node: ElementNode) {
     val rules = rulesOf(p)
     val validation = LocalFormValidation.current
     RegisterRules(name, rules, (field.value as? List<*>)?.firstOrNull())
-    val min = p.num("min") ?: 0.0
-    val maxValue = (p.num("max") ?: 100.0).let { if (it <= min) min + 1 else it }
+    val min = (p.num("min") ?: 0.0).takeIf { it.isFinite() } ?: 0.0
+    val maxValue = (p.num("max") ?: 100.0).takeIf { it.isFinite() && it > min } ?: (min + 1.0)
     val discrete = p.str("variant") == "discrete"
-    val step = if (discrete) (p.num("step") ?: 1.0) else max(1.0, p.num("step") ?: 1.0)
-    val stored = (field.value as? List<*>)?.mapNotNull { (it as? Double) }
-        ?: (p["defaultValue"] as? List<*>)?.mapNotNull { it as? Double }
-        ?: listOf(min)
+    val rawStep = p.num("step")?.takeIf { it.isFinite() && it > 0.0 } ?: 1.0
+    val step = if (discrete) rawStep else max(1.0, rawStep)
+    val stored = ((field.value as? List<*>)?.mapNotNull { (it as? Double)?.takeIf(Double::isFinite) }
+        ?: (p["defaultValue"] as? List<*>)?.mapNotNull { (it as? Double)?.takeIf(Double::isFinite) }
+        ?: listOf(min)).ifEmpty { listOf(min) }
     val isRange = stored.size >= 2
-    var local by remember(stored) { mutableStateOf(stored.map { it.toFloat() }) }
-    fun snap(v: Float) = (min + ((v - min) / step).roundToInt() * step).coerceIn(min, maxValue)
+    var local by remember(stored, min, maxValue) { mutableStateOf(stored.map { it.coerceIn(min, maxValue).toFloat() }) }
+    fun snap(v: Float): Double {
+        val ratio = (v.toDouble() - min) / step
+        if (!ratio.isFinite()) return min
+        return (min + ratio.roundToInt() * step).coerceIn(min, maxValue)
+    }
     fun commit() {
         val values = local.map { snap(it) }
         field.setValue(values)
         if (validation != null && rules.isNotEmpty()) validation.validateField(name, values.firstOrNull(), rules)
     }
-    val stops = ((maxValue - min) / step).roundToInt()
+    val rawStops = (maxValue - min) / step
+    val stops = if (rawStops.isFinite() && rawStops <= 1000.0) rawStops.roundToInt() else 0
     val steps = if (discrete && stops in 2..40) stops - 1 else 0
     Column(Modifier.fillMaxWidth().testTag("slider-$name")) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

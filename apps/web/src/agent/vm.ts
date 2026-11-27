@@ -584,17 +584,19 @@ export class VmManager {
         const activity = this.startActivity("system", "exec", title)
         let output = ""
         try {
-          const result = await runOn(command, options, (data) => {
+          const result = await runOn(command, options, (raw) => {
+            const data = this.host.mask(this.key, raw)
             output += data
             if (output.length > MAX_ACTIVITY_OUTPUT * 4) output = output.slice(-MAX_ACTIVITY_OUTPUT * 2)
             this.appendActivity(activity.id, data)
           })
           const exitCode = result.exitCode ?? -1
+          output = this.host.mask(this.key, output)
           const notes = result.timedOut ? "\n[timed out]" : ""
           this.finishActivity(activity.id, exitCode === 0 ? "done" : "error", output + notes, exitCode)
           return { exitCode, output: output + notes }
         } catch (error) {
-          this.finishActivity(activity.id, "error", `${output}\n${errorText(error)}`)
+          this.finishActivity(activity.id, "error", this.host.mask(this.key, `${output}\n${errorText(error)}`))
           throw error
         }
       },
@@ -607,12 +609,13 @@ export class VmManager {
         const activity = this.startActivity("system", "exec", title)
         let output = ""
         return {
-          append: (text) => {
+          append: (raw) => {
+            const text = this.host.mask(this.key, raw)
             output += text
             if (output.length > MAX_ACTIVITY_OUTPUT * 4) output = output.slice(-MAX_ACTIVITY_OUTPUT * 2)
             this.appendActivity(activity.id, text)
           },
-          finish: (ok, exitCode = null) => this.finishActivity(activity.id, ok ? "done" : "error", output, exitCode)
+          finish: (ok, exitCode = null) => this.finishActivity(activity.id, ok ? "done" : "error", this.host.mask(this.key, output), exitCode)
         }
       }
     }
@@ -709,9 +712,15 @@ export class VmManager {
     const id = this.sandboxId()
     if (!id) return
     await this.logged(actor, "lifecycle", title, async () => {
+      const previous = this.info.status
       this.update({ status: "stopping" })
-      await this.host.run(BoatClient.use((client) => client.stop(id)))
-      await this.waitFor(id, (s) => s.state === "archived", "stop")
+      try {
+        await this.host.run(BoatClient.use((client) => client.stop(id)))
+        await this.waitFor(id, (s) => s.state === "archived", "stop")
+      } catch (error) {
+        if (this.info.status === "stopping") this.update({ status: previous })
+        throw error
+      }
     })
   }
 
@@ -817,7 +826,7 @@ export class VmManager {
       this.finishActivity(activity.id, exitCode === 0 ? "done" : "error", notes ? `${output}\n${notes}` : output, exitCode)
       return { ...result, output: notes ? `${output}\n${notes}` : output }
     } catch (error) {
-      this.finishActivity(activity.id, "error", `${output}\n${options.signal?.aborted ? "[stopped]" : errorText(error)}`)
+      this.finishActivity(activity.id, "error", this.host.mask(this.key, `${output}\n${options.signal?.aborted ? "[stopped]" : errorText(error)}`))
       throw error
     }
   }
@@ -968,7 +977,8 @@ export class VmManager {
     // boat trades the link's one-time token for a cookie on its port domain (SameSite=None, which Safari won't send
     // from inside Dex); the Worker sends it instead.
     const url = await boat((client) => client.hostPort(id, SELKIES_PORT, false))
-    const response = await fetch(url, { redirect: "manual" })
+    const response = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(15_000) })
+    void response.body?.cancel()
     const cookies = response.headers.getSetCookie?.() ?? [response.headers.get("set-cookie") ?? ""]
     const cookie = cookies.map((value) => value.split(";")[0]?.trim() ?? "").filter((value) => value.startsWith("_port_auth=")).join("; ")
     if (!cookie) throw new Error(`boat.dev didn't open the desktop port (HTTP ${response.status})`)

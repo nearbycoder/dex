@@ -1,6 +1,6 @@
-import { Type } from "@earendil-works/pi-ai"
+import { Type } from "typebox"
 import type { ToolResultMessage } from "@earendil-works/pi-ai"
-import type { ToolExecutionResult, ToolRegistration } from "@earendil-works/pi-durable"
+import type { ToolExecutionResult, ToolPark, ToolRegistration } from "@earendil-works/pi-durable"
 import { defineTool } from "@earendil-works/pi-durable"
 import { webFetchTool } from "agents/webfetch/pi"
 import {
@@ -22,8 +22,10 @@ import type { SearchResult } from "../chatgpt-search"
 const withOutput = <T extends ToolRegistration<any, any>>(tool: T): T => ({
   ...tool,
   execute: async (args, api, context) => {
-    const result: ToolExecutionResult<any> & { content?: ToolResultMessage["content"] } = await tool.execute(args, api, context)
-    return result.output === undefined && result.content ? { ...result, output: result.content } : result
+    const result: (ToolExecutionResult<any> & { content?: ToolResultMessage["content"] }) | ToolPark = await tool.execute(args, api, context)
+    if ("kind" in result && result.kind !== undefined) return result
+    const execution = result as ToolExecutionResult<any> & { content?: ToolResultMessage["content"] }
+    return execution.output === undefined && execution.content ? { ...execution, output: execution.content } : execution
   }
 })
 

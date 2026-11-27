@@ -248,20 +248,26 @@ fi`
  * changed while it was open, this waits (on a page of its own) until it has, so the next page loads on the new route.
  */
 export const vpnSettle = (on: boolean) => `if [ -n "$vpn_changed" ]; then
-  direct=" $(curl -s4 --max-time 5 ${TRACE} | sed -n 's/^ip=//p') $(curl -s6 --max-time 5 ${TRACE} | sed -n 's/^ip=//p') "
-  echo 'await page.goto("${TRACE}"); return (await page.locator("body").innerText()).match(/^ip=(.*)$/m)?.[1] ?? ""' > /tmp/dex-vpn-check.js
-  check=$(browse tabs new --group=dex-vpn-check 2> /dev/null | python3 -c 'import json, sys; print(json.load(sys.stdin)["tab"])' 2> /dev/null || true)
+  v4file="/tmp/dex-vpn-v4-$$"; v6file="/tmp/dex-vpn-v6-$$"; chkfile="/tmp/dex-vpn-check-$$.js"; chkgrp="dex-vpn-check-$$"
+  (curl -s4 --max-time 5 ${TRACE} | sed -n 's/^ip=//p' > "$v4file") & p4=$!
+  (curl -s6 --max-time 5 ${TRACE} | sed -n 's/^ip=//p' > "$v6file") & p6=$!
+  wait "$p4" "$p6" 2>/dev/null || true
+  direct_ips="$(cat "$v4file" 2>/dev/null) $(cat "$v6file" 2>/dev/null)"
+  direct=" $direct_ips "
+  rm -f "$v4file" "$v6file"
+  echo 'await page.goto("${TRACE}"); return (await page.locator("body").innerText()).match(/^ip=(.*)$/m)?.[1] ?? ""' > "$chkfile"
+  check=$(browse tabs new --group="$chkgrp" 2> /dev/null | python3 -c 'import json, sys; print(json.load(sys.stdin)["tab"])' 2> /dev/null || true)
   settled=""
   for i in $(seq 12); do
     [ -n "$check" ] || break
-    seen=$(browse execute --tab="$check" --timeout-ms=8000 --file=/tmp/dex-vpn-check.js 2> /dev/null | grep -m1 -E '^[0-9A-Fa-f:.]+$' || true)
+    seen=$(browse execute --tab="$check" --timeout-ms=8000 --file="$chkfile" 2> /dev/null | grep -m1 -E '^[0-9A-Fa-f:.]+$' || true)
     case "$direct" in
       *" $seen "*) ${on ? "" : `[ -n "$seen" ] && settled=1 && break`} ;;
-      *) ${on ? `[ -n "$seen" ] && settled=1 && break` : ""} ;;
+      *) ${on ? `[ -n "$seen" ] && settled=1 && break` : `[ -z "$(echo "$direct_ips" | tr -d ' ')" ] && [ -n "$seen" ] && settled=1 && break`} ;;
     esac
     sleep 1.5
   done
-  browse tabs close --group=dex-vpn-check > /dev/null 2>&1 || true
-  rm -f /tmp/dex-vpn-check.js
+  browse tabs close --group="$chkgrp" > /dev/null 2>&1 || true
+  rm -f "$chkfile"
   ${on ? `[ -n "$settled" ] || { echo "The VM's Chrome didn't switch to the VPN. Call vm_browser again to retry." >&2; exit 1; }` : "true"}
 fi`

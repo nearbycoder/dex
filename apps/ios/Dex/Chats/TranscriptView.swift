@@ -73,7 +73,7 @@ struct TranscriptView: View {
                         // Live tools belong to the latest reply; earlier ones get none, so they don't redraw as a tool's output streams.
                         let reply = ReplyView(feed: feed, messages: messages, streaming: streaming, running: transcript.running && index == items.count - 1,
                                               endedAt: endedAt, results: results, tools: index == items.count - 1 ? transcript.tools : Self.noTools,
-                                              onRetry: index == items.count - 1 ? lastUser.flatMap(Self.text).map { text in { send(text) } } : nil)
+                                              onRetry: index == items.count - 1 ? { client.perform { try await feed.continueSession() } } : nil)
                         if let speaker {
                             HStack(alignment: .top, spacing: 10) {
                                 CharacterAvatar(speaker, size: 28)
@@ -107,7 +107,7 @@ struct TranscriptView: View {
                         .accessibilityIdentifier("chat.retrying")
                 }
                 if let error = transcript.error {
-                    ErrorCard(message: error, onRetry: transcript.running ? nil : lastUser.flatMap(Self.text).map { text in { send(text) } })
+                    ErrorCard(message: error, onRetry: transcript.running ? nil : { client.perform { try await feed.continueSession() } })
                 }
                 // Confirmations this chat asked for that no reply shows (an older agent, or a reply still loading).
                 ForEach(orphanConfirmations(results: results)) { action in

@@ -143,13 +143,16 @@ struct GitHubConnectSheet: View {
 
     let server: URL
     let token: String
+    var startPath: String = "auth/github/connect"
+    var errorParam: String = "github_error"
+    var serviceName: String = "GitHub"
     let finish: (Outcome) -> Void
     @State private var host = ""
     @State private var loading = true
 
     var body: some View {
         NavigationStack {
-            OAuthWebView(server: server, token: token, host: $host, loading: $loading, finish: finish)
+            OAuthWebView(server: server, token: token, startPath: startPath, errorParam: errorParam, serviceName: serviceName, host: $host, loading: $loading, finish: finish)
                 .ignoresSafeArea(edges: .bottom)
                 .overlay { if loading && host.isEmpty { ProgressView() } }
                 .navigationBarTitleDisplayMode(.inline)
@@ -175,6 +178,9 @@ struct GitHubConnectSheet: View {
 private struct OAuthWebView: UIViewRepresentable {
     let server: URL
     let token: String
+    let startPath: String
+    let errorParam: String
+    let serviceName: String
     @Binding var host: String
     @Binding var loading: Bool
     let finish: (GitHubConnectSheet.Outcome) -> Void
@@ -186,7 +192,7 @@ private struct OAuthWebView: UIViewRepresentable {
         configuration.websiteDataStore = .nonPersistent()
         let view = WKWebView(frame: .zero, configuration: configuration)
         view.navigationDelegate = context.coordinator
-        let start = server.appending(path: "auth/github/connect")
+        let start = server.appending(path: startPath)
         if let cookie = DexHTTP.cookie(server: server, token: token) {
             configuration.websiteDataStore.httpCookieStore.setCookie(cookie) { view.load(URLRequest(url: start)) }
         } else {
@@ -206,17 +212,19 @@ private struct OAuthWebView: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
             guard let url = action.request.url else { return .cancel }
+            let scheme = url.scheme?.lowercased()
+            guard scheme == "https" || DexHTTP.sameOrigin(url, parent.server) else { return .cancel }
             await MainActor.run { self.parent.host = url.host() ?? "" }
-            guard url.host() == parent.server.host() else { return .allow }
+            guard DexHTTP.sameOrigin(url, parent.server) else { return .allow }
             // The flow ends back on Dex: Settings with its result, or sign-in if the session didn't count.
             let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             switch url.path() {
             case "/settings":
-                let error = query.first { $0.name == "github_error" }?.value
+                let error = query.first { $0.name == parent.errorParam }?.value
                 complete(error.map { .failed($0) } ?? .connected)
                 return .cancel
             case "/login":
-                complete(.failed("Dex didn't accept this app's session for the GitHub sign-in. Sign out and in again, or paste a token instead."))
+                complete(.failed("Dex didn't accept this app's session for the \(parent.serviceName) sign-in. Sign out and in again, or paste a key instead."))
                 return .cancel
             default:
                 return .allow

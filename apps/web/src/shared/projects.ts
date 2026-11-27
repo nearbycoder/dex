@@ -60,17 +60,21 @@ export const isProjectImage = (value: unknown): value is string =>
   /^data:image\/(svg\+xml|png|x-icon|vnd\.microsoft\.icon|jpeg|webp|gif);base64,[A-Za-z0-9+/]+=*$/.test(value)
 
 /** The `owner/repo` of a GitHub clone URL; null for other hosts. */
-export const githubFullName = (url: string) => /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/.exec(url)?.[1] ?? null
+export const githubFullName = (url: string) => {
+  const match = /^https:\/\/github\.com\/((?!\.+$)[\w.-]+)\/((?!\.+$)[\w.-]+?)(?:\.git)?\/?$/.exec(url)
+  return match ? `${match[1]}/${match[2]}` : null
+}
 
 /** `owner/repo`, `github.com/owner/repo`, or a full URL, as a clone URL; null if it isn't a repo. */
 export const normalizeRepoUrl = (input: string): string | null => {
   const value = input.trim().replace(/\/+$/, "")
-  const shorthand = /^(?:github\.com\/)?([\w.-]+)\/([\w.-]+?)(?:\.git)?$/.exec(value)
+  const shorthand = /^(?:github\.com\/)?((?!\.+$)[\w.-]+)\/((?!\.+$)[\w.-]+?)(?:\.git)?$/.exec(value)
   if (shorthand && !value.includes(":")) return `https://github.com/${shorthand[1]}/${shorthand[2]}.git`
   try {
     const url = new URL(value)
     if (url.protocol !== "https:" || url.username || url.password) return null
-    if (url.pathname.split("/").filter(Boolean).length < 2) return null
+    const segments = url.pathname.split("/").filter(Boolean)
+    if (segments.length < 2 || segments.some((seg) => seg === "." || seg === "..")) return null
     return url.href
   } catch {
     return null

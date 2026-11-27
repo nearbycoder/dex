@@ -7,6 +7,7 @@ import dev.trydex.core.model.EntryRecord
 import dev.trydex.core.model.ModelCatalog
 import kotlinx.serialization.Serializable
 import java.io.File
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * What the app keeps on the device so a launch shows your chats at once while the agent wakes (the web keeps the same
@@ -16,18 +17,22 @@ import java.io.File
 class LocalCache(private val dir: File) {
     private val chats = File(dir, "chats")
     private val ioLock = Any()
+    private val generation = AtomicLong(0)
 
     init {
         dir.mkdirs()
     }
+
+    fun currentGeneration(): Long = generation.get()
 
     private fun stateFile(userId: String) = File(dir, "state-${safe(userId)}.json")
     private val modelsFile = File(dir, "models.json")
 
     private fun safe(name: String) = name.replace(SAFE_CHARS, "_")
 
-    private fun write(file: File, text: String) {
+    private fun write(file: File, text: String, expectedGeneration: Long? = null) {
         synchronized(ioLock) {
+            if (expectedGeneration != null && generation.get() != expectedGeneration) return
             file.parentFile?.mkdirs()
             val temp = File(file.parentFile, file.name + ".tmp")
             temp.writeText(text)
@@ -42,8 +47,8 @@ class LocalCache(private val dir: File) {
         stateFile(userId).takeIf { it.exists() }?.readText()?.let { DexJson.decodeFromString(DexState.serializer(), it) }
     }.getOrNull()
 
-    fun saveState(userId: String, state: DexState) = runCatching {
-        write(stateFile(userId), DexJson.encodeToString(DexState.serializer(), state))
+    fun saveState(userId: String, state: DexState, expectedGeneration: Long? = null) = runCatching {
+        write(stateFile(userId), DexJson.encodeToString(DexState.serializer(), state), expectedGeneration)
     }
 
     fun loadModels(): ModelCatalog? = runCatching {
@@ -62,12 +67,13 @@ class LocalCache(private val dir: File) {
     }.getOrNull()
 
     /** Keeps a chat (if it isn't huge) and drops all but the newest [MAX_CHATS]. */
-    fun saveChat(userId: String, sessionId: String, chat: SavedChat) = runCatching {
+    fun saveChat(userId: String, sessionId: String, chat: SavedChat, expectedGeneration: Long? = null) = runCatching {
         val text = DexJson.encodeToString(SavedChat.serializer(), chat)
         if (text.length > MAX_CHAT_CHARS) return@runCatching
         synchronized(ioLock) {
+            if (expectedGeneration != null && generation.get() != expectedGeneration) return@runCatching
             chats.mkdirs()
-            write(chatFile(userId, sessionId), text)
+            write(chatFile(userId, sessionId), text, expectedGeneration)
             chats.listFiles { file -> file.isFile && file.name.endsWith(".json") }
                 ?.sortedByDescending { it.lastModified() }
                 ?.drop(MAX_CHATS)
@@ -78,6 +84,7 @@ class LocalCache(private val dir: File) {
     /** Signing out: everything but the model list (the same for everyone). */
     fun clear() {
         synchronized(ioLock) {
+            generation.incrementAndGet()
             dir.listFiles()?.forEach { if (it != modelsFile) it.deleteRecursively() }
         }
     }

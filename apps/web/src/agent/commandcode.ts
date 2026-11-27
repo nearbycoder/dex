@@ -1,7 +1,7 @@
 import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy"
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy"
 import { createProvider } from "@earendil-works/pi-ai/models"
-import { modelsOf } from "~/shared/models"
+import { type DexModel, modelsOf } from "~/shared/models"
 
 /**
  * Command Code (https://commandcode.ai/docs/provider): a plan's models over one OpenAI-compatible API, with Claude on
@@ -18,7 +18,10 @@ const TIMEOUT_MS = 20_000
  * Command Code as a pi-ai provider, with the models listed now (see model-catalog.ts). `resolveKey` runs before each
  * model request, so a key connected or removed in the UI applies to the next request.
  */
-export const commandCodeProvider = (resolveKey: () => Promise<{ key: string; source: string } | undefined>) =>
+export const commandCodeProvider = (
+  resolveKey: () => Promise<{ key: string; source: string } | undefined>,
+  models: ReadonlyArray<DexModel> = modelsOf("commandcode")
+) =>
   createProvider({
     id: COMMANDCODE_PROVIDER_ID,
     name: "Command Code",
@@ -32,7 +35,7 @@ export const commandCodeProvider = (resolveKey: () => Promise<{ key: string; sou
         }
       }
     },
-    models: modelsOf("commandcode").map((model) => ({
+    models: models.map((model) => ({
       id: model.apiId,
       name: model.name,
       api: model.api ?? "openai-completions",

@@ -1,7 +1,7 @@
 import { Link, useNavigate } from "@tanstack/react-router"
 import { AlertTriangle, ArrowLeft, ArrowUpRight, Check, ChevronDown, CircleDashed, GitBranch, Hand, LoaderCircle, MessageSquareText, Orbit, Send, Sparkles, Square, X } from "lucide-react"
 import { createContext, type ReactNode, useContext, useEffect, useState } from "react"
-import { useDex } from "~/client/lib/dex"
+import { useDexActions, useDexSelector } from "~/client/lib/dex"
 import { timeAgo } from "~/client/lib/format"
 import type { SessionMeta } from "~/shared/protocol"
 import {
@@ -48,12 +48,27 @@ export function ThreadStatusChip({ status }: { status: ThreadStatus }) {
 
 /** The space a chat belongs to, whether it's the coordinator, and its threads with their statuses. */
 export function useSpaceOf(session: SessionMeta | undefined) {
-  const { state } = useDex()
-  const space = session?.spaceId ? state?.spaces?.find((candidate) => candidate.id === session.spaceId) : undefined
-  if (!space || !state) return null
-  const pending = state.access.pending
-  const threads = spaceThreads(space, state.sessions).map((thread) => ({ thread, status: threadStatus(thread, pending) }))
-  return { space, coordinator: space.sessionId === session!.id, threads }
+  const spaceId = session?.spaceId ?? null
+  const sessionId = session?.id ?? null
+  return useDexSelector(
+    (state) => {
+      if (!spaceId || !sessionId || !state) return null
+      const space = state.spaces?.find((candidate) => candidate.id === spaceId)
+      if (!space) return null
+      const pending = state.access.pending
+      const threads = spaceThreads(space, state.sessions).map((thread) => ({ thread, status: threadStatus(thread, pending) }))
+      return { space, coordinator: space.sessionId === sessionId, threads }
+    },
+    (a, b) => {
+      if (a === b) return true
+      if (!a || !b) return false
+      if (a.space !== b.space || a.coordinator !== b.coordinator || a.threads.length !== b.threads.length) return false
+      for (let i = 0; i < a.threads.length; i++) {
+        if (a.threads[i]!.thread !== b.threads[i]!.thread || a.threads[i]!.status !== b.threads[i]!.status) return false
+      }
+      return true
+    }
+  )
 }
 
 /** How the coordinator's page shows a thread when a card or row is picked: in its panel, or by opening it. */
@@ -71,10 +86,12 @@ function useOpenThread() {
 
 /** A thread the coordinator started, as a card in its reply: title, live status, the latest of what it said. */
 export function ThreadCard({ id, title }: { id: string; title: string }) {
-  const { state } = useDex()
+  const session = useDexSelector((state) => state?.sessions.find((candidate) => candidate.id === id))
+  const status = useDexSelector((state) => {
+    const s = state?.sessions.find((candidate) => candidate.id === id)
+    return s ? threadStatus(s, state?.access.pending) : null
+  })
   const open = useOpenThread()
-  const session = state?.sessions.find((candidate) => candidate.id === id)
-  const status = session ? threadStatus(session, state?.access.pending) : null
   return (
     <button
       type="button"
@@ -304,7 +321,7 @@ function ThreadList({ threads, onSelect }: { threads: ReadonlyArray<{ thread: Se
 
 /** One thread up close: its status and latest reply, a line to send it, and the way into the full chat. */
 function ThreadPeek({ thread, status, onBack }: { thread: SessionMeta; status: ThreadStatus; onBack: () => void }) {
-  const { stub } = useDex()
+  const { stub } = useDexActions()
   const [message, setMessage] = useState("")
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -392,7 +409,7 @@ function ThreadPeek({ thread, status, onBack }: { thread: SessionMeta; status: T
 
 /** The coordinator's notes, read again whenever it finishes a reply. */
 function SpaceNotes({ space, refreshKey }: { space: SpaceProfile; refreshKey: boolean }) {
-  const { stub } = useDex()
+  const { stub } = useDexActions()
   const [notes, setNotes] = useState<string | null>(null)
   useEffect(() => {
     if (refreshKey) return

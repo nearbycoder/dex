@@ -1,6 +1,6 @@
+import type { AssistantMessage } from "@earendil-works/pi-ai"
+import type { EntryRecord } from "@earendil-works/pi-durable"
 import type { AttachedFile } from "./attachments"
-import type { AgentEvent, SnapshotEvent } from "@earendil-works/pi-durable"
-import { Predicate } from "effect"
 import { type AccessState, NO_ACCESS } from "./access"
 import type { AgentProfile } from "./agents"
 import type { CharacterProfile } from "./characters"
@@ -11,6 +11,7 @@ import type { PushStatus } from "./notifications"
 import type { ProjectProfile } from "./projects"
 import type { SpaceProfile } from "./spaces"
 import type { ThinkingLevel } from "./models"
+import type { WebhookInfo } from "./webhooks"
 
 /** Durable Object binding / class name; the client addresses it as `DexAgent`. */
 export const AGENT_CLASS = "DexAgent"
@@ -80,9 +81,19 @@ export interface GitHubStatus {
 
 export interface BoatStatus {
   readonly connected: boolean
-  /** `user`: a key this user connected. `server`: the deployment's BOAT_API_KEY, which only its owner uses. */
+  /** `user`: an account or API key this user connected. `server`: the deployment's BOAT_API_KEY, which only its owner uses. */
   readonly source: "user" | "server" | null
   readonly keyHint: string | null
+  /** How a user connection was set up: "Sign in with boat.dev" (OAuth) or a pasted API key. */
+  readonly via?: "oauth" | "key" | null
+  /** Account label from boat.dev `/api/v1/me` for OAuth connections (email, handle, or name). */
+  readonly account?: string | null
+  /** This deployment has a boat.dev OAuth app (`BOAT_CLIENT_ID`), so "Sign in with boat.dev" is offered. */
+  readonly oauthAvailable?: boolean
+  /** boat.dev stopped accepting the OAuth connection (revoked or expired): reconnect it. */
+  readonly expired?: boolean
+  readonly expiredAt?: number | null
+  readonly expiredReason?: string | null
 }
 
 export interface ClineStatus {
@@ -282,6 +293,8 @@ export interface DexState {
   readonly vpns?: ReadonlyArray<VpnInfo>
   /** Installed skills (without their instructions). */
   readonly skills: ReadonlyArray<SkillInfo>
+  /** Signed inbound webhooks that route external events into chats, spaces, or agents. Missing from older agents. */
+  readonly webhooks?: ReadonlyArray<WebhookInfo>
   /** The build the agent is running (ISO time it was built): tells a deploy apart from a stale instance. */
   readonly build?: string
   /** The model list the agent last looked up (the list itself comes from `modelCatalog()` when `version` changes). */
@@ -325,6 +338,59 @@ export interface QueuedMessage {
   readonly attachments?: ReadonlyArray<AttachedFile>
 }
 
+/** A running tool slot carried in a chat's initial snapshot. */
+export interface SnapshotToolSlot {
+  readonly callId: string
+  readonly name: string
+  readonly status: "pending" | "running" | "done"
+  readonly output?: string
+  readonly details?: unknown
+}
+
+/** Chat state snapshot sent in `dex.snapshot` (and snapshot recovery events). */
+export interface SnapshotEvent {
+  readonly type: "snapshot"
+  readonly entries: ReadonlyArray<EntryRecord>
+  readonly run?: unknown
+  readonly generation?: {
+    readonly message?: AssistantMessage
+    readonly retry?: { readonly at: number; readonly error: string }
+  }
+  readonly tools: ReadonlyArray<SnapshotToolSlot>
+  readonly inbox: ReadonlyArray<unknown>
+}
+
+export type MessageChange =
+  | { readonly type: "message"; readonly message: AssistantMessage }
+  | { readonly type: "text_start"; readonly contentIndex: number; readonly block: AssistantMessage["content"][number] }
+  | { readonly type: "thinking_start"; readonly contentIndex: number; readonly block: AssistantMessage["content"][number] }
+  | { readonly type: "toolcall_start"; readonly contentIndex: number; readonly block: AssistantMessage["content"][number] }
+  | { readonly type: "block"; readonly contentIndex: number; readonly block: AssistantMessage["content"][number] }
+  | { readonly type: "text_delta"; readonly contentIndex: number; readonly delta: string }
+  | { readonly type: "thinking_delta"; readonly contentIndex: number; readonly delta: string }
+  | { readonly type: "toolcall_delta"; readonly contentIndex: number; readonly path: ReadonlyArray<string | number>; readonly delta: string }
+
+export type ToolOutputUpdate =
+  | { readonly set: string }
+  | { readonly trimStart?: number; readonly append?: string }
+
+/** Streaming chat events carried in `dex.events` (wire-compatible across Web, iOS, and Android). */
+export type AgentEvent =
+  | SnapshotEvent
+  | { readonly type: "run_start" }
+  | { readonly type: "run_end" }
+  | { readonly type: "message_start"; readonly message: AssistantMessage }
+  | { readonly type: "message_update"; readonly changes: ReadonlyArray<MessageChange> }
+  | { readonly type: "message_end"; readonly entry: EntryRecord }
+  | { readonly type: "entry_appended"; readonly entry: EntryRecord }
+  | { readonly type: "tool_execution_start"; readonly toolCallId: string; readonly toolName: string; readonly args?: unknown; readonly parentToolCallId?: string }
+  | { readonly type: "tool_execution_update"; readonly toolCallId: string; readonly toolName: string; readonly output?: ToolOutputUpdate; readonly details?: unknown; readonly parentToolCallId?: string }
+  | { readonly type: "tool_execution_end"; readonly toolCallId: string; readonly toolName: string; readonly entry?: EntryRecord; readonly parentToolCallId?: string }
+  | { readonly type: "inbox_update"; readonly items: ReadonlyArray<unknown> }
+  | { readonly type: "auto_retry_start"; readonly at: number; readonly errorMessage: string }
+  | { readonly type: "auto_retry_end" }
+  | { readonly type: "task_failed"; readonly message: string }
+
 export type ServerMessage =
   /**
    * The chat's entries begin with older ones than the model's context (from before its latest summary or reset; agents
@@ -341,4 +407,4 @@ export type ServerMessage =
   | { readonly type: "dex.vm.output"; readonly sessionId: null; readonly vmKey: string; readonly id: number; readonly data: string }
 
 export const isServerMessage = (value: unknown): value is ServerMessage =>
-  Predicate.hasProperty(value, "type") && Predicate.isString(value.type) && value.type.startsWith("dex.")
+  typeof value === "object" && value !== null && "type" in value && typeof (value as { type: unknown }).type === "string" && (value as { type: string }).type.startsWith("dex.")

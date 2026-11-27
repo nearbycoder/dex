@@ -470,6 +470,8 @@ struct ProjectPicturePicker: View {
                 Image(uiImage: image).resizable().interpolation(.medium).scaledToFit()
             } else if dataUrl.hasPrefix("data:image/svg+xml") {
                 SVGPicture(dataUrl: dataUrl)
+            } else if dataUrl.hasPrefix("/api/avatars/") {
+                AgentAvatar(icon: draft.icon, color: draft.color, image: dataUrl, size: 36)
             } else {
                 Image(systemName: "photo").foregroundStyle(.secondary)
             }

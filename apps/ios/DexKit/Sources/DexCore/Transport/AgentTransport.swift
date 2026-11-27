@@ -139,17 +139,36 @@ public final class WebSocketTransport: NSObject, AgentTransport, URLSessionWebSo
     }
 }
 
-public struct WebSocketTransportFactory: AgentTransportFactory {
+public final class WebSocketTransportFactory: AgentTransportFactory, @unchecked Sendable {
     public let server: URL
     public let userId: String
-    public let token: String
-    public init(server: URL, userId: String, token: String) { self.server = server; self.userId = userId; self.token = token }
+    private let lock = NSLock()
+    private var currentToken: String
+    public var token: String { lock.withLock { currentToken } }
+    public init(server: URL, userId: String, token: String) { self.server = server; self.userId = userId; self.currentToken = token }
+    public func updateToken(_ token: String) { lock.withLock { currentToken = token } }
     public func makeTransport() -> AgentTransport { WebSocketTransport(server: server, userId: userId, token: token) }
 }
 
 /// Shared HTTP details.
 public enum DexHTTP {
     public static let sessionCookie = "dex_session"
+
+    private static func effectivePort(of url: URL) -> Int? {
+        if let port = url.port { return port }
+        switch url.scheme?.lowercased() {
+        case "https", "wss": return 443
+        case "http", "ws": return 80
+        default: return nil
+        }
+    }
+
+    /// Whether two URLs share the same scheme, host, and port (never sends cookies across ports or protocols).
+    public static func sameOrigin(_ a: URL, _ b: URL) -> Bool {
+        guard let schemeA = a.scheme?.lowercased(), let schemeB = b.scheme?.lowercased(), schemeA == schemeB,
+              let hostA = a.host()?.lowercased(), let hostB = b.host()?.lowercased(), hostA == hostB else { return false }
+        return effectivePort(of: a) == effectivePort(of: b)
+    }
 
     /// A request to the Dex server, signed in with the session token as its cookie.
     public static func request(_ url: URL, token: String?) -> URLRequest {
@@ -158,14 +177,15 @@ public enum DexHTTP {
         return request
     }
 
-    /// The session cookie for web views and media players on the server's host.
+    /// The session cookie for web views and media players on the server's host (host-only, HttpOnly, Secure on HTTPS).
     public static func cookie(server: URL, token: String) -> HTTPCookie? {
-        guard let host = server.host() else { return nil }
+        guard server.host() != nil else { return nil }
         var properties: [HTTPCookiePropertyKey: Any] = [
-            .name: sessionCookie, .value: token, .domain: host, .path: "/",
+            .name: sessionCookie, .value: token, .originURL: server, .path: "/",
+            HTTPCookiePropertyKey("HttpOnly"): "TRUE",
             .expires: Date().addingTimeInterval(60 * 60 * 24 * 30)
         ]
-        if server.scheme == "https" { properties[.secure] = "TRUE" }
+        if server.scheme?.lowercased() == "https" { properties[.secure] = "TRUE" }
         return HTTPCookie(properties: properties)
     }
 

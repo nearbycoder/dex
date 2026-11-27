@@ -301,18 +301,7 @@ fun GeneralSettingsScreen() {
                 )
             }
             SectionCard(title = "Cloud VMs", info = "Chats run code, browsers, and servers on VMs in your boat.dev account.") {
-                val user = current.boat.source == "user"
-                SecretConnect(
-                    connected = current.boat.connected,
-                    status = if (user) current.boat.keyHint ?: "" else "This deployment's account",
-                    monospace = user,
-                    placeholder = if (user) "New boat.dev API key" else "boat.dev API key",
-                    help = "Create an API key in your boat.dev account. Chats' VMs run on this account, so boat.dev bills it for the time they run (they stop after a few idle minutes). To switch accounts, delete your VMs first: they live in the account that made them.",
-                    helpLink = "https://boat.dev" to "boat.dev",
-                    onConnect = { repository.api.connectBoat(it).copy(note = null) },
-                    onDisconnect = if (user) ({ repository.api.disconnectBoat() }) else null,
-                    tag = "boat",
-                )
+                BoatConnect()
             }
             SectionCard(title = "GitHub", info = "Lets chats' VMs clone private repos, push branches, and open pull requests.") { GitHubConnect() }
             SectionCard(title = "New chats", info = "Defaults for chats you start. Each chat can change its model and thinking level.") {
@@ -584,6 +573,95 @@ private fun ChatGPTConnect(status: ProviderStatus) {
  * a fine-grained token. The outcome arrives with the synced state.
  */
 @Composable
+private fun BoatConnect() {
+    val app = LocalApp.current
+    val repository = app.graph.repository
+    val openInBrowser = LocalOpenInBrowser.current
+    val state by repository.state.collectAsStateWithLifecycle()
+    val boat = state?.boat ?: return
+    val oauth = boat.oauthAvailable
+    val user = boat.source == "user"
+    var useKey by remember { mutableStateOf(false) }
+    var waiting by remember { mutableStateOf(false) }
+    var connectedMessage by remember { mutableStateOf(false) }
+    var disconnectError by remember { mutableStateOf<String?>(null) }
+    val server = repository.session.value?.serverUrl
+    val connectUrl = server?.resolve("/auth/boat/connect")?.toString()
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(boat.connected, boat.via) {
+        if (waiting && boat.connected && boat.via == "oauth") {
+            connectedMessage = true
+            waiting = false
+        }
+    }
+
+    val message: @Composable () -> Unit = {
+        disconnectError?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+        if (connectedMessage) Text("boat.dev is connected. New VMs run on your account. You can close the browser tab.", style = MaterialTheme.typography.bodySmall, color = DexTheme.colors.success)
+    }
+
+    when {
+        !oauth || useKey || (boat.connected && (boat.source == "server" || boat.via != "oauth")) -> SecretConnect(
+            connected = boat.connected,
+            status = if (user) boat.keyHint ?: "" else "This deployment's account",
+            monospace = user,
+            placeholder = if (user) "New boat.dev API key" else "boat.dev API key",
+            help = "Create an API key in your boat.dev account. Chats' VMs run on this account, so boat.dev bills it for the time they run (they stop after a few idle minutes). To switch accounts, delete your VMs first: they live in the account that made them.",
+            helpLink = "https://boat.dev" to "boat.dev",
+            onConnect = { repository.api.connectBoat(it).copy(note = null) },
+            onDisconnect = if (user) ({ repository.api.disconnectBoat() }) else null,
+            tag = "boat",
+            footer = {
+                if (oauth && (!boat.connected || boat.source == "server")) {
+                    TextButton(onClick = {
+                        if (useKey) useKey = false
+                        else connectUrl?.let { waiting = true; openInBrowser(it) }
+                    }) {
+                        Text(if (useKey) "Sign in with boat.dev instead" else "Sign in with your own boat.dev account")
+                    }
+                }
+                message()
+            },
+        )
+        boat.connected -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (boat.expired) {
+                val since = boat.expiredAt?.let { " " + android.text.format.DateUtils.getRelativeTimeSpanString(it).toString().lowercase() } ?: ""
+                dev.trydex.android.ui.components.Banner(
+                    "boat.dev stopped accepting this connection$since (revoked or expired). Reconnect to resume starting VMs." +
+                        (boat.expiredReason?.let { "\n$it." } ?: ""),
+                    action = { TextButton(onClick = { connectUrl?.let { waiting = true; openInBrowser(it) } }) { Text("Reconnect") } },
+                )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = DexTheme.colors.success, modifier = Modifier.size(20.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(boat.account ?: boat.keyHint ?: "boat.dev account", style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("via boat.dev", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                TextButton(onClick = { connectUrl?.let { waiting = true; openInBrowser(it) } }) { Text("Reconnect") }
+                TextButton(onClick = {
+                    scope.launch {
+                        disconnectError = null
+                        val outcome = runCatching { repository.api.disconnectBoat() }.getOrElse { ConnectResult(ok = false, error = it.message) }
+                        if (!outcome.ok) disconnectError = outcome.error
+                    }
+                }) { Text("Disconnect") }
+            }
+            message()
+        }
+        else -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Button(onClick = { connectUrl?.let { waiting = true; openInBrowser(it) } }, modifier = Modifier.testTag("connect-boat-oauth")) {
+                Text("Sign in with boat.dev")
+            }
+            Text("Connect your boat.dev account with one click—no API key to copy.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onClick = { useKey = true }) { Text("Use an API key instead") }
+            message()
+        }
+    }
+}
+
+@Composable
 private fun GitHubConnect() {
     val app = LocalApp.current
     val repository = app.graph.repository
@@ -736,6 +814,7 @@ private fun Account() {
     val confirm = rememberConfirm()
     val scope = rememberCoroutineScope()
     val user = session?.user
+    var signOutAllError by remember { mutableStateOf<String?>(null) }
     SettingRow(
         user?.name ?: "Account",
         detail = user?.let { "@${it.login}" },
@@ -753,13 +832,16 @@ private fun Account() {
         info = "Ends every session on every device, including this one. Use it if a device is lost or your password may have leaked.",
         trailing = {
             TextButton(onClick = {
+                signOutAllError = null
                 confirm.ask("Sign out of Dex on every device, including this one?", confirm = "Sign out all") {
                     scope.launch {
                         runCatching { repository.api.signOutEverywhere() }
-                        repository.signOut(SignedOutReason.Everywhere)
+                            .onSuccess { repository.signOut(SignedOutReason.Everywhere) }
+                            .onFailure { signOutAllError = it.message ?: "Couldn't revoke other devices. Try again when connected." }
                     }
                 }
             }, modifier = Modifier.testTag("sign-out-everywhere")) { Text("Sign out all") }
         },
     )
+    signOutAllError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
 }

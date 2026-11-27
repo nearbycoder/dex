@@ -36,6 +36,7 @@ function SettingsPage() {
   const { state, stub, viewer, connected } = useDex()
   const [instructions, setInstructions] = useState("")
   const [saved, setSaved] = useState(false)
+  const [signOutAllError, setSignOutAllError] = useState<string | null>(null)
 
   useEffect(() => {
     if (state) setInstructions(state.settings.instructions)
@@ -165,7 +166,15 @@ function SettingsPage() {
           label={viewer.name}
           detail={`@${viewer.login}`}
         >
-          <form method="post" action="/auth/logout" onSubmit={forgetSavedState}>
+          <form
+            method="post"
+            action="/auth/logout"
+            onSubmit={(event) => {
+              event.preventDefault()
+              const form = event.currentTarget
+              void forgetSavedState().finally(() => form.submit())
+            }}
+          >
             <button type="submit" className="flex items-center gap-1.5 rounded-lg border border-zinc-700 px-3 py-1.5 text-sm hover:bg-zinc-800">
               <LogOut className="size-4" /> Sign out
             </button>
@@ -182,9 +191,15 @@ function SettingsPage() {
             action="/auth/logout"
             onSubmit={async (event) => {
               event.preventDefault()
+              setSignOutAllError(null)
               if (!(await ask({ title: "Sign out everywhere?", body: "Every device signed in to Dex, including this one, has to sign in again.", confirm: "Sign out" }))) return
-              await stub.signOutEverywhere().catch(() => undefined)
-              forgetSavedState()
+              try {
+                await stub.signOutEverywhere()
+              } catch (error: unknown) {
+                setSignOutAllError(error instanceof Error ? error.message : "Could not revoke other devices. Try again when connected.")
+                return
+              }
+              await forgetSavedState()
               signOutAll.current?.submit()
             }}
           >
@@ -193,6 +208,7 @@ function SettingsPage() {
             </button>
           </form>
         </Row>
+        {signOutAllError && <p className="pt-2 text-xs text-red-400">{signOutAllError}</p>}
       </Section>
     </Page>
   )

@@ -80,6 +80,7 @@ class DexRepository(
 
     private var connection: AgentConnection? = null
     private var connectionJobs = emptyList<Job>()
+    private var signedOutCheckJob: Job? = null
     lateinit var api: DexApi
         private set
 
@@ -123,6 +124,8 @@ class DexRepository(
         val old = connection
         val oldSession = _session.value
         val oldApi = if (this::api.isInitialized) api else null
+        signedOutCheckJob?.cancel()
+        signedOutCheckJob = null
         connectionJobs.forEach { it.cancel() }
         connectionJobs = emptyList()
         connection = null
@@ -149,6 +152,8 @@ class DexRepository(
     }
 
     private fun activate(session: DexSession) {
+        signedOutCheckJob?.cancel()
+        signedOutCheckJob = null
         connectionJobs.forEach { it.cancel() }
         connectionJobs = emptyList()
         connection?.stop()
@@ -164,7 +169,8 @@ class DexRepository(
             // Kept a moment after it settles, not on every streamed change.
             scope.launch {
                 agent.state.filterNotNull().debounce(1_000).collect { state ->
-                    withContext(Dispatchers.IO) { cache.saveState(session.user.id, state) }
+                    val gen = cache.currentGeneration()
+                    withContext(Dispatchers.IO) { cache.saveState(session.user.id, state, gen) }
                 }
             },
             scope.launch { syncModels() },
@@ -174,20 +180,27 @@ class DexRepository(
         if (visible.value) agent.start()
     }
 
-    private suspend fun onStatus(status: ConnectionStatus) {
+    private fun onStatus(status: ConnectionStatus) {
         _status.value = status
         when (status) {
             is ConnectionStatus.SignedOut -> {
-                // A refused socket doesn't always mean the session is gone: ask the server before signing out.
+                // Run the probe off the status collector so subsequent status changes aren't blocked.
                 val current = _session.value ?: return
-                val accepted = if (status.everywhere) false else DexAuth.sessionAccepted(http, current)
-                if (accepted == false) signOut(if (status.everywhere) SignedOutReason.Everywhere else SignedOutReason.Expired)
-                else {
-                    delay(3_000)
-                    connection?.start()
+                val agent = connection ?: return
+                signedOutCheckJob?.cancel()
+                signedOutCheckJob = scope.launch {
+                    val accepted = if (status.everywhere) false else DexAuth.sessionAccepted(http, current)
+                    if (_session.value?.token != current.token || connection !== agent) return@launch
+                    if (accepted == false) signOut(if (status.everywhere) SignedOutReason.Everywhere else SignedOutReason.Expired)
+                    else {
+                        delay(3_000)
+                        if (connection === agent) agent.start()
+                    }
                 }
             }
             ConnectionStatus.Connected -> {
+                signedOutCheckJob?.cancel()
+                signedOutCheckJob = null
                 connection?.send(ClientMessages.presence(visible.value, onScreen.value))
                 resubscribe()
             }
@@ -347,8 +360,9 @@ class DexRepository(
     private fun saveChat(sessionId: String, state: TranscriptState) {
         val user = userId ?: return
         if (!state.loaded) return
+        val gen = cache.currentGeneration()
         scope.launch(Dispatchers.IO) {
-            cache.saveChat(user, sessionId, LocalCache.SavedChat(System.currentTimeMillis(), state.entries, state.artifacts))
+            cache.saveChat(user, sessionId, LocalCache.SavedChat(System.currentTimeMillis(), state.entries, state.artifacts), gen)
         }
     }
 

@@ -112,10 +112,11 @@ fun TabsView(node: ElementNode) {
     if (tabs.isEmpty()) return
     var selected by remember { mutableIntStateOf(0) }
     var touched by remember { mutableStateOf(false) }
-    val sizes = tabs.map { Js.json(it.props["content"]).length }
+    // Only serialize tab content sizes while streaming and untouched (avoids O(size) JSON serialization on every recomposition).
+    val sizes = if (ui.streaming && !touched) tabs.map { Js.json(it.props["content"]).length } else emptyList()
     var previous by remember { mutableStateOf(sizes) }
     LaunchedEffect(sizes) {
-        if (!touched && ui.streaming) {
+        if (!touched && ui.streaming && sizes.isNotEmpty()) {
             val grown = sizes.indices.lastOrNull { it >= previous.size || sizes[it] > previous[it] }
             if (grown != null) selected = grown
         }

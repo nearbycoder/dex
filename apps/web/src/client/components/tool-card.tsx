@@ -6,9 +6,11 @@ import {
   Monitor,
   ChevronRight,
   Clock,
+  Download,
   FilePen,
   FileText,
   Globe,
+  Layers,
   LoaderCircle,
   type LucideIcon,
   Plug,
@@ -17,8 +19,9 @@ import {
   Wrench
 } from "lucide-react"
 import { useEffect, useState } from "react"
-import { useDex } from "~/client/lib/dex"
+import { useDexActions } from "~/client/lib/dex"
 import type { LiveTool } from "~/client/lib/transcript"
+import { vmKeyFor } from "~/shared/protocol"
 import { Collapse } from "./collapse"
 
 const icons: Record<string, LucideIcon> = {
@@ -41,10 +44,12 @@ const icons: Record<string, LucideIcon> = {
   vm_start: Monitor,
   vm_agents: Monitor,
   vm_agent_send: Monitor,
-  vm_agent_stop: Monitor
+  vm_agent_stop: Monitor,
+  tool_search: Search,
+  batch_tools: Layers
 }
 
-const summaryKeys = ["command", "path", "query", "url", "prompt", "name", "id", "operation"]
+const summaryKeys = ["command", "path", "uri", "query", "url", "prompt", "name", "id", "operation"]
 
 export const summarize = (args: unknown) => {
   if (typeof args !== "object" || args === null) return ""
@@ -89,7 +94,9 @@ const activities: Record<string, string> = {
   vm_agent_stop: "Stopping VM helpers",
   share_media: "Sharing a file from the VM",
   app_operations: "Looking up app operations",
-  app_call: "Managing Dex"
+  app_call: "Managing Dex",
+  tool_search: "Loading tools",
+  batch_tools: "Running tools in parallel"
 }
 
 /** Images fetched this session, by ref, so reopening a step or scrolling back doesn't fetch again. */
@@ -112,29 +119,52 @@ export function TranscriptImage({
   className?: string
   placeholderClassName?: string
 }) {
-  const { stub } = useDex()
+  const { stub } = useDexActions()
   const key = `${chatId}:${ref_}`
-  const [src, setSrc] = useState(() => screenshots.get(key) ?? null)
-  const [failed, setFailed] = useState(false)
+  const cached = screenshots.get(key) ?? null
+  const [loaded, setLoaded] = useState<{ key: string; src: string | null; failed: boolean }>(() => ({
+    key,
+    src: cached,
+    failed: false
+  }))
+  const src = cached ?? (loaded.key === key ? loaded.src : null)
+  const failed = !src && loaded.key === key && loaded.failed
   useEffect(() => {
-    if (src) return
+    if (cached) return
     let current = true
     stub
       .transcriptImage(chatId, ref_)
       .then((image) => {
         if (!current) return
-        if (!image) return setFailed(true)
+        if (!image) return setLoaded({ key, src: null, failed: true })
         const url = `data:${image.mimeType};base64,${image.data}`
         screenshots.set(key, url)
         if (screenshots.size > 40) screenshots.delete(screenshots.keys().next().value!)
-        setSrc(url)
+        setLoaded({ key, src: url, failed: false })
       })
-      .catch(() => current && setFailed(true))
+      .catch(() => current && setLoaded({ key, src: null, failed: true }))
     return () => {
       current = false
     }
-  }, [chatId, ref_, key, src, stub])
-  if (src) return <img src={src} alt={alt} className={className} />
+  }, [chatId, ref_, key, cached, stub])
+  if (src) {
+    const ext = /^data:image\/([a-z0-9+]+);/i.exec(src)?.[1]?.replace("jpeg", "jpg").replace("svg+xml", "svg") ?? "png"
+    return (
+      <span className="relative inline-block max-w-full">
+        <img src={src} alt={alt} className={className} />
+        <a
+          href={src}
+          download={`image-${ref_.slice(0, 8)}.${ext}`}
+          onClick={(event) => event.stopPropagation()}
+          title="Download image"
+          aria-label="Download image"
+          className="absolute top-1.5 right-1.5 inline-flex items-center justify-center rounded-md bg-black/65 p-1.5 text-zinc-100 ring-1 ring-white/15 backdrop-blur hover:bg-black/85"
+        >
+          <Download className="size-3.5" />
+        </a>
+      </span>
+    )
+  }
   return <div className={placeholderClassName}>{failed ? "Image unavailable" : <LoaderCircle className="size-4 animate-spin" />}</div>
 }
 
@@ -149,6 +179,9 @@ export function ToolCard({ call, result, live }: { call: ToolCall; result?: Tool
   const failed = result?.isError
   const images = result?.content.flatMap((part) => (part.type === "image" ? [part] : [])) ?? []
   const onVm = call.name.startsWith("vm_")
+  const rawVm = typeof call.arguments === "object" && call.arguments !== null ? (call.arguments as Record<string, unknown>).vm : undefined
+  const vmNum = typeof rawVm === "number" && Number.isInteger(rawVm) && rawVm > 1 ? rawVm : 1
+  const watchKey = chatId ? vmKeyFor(chatId, vmNum) : undefined
   // Stream a running VM command open so its output is visible as it arrives.
   const showLive = onVm && pending && output.length > 0
 
@@ -161,12 +194,21 @@ export function ToolCard({ call, result, live }: { call: ToolCall; result?: Tool
       >
         <ChevronRight className={`size-3.5 shrink-0 text-zinc-500 transition-transform ${open ? "rotate-90" : ""}`} />
         <Icon className={`size-3.5 shrink-0 ${failed ? "text-red-400" : "text-emerald-400"}`} />
-        <span className="shrink-0 font-medium text-zinc-300">{call.name}</span>
+        {call.name.includes("__") ? (
+          <>
+            <span className="shrink-0 rounded bg-emerald-950/60 px-1.5 py-0.5 font-mono text-[10px] text-emerald-300 ring-1 ring-emerald-800/50">
+              {call.name.slice(0, call.name.indexOf("__"))}
+            </span>
+            <span className="shrink-0 font-medium text-zinc-300">{call.name.slice(call.name.indexOf("__") + 2)}</span>
+          </>
+        ) : (
+          <span className="shrink-0 font-medium text-zinc-300">{call.name}</span>
+        )}
         <span className="truncate font-mono text-zinc-500">{summarize(call.arguments)}</span>
         {onVm && (
           <Link
-            to={chatId ? "/machine/$vmKey" : "/machine"}
-            params={chatId ? { vmKey: chatId } : {}}
+            to={watchKey ? "/machine/$vmKey" : "/machine"}
+            params={watchKey ? { vmKey: watchKey } : {}}
             onClick={(event) => event.stopPropagation()}
             className="ml-auto shrink-0 rounded px-1.5 py-0.5 text-[10px] text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
             title="Watch this chat's VM live"
@@ -184,7 +226,25 @@ export function ToolCard({ call, result, live }: { call: ToolCall; result?: Tool
       </button>
       {images.map((image, index) => {
         const ref = (image as { ref?: string }).ref
-        if (image.data) return <img key={index} src={`data:${image.mimeType};base64,${image.data}`} alt="VM screenshot" className="block w-full border-t border-zinc-800" />
+        if (image.data) {
+          const dataUrl = `data:${image.mimeType};base64,${image.data}`
+          const ext = image.mimeType.split("/")[1]?.replace("jpeg", "jpg") ?? "png"
+          return (
+            <span key={index} className="relative block border-t border-zinc-800">
+              <img src={dataUrl} alt="VM screenshot" className="block w-full" />
+              <a
+                href={dataUrl}
+                download={`screenshot-${index + 1}.${ext}`}
+                onClick={(event) => event.stopPropagation()}
+                title="Download screenshot"
+                aria-label="Download screenshot"
+                className="absolute top-2 right-2 inline-flex items-center justify-center rounded-md bg-black/65 p-1.5 text-zinc-100 ring-1 ring-white/15 backdrop-blur hover:bg-black/85"
+              >
+                <Download className="size-3.5" />
+              </a>
+            </span>
+          )
+        }
         return ref && chatId ? <TranscriptImage key={index} chatId={chatId} ref_={ref} /> : null
       })}
       {showLive && !open && (

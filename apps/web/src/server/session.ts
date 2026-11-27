@@ -1,6 +1,6 @@
 import { Clock, Context, Effect, Layer, Option, Result, Schema } from "effect"
 import { Base64Url } from "effect/encoding"
-import { Keys } from "./crypto"
+import { Keys, verifyHmac } from "./crypto"
 
 export const SESSION_COOKIE = "dex_session"
 export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 30
@@ -50,7 +50,9 @@ export class Sessions extends Context.Service<Sessions, {
       })
 
       const verifyWithIssuedAt = Effect.fn("Sessions.verifyWithIssuedAt")(function*(token: string | undefined) {
-        const [payload, signature] = token?.split(".") ?? []
+        const parts = token?.split(".")
+        if (!parts || parts.length !== 2) return Option.none<VerifiedSession>()
+        const [payload, signature] = parts
         if (!payload || !signature) return Option.none<VerifiedSession>()
         if (!(yield* keys.verify(payload, signature))) return Option.none<VerifiedSession>()
         const json = Base64Url.decodeString(payload)
@@ -76,4 +78,21 @@ export const tokenIssuedAt = (token: string): number => {
   const json = Base64Url.decodeString(token.split(".")[0] ?? "")
   if (Result.isFailure(json)) return 0
   return Option.match(decodeClaims(json.success), { onNone: () => 0, onSome: (claims) => claims.iat ?? claims.exp - SESSION_TTL_SECONDS })
+}
+
+/** Fast session token verification without entering the Effect runtime (for per-request auth gates). */
+export async function verifySessionTokenFast(secret: string, token: string | undefined): Promise<VerifiedSession | null> {
+  if (!token || !secret) return null
+  const parts = token.split(".")
+  if (parts.length !== 2) return null
+  const [payload, signature] = parts
+  if (!payload || !signature) return null
+  if (!(await verifyHmac(secret, payload, signature))) return null
+  const json = Base64Url.decodeString(payload)
+  if (Result.isFailure(json)) return null
+  const decoded = decodeClaims(json.success)
+  if (Option.isNone(decoded)) return null
+  const claims = decoded.value
+  if (claims.exp * 1000 <= Date.now()) return null
+  return { user: claims.user, issuedAt: claims.iat ?? claims.exp - SESSION_TTL_SECONDS }
 }

@@ -2,7 +2,7 @@ import { type ActionEvent, BuiltinActionType, type McpClientLike, type OpenUIErr
 import { ThemeProvider } from "@openuidev/react-ui/ThemeProvider"
 import { useNavigate } from "@tanstack/react-router"
 import { Check, ShieldAlert, Wrench, X } from "lucide-react"
-import { useContext, useEffect, useMemo, useRef, useState } from "react"
+import { memo, useContext, useEffect, useMemo, useRef, useState } from "react"
 import { ChatSecretsContext } from "~/client/lib/chat-secrets"
 import { OpenUIHostContext } from "~/client/lib/openui-host"
 import { library } from "~/client/openui/library"
@@ -25,13 +25,23 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 /**
  * The form's values with every password field's value swapped for its `{{secret:<name>}}` placeholder, after
  * storing the value in Dex. Fields are found by name (`{ value }` or a bare string), wherever the form nests them.
+ * Also returns every raw secret -> placeholder mapping so context and humanFriendlyMessage can be scrubbed too.
  */
-async function withoutSecrets(state: unknown, fields: ReadonlySet<string>, store: (field: string, value: string) => Promise<string>): Promise<unknown> {
+async function withoutSecrets(
+  state: unknown,
+  fields: ReadonlySet<string>,
+  store: (field: string, value: string) => Promise<string>,
+  stored: Map<string, string> = new Map()
+): Promise<unknown> {
   const walk = async (node: unknown, key?: string): Promise<unknown> => {
     if (key !== undefined && fields.has(key)) {
       const value = typeof node === "string" ? node : isRecord(node) && typeof node.value === "string" ? node.value : null
       if (value) {
-        const placeholder = `{{secret:${await store(key, value)}}}`
+        let placeholder = stored.get(value)
+        if (!placeholder) {
+          placeholder = `{{secret:${await store(key, value)}}}`
+          stored.set(value, placeholder)
+        }
         return typeof node === "string" ? placeholder : { ...(node as Record<string, unknown>), value: placeholder }
       }
     }
@@ -42,6 +52,60 @@ async function withoutSecrets(state: unknown, fields: ReadonlySet<string>, store
   return walk(state)
 }
 
+/** Recursively replaces any raw secret values (longest first) inside strings, arrays, and objects. */
+function scrubSecretValues(node: unknown, replacements: ReadonlyArray<readonly [string, string]>): unknown {
+  if (!replacements.length) return node
+  if (typeof node === "string") {
+    let out = node
+    for (const [secret, placeholder] of replacements) {
+      if (secret.length >= 1) out = out.split(secret).join(placeholder)
+    }
+    return out
+  }
+  if (Array.isArray(node)) return node.map((item) => scrubSecretValues(item, replacements))
+  if (isRecord(node)) return Object.fromEntries(Object.entries(node).map(([k, v]) => [k, scrubSecretValues(v, replacements)]))
+  return node
+}
+
+/** Collects password input names and reactive `$var` bindings statically from a ParseResult AST (covers hidden tabs/steps). */
+function astPasswordKeys(node: unknown, out: Set<string>, seen = new WeakSet<object>()) {
+  if (!node || typeof node !== "object") return
+  if (seen.has(node)) return
+  seen.add(node)
+  if (Array.isArray(node)) {
+    for (const item of node) astPasswordKeys(item, out, seen)
+    return
+  }
+  const rec = node as Record<string, unknown>
+  const props = isRecord(rec.props) ? rec.props : null
+  const isPasswordType = (value: unknown): boolean =>
+    (typeof value === "string" && value.toLowerCase() === "password") ||
+    (isRecord(value) && value.k === "Str" && typeof value.v === "string" && value.v.toLowerCase() === "password")
+  if (props && isPasswordType(props.type)) {
+    const addKey = (val: unknown) => {
+      if (typeof val === "string" && val) {
+        out.add(val)
+        if (val.startsWith("$")) out.add(val.slice(1))
+      } else if (isRecord(val)) {
+        if (val.k === "Str" && typeof val.v === "string" && val.v) out.add(val.v)
+        if (typeof val.target === "string" && val.target) {
+          out.add(val.target)
+          if (val.target.startsWith("$")) out.add(val.target.slice(1))
+        }
+        if (typeof val.name === "string" && val.name) {
+          out.add(val.name)
+          if (val.name.startsWith("$")) out.add(val.name.slice(1))
+        }
+      }
+    }
+    addKey(props.name)
+    addKey(props.value)
+    addKey(props.defaultValue)
+    addKey(props.binding)
+  }
+  for (const value of Object.values(rec)) astPasswordKeys(value, out, seen)
+}
+
 /** State to save, without password fields: those values are only ever kept as secrets. */
 const withoutPasswords = (node: unknown, fields: ReadonlySet<string>): unknown => {
   if (Array.isArray(node)) return node.map((item) => withoutPasswords(item, fields))
@@ -49,7 +113,7 @@ const withoutPasswords = (node: unknown, fields: ReadonlySet<string>): unknown =
   return Object.fromEntries(Object.entries(node).flatMap(([key, value]) => (fields.has(key) ? [] : [[key, withoutPasswords(value, fields)]])))
 }
 
-const toModelMessage = (event: ActionEvent, formState: unknown) => uiActionMessage(event.humanFriendlyMessage, formState, event.params?.context)
+const toModelMessage = (message: string, formState: unknown, context: unknown) => uiActionMessage(message, formState, context)
 
 type ToolResult = Awaited<ReturnType<McpClientLike["callTool"]>>
 const CANCELLED = "You cancelled it."
@@ -103,7 +167,7 @@ const EMPTY_THEME = {}
  * Renders a chat's render_ui program, live while its arguments stream in. Its
  * Query() and Mutation() calls run app operations through the host; its form and filter state is saved per card.
  */
-export default function OpenUIBlock(props: {
+export default memo(function OpenUIBlock(props: {
   code: string
   streaming: boolean
   /** Which card this is, for its saved state: the render_ui call's id. */
@@ -122,9 +186,12 @@ export default function OpenUIBlock(props: {
   const [problems, setProblems] = useState<ReadonlyArray<string>>([])
   const mutationOnly = useRef<ReadonlySet<string>>(new Set())
   const wantsRows = useRef<ReadonlySet<string>>(new Set())
+  // Sticky set of password field names & `$var` bindings seen in the AST or DOM (covers unmounted tabs/steps).
+  const knownPasswordKeys = useRef<Set<string>>(new Set())
   // An admin operation a button asked for, shown with Dex's own summary of it (not the model's label).
   const [confirm, setConfirm] = useState<{ readonly summary: string; readonly answer: (yes: boolean) => void } | null>(null)
   const confirming = useRef<((yes: boolean) => void) | null>(null)
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const ready = !host || host.states !== null
   const initialState = useMemo(() => {
@@ -198,12 +265,23 @@ export default function OpenUIBlock(props: {
     [run]
   )
 
-  const passwordFields = () => new Set([...(root.current?.querySelectorAll<HTMLInputElement>('input[type="password"][name]') ?? [])].map((input) => input.name))
+  const passwordFields = () => {
+    const fields = new Set<string>(knownPasswordKeys.current)
+    for (const input of root.current?.querySelectorAll<HTMLInputElement>('input[type="password"]') ?? []) {
+      if (input.name) {
+        fields.add(input.name)
+        knownPasswordKeys.current.add(input.name)
+      }
+    }
+    return fields
+  }
 
   // Filters, tabs, and half-filled forms are saved (shortly after each change) so the card opens as you left it.
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => () => {
     if (saveTimer.current) clearTimeout(saveTimer.current)
+    if (noticeTimer.current) clearTimeout(noticeTimer.current)
+    confirming.current?.(false)
   }, [])
   const onStateUpdate = (state: Record<string, unknown>) => {
     if (props.streaming || !host) return
@@ -220,8 +298,16 @@ export default function OpenUIBlock(props: {
     const fields = passwordFields()
     try {
       if (fields.size && !storeSecret) throw new Error("Secrets can't be kept out of the chat here, so this wasn't sent.")
-      const formState = fields.size && storeSecret ? await withoutSecrets(event.formState, fields, storeSecret) : event.formState
-      props.onSend(toModelMessage(event, formState))
+      const stored = new Map<string, string>()
+      const formState = fields.size && storeSecret ? await withoutSecrets(event.formState, fields, storeSecret, stored) : event.formState
+      let context = fields.size && storeSecret ? await withoutSecrets(event.params?.context, fields, storeSecret, stored) : event.params?.context
+      let message = event.humanFriendlyMessage
+      if (stored.size) {
+        const replacements = [...stored.entries()].sort((a, b) => b[0].length - a[0].length)
+        context = scrubSecretValues(context, replacements)
+        message = scrubSecretValues(message, replacements) as string
+      }
+      props.onSend(toModelMessage(message, formState, context))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     }
@@ -229,7 +315,8 @@ export default function OpenUIBlock(props: {
 
   const flash = (text: string) => {
     setNotice(text)
-    setTimeout(() => setNotice((current) => (current === text ? null : current)), 2_000)
+    if (noticeTimer.current) clearTimeout(noticeTimer.current)
+    noticeTimer.current = setTimeout(() => setNotice((current) => (current === text ? null : current)), 2_000)
   }
 
   const onAction = (event: ActionEvent) => {
@@ -284,6 +371,7 @@ export default function OpenUIBlock(props: {
               if (!result) return
               mutationOnly.current = mutationOnlyTools(result)
               wantsRows.current = rowsTools(result, props.code)
+              astPasswordKeys(result, knownPasswordKeys.current)
             }}
             onAction={onAction}
           />
@@ -343,4 +431,4 @@ export default function OpenUIBlock(props: {
       </div>
     </ThemeProvider>
   )
-}
+})

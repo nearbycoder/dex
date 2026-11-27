@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { useDex } from "~/client/lib/dex"
+import { useDexActions, useDexConnected } from "~/client/lib/dex"
 
 /** The latest thing done on each of these VMs ("browse: await page.goto(…)"), kept live from the agent's broadcasts. */
 export function useLatestActivity(keys: ReadonlyArray<string>) {
-  const { stub, listen, connected } = useDex()
+  const { stub, listen } = useDexActions()
+  const connected = useDexConnected()
   const [latest, setLatest] = useState<Record<string, string>>({})
   const joined = keys.join("\n")
   const watched = useMemo(() => new Set(joined ? joined.split("\n") : []), [joined])

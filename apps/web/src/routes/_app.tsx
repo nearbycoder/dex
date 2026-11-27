@@ -1,6 +1,8 @@
 import { createFileRoute, Link, Outlet, redirect, useLocation, useMatch, useRouter } from "@tanstack/react-router"
-import { MessageSquarePlus } from "lucide-react"
+import { MessageSquarePlus, Search } from "lucide-react"
 import { useEffect } from "react"
+import { Toaster } from "sonner"
+import { CommandPalette, openCommandPalette } from "~/client/components/command-palette"
 import { ConfirmHost } from "~/client/components/confirm-dialog"
 import { Sidebar } from "~/client/components/sidebar"
 import { ShellSkeleton } from "~/client/components/skeleton"
@@ -61,11 +63,13 @@ export const Route = createFileRoute("/_app")({
               signedIn = undefined
               return
             }
-            forgetSavedState()
-            window.location.assign("/login")
+            signedIn = undefined
+            void forgetSavedState().finally(() => window.location.assign("/login"))
           },
-          // Offline or unreachable: carry on with what's kept; the socket reconnects (and checks) when it can.
-          () => undefined
+          // Offline or unreachable: clear the rejected check so a later navigation retries; the socket checks when online.
+          () => {
+            signedIn = undefined
+          }
         )
       }
     }
@@ -82,7 +86,7 @@ export const Route = createFileRoute("/_app")({
     if (!viewer) {
       signedIn = undefined
       // Signed out, expired, or revoked: don't leave this account's chats on the device.
-      forgetSavedState()
+      await forgetSavedState()
       throw redirect({ to: "/login" })
     }
     keepViewer(viewer)
@@ -94,12 +98,18 @@ export const Route = createFileRoute("/_app")({
   component: AppLayout
 })
 
-/** Fetches every page's code once the app is idle, so a first visit doesn't wait on the network or parsing. */
+/** Preloads the core chat routes once idle without downloading every rarely-visited settings/admin chunk up front. */
+const PRELOAD_ROUTES = ["/_app/chat/$sessionId", "/_app/chat/"] as const
 function usePreloadPages() {
   const router = useRouter()
   useEffect(() => {
+    const conn = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection
+    if (conn?.saveData) return
     const load = () => {
-      for (const route of Object.values(router.routesById)) void router.loadRouteChunk(route)?.catch(() => undefined)
+      for (const id of PRELOAD_ROUTES) {
+        const route = router.routesById[id]
+        if (route) void router.loadRouteChunk(route)?.catch(() => undefined)
+      }
     }
     if ("requestIdleCallback" in window) {
       const handle = requestIdleCallback(load, { timeout: 2_000 })
@@ -140,7 +150,16 @@ function AppLayout() {
                 <MenuButton />
                 <img src="/favicon.svg" alt="" className="size-6" />
                 <span className="font-semibold tracking-tight">Dex</span>
-                <Link to="/chat" title="New chat" className="ml-auto rounded-md p-1.5 text-zinc-400 hover:text-zinc-100">
+                <button
+                  type="button"
+                  onClick={openCommandPalette}
+                  title="Search (⌘K)"
+                  aria-label="Search"
+                  className="ml-auto rounded-md p-1.5 text-zinc-400 hover:text-zinc-100"
+                >
+                  <Search className="size-4.5" />
+                </button>
+                <Link to="/chat" title="New chat" className="rounded-md p-1.5 text-zinc-400 hover:text-zinc-100">
                   <MessageSquarePlus className="size-5" />
                 </Link>
               </header>
@@ -148,7 +167,9 @@ function AppLayout() {
             <Outlet />
           </main>
         </div>
+        <CommandPalette />
         <ConfirmHost />
+        <Toaster theme="dark" position="bottom-right" richColors closeButton />
       </NavContext.Provider>
     </DexProvider>
   )

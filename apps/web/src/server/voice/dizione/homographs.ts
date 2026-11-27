@@ -1,7 +1,7 @@
 // Words spelled alike and pronounced differently: which reading is meant, from hand rules and small linear
 // classifiers over the neighbouring words (dizione's homographs.py).
 
-import { charAt, compare, isalpha, isdigit, isupper } from "./py.ts"
+import { charAt, chars, compare, isalpha, isascii, isdigit, isupper } from "./py.ts"
 import { rows } from "./tables.ts"
 
 const CLASSES: readonly (readonly [string, string])[] = [
@@ -35,10 +35,11 @@ function tag(token: string): string {
   const word = lower(token)
   const known = TAG.get(word)
   if (known) return known
+  const charLen = isascii(word) ? word.length : chars(word).length
   for (const [ending, name] of [["'s", "POS"], ["ly", "LY"], ["ing", "ING"], ["ed", "ED"]] as const) {
-    if (word.endsWith(ending) && [...word].length > ending.length + 1) return name
+    if (word.endsWith(ending) && charLen > ending.length + 1) return name
   }
-  if (word.endsWith("s") && !word.endsWith("ss") && [...word].length > 3) return "S"
+  if (word.endsWith("s") && !word.endsWith("ss") && charLen > 3) return "S"
   return isupper(first(token)) ? "CAP" : "W"
 }
 
@@ -182,9 +183,9 @@ export class Homographs {
     return [this.choose(word.slice(0, -1), tokens, index, joined).phones, true]
   }
 
-  private scores(word: string, tokens: readonly string[], index: number): number[] {
+  private scores(word: string, sentence: readonly string[], position: number): number[] {
     const entry = this.words[word]!
-    const names = features(...sentenceOf(tokens, index))
+    const names = features(sentence, position)
     const model = entry.model
     if (model.kind === "noun-verb") {
       const { bias, weights } = model as { bias: number; weights: Readonly<Record<string, number>> }
@@ -205,7 +206,7 @@ export class Homographs {
         return entry.senses.find((s) => s.id === sense)!
       }
     }
-    const scores = this.scores(word, tokens, index)
+    const scores = this.scores(word, sentence, position)
     let best = 0
     for (let k = 1; k < scores.length; k++) if (scores[k]! > scores[best]!) best = k
     return entry.senses[best]!

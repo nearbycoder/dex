@@ -26,7 +26,8 @@ struct MarkdownView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .environment(\.openURL, OpenURLAction { url in
             if let onLink { onLink(url); return .handled }
-            return .systemAction
+            let scheme = url.scheme?.lowercased()
+            return (scheme == "http" || scheme == "https" || scheme == "mailto") ? .systemAction : .discarded
         })
         .textSelection(.enabled)
     }

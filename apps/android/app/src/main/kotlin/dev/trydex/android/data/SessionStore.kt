@@ -41,16 +41,29 @@ class KeystoreSessionStore(context: Context) : SessionStore {
         return generator.generateKey()
     }
 
-    override fun load(): DexSession? = runCatching {
+    override fun load(): DexSession? = try {
         val sealed = prefs.getString(SESSION, null) ?: return null
         val bytes = Base64.decode(sealed, Base64.NO_WRAP)
+        if (bytes.size <= 12) {
+            clear()
+            return null
+        }
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
         val json = cipher.doFinal(bytes.copyOfRange(12, bytes.size)).decodeToString()
         DexJson.decodeFromString(DexSession.serializer(), json)
-    }.getOrElse {
-        // A key lost with a restore, or a corrupt record: sign in again.
-        clear()
+    } catch (error: Exception) {
+        // Only clear on unrecoverable corruption/key loss, never on transient keystore/IO failures.
+        if (
+            error is javax.crypto.AEADBadTagException ||
+            error is javax.crypto.BadPaddingException ||
+            error is javax.crypto.IllegalBlockSizeException ||
+            error is IllegalArgumentException ||
+            error is IndexOutOfBoundsException ||
+            error is kotlinx.serialization.SerializationException
+        ) {
+            clear()
+        }
         null
     }
 

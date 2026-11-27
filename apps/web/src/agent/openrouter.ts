@@ -1,6 +1,6 @@
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy"
 import { createProvider } from "@earendil-works/pi-ai/models"
-import { modelsOf } from "~/shared/models"
+import { type DexModel, modelsOf } from "~/shared/models"
 import type { OpenRouterAccount } from "~/shared/usage"
 
 /**
@@ -29,7 +29,10 @@ const APP_HEADERS = {
  * OpenRouter as a pi-ai provider, with the models listed now. `resolveKey` runs before each model request, so a key
  * connected or removed in the UI applies to the next request.
  */
-export const openRouterProvider = (resolveKey: () => Promise<{ key: string; source: string } | undefined>) =>
+export const openRouterProvider = (
+  resolveKey: () => Promise<{ key: string; source: string } | undefined>,
+  models: ReadonlyArray<DexModel> = modelsOf("openrouter")
+) =>
   createProvider({
     id: OPENROUTER_PROVIDER_ID,
     name: "OpenRouter",
@@ -43,7 +46,7 @@ export const openRouterProvider = (resolveKey: () => Promise<{ key: string; sour
         }
       }
     },
-    models: modelsOf("openrouter").map((model) => ({
+    models: models.map((model) => ({
       id: model.apiId,
       name: model.name,
       api: "openai-completions" as const,

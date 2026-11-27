@@ -160,7 +160,9 @@ struct OUISteps: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(item.string("title") ?? "").font(.subheadline.weight(.semibold))
                         if let details = item.string("details") {
-                            MarkdownView(text: details, font: .subheadline) { openURL($0) }.foregroundStyle(.secondary)
+                            MarkdownView(text: details, font: .subheadline) { url in
+                                if let safe = OpenUICard.safeHttpUrl(.string(url.absoluteString)) { openURL(safe) }
+                            }.foregroundStyle(.secondary)
                         } else if let details = item.node("details") {
                             OpenUINodeView(node: details)
                         }
@@ -579,7 +581,9 @@ struct OUICardItem: View {
         return VStack(alignment: .leading, spacing: 6) {
             title
             if let body = item.string("body") {
-                MarkdownView(text: body, font: .subheadline) { openURL($0) }.fontWeight(.medium)
+                MarkdownView(text: body, font: .subheadline) { url in
+                    if let safe = OpenUICard.safeHttpUrl(.string(url.absoluteString)) { openURL(safe) }
+                }.fontWeight(.medium)
             }
         }
         .padding(12)

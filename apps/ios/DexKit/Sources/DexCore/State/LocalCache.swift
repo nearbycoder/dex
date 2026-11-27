@@ -9,12 +9,19 @@ public final class LocalCache: @unchecked Sendable {
 
     private let root: URL
     private let queue = DispatchQueue(label: "dex.cache", qos: .utility)
+    private let lock = NSLock()
+    private var generation: UInt64 = 0
 
     public init(root: URL? = nil) {
-        let base = root ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appending(path: "DexCache")
+        var base = root ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appending(path: "DexCache")
         self.root = base
         try? FileManager.default.createDirectory(at: base.appending(path: "chats"), withIntermediateDirectories: true)
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? base.setResourceValues(values)
     }
+
+    private func currentGeneration() -> UInt64 { lock.withLock { generation } }
 
     private func stateURL(_ userId: String) -> URL { root.appending(path: "state-\(Self.safe(userId)).json") }
     private var modelsURL: URL { root.appending(path: "models.json") }
@@ -33,7 +40,11 @@ public final class LocalCache: @unchecked Sendable {
 
     public func saveState(_ state: DexState, userId: String) {
         let url = stateURL(userId)
-        queue.async { try? JSONEncoder.dex.encode(state).write(to: url, options: .atomic) }
+        let gen = currentGeneration()
+        queue.async {
+            guard self.currentGeneration() == gen else { return }
+            try? JSONEncoder.dex.encode(state).write(to: url, options: .atomic)
+        }
     }
 
     // MARK: Models
@@ -71,7 +82,9 @@ public final class LocalCache: @unchecked Sendable {
         let url = chatURL(userId, sessionId)
         let folder = root.appending(path: "chats")
         let saved = SavedChat(entries: transcript.entries, artifacts: transcript.artifacts)
+        let gen = currentGeneration()
         queue.async {
+            guard self.currentGeneration() == gen else { return }
             guard let data = try? JSONEncoder.dex.encode(saved), data.count <= Self.maxChatBytes else { return }
             try? data.write(to: url, options: .atomic)
             let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
@@ -91,6 +104,7 @@ public final class LocalCache: @unchecked Sendable {
 
     /// Forgets everything kept for a quick start (signing out). The model list stays: it's the same for everyone.
     public func clear() {
+        lock.withLock { generation &+= 1 }
         queue.sync {
             let files = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []
             for file in files where file.lastPathComponent != "models.json" { try? FileManager.default.removeItem(at: file) }

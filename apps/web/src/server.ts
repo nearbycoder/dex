@@ -9,7 +9,7 @@ export { DexAgent } from "./agent/dex-agent"
 
 const sameOrigin = (origin: string, url: URL) => {
   try {
-    return new URL(origin).host === url.host
+    return new URL(origin).origin === url.origin
   } catch {
     // e.g. `Origin: null` from a sandboxed frame or a file.
     return false
@@ -63,7 +63,8 @@ const withSecurityHeaders = (response: Response, url: URL) => {
   // Responses with their own (stricter) policy keep it, e.g. sandboxed media.
   if (!secured.headers.has("Content-Security-Policy")) secured.headers.set("Content-Security-Policy", CONTENT_SECURITY_POLICY)
   secured.headers.set("X-Content-Type-Options", "nosniff")
-  secured.headers.set("Referrer-Policy", "strict-origin-when-cross-origin")
+  // Preserve stricter per-route Referrer-Policy (e.g. `no-referrer` on workspace preview, `same-origin` on VM desktop).
+  if (!secured.headers.has("Referrer-Policy")) secured.headers.set("Referrer-Policy", "strict-origin-when-cross-origin")
   // The microphone is Dex's own, for calls with sidekicks; nothing it frames or opens gets it.
   secured.headers.set("Permissions-Policy", "camera=(), microphone=(self), geolocation=()")
   // Pages opened from Dex (links in chats) get no handle back to it, and Dex none to them.
@@ -79,7 +80,7 @@ const withSecurityHeaders = (response: Response, url: URL) => {
  */
 const toCustomDomain = (request: Request, url: URL, env: Env) => {
   // A comma-separated list (e.g. "example.com,www.example.com"); the first is the main one.
-  const domain = env.CUSTOM_DOMAIN.split(",")[0]?.trim()
+  const domain = (env.CUSTOM_DOMAIN ?? "").split(",")[0]?.trim()
   if (!domain || request.method !== "GET" || request.headers.get("sec-fetch-mode") !== "navigate") return undefined
   if (url.hostname === domain || url.hostname === "localhost" || url.hostname === "127.0.0.1") return undefined
   return Response.redirect(`https://${domain}${url.pathname}${url.search}`, 301)
@@ -95,7 +96,7 @@ export default {
     if (url.pathname.startsWith("/agents/")) {
       const authorize = authorizeAgent(env, url)
       const response = await routeAgentRequest(request, env, { onBeforeConnect: authorize, onBeforeRequest: authorize })
-      if (response) return response
+      if (response) return withSecurityHeaders(response, url)
     }
     if (url.pathname.startsWith(VM_DESKTOP_PREFIX)) return withSecurityHeaders(await handleVmDesktop(request, env), url)
     if (url.pathname === TOUR_PATH) return withSecurityHeaders(await serveTour(request, env), url)

@@ -1,6 +1,6 @@
 import { Check, LoaderCircle, ShieldAlert, X } from "lucide-react"
 import { useState } from "react"
-import { useDex } from "~/client/lib/dex"
+import { useDexActions, useDexSelector } from "~/client/lib/dex"
 
 const STATUS: Record<string, string> = {
   approved: "Confirmed",
@@ -14,10 +14,10 @@ const STATUS: Record<string, string> = {
  * Nothing happens until you confirm here; your answer goes back to the chat as a message.
  */
 export function ConfirmCard({ id, summary }: { id: string; summary: string }) {
-  const { state, stub } = useDex()
+  const { stub } = useDexActions()
+  const pending = useDexSelector((state) => state?.access.pending.find((candidate) => candidate.id === id))
   const [busy, setBusy] = useState<"yes" | "no" | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const pending = state?.access.pending.find((candidate) => candidate.id === id)
   const status = pending?.status ?? "expired"
 
   const answer = async (approve: boolean) => {
